@@ -14,9 +14,19 @@ class UpdateGroupCellView: NSTableCellView {
 	/// The label holding the sections title.
 	@IBOutlet private weak var titleField: NSTextField!
 
+	/// The visual effect view behind the section header.
+	@IBOutlet private weak var backgroundEffectView: NSVisualEffectView!
+	
 	/// The number formatter formatting the app counter
 	private static let numberFormatter = NumberFormatter()
 
+	override func awakeFromNib() {
+		super.awakeFromNib()
+		if #available(macOS 26.0, *) {
+			backgroundEffectView.isHidden = true
+		}
+	}
+	
 	/// The section to be presented by this view.
 	var section: AppListSnapshot.Section? {
 		didSet {
@@ -49,7 +59,7 @@ class UpdateGroupCellView: NSTableCellView {
 			
 			// Remove the underline and add special formatting to the count
 			let formattedText = NSMutableAttributedString(string: text.string)
-			formattedText.setAttributes([.foregroundColor: NSColor.tertiaryLabelColor, .font: NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .small))], range: range)
+			formattedText.setAttributes([.foregroundColor: NSColor.tertiaryLabelColor, .font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize(for: .small))], range: range)
 			
 			self.titleField.attributedStringValue = formattedText
 		}
