@@ -33,6 +33,8 @@ class AppDirectory {
 	/// The file system listener
 	private lazy var listener : DispatchSourceFileSystemObject = {
 		let descriptor = open((self.url as NSURL).fileSystemRepresentation, O_EVTONLY)
+		guard descriptor != -1 else { fatalError("Unable to open folder at url") }
+		
 		let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor,
 															   eventMask: .write)
 		

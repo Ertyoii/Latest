@@ -27,9 +27,13 @@ class AppDirectoryCellView: NSTableCellView {
 	var url: URL? {
 		didSet {
 			guard url != oldValue else { return }
+			
+			isReachable = (try? url?.checkResourceIsReachable()) == true
 			setUpView()
 		}
 	}
+	
+	var isReachable: Bool = false
 	
 	private func setUpView() {
 		guard let url else {
@@ -41,9 +45,10 @@ class AppDirectoryCellView: NSTableCellView {
 		
 		// Title
 		titleLabel.stringValue = url.relativePath
+		titleLabel.textColor = tintColor
 		
 		// Image
-		iconImageView.image = NSWorkspace.shared.icon(forFile: url.relativePath)
+		iconImageView.image = icon
 		
 		// App Count
 		activityIndicator.startAnimation(nil)
@@ -58,4 +63,20 @@ class AppDirectoryCellView: NSTableCellView {
 		}
 	}
 	
+	private var tintColor: NSColor {
+		isReachable ? .labelColor : .secondaryLabelColor
+	}
+	
+	private var icon: NSImage {
+		if isReachable {
+			guard let url else { return NSImage() }
+			return NSWorkspace.shared.icon(forFile: url.relativePath)
+		}
+		
+		return if #available(macOS 11.0, *) {
+			NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "")!
+		} else {
+			NSImage(named: .init("NSCaution"))!
+		}
+	}
 }
