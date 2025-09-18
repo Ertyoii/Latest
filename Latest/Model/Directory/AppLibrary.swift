@@ -58,7 +58,10 @@ class AppLibrary {
 		var dispatchGroup: DispatchGroup? = self.directories.isEmpty ? DispatchGroup() : nil
 		
 		// Setup directories
-		directories = Dictionary(uniqueKeysWithValues: directoryStore.URLs.map({ url in
+		directories = Dictionary(uniqueKeysWithValues: directoryStore.URLs.compactMap { url in
+			// Skip unreachable directories
+			guard directoryStore.isReachable(url) else { return nil }
+			
 			dispatchGroup?.enter()
 			
 			// Reuse existing directory observations if possible
@@ -71,7 +74,7 @@ class AppLibrary {
 					self.updateScheduler.add(data: 1)
 				}
 			})
-		}))
+		})
 		
 		dispatchGroup?.notify(queue: .global()) {
 			// Call update immediately. Using the scheduler delays the update.

@@ -81,6 +81,11 @@ class AppDirectoryStore {
 	func canRemove(_ url: URL) -> Bool {
 		customURLs.contains(url) && !Self.defaultURLs.contains(url)
 	}
+	
+	/// Whether the url currently reachable.
+	func isReachable(_ url: URL) -> Bool {
+		(try? url.checkResourceIsReachable()) == true
+	}
 }
 
 extension UserDefaults {
