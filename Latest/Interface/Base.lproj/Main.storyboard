@@ -25,14 +25,14 @@
                                                 <action selector="orderFrontStandardAboutPanel:" target="Ady-hI-5gd" id="Exp-CZ-Vem"/>
                                             </connections>
                                         </menuItem>
-                                        <menuItem title="Check for Updates…" id="4vf-ia-dzo">
+                                        <menuItem title="Check for Updates…" image="arrow.trianglehead.2.clockwise.rotate.90" catalog="system" id="4vf-ia-dzo">
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
                                                 <action selector="checkForUpdates:" target="ZIQ-oE-e1U" id="6ax-If-3sD"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem isSeparatorItem="YES" id="VOq-y0-SEH"/>
-                                        <menuItem title="Preferences…" keyEquivalent="," id="BOF-NM-1cW">
+                                        <menuItem title="Preferences…" image="gear" catalog="system" keyEquivalent="," id="BOF-NM-1cW">
                                             <connections>
                                                 <segue destination="FYj-Dr-V87" kind="show" id="nij-E9-reP"/>
                                             </connections>
@@ -73,23 +73,23 @@
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <menu key="submenu" title="File" id="bib-Uj-vzu">
                                     <items>
-                                        <menuItem title="Update" keyEquivalent="u" id="IAo-SY-fd9">
+                                        <menuItem title="Update" image="square.and.arrow.down" catalog="system" keyEquivalent="u" id="IAo-SY-fd9">
                                             <connections>
                                                 <action selector="updateApp:" target="Ady-hI-5gd" id="8d0-AY-Uqx"/>
                                             </connections>
                                         </menuItem>
-                                        <menuItem title="Update All" keyEquivalent="U" id="tXI-mr-wws">
+                                        <menuItem title="Update All" image="custom.arrow.down.square.stack" keyEquivalent="U" id="tXI-mr-wws">
                                             <connections>
                                                 <action selector="updateAll:" target="Ady-hI-5gd" id="krK-jh-4Gr"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem isSeparatorItem="YES" id="6iT-9L-JOa"/>
-                                        <menuItem title="Open" keyEquivalent="O" id="Uax-et-NIt">
+                                        <menuItem title="Open" image="arrow.up.forward.app" catalog="system" keyEquivalent="O" id="Uax-et-NIt">
                                             <connections>
                                                 <action selector="openApp:" target="Ady-hI-5gd" id="UoD-aP-cgb"/>
                                             </connections>
                                         </menuItem>
-                                        <menuItem title="Show in Finder" keyEquivalent="R" id="bm3-iR-6vZ">
+                                        <menuItem title="Show in Finder" image="finder" catalog="system" keyEquivalent="R" id="bm3-iR-6vZ">
                                             <connections>
                                                 <action selector="showAppInFinder:" target="Ady-hI-5gd" id="WCT-RO-qvU"/>
                                             </connections>
@@ -326,23 +326,23 @@
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <menu key="submenu" title="View" id="HyV-fh-RgO">
                                     <items>
-                                        <menuItem title="Sort By" identifier="sortByMenu" id="ZKg-u2-aqr">
+                                        <menuItem title="Sort By" image="arrow.up.arrow.down" catalog="system" identifier="sortByMenu" id="ZKg-u2-aqr">
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <menu key="submenu" title="Sort By" id="1fA-1k-qER"/>
                                         </menuItem>
                                         <menuItem isSeparatorItem="YES" id="wrO-ue-Kal"/>
-                                        <menuItem title="Show Installed Apps" keyEquivalent="i" id="XVu-eG-PUK">
+                                        <menuItem title="Show Installed Apps" image="checkmark.app" catalog="system" keyEquivalent="i" id="XVu-eG-PUK">
                                             <connections>
                                                 <action selector="toggleShowInstalledUpdates:" target="Ady-hI-5gd" id="DiG-pc-JWl"/>
                                             </connections>
                                         </menuItem>
-                                        <menuItem title="Show Ignored Apps" keyEquivalent="I" id="Rh5-N3-X6H">
+                                        <menuItem title="Show Ignored Apps" image="app.dashed" catalog="system" keyEquivalent="I" id="Rh5-N3-X6H">
                                             <connections>
                                                 <action selector="toggleShowIgnoredUpdates:" target="Ady-hI-5gd" id="V8P-XQ-TjM"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem isSeparatorItem="YES" id="2cf-83-Jly"/>
-                                        <menuItem title="Check for Updates…" keyEquivalent="r" id="c4C-I9-Gd0">
+                                        <menuItem title="Check for Updates…" image="arrow.clockwise" catalog="system" keyEquivalent="r" id="c4C-I9-Gd0">
                                             <connections>
                                                 <action selector="reload:" target="Ady-hI-5gd" id="hPg-BA-6c8"/>
                                             </connections>
@@ -392,13 +392,13 @@
                                             </connections>
                                         </menuItem>
                                         <menuItem isSeparatorItem="YES" id="1aU-f4-c4Z"/>
-                                        <menuItem title="Visit Latest-Website" id="7c2-6r-Saw">
+                                        <menuItem title="Visit Latest-Website" image="globe" catalog="system" id="7c2-6r-Saw">
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
                                                 <action selector="visitWebsite:" target="Ady-hI-5gd" id="nmK-ds-F4f"/>
                                             </connections>
                                         </menuItem>
-                                        <menuItem title="Donate" id="o46-Ym-MCY">
+                                        <menuItem title="Donate" image="hands.clap" catalog="system" id="o46-Ym-MCY">
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
                                                 <action selector="donate:" target="Ady-hI-5gd" id="k6J-4J-DNa"/>
@@ -543,14 +543,13 @@
                                                     <prototypeCellViews>
                                                         <tableCellView identifier="MLMUpdateCellSectionIdentifier" id="ZtS-Z9-Cu9" customClass="UpdateGroupCellView" customModule="Latest" customModuleProvider="target">
                                                             <rect key="frame" x="10" y="0.0" width="380" height="26"/>
-                                                            <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                                                            <autoresizingMask key="autoresizingMask" widthSizable="YES"/>
                                                             <subviews>
                                                                 <visualEffectView blendingMode="behindWindow" material="sidebar" state="followsWindowActiveState" translatesAutoresizingMaskIntoConstraints="NO" id="DVj-Eq-QBv">
                                                                     <rect key="frame" x="0.0" y="0.0" width="380" height="26"/>
                                                                 </visualEffectView>
-                                                                <textField wantsLayer="YES" focusRingType="none" horizontalHuggingPriority="20" verticalHuggingPriority="750" horizontalCompressionResistancePriority="20" fixedFrame="YES" textCompletion="NO" translatesAutoresizingMaskIntoConstraints="NO" id="xhF-6m-YCA">
+                                                                <textField wantsLayer="YES" focusRingType="none" horizontalHuggingPriority="20" verticalHuggingPriority="750" horizontalCompressionResistancePriority="20" textCompletion="NO" translatesAutoresizingMaskIntoConstraints="NO" id="xhF-6m-YCA">
                                                                     <rect key="frame" x="20" y="5" width="324" height="16"/>
-                                                                    <autoresizingMask key="autoresizingMask" widthSizable="YES"/>
                                                                     <textFieldCell key="cell" lineBreakMode="truncatingTail" title="&lt;dnl&gt;" allowsEditingTextAttributes="YES" id="NNm-bC-QYz">
                                                                         <font key="font" metaFont="systemMedium" size="13"/>
                                                                         <color key="textColor" name="secondaryLabelColor" catalog="System" colorSpace="catalog"/>
@@ -559,8 +558,12 @@
                                                                 </textField>
                                                             </subviews>
                                                             <constraints>
+                                                                <constraint firstItem="xhF-6m-YCA" firstAttribute="top" secondItem="ZtS-Z9-Cu9" secondAttribute="top" constant="5" id="GJp-Zp-KgO"/>
+                                                                <constraint firstAttribute="trailing" secondItem="xhF-6m-YCA" secondAttribute="trailing" constant="38" id="PuY-qX-7H7"/>
                                                                 <constraint firstAttribute="trailing" secondItem="DVj-Eq-QBv" secondAttribute="trailing" id="QhD-5H-yqc"/>
                                                                 <constraint firstAttribute="bottom" secondItem="DVj-Eq-QBv" secondAttribute="bottom" id="chm-Rk-jh3"/>
+                                                                <constraint firstItem="xhF-6m-YCA" firstAttribute="leading" secondItem="ZtS-Z9-Cu9" secondAttribute="leading" constant="22" id="fIZ-KU-ehA"/>
+                                                                <constraint firstAttribute="bottom" secondItem="xhF-6m-YCA" secondAttribute="bottom" constant="5" id="foH-Nd-kQc"/>
                                                                 <constraint firstItem="DVj-Eq-QBv" firstAttribute="leading" secondItem="ZtS-Z9-Cu9" secondAttribute="leading" id="ltP-EW-8at"/>
                                                                 <constraint firstItem="DVj-Eq-QBv" firstAttribute="top" secondItem="ZtS-Z9-Cu9" secondAttribute="top" id="zDi-if-AoH"/>
                                                             </constraints>
@@ -795,32 +798,32 @@
                     <modifierMask key="keyEquivalentModifierMask"/>
                     <menu key="submenu" title="Menu" id="Ake-Tt-cX3">
                         <items>
-                            <menuItem title="Update" id="00n-xr-jcQ">
+                            <menuItem title="Update" image="square.and.arrow.down" catalog="system" id="00n-xr-jcQ">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="updateApp:" target="MxB-hL-adL" id="1IZ-Ca-AKt"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="Ignore" id="PS4-wi-kF9" userLabel="Ignore">
+                            <menuItem title="Ignore" image="app.dashed" catalog="system" id="PS4-wi-kF9" userLabel="Ignore">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="ignoreApp:" target="MxB-hL-adL" id="eZ6-zI-CeB"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="Don't Ignore" id="Ljr-hV-usc" userLabel="Unignore">
+                            <menuItem title="Don't Ignore" image="custom.app.dashed.slash" id="Ljr-hV-usc" userLabel="Unignore">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="unignoreApp:" target="MxB-hL-adL" id="oa9-yN-Xq6"/>
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="Sha-Xo-nI1"/>
-                            <menuItem title="Open" id="w14-Ia-4l9" userLabel="Open">
+                            <menuItem title="Open" image="arrow.up.forward.app" catalog="system" id="w14-Ia-4l9" userLabel="Open">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="openApp:" target="MxB-hL-adL" id="BeE-Pr-FN9"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="Show in Finder" id="h9B-7u-6ru">
+                            <menuItem title="Show in Finder" image="finder" catalog="system" id="h9B-7u-6ru">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="showAppInFinder:" target="MxB-hL-adL" id="iar-Jd-EH1"/>
@@ -1601,8 +1604,20 @@
         <image name="NSStatusAvailable" width="16" height="16"/>
         <image name="NSTouchBarRefreshTemplate" width="18" height="21"/>
         <image name="NSTouchBarSearchTemplate" width="20" height="20"/>
+        <image name="app.dashed" catalog="system" width="15" height="14"/>
+        <image name="arrow.clockwise" catalog="system" width="14" height="16"/>
+        <image name="arrow.trianglehead.2.clockwise.rotate.90" catalog="system" width="16" height="15"/>
+        <image name="arrow.up.arrow.down" catalog="system" width="18" height="15"/>
+        <image name="arrow.up.forward.app" catalog="system" width="15" height="14"/>
+        <image name="checkmark.app" catalog="system" width="15" height="14"/>
+        <image name="custom.app.dashed.slash" width="12" height="12"/>
+        <image name="custom.arrow.down.square.stack" width="11" height="13"/>
         <image name="externaldrive" catalog="system" width="18" height="13"/>
+        <image name="finder" catalog="system" width="16" height="15"/>
+        <image name="gear" catalog="system" width="17" height="16"/>
         <image name="gearshape" catalog="system" width="16" height="16"/>
+        <image name="globe" catalog="system" width="15" height="15"/>
+        <image name="hands.clap" catalog="system" width="20" height="19"/>
         <image name="menuItem:NMo-om-nkz:secondaryImage" width="20" height="16">
             <mutableData key="keyedArchiveRepresentation">
 YnBsaXN0MDDUAQIDBAUGBwpYJHZlcnNpb25ZJGFyY2hpdmVyVCR0b3BYJG9iamVjdHMSAAGGoF8QD05T
@@ -1697,5 +1712,6 @@ Af4CAAICAgQCBhOmE6sTuBO7E8gTzRPVE9gUCBQNFBUAAAAAAAACAQAAAAAAAABUAAAAAAAAAAAAAAAA
 AAAUGA
 </mutableData>
         </image>
+        <image name="square.and.arrow.down" catalog="system" width="15" height="17"/>
     </resources>
 </document>
