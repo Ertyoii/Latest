@@ -144,3 +144,9 @@
 
 /* A label used for apps which are not supported by Latest. */
 "UnsupportedLabel" = "No support";
+
+/* Tool tip of a toolbar button that checks for updates */
+"CheckForUpdatesToolbarItemToolTip" = "Check for Updates";
+
+/* Tool tip of a toolbar button that performs updates for all apps with update available */
+"UpdateAllToolbarItemToolTip" = "Update all Apps";
