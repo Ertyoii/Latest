@@ -39,6 +39,9 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
     /// The menu displayed on secondary clicks on cells in the list
     @IBOutlet weak var tableViewMenu: NSMenu!
     
+	/// Constraint controlling the top constraint of the table view.
+	@IBOutlet weak var topTableConstraint: NSLayoutConstraint!
+	
 	/// The currently selected app within the UI.
 	var selectedApp: App? {
 		willSet {
@@ -79,6 +82,12 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 		
 		if #available(macOS 11, *) {
 			self.updatesLabel.isHidden = true
+		}
+		
+		if #available(macOS 26, *) {
+			self.topTableConstraint.constant = 0
+			self.tableView.enclosingScrollView?.contentInsets = .init(top: 78, left: 0, bottom: 0, right: 0)
+			self.tableView.enclosingScrollView?.scrollerInsets = .init(top: 0, left: 0, bottom: 10, right: 0)
 		}
     }
     
