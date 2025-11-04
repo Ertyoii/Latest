@@ -204,6 +204,10 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
                 self.updateApp(atIndex: row)
 				tableView.rowActionsVisible = false
             })
+			
+			if #available(macOS 11.0, *) {
+				action.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: nil)
+			}
             
 			// Teal on macOS 11 / below is the same as Cyan on macOS 12+
 			if #available(macOS 12.0, *) {
@@ -224,7 +228,12 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 				tableView.rowActionsVisible = false
             })
 			reveal.backgroundColor = .systemGray
-
+			
+			if #available(macOS 11.0, *) {
+				open.image = NSImage(systemSymbolName: "arrow.up.forward.app", accessibilityDescription: nil)
+				reveal.image = NSImage(systemSymbolName: "finder", accessibilityDescription: nil)
+			}
+			
             return [open, reveal]
         }
         
