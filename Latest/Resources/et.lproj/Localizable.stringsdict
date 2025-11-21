@@ -17,6 +17,8 @@
 			<key>other</key>
 			<string>Saadaval on %d uuendust</string>
 		</dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
 	</dict>
 </dict>
 </plist>
