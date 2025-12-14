@@ -40,8 +40,11 @@ jobs:
 
           # import certificate to keychain
           security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t agg -f pkcs12 -k $KEYCHAIN_PATH
+          
+          # Fix: Append temp keychain to the existing list to keep System Root CAs available
+          security list-keychains -d user -s $KEYCHAIN_PATH $(security list-keychains -d user | sed 's/"//g')
+
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security list-keychains -s $KEYCHAIN_PATH
           security find-identity -v -p codesigning
 
       - name: Build App
