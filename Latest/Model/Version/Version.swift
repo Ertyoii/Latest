@@ -77,6 +77,10 @@ struct Version : Hashable, Comparable {
 			v2 = rhs.versionNumber
 		}
 		
+		if v1 == v2 {
+			return .equal
+		}
+		
 		guard let c1 = v1?.components(), let c2 = v2?.components() else {
 			return .undefined
 		}
@@ -364,4 +368,3 @@ extension OperatingSystemVersion {
 	}
 	
 }
-

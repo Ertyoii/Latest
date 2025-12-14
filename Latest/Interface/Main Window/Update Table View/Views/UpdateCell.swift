@@ -28,10 +28,10 @@ class UpdateCell: NSTableCellView {
 	@IBOutlet private weak var contentStackView: NSStackView!
 	
 	/// The constraint defining the leading inset of the content.
-	@available(macOS, deprecated: 11.0) @IBOutlet private weak var leadingConstraint: NSLayoutConstraint!
+	@IBOutlet private weak var leadingConstraint: NSLayoutConstraint!
 	
 	/// Constraint controlling the trailing inset of the cell.
-	@available(macOS, deprecated: 11.0) @IBOutlet private weak var trailingConstraint: NSLayoutConstraint!
+	@IBOutlet private weak var trailingConstraint: NSLayoutConstraint!
 
 	/// Label displaying the last modified/update date for the app.
 	@IBOutlet private weak var dateTextField: NSTextField!

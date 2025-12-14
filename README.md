@@ -26,7 +26,7 @@ After that, run `brew install --cask latest` to install the current version of L
 
 ### Build from Source
 
-**To build Latest, Xcode 11 and Swift 5 is required.**
+**To build Latest, a recent Xcode (tested with Xcode 26 / Swift 6) is required.** (The project uses Swift Package Manager and will fetch Sparkle during the first build.)
 
 You can build Latest directly on your machine. To do that, you have to download the source code by cloning the repository: `git clone --recurse-submodules git@github.com:mangerlahn/Latest.git`.
 
