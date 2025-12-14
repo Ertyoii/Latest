@@ -15,9 +15,26 @@ class WebContentLoader: NSObject {
 	/// Loads contents for the given URL.
 	///
 	/// The update handler may be called multiple times, if contents change. The caller is responsible for determining whether updates are still relevant.
+	@available(*, deprecated, message: "Use `events(for:)` instead")
 	func load(from url: URL, contentUpdateHandler: @escaping(Result<String, Error>) -> Void) {
 		currentUpdateHandler = contentUpdateHandler
 		currentNavigation = webView.load(URLRequest(url: url))
+	}
+
+	/// Returns a stream of HTML content updates for the given URL.
+	func events(for url: URL) -> AsyncThrowingStream<String, Error> {
+		return AsyncThrowingStream { continuation in
+			self.currentContinuation = continuation
+			self.currentNavigation = webView.load(URLRequest(url: url))
+			
+			// Handle cleanup when the stream is cancelled
+			continuation.onTermination = { @Sendable [weak self] _ in
+				Task { @MainActor [weak self] in
+					self?.webView.stopLoading()
+					self?.currentContinuation = nil
+				}
+			}
+		}
 	}
 
 
@@ -58,18 +75,22 @@ class WebContentLoader: NSObject {
 	/// The current update handler.
 	private var currentUpdateHandler: ((Result<String, Error>) -> Void)?
 	
+	/// The current async continuation.
+	private var currentContinuation: AsyncThrowingStream<String, Error>.Continuation?
+	
 	
 	// MARK: - Utilities
 	
 	/// Forwards the current page contents to the caller of the load method.
 	fileprivate func notifyContentUpdate() {
 		webView.evaluateJavaScript("document.documentElement.outerHTML.toString()") { html, error in
-			DispatchQueue.main.async {
-				if let html = html as? String, !html.isEmpty {
-					self.currentUpdateHandler?(.success(html))
-				} else if let error = error {
-					self.currentUpdateHandler?(.failure(error))
-				}
+			// WebKit callbacks are already on the main thread, but explicit MainActor context is safe.
+			if let html = html as? String, !html.isEmpty {
+				self.currentUpdateHandler?(.success(html))
+				self.currentContinuation?.yield(html)
+			} else if let error = error {
+				self.currentUpdateHandler?(.failure(error))
+				self.currentContinuation?.finish(throwing: error)
 			}
 		}
 	}

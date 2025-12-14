@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <document type="com.apple.InterfaceBuilder3.Cocoa.Storyboard.XIB" version="3.0" toolsVersion="24506" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES" initialViewController="B8D-0N-5wS">
     <dependencies>
-        <deployment identifier="macosx"/>
         <plugIn identifier="com.apple.InterfaceBuilder.CocoaDFRPlugin" version="24006"/>
         <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="24506"/>
         <capability name="System colors introduced in macOS 10.14" minToolsVersion="10.0"/>
@@ -424,7 +423,7 @@
                 <customObject id="Oky-zY-oP4" userLabel="First Responder" customClass="NSResponder" sceneMemberID="firstResponder"/>
                 <windowController storyboardIdentifier="MainWindowController" showSeguePresentationStyle="single" id="B8D-0N-5wS" customClass="MainWindowController" customModule="Latest" customModuleProvider="target" sceneMemberID="viewController">
                     <window key="window" identifier="MainWindow" title="&lt;dnl&gt;" subtitle="&lt;dnl&gt;" allowsToolTipsWhenApplicationIsInactive="NO" autorecalculatesKeyViewLoop="NO" releasedWhenClosed="NO" frameAutosaveName="MainWindowSize" animationBehavior="default" titlebarAppearsTransparent="YES" id="IQv-IB-iLA">
-                        <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES" resizable="YES" fullSizeContentView="NO"/>
+                        <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES" resizable="YES"/>
                         <rect key="contentRect" x="549" y="334" width="1004" height="495"/>
                         <rect key="screenRect" x="0.0" y="0.0" width="2560" height="1415"/>
                         <value key="minSize" type="size" width="350" height="300"/>
@@ -561,13 +560,13 @@
                         <autoresizingMask key="autoresizingMask"/>
                         <subviews>
                             <scrollView borderType="none" autohidesScrollers="YES" horizontalLineScroll="65" horizontalPageScroll="10" verticalLineScroll="65" verticalPageScroll="10" usesPredominantAxisScrolling="NO" horizontalScrollElasticity="none" translatesAutoresizingMaskIntoConstraints="NO" id="yos-E7-CDu">
-                                <rect key="frame" x="0.0" y="-1" width="400" height="196"/>
+                                <rect key="frame" x="0.0" y="-1" width="400" height="188"/>
                                 <clipView key="contentView" drawsBackground="NO" id="sB5-n6-Pai">
-                                    <rect key="frame" x="0.0" y="0.0" width="400" height="196"/>
+                                    <rect key="frame" x="0.0" y="0.0" width="400" height="188"/>
                                     <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                                     <subviews>
                                         <tableView autoresizesSubviews="NO" verticalHuggingPriority="750" allowsExpansionToolTips="YES" columnAutoresizingStyle="lastColumnOnly" selectionHighlightStyle="sourceList" columnReordering="NO" multipleSelection="NO" autosaveColumns="NO" typeSelect="NO" rowHeight="65" usesAutomaticRowHeights="YES" viewBased="YES" id="Aue-8r-EWw" customClass="UpdateTableView" customModule="Latest" customModuleProvider="target">
-                                            <rect key="frame" x="0.0" y="0.0" width="400" height="196"/>
+                                            <rect key="frame" x="0.0" y="0.0" width="400" height="188"/>
                                             <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                                             <color key="backgroundColor" white="1" alpha="0.0" colorSpace="calibratedWhite"/>
                                             <tableViewGridLines key="gridStyleMask" horizontal="YES"/>
@@ -585,12 +584,12 @@
                                                     </textFieldCell>
                                                     <tableColumnResizingMask key="resizingMask" resizeWithTable="YES"/>
                                                     <prototypeCellViews>
-                                                        <tableCellView identifier="MLMUpdateCellSectionIdentifier" misplaced="YES" id="ZtS-Z9-Cu9" customClass="UpdateGroupCellView" customModule="Latest" customModuleProvider="target">
-                                                            <rect key="frame" x="10" y="0.0" width="380" height="26"/>
+                                                        <tableCellView identifier="MLMUpdateCellSectionIdentifier" id="ZtS-Z9-Cu9" customClass="UpdateGroupCellView" customModule="Latest" customModuleProvider="target">
+                                                            <rect key="frame" x="10" y="0.0" width="380" height="28"/>
                                                             <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                                                             <subviews>
                                                                 <textField wantsLayer="YES" focusRingType="none" horizontalHuggingPriority="20" verticalHuggingPriority="750" horizontalCompressionResistancePriority="20" textCompletion="NO" translatesAutoresizingMaskIntoConstraints="NO" id="xhF-6m-YCA">
-                                                                    <rect key="frame" x="18" y="6" width="324" height="16"/>
+                                                                    <rect key="frame" x="14" y="6" width="332" height="16"/>
                                                                     <textFieldCell key="cell" lineBreakMode="truncatingTail" title="&lt;dnl&gt;" allowsEditingTextAttributes="YES" id="NNm-bC-QYz">
                                                                         <font key="font" metaFont="system"/>
                                                                         <color key="textColor" name="secondaryLabelColor" catalog="System" colorSpace="catalog"/>
@@ -600,16 +599,16 @@
                                                             </subviews>
                                                             <constraints>
                                                                 <constraint firstItem="xhF-6m-YCA" firstAttribute="top" secondItem="ZtS-Z9-Cu9" secondAttribute="top" constant="6" id="Nsv-Nb-u2a"/>
-                                                                <constraint firstItem="xhF-6m-YCA" firstAttribute="leading" secondItem="ZtS-Z9-Cu9" secondAttribute="leading" constant="20" id="r4x-hJ-lPW"/>
+                                                                <constraint firstItem="xhF-6m-YCA" firstAttribute="leading" secondItem="ZtS-Z9-Cu9" secondAttribute="leading" constant="16" id="r4x-hJ-lPW"/>
                                                                 <constraint firstAttribute="bottom" secondItem="xhF-6m-YCA" secondAttribute="bottom" constant="6" id="yFI-0q-wNe"/>
-                                                                <constraint firstAttribute="trailing" secondItem="xhF-6m-YCA" secondAttribute="trailing" constant="40" id="zD0-NE-nwL"/>
+                                                                <constraint firstAttribute="trailing" secondItem="xhF-6m-YCA" secondAttribute="trailing" priority="999" constant="36" id="zD0-NE-nwL"/>
                                                             </constraints>
                                                             <connections>
                                                                 <outlet property="titleField" destination="xhF-6m-YCA" id="LiU-5J-UIh"/>
                                                             </connections>
                                                         </tableCellView>
                                                         <tableCellView identifier="MLMUpdateCellIdentifier" id="c4D-Nt-dk9" customClass="UpdateCell" customModule="Latest" customModuleProvider="target">
-                                                            <rect key="frame" x="10" y="26" width="380" height="65"/>
+                                                            <rect key="frame" x="10" y="28" width="380" height="65"/>
                                                             <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                                                             <subviews>
                                                                 <stackView distribution="equalSpacing" orientation="vertical" alignment="trailing" spacing="0.0" horizontalStackHuggingPriority="249.99998474121094" verticalStackHuggingPriority="249.99998474121094" detachesHiddenViews="YES" translatesAutoresizingMaskIntoConstraints="NO" id="xEj-uF-Wqu">
@@ -765,7 +764,7 @@
                                 </scroller>
                             </scrollView>
                             <customView translatesAutoresizingMaskIntoConstraints="NO" id="zLf-Z1-wsn">
-                                <rect key="frame" x="0.0" y="239" width="400" height="32"/>
+                                <rect key="frame" x="0.0" y="195" width="400" height="32"/>
                                 <subviews>
                                     <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="C1U-Xt-po9">
                                         <rect key="frame" x="181" y="6" width="39" height="14"/>
@@ -793,7 +792,7 @@
                                 </textFieldCell>
                             </textField>
                             <searchField wantsLayer="YES" focusRingType="none" verticalHuggingPriority="750" textCompletion="NO" translatesAutoresizingMaskIntoConstraints="NO" id="pFN-sP-y2s" customClass="UpdateSearchField" customModule="Latest" customModuleProvider="target">
-                                <rect key="frame" x="20" y="203" width="360" height="28"/>
+                                <rect key="frame" x="20" y="235" width="360" height="28"/>
                                 <searchFieldCell key="cell" controlSize="large" scrollable="YES" lineBreakMode="clipping" selectable="YES" editable="YES" continuous="YES" borderStyle="bezel" usesSingleLineMode="YES" bezelStyle="round" sendsSearchStringImmediately="YES" id="8t3-jj-ywQ">
                                     <font key="font" metaFont="system"/>
                                     <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
@@ -826,9 +825,9 @@
                         <outlet property="searchFieldToUpdatesLabelContainerConstraint" destination="ayY-zN-ich" id="ipf-9x-2Gt"/>
                         <outlet property="tableView" destination="Aue-8r-EWw" id="Kk8-bt-uhk"/>
                         <outlet property="tableViewMenu" destination="Ake-Tt-cX3" id="9e8-6Q-FyL"/>
+                        <outlet property="updatesLabel" destination="C1U-Xt-po9" id="gYG-qf-IaS"/>
                         <outlet property="updatesLabelContainerHeightConstraint" destination="pQ0-ht-32A" id="bdR-hw-Ym2"/>
                         <outlet property="updatesLabelContainerView" destination="zLf-Z1-wsn" id="yqK-QZ-zxY"/>
-                        <outlet property="updatesLabel" destination="C1U-Xt-po9" id="gYG-qf-IaS"/>
                     </connections>
                 </viewController>
                 <customObject id="MxB-hL-adL" userLabel="First Responder" customClass="NSResponder" sceneMemberID="firstResponder"/>
@@ -1295,8 +1294,8 @@
         <scene sceneID="d1P-e9-H2I">
             <objects>
                 <viewController title="General" showSeguePresentationStyle="single" id="JNL-bS-gzr" customClass="GeneralSettingsViewController" customModule="Latest" customModuleProvider="target" sceneMemberID="viewController">
-                    <view key="view" misplaced="YES" id="4Hf-JC-45B">
-                        <rect key="frame" x="0.0" y="0.0" width="440" height="168"/>
+                    <view key="view" id="4Hf-JC-45B">
+                        <rect key="frame" x="0.0" y="0.0" width="440" height="160"/>
                         <autoresizingMask key="autoresizingMask"/>
                         <subviews>
                             <gridView horizontalHuggingPriority="1000" verticalHuggingPriority="1000" xPlacement="leading" yPlacement="top" rowAlignment="firstBaseline" translatesAutoresizingMaskIntoConstraints="NO" id="crg-Gw-gZ5">
@@ -1403,7 +1402,7 @@
                             <constraint firstAttribute="bottom" secondItem="crg-Gw-gZ5" secondAttribute="bottom" constant="20" symbolic="YES" id="k4U-VR-rMz"/>
                             <constraint firstItem="crg-Gw-gZ5" firstAttribute="top" secondItem="4Hf-JC-45B" secondAttribute="top" constant="20" symbolic="YES" id="kh5-R2-oHV"/>
                             <constraint firstItem="crg-Gw-gZ5" firstAttribute="leading" secondItem="4Hf-JC-45B" secondAttribute="leading" constant="20" symbolic="YES" id="tcN-Ue-Dgt"/>
-                            <constraint firstAttribute="trailing" secondItem="crg-Gw-gZ5" secondAttribute="trailing" constant="20" symbolic="YES" id="unh-aR-t5g"/>
+                            <constraint firstAttribute="trailing" secondItem="crg-Gw-gZ5" secondAttribute="trailing" priority="999" constant="20" symbolic="YES" id="unh-aR-t5g"/>
                         </constraints>
                     </view>
                     <connections>

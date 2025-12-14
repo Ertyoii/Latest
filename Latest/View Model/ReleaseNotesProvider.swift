@@ -14,6 +14,11 @@ import AppKit
 @MainActor
 class ReleaseNotesProvider {
 	
+	/// A wrapper to transfer NSAttributedString across concurrency boundaries.
+	struct ReleaseNotesContent: @unchecked Sendable {
+		let attributedString: NSAttributedString
+	}
+	
 	/// The return value, containing either the desired release notes, or an error if unavailable.
 	typealias ReleaseNotes = Result<NSAttributedString, Error>
 	
@@ -76,15 +81,79 @@ class ReleaseNotesProvider {
 		}
 	}
 	
+	func releaseNotes(for app: App) -> AsyncThrowingStream<ReleaseNotesContent, Error> {
+		if let releaseNotes = app.releaseNotes {
+			switch releaseNotes {
+			case .html(let html):
+				// Parse on MainActor (current context)
+				let result = self.releaseNotes(from: html, baseURL: nil)
+				return AsyncThrowingStream { continuation in
+					switch result {
+					case .success(let str):
+						continuation.yield(ReleaseNotesContent(attributedString: str))
+					case .failure(let err):
+						continuation.finish(throwing: err)
+					}
+					continuation.finish()
+				}
+			case .url(let url):
+				return self.releaseNotes(from: url)
+			case .encoded(let data):
+				// Parse on MainActor (current context)
+				let result = self.releaseNotes(from: data)
+				return AsyncThrowingStream { continuation in
+					switch result {
+					case .success(let str):
+						continuation.yield(ReleaseNotesContent(attributedString: str))
+					case .failure(let err):
+						continuation.finish(throwing: err)
+					}
+					continuation.finish()
+				}
+			}
+		} else if let error = app.error {
+			return AsyncThrowingStream { $0.finish(throwing: error) }
+		} else {
+			return AsyncThrowingStream { $0.finish(throwing: LatestError.releaseNotesUnavailable) }
+		}
+	}
+	
 	
 	/// Fetches release notes from the given URL.
 	private func releaseNotes(from url: URL, with completion: @escaping (ReleaseNotes) -> Void) {
-		webContentLoader.load(from: url) { result in
-			switch result {
-			case .success(let html):
-				completion(self.releaseNotes(from: html, baseURL: url))
-			case .failure(let error):
+		Task { @MainActor in
+			do {
+				for try await content in self.releaseNotes(from: url) {
+					completion(.success(content.attributedString))
+					// We only need the first result for the completion handler version
+					break
+				}
+			} catch {
 				completion(.failure(error))
+			}
+		}
+	}
+	
+	/// Fetches release notes from the given URL as stream.
+	private func releaseNotes(from url: URL) -> AsyncThrowingStream<ReleaseNotesContent, Error> {
+		let upstream = webContentLoader.events(for: url)
+		return AsyncThrowingStream { continuation in
+			Task { @MainActor in
+				do {
+					for try await html in upstream {
+						let result = self.releaseNotes(from: html, baseURL: url)
+						switch result {
+						case .success(let string):
+							continuation.yield(ReleaseNotesContent(attributedString: string))
+						case .failure(let error):
+							continuation.finish(throwing: error)
+							return
+						}
+					}
+					continuation.finish()
+				} catch {
+					continuation.finish(throwing: error)
+				}
 			}
 		}
 	}

@@ -152,6 +152,10 @@ class ReleaseNotesViewController: NSViewController {
      - parameter content: The content to be displayed
      */
 	func display(releaseNotesFor app: App?) {
+		// Cancel existing task
+		self.loadingTask?.cancel()
+		self.loadingTask = nil
+		
 		guard let app = app else {
 			self.setEmptyState()
 			return
@@ -159,23 +163,27 @@ class ReleaseNotesViewController: NSViewController {
 		
         self.display(app)
 
-		// Delay the loading screen to avoid flickering
-		let timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { (_) in
-            Task { @MainActor [weak self] in
-			    self?.loadContent(.loading)
-            }
-		}
-		releaseNotesProvider.releaseNotes(for: app) { result in
-			timer.invalidate()
-
-			switch result {
-				case .success(let releaseNotes):
-					self.update(with: releaseNotes)
-				case .failure(let error):
-					self.show(error)
+		self.loadingTask = Task { @MainActor [weak self] in
+			// Delay the loading screen to avoid flickering
+			try? await Task.sleep(nanoseconds: 200_000_000)
+			
+			guard !Task.isCancelled else { return }
+			self?.loadContent(.loading)
+			
+			do {
+				for try await content in self?.releaseNotesProvider.releaseNotes(for: app) ?? .init(unfolding: { nil }) {
+					self?.update(with: content.attributedString)
+				}
+			} catch {
+				guard !Task.isCancelled else { return }
+				self?.show(error)
 			}
 		}
+
     }
+	
+	/// The current loading task.
+	private var loadingTask: Task<Void, Never>?
 	
     
     // MARK: - User Interface Stuff
