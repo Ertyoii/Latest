@@ -65,8 +65,12 @@ class MainWindowController: NSWindowController, NSMenuItemValidation, NSMenuDele
 			self.window?.titleVisibility = .hidden
 		}
         
-		// Set ourselves as the view menu delegate
-		NSApplication.shared.mainMenu?.item(at: MainMenuItem.view.rawValue)?.submenu?.delegate = self
+		// Set ourselves as the view menu delegate. Deferring this avoids touching/modifying the
+		// main menu while AppKit is still wiring the menu graph during launch on macOS 26.
+		DispatchQueue.main.async { [weak self] in
+			guard let self else { return }
+			NSApplication.shared.mainMenu?.item(at: MainMenuItem.view.rawValue)?.submenu?.delegate = self
+		}
 		
 		UpdateCheckCoordinator.shared.progressDelegate = self
         
@@ -146,7 +150,12 @@ class MainWindowController: NSWindowController, NSMenuItemValidation, NSMenuDele
         menu.items.forEach { (menuItem) in
 			// Sort By menu constructed dynamically
 			if menuItem.identifier == NSUserInterfaceItemIdentifier(rawValue: "sortByMenu") {
-				menuItem.submenu?.items = sortByMenuItems
+				if let sortByMenu = menuItem.submenu {
+					// Avoid assigning to `items` directly; rebuilding the submenu is less likely to
+					// confuse AppKit's menu graph bookkeeping on macOS 26.
+					sortByMenu.removeAllItems()
+					sortByMenuItems.forEach { sortByMenu.addItem($0) }
+				}
 			}
 
             guard let action = menuItem.action else { return }

@@ -7,7 +7,7 @@
 //
 
 import Cocoa
-import Sparkle
+import Foundation
 
 /// The operation for checking for updates for a Sparkle app.
 class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, @unchecked Sendable {
@@ -30,7 +30,11 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 		super.init()
 
 		self.completionBlock = {
-			guard !self.isCancelled else { return }
+			if self.isCancelled {
+				completionBlock(.failure(CancellationError()))
+				return
+			}
+
 			if let update = self.update {
 				completionBlock(.success(update))
 			} else {
@@ -53,127 +57,224 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 	
 	/// The update fetched during the checking operation.
 	fileprivate var update: App.Update?
+	
+	private var task: URLSessionDataTask?
+	private func finishIfNeeded(with error: Error? = nil) {
+		guard !self.isFinished else { return }
+		self.task = nil
 
-	/// The updater used to check for updates to this app.
-	private var updater: SPUUpdater?
+		if let error {
+			super.finish(with: error)
+		} else {
+			super.finish()
+		}
+	}
 
 	
 	// MARK: - Operation
 	
 	override func execute() {
-		// Gather app and app bundle
-		guard let bundle = Bundle(identifier: self.app.bundleIdentifier) else {
-			self.finish(with: LatestError.updateInfoUnavailable)
+		guard let url else {
+			finishIfNeeded(with: LatestError.updateInfoUnavailable)
 			return
 		}
-		
-		DispatchQueue.main.async {
-			// Instantiate a new updater that performs the update
-			let updater = SPUUpdater(hostBundle: bundle, applicationBundle: bundle, userDriver: self, delegate: self)
-			
-			do {
-				try updater.start()
-			} catch let error {
-				self.finish(with: error)
+
+		let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
+		let task = URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
+			guard let self else { return }
+
+			if self.isCancelled {
+				self.finishIfNeeded(with: CancellationError())
+				return
 			}
 			
-			updater.checkForUpdates()
+			if let error {
+				self.finishIfNeeded(with: error)
+				return
+			}
 			
-			self.updater = updater
+			guard let data, !data.isEmpty else {
+				self.finishIfNeeded(with: LatestError.updateInfoUnavailable)
+				return
+			}
+			
+			do {
+				let item = try SparkleAppcastParser.parseFirstItem(from: data)
+				
+				let version = Version(versionNumber: item.shortVersionString, buildNumber: item.version)
+				let minimumOSVersion = try item.minimumSystemVersion.flatMap(OperatingSystemVersion.init(string:))
+				
+				var releaseNotes: App.Update.ReleaseNotes? = nil
+				if let html = item.descriptionHTML, !html.isEmpty {
+					releaseNotes = .html(string: html)
+				} else if let url = item.releaseNotesURL {
+					releaseNotes = .url(url: url)
+				}
+				
+				self.update = App.Update(
+					app: self.app,
+					remoteVersion: version,
+					minimumOSVersion: minimumOSVersion,
+					source: .sparkle,
+					date: item.pubDate,
+					releaseNotes: releaseNotes,
+					updateAction: .builtIn(block: { app in
+						UpdateQueue.shared.addOperation(SparkleUpdateOperation(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier))
+					})
+				)
+				
+				self.finishIfNeeded()
+			} catch {
+				self.finishIfNeeded(with: error)
+			}
 		}
+		
+		self.task = task
+		task.resume()
 	}
 	
-	fileprivate func finish(with appcastItem: SUAppcastItem) {
-		let version = Version(versionNumber: appcastItem.displayVersionString, buildNumber: appcastItem.versionString)
-		
-		// OS Version
-		var minimumOSVersion: OperatingSystemVersion? = nil
-		if let minimumVersion = appcastItem.minimumSystemVersion {
-			minimumOSVersion = try? OperatingSystemVersion(string: minimumVersion)
-		}
-		
-		// Release Notes
-		var releaseNotes: App.Update.ReleaseNotes? = nil
-		if let description = appcastItem.itemDescription {
-			releaseNotes = .html(string: description)
-		} else if let url = appcastItem.releaseNotesURL ?? appcastItem.fullReleaseNotesURL {
-			releaseNotes = .url(url: url)
-		}
-		
-		// Build update
-		self.update = App.Update(app: self.app, remoteVersion: version, minimumOSVersion: minimumOSVersion, source: .sparkle, date: appcastItem.date, releaseNotes: releaseNotes, updateAction: .builtIn(block: { app in
-			UpdateQueue.shared.addOperation(SparkleUpdateOperation(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier))
-		}))
-
-		DispatchQueue.main.async(execute: {
-			self.finish()
-		})
+	override func cancel() {
+		super.cancel()
+		self.task?.cancel()
+		self.finishIfNeeded(with: CancellationError())
 	}
 }
 
-// MARK: - Driver Implementation
-extension SparkleUpdateCheckerOperation: SPUUserDriver {
-	
-	// MARK: - Checking for Updates
-	
-	func show(_ request: SPUUpdatePermissionRequest, reply: @escaping (SUUpdatePermissionResponse) -> Void) {
-		reply(.init(automaticUpdateChecks: false, sendSystemProfile: false))
-	}
-	
-	func showUpdateFound(with appcastItem: SUAppcastItem, state: SPUUserUpdateState, reply: @escaping (SPUUserUpdateChoice) -> Void) {
-		self.finish(with: appcastItem)
-	}
-		
-	func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
-		let nsError = error as NSError
-		if nsError.domain == SUSparkleErrorDomain && nsError.code == SUError.noUpdateError.rawValue, let appcastItem = nsError.userInfo[SPULatestAppcastItemFoundKey] as? SUAppcastItem {
-			self.finish(with: appcastItem)
-		}
-		
-		self.finish(with: error)
-		acknowledgement()
-	}
-	
-	func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
-		self.finish(with: error)
-		acknowledgement()
-	}
-	
-	func showUpdateInstalledAndRelaunched(_ relaunched: Bool, acknowledgement: @escaping () -> Void) {
-		acknowledgement()
-		self.finish()
-	}
-
-	
-	// MARK: - Ignored Methods
-	func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {}
-	func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {}
-	func showUpdateReleaseNotesFailedToDownloadWithError(_ error: Error) {}
-
-	func showUpdateInFocus() {}
-	func showDownloadInitiated(cancellation: @escaping () -> Void) {}
-	func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {}
-	func showDownloadDidReceiveData(ofLength length: UInt64) {}
-	private func scheduleProgressHandler() {}
-	
-	func showDownloadDidStartExtractingUpdate() {}
-	func showExtractionReceivedProgress(_ progress: Double) {}
-	func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {}
-	func showInstallingUpdate(withApplicationTerminated applicationTerminated: Bool, retryTerminatingApplication: @escaping () -> Void) {}
-
-	func showCanCheck(forUpdates canCheckForUpdates: Bool) {}
-	func dismissUserInitiatedUpdateCheck() {}
-	func showSendingTerminationSignal() {}
-	func dismissUpdateInstallation() {}
-	
+private struct SparkleAppcastItem {
+	var version: String?
+	var shortVersionString: String?
+	var minimumSystemVersion: String?
+	var descriptionHTML: String?
+	var releaseNotesURL: URL?
+	var pubDate: Date?
 }
 
-extension SparkleUpdateCheckerOperation: SPUUpdaterDelegate {
-	
-	func feedURLString(for updater: SPUUpdater) -> String? {
-		// We can try to supply a valid feed as addition to Sparkle's own methods.
-		// For some cases (like DevMate) Sparkle fails to retrieve an appcast by itself.
-		return url?.absoluteString
+private enum SparkleAppcastParser {
+	static func parseFirstItem(from data: Data) throws -> SparkleAppcastItem {
+		let parser = XMLParser(data: data)
+		let delegate = Delegate()
+		parser.delegate = delegate
+		
+		let success = parser.parse()
+		if let item = delegate.firstItem {
+			return item
+		}
+		
+		if !success {
+			throw parser.parserError ?? LatestError.updateInfoUnavailable
+		}
+		
+		throw LatestError.updateInfoUnavailable
 	}
 	
+	private final class Delegate: NSObject, XMLParserDelegate {
+		private(set) var firstItem: SparkleAppcastItem?
+		
+		private var currentElement: String?
+		private var currentText = ""
+		private var isInsideItem = false
+		
+		private var pendingItem = SparkleAppcastItem()
+		private var releaseNotesCandidates: [(lang: String?, url: URL)] = []
+		
+		func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
+			currentElement = qName ?? elementName
+			currentText = ""
+			
+			if elementName == "item" {
+				isInsideItem = true
+				pendingItem = SparkleAppcastItem()
+				releaseNotesCandidates = []
+				return
+			}
+			
+			guard isInsideItem else { return }
+			
+			if elementName == "enclosure" {
+				// Sparkle stores versions on the enclosure.
+				pendingItem.version = attributeDict["sparkle:version"] ?? pendingItem.version
+				pendingItem.shortVersionString = attributeDict["sparkle:shortVersionString"] ?? pendingItem.shortVersionString
+				pendingItem.minimumSystemVersion = attributeDict["sparkle:minimumSystemVersion"] ?? pendingItem.minimumSystemVersion
+			}
+			
+			if elementName == "releaseNotesLink" || (qName?.hasSuffix(":releaseNotesLink") ?? false) {
+				// Collect candidates; we select after finishing the item.
+				if let urlString = attributeDict["href"], let url = URL(string: urlString) {
+					releaseNotesCandidates.append((lang: attributeDict["xml:lang"], url: url))
+				}
+			}
+		}
+		
+		func parser(_ parser: XMLParser, foundCharacters string: String) {
+			currentText += string
+		}
+		
+		func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+			defer {
+				currentElement = nil
+				currentText = ""
+			}
+			
+			if elementName == "item" {
+				isInsideItem = false
+				if pendingItem.releaseNotesURL == nil {
+					pendingItem.releaseNotesURL = chooseReleaseNotesURL(from: releaseNotesCandidates)
+				}
+				firstItem = pendingItem
+				parser.abortParsing()
+				return
+			}
+			
+			guard isInsideItem else { return }
+			
+			let value = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+			guard !value.isEmpty else { return }
+			
+			switch elementName {
+			case "description":
+				pendingItem.descriptionHTML = value
+			case "pubDate":
+				pendingItem.pubDate = RFC822DateParser.formatter.date(from: value)
+			case "minimumSystemVersion":
+				pendingItem.minimumSystemVersion = value
+			case "releaseNotesLink":
+				// Some feeds use element text instead of href.
+				if let url = URL(string: value) {
+					releaseNotesCandidates.append((lang: nil, url: url))
+				}
+			default:
+				// Handle namespaced elements by suffix.
+				if (qName ?? "").hasSuffix(":minimumSystemVersion") {
+					pendingItem.minimumSystemVersion = value
+				} else if (qName ?? "").hasSuffix(":releaseNotesLink"), let url = URL(string: value) {
+					releaseNotesCandidates.append((lang: nil, url: url))
+				}
+			}
+		}
+		
+		private func chooseReleaseNotesURL(from candidates: [(lang: String?, url: URL)]) -> URL? {
+			guard !candidates.isEmpty else { return nil }
+			
+			let preferredLang = Locale.current.languageCode
+			if let preferredLang, let match = candidates.first(where: { $0.lang == preferredLang }) {
+				return match.url
+			}
+			
+			if let match = candidates.first(where: { $0.lang == "en" }) {
+				return match.url
+			}
+			
+			return candidates.first?.url
+		}
+	}
+}
+
+private enum RFC822DateParser {
+	static let formatter: DateFormatter = {
+		let formatter = DateFormatter()
+		formatter.locale = Locale(identifier: "en_US_POSIX")
+		formatter.timeZone = TimeZone(secondsFromGMT: 0)
+		formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss Z"
+		return formatter
+	}()
 }
