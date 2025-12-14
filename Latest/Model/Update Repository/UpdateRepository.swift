@@ -14,7 +14,7 @@ private let UpdateDateKey = "UpdateDateKey"
 /// A storage that fetches update information from an online source.
 ///
 /// Can be asked for update version information for a given application bundle.
-class UpdateRepository {
+class UpdateRepository: @unchecked Sendable {
 	
 	/// Duration after which the cache will be invalidated. (1 hour in seconds)
 	private static let cacheInvalidationDuration: Double = 1 * 60 * 60
@@ -46,8 +46,8 @@ class UpdateRepository {
 	// MARK: - Accessors
 	
 	/// Returns update information for the given bundle.
-	func updateInfo(for bundle: App.Bundle, handler: @escaping (_ bundle: App.Bundle, _ version: Version?, _ minimumOSVersion: OperatingSystemVersion?) -> Void) {
-		let checkApp = {
+	func updateInfo(for bundle: App.Bundle, handler: @escaping @Sendable (_ bundle: App.Bundle, _ version: Version?, _ minimumOSVersion: OperatingSystemVersion?) -> Void) {
+		let checkApp: @Sendable () -> Void = {
 			guard let entry = self.entry(for: bundle) else {
 				handler(bundle, nil, nil)
 				return
@@ -74,7 +74,7 @@ class UpdateRepository {
 	/// A list of requests being performed while the repository was still fetching data.
 	///
 	/// It also acts as a flag for whether initialization finished. The array is initialized when the repository is created. It will be set to nil once `finalize()` is being called.
-	private var pendingRequests: [() -> Void]? = []
+	private var pendingRequests: [ @Sendable () -> Void ]? = []
 	
 	/// A set of bundle identifiers for which update checking is currently not supported.
 	private var unsupportedBundleIdentifiers: Set<String>!
@@ -137,7 +137,7 @@ class UpdateRepository {
 		RemoteURL.allCases.forEach { urlType in
 			self.fetchCompletedGroup.enter()
 			
-			func handle(_ data: Data) {
+			@Sendable func handle(_ data: Data) {
 				switch urlType {
 				case .repository:
 					parse(data)

@@ -11,7 +11,7 @@ import Foundation
 /// Object that takes care of storing and observing application directories.
 class AppDirectoryStore {
 	
-	typealias UpdateHandler = () -> Void
+	typealias UpdateHandler = @Sendable () -> Void
 	private let observer: NSKeyValueObservation?
 
 	/// Initializes the store with the given update handler.
