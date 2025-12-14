@@ -54,6 +54,14 @@ jobs:
           name: Latest-DMG
           path: Latest.dmg
 
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: Latest.dmg
+          draft: true
+          prerelease: false
+
   test:
     name: Run Tests
     runs-on: macos-latest
