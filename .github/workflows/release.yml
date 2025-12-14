@@ -45,15 +45,31 @@ jobs:
           security list-keychains -d user -s $KEYCHAIN_PATH $(security list-keychains -d user | sed 's/"//g')
 
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # Debug: check for valid identities
+          echo "Checking for valid identities..."
           security find-identity -v -p codesigning
+          
+          # Get the first valid identity hash
+          IDENTITY_HASH=$(security find-identity -v -p codesigning | head -1 | awk '{print $2}')
+          
+          if [ -z "$IDENTITY_HASH" ]; then
+            echo "::error::No valid signing identity found in keychain! This means your .p12 export was incorrect (missing private key) or the password was wrong."
+            exit 1
+          fi
+          
+          echo "Using Identity Hash: $IDENTITY_HASH"
 
       - name: Build App
         run: |
+          # Get the identity hash again or pass it via env
+          IDENTITY_HASH=$(security find-identity -v -p codesigning | head -1 | awk '{print $2}')
+          
           xcodebuild -project Latest.xcodeproj \
             -scheme "Latest" \
             -configuration Release \
             -derivedDataPath build \
-            CODE_SIGN_IDENTITY="Developer ID Application" \
+            CODE_SIGN_IDENTITY="$IDENTITY_HASH" \
             CODE_SIGNING_REQUIRED=YES \
             CODE_SIGN_STYLE=Manual \
             PROVISIONING_PROFILE_SPECIFIER="" \
