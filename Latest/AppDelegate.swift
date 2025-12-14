@@ -23,12 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 			.instantiateController(withIdentifier: "SettingsWindowController") as? NSWindowController
 	}()
 	
-    func applicationDidFinishLaunching(_ aNotification: Notification) {
-		// Defer wiring system menu pointers until after AppKit has finished constructing the
-		// menu graph on launch (helps avoid spurious menu consistency assertions on macOS 26).
-		DispatchQueue.main.async { [weak self] in
-			self?.wireSystemMenus()
-		}
+	func applicationDidFinishLaunching(_ aNotification: Notification) {
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
@@ -62,25 +57,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 		NSApp.activate(ignoringOtherApps: true)
 	}
 	
-	private func wireSystemMenus() {
-		MainActor.assumeIsolated {
-			guard let mainMenu = NSApp.mainMenu else { return }
 
-			if
-				let appMenu = mainMenu.items.first?.submenu,
-				let servicesMenu = appMenu.item(withTitle: "Services")?.submenu
-			{
-				NSApp.servicesMenu = servicesMenu
-			}
-
-			if let windowMenu = mainMenu.item(withTitle: "Window")?.submenu {
-				NSApp.windowsMenu = windowMenu
-			}
-
-			if let helpMenu = mainMenu.item(withTitle: "Help")?.submenu {
-				NSApp.helpMenu = helpMenu
-			}
-		}
-	}
     
 }

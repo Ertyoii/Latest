@@ -51,10 +51,7 @@ struct UpdateCheckSettings: Observable {
 	
 	private func set(_ value: Any, for setting: Setting) {
 		UserDefaults.standard.set(value, forKey: setting.userDefaultsKey)
-		
-		DispatchQueue.main.async {
-			self.notify()
-		}
+		self.notify()
 	}
 	
 }
