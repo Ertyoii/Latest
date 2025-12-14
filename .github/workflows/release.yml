@@ -94,6 +94,24 @@ jobs:
             "Latest.dmg" \
             "build/Build/Products/Release/Latest.app"
 
+      - name: Notarize App
+        run: |
+          # Store credentials
+          xcrun notarytool store-credentials "AC_PASSWORD" \
+            --issuer "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}" \
+            --key-id "${{ secrets.APP_STORE_CONNECT_KEY_ID }}" \
+            --key <(echo "${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}") \
+            --keychain "$RUNNER_TEMP/app-signing.keychain-db"
+
+          # Submit for notarization
+          xcrun notarytool submit "Latest.dmg" \
+            --keychain-profile "AC_PASSWORD" \
+            --keychain "$RUNNER_TEMP/app-signing.keychain-db" \
+            --wait
+
+          # Staple the ticket to the DMG
+          xcrun stapler staple "Latest.dmg"
+
       - name: Upload DMG Artifact
         uses: actions/upload-artifact@v4
         with:
