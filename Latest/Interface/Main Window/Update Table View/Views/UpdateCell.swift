@@ -44,14 +44,9 @@ class UpdateCell: NSTableCellView {
 	
 	override func awakeFromNib() {
 		super.awakeFromNib()
-		
-		if #available(macOS 11.0, *) {
-			self.leadingConstraint.constant = 0;
-			self.trailingConstraint.constant = 0;
-		} else {
-			self.leadingConstraint.constant = 20;
-			self.trailingConstraint.constant = 20;
-		}
+
+		self.leadingConstraint.constant = 0
+		self.trailingConstraint.constant = 0
 	}
 	
 	

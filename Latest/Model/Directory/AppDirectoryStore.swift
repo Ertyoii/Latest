@@ -47,11 +47,7 @@ class AppDirectoryStore {
 			guard let paths = UserDefaults.standard.directoryPaths else { return [] }
 			
 			return paths.map { path in
-				if #available(macOS 13.0, *) {
-					URL(filePath: path, directoryHint: .isDirectory, relativeTo: nil)
-				} else {
-					URL(fileURLWithPath: path)
-				}
+				URL(filePath: path, directoryHint: .isDirectory, relativeTo: nil)
 			}
 		}
 		

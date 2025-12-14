@@ -32,22 +32,8 @@ class MacAppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
 	override func execute() {
 		super.execute()
 
-		// Verify user is signed in
-		var storeAccount: ISStoreAccount?
-		if #unavailable(macOS 12) {
-			// Monterey obscured the user's account information, but still allows
-			// redownloads without passing it to SSPurchase.
-			// https://github.com/mas-cli/mas/issues/417
-			guard let account = ISStoreAccount.primaryAccount else {
-				self.finish(with: LatestError.notSignedInToAppStore)
-				return
-			}
-
-			storeAccount = account
-		}
-		
 		// Construct purchase to receive update
-		let purchase = SSPurchase(itemIdentifier: self.itemIdentifier, account: storeAccount)
+		let purchase = SSPurchase(itemIdentifier: self.itemIdentifier, account: nil)
 		CKPurchaseController.shared().perform(purchase, withOptions: 0) { [weak self] purchase, _, error, response in
 			guard let self = self else { return }
 

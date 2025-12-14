@@ -59,14 +59,19 @@ class UpdateButton: NSButton {
 		
 		didSet {
 			if let app = self.app {
+				self.observedAppIdentifier = app.identifier
 				UpdateQueue.shared.addObserver(self, to: app.identifier) { [weak self] progress in
 					self?.updateInterface(with: progress)
 				}
 			} else {
+				self.observedAppIdentifier = nil
 				self.isHidden = true
 			}
 		}
 	}
+
+	/// Tracks the identifier currently observed in `UpdateQueue`.
+	private var observedAppIdentifier: App.Bundle.Identifier?
 	
 	/// The cell handling the drawing for this button.
 	var contentCell: UpdateButtonCell {
@@ -88,19 +93,19 @@ class UpdateButton: NSButton {
 	
 	override func awakeFromNib() {
 		super.awakeFromNib()
-		
-		self.target = self;
-		self.action = #selector(performAction(_:))
-		
-		self.isBordered = false
-		if #available(OSX 10.14, *) {
+
+		MainActor.assumeIsolated {
+			self.target = self
+			self.action = #selector(performAction(_:))
+
+			self.isBordered = false
 			self.contentTintColor = .controlAccentColor
 		}
 	}
 	
 	deinit {
-		if let app = self.app {
-			UpdateQueue.shared.removeObserver(self, for: app.identifier)
+		if let identifier = self.observedAppIdentifier {
+			UpdateQueue.shared.removeObserver(self, for: identifier)
 		}
 	}
 
@@ -193,21 +198,12 @@ class UpdateButton: NSButton {
 		case .open:
 			title = NSLocalizedString("OpenAction", comment: "Action to open a given app.")
 		case .error:
-			if #available(OSX 11.0, *) {
-				image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: NSLocalizedString("ErrorButtonAccessibilityTitle", comment: "Description of button that opens an error dialogue."))
-			} else {
-				image = NSImage(named: "warning")!
-			}
+			image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: NSLocalizedString("ErrorButtonAccessibilityTitle", comment: "Description of button that opens an error dialogue.")) ?? NSImage(named: "warning")!
 		default:
 			()
 		}
 		
-		// Beginning with macOS 14, the button text is no longer uppercase
-		if #available(macOS 14.0, *) {
-			self.title = title ?? ""
-		} else {
-			self.title = title?.localizedUppercase ?? ""
-		}
+		self.title = title ?? ""
 		self.image = image
 	}
 	

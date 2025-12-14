@@ -6,6 +6,8 @@
 //  Copyright © 2023 Max Langer. All rights reserved.
 //
 
+import Foundation
+
 /// A wrapper for optionally decoding a given object.
 ///
 /// Ensures that the overall decoding succeeds even if individual items may fail to decode.

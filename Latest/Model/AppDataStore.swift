@@ -18,13 +18,13 @@ protocol AppProviding {
 	func countOfAvailableUpdates(where condition: (App) -> Bool) -> Int
 	
 	/// The handler for notifying observers about changes to the update state.
-	typealias ObserverHandler = (_ newValue: [App]) -> Void
+	typealias ObserverHandler = @MainActor @Sendable (_ newValue: [App]) -> Void
 
 	/// Adds the observer if it is not already registered.
-	func addObserver(_ observer: NSObject, handler: @escaping ObserverHandler)
+	@MainActor func addObserver(_ observer: NSObject, handler: @escaping ObserverHandler)
 	
 	/// Removes the observer.
-	func removeObserver(_ observer: NSObject)
+	@MainActor func removeObserver(_ observer: NSObject)
 	
 	/// Sets the ignored state for the given app.
 	func setIgnoredState(_ ignored: Bool, for app: App)
@@ -32,7 +32,7 @@ protocol AppProviding {
 }
 
 /// The collection handling app bundles alongside there update representations.
-class AppDataStore: AppProviding {
+final class AppDataStore: AppProviding, @unchecked Sendable {
 	
 	/// The queue on which updates to the collection are being performed.
 	private var updateQueue = DispatchQueue(label: "DataStoreQueue")
@@ -52,9 +52,11 @@ class AppDataStore: AppProviding {
 	/// Sets up the scheduler.
 	private func setupScheduler() {
 		// Delay notifying observers to only let that notification occur in a certain interval
-		updateScheduler.setEventHandler() { [unowned self] in
-			updateQueue.sync {
-				let apps = Array(self.apps)
+		updateScheduler.setEventHandler() { [weak self] in
+			guard let self else { return }
+
+			let apps = self.updateQueue.sync { Array(self.apps) }
+			Task { @MainActor in
 				self.notifyObservers(apps)
 			}
 		
@@ -173,38 +175,26 @@ class AppDataStore: AppProviding {
 	// MARK: - Observer Handling
 	
 	/// A mapping of observers associated with apps.
-	private var observers = [NSObject: ObserverHandler]()
+	@MainActor private var observers = [NSObject: ObserverHandler]()
 	
 	/// Adds the observer if it is not already registered.
-	func addObserver(_ observer: NSObject, handler: @escaping ObserverHandler) {
-		DispatchQueue.main.async {
-			guard !self.observers.keys.contains(observer) else { return }
-			self.observers[observer] = handler
-				
-			self.updateQueue.sync {
-				// Call handler immediately to propagate initial state
-				let apps = Array(self.apps)
-				DispatchQueue.main.async {
-					handler(apps)
-				}
-			}
-		}
+	@MainActor func addObserver(_ observer: NSObject, handler: @escaping ObserverHandler) {
+		guard !observers.keys.contains(observer) else { return }
+		observers[observer] = handler
+		
+		// Call handler immediately to propagate initial state
+		let apps = updateQueue.sync { Array(self.apps) }
+		handler(apps)
 	}
 	
 	/// Removes the observer.
-	func removeObserver(_ observer: NSObject) {
-		DispatchQueue.main.async {
-			self.observers.removeValue(forKey: observer)
-		}
+	@MainActor func removeObserver(_ observer: NSObject) {
+		observers.removeValue(forKey: observer)
 	}
 		
 	/// Notifies observers about state changes.
-	private func notifyObservers(_ apps: [App]) {
-		DispatchQueue.main.async {
-			self.observers.forEach { (key: NSObject, handler: ObserverHandler) in
-				handler(apps)
-			}
-		}
+	@MainActor private func notifyObservers(_ apps: [App]) {
+		observers.values.forEach { $0(apps) }
 	}
 		
 }

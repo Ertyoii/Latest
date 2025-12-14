@@ -9,7 +9,7 @@
 import Cocoa
 import Sparkle
 
-@NSApplicationMain
+@main
 class AppDelegate: NSObject, NSApplicationDelegate {
 	
 	private lazy var sparkleUpdaterController = SPUStandardUpdaterController(
@@ -63,21 +63,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 	}
 	
 	private func wireSystemMenus() {
-		guard let mainMenu = NSApp.mainMenu else { return }
-		
-		if
-			let appMenu = mainMenu.items.first?.submenu,
-			let servicesMenu = appMenu.item(withTitle: "Services")?.submenu
-		{
-			NSApp.servicesMenu = servicesMenu
-		}
-		
-		if let windowMenu = mainMenu.item(withTitle: "Window")?.submenu {
-			NSApp.windowsMenu = windowMenu
-		}
-		
-		if let helpMenu = mainMenu.item(withTitle: "Help")?.submenu {
-			NSApp.helpMenu = helpMenu
+		MainActor.assumeIsolated {
+			guard let mainMenu = NSApp.mainMenu else { return }
+
+			if
+				let appMenu = mainMenu.items.first?.submenu,
+				let servicesMenu = appMenu.item(withTitle: "Services")?.submenu
+			{
+				NSApp.servicesMenu = servicesMenu
+			}
+
+			if let windowMenu = mainMenu.item(withTitle: "Window")?.submenu {
+				NSApp.windowsMenu = windowMenu
+			}
+
+			if let helpMenu = mainMenu.item(withTitle: "Help")?.submenu {
+				NSApp.helpMenu = helpMenu
+			}
 		}
 	}
     

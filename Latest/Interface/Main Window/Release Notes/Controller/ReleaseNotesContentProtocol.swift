@@ -9,6 +9,7 @@
 import AppKit
 
 /// This protocol manages the instantiation of the content controllers
+@MainActor
 protocol ReleaseNotesContentProtocol {
     
     /// The type of the viewController
@@ -29,4 +30,3 @@ extension ReleaseNotesContentProtocol {
         return storyboard.instantiateController(withIdentifier: StoryboardIdentifier) as? ReleaseNotesContentController
     }
 }
-

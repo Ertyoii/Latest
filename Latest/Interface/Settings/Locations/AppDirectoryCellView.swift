@@ -73,10 +73,6 @@ class AppDirectoryCellView: NSTableCellView {
 			return NSWorkspace.shared.icon(forFile: url.relativePath)
 		}
 		
-		return if #available(macOS 11.0, *) {
-			NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "")!
-		} else {
-			NSImage(named: .init("NSCaution"))!
-		}
+		return NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "") ?? NSImage(named: .init("NSCaution"))!
 	}
 }

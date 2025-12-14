@@ -211,8 +211,6 @@
 		5087CD2C22F6E06B0013354C /* SparkleUpdateOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SparkleUpdateOperation.swift; sourceTree = "<group>"; };
 		508A40542D56961400A02DF1 /* SupportStatusButtonCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportStatusButtonCell.swift; sourceTree = "<group>"; };
 		5093EF9B2B913A1C0041E6C1 /* AppDirectoryCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDirectoryCellView.swift; sourceTree = "<group>"; };
-		5094821C27C19E4A00EC6B6B /* CFBundle_Private.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CFBundle_Private.h; sourceTree = "<group>"; };
-		5094823327C19F5800EC6B6B /* Latest Bridging_Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Latest Bridging_Header.h"; sourceTree = "<group>"; };
 		509512101FF362A1003D2D7F /* Version.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Version.swift; sourceTree = "<group>"; };
 		509512111FF362A1003D2D7F /* Update.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Update.swift; sourceTree = "<group>"; };
 		5095121F1FF36301003D2D7F /* Bundle.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Bundle.swift; sourceTree = "<group>"; };
@@ -536,7 +534,6 @@
 			isa = PBXGroup;
 			children = (
 				506A8F6622EC14CC00C755AF /* LatestError.swift */,
-				5094821C27C19E4A00EC6B6B /* CFBundle_Private.h */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -548,7 +545,6 @@
 				50290E781E53EB6A00133E3D /* Assets.xcassets */,
 				50290E7D1E53EB6A00133E3D /* Info.plist */,
 				502217992804BB330043366B /* InfoPlist.strings */,
-				5094823327C19F5800EC6B6B /* Latest Bridging_Header.h */,
 				501EA98C1EB1BD8B00D05821 /* Localizable.stringsdict */,
 				501EA9841EB1BA4400D05821 /* Localizable.strings */,
 				50C8C85B208A0EE9004FF5D5 /* dsa_pub.pem */,
@@ -1239,7 +1235,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -1297,7 +1293,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1329,17 +1325,17 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-					MACOSX_DEPLOYMENT_TARGET = 11.0;
+					MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.12;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest";
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/Frameworks/CommerceKit $(SRCROOT)/Frameworks/StoreFoundation";
-				SWIFT_OBJC_BRIDGING_HEADER = "Latest/Resources/Latest Bridging_Header.h";
-				SWIFT_VERSION = 5.0;
+					PROVISIONING_PROFILE_SPECIFIER = "";
+					SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/Frameworks/CommerceKit $(SRCROOT)/Frameworks/StoreFoundation";
+					SWIFT_STRICT_CONCURRENCY = complete;
+					SWIFT_VERSION = 6.0;
+				};
+				name = Debug;
 			};
-			name = Debug;
-		};
 		50290E821E53EB6A00133E3D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1363,17 +1359,17 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-					MACOSX_DEPLOYMENT_TARGET = 11.0;
+					MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.12;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest";
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/Frameworks/CommerceKit $(SRCROOT)/Frameworks/StoreFoundation";
-				SWIFT_OBJC_BRIDGING_HEADER = "Latest/Resources/Latest Bridging_Header.h";
-				SWIFT_VERSION = 5.0;
+					PROVISIONING_PROFILE_SPECIFIER = "";
+					SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/Frameworks/CommerceKit $(SRCROOT)/Frameworks/StoreFoundation";
+					SWIFT_STRICT_CONCURRENCY = complete;
+					SWIFT_VERSION = 6.0;
+				};
+				name = Release;
 			};
-			name = Release;
-		};
 		50C81D701FBADC5900324C2E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1392,11 +1388,12 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest-Tests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/Frameworks/CommerceKit $(SRCROOT)/Frameworks/StoreFoundation";
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Latest.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Latest";
 			};
 			name = Debug;
@@ -1419,11 +1416,12 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest-Tests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/Frameworks/CommerceKit $(SRCROOT)/Frameworks/StoreFoundation";
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Latest.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Latest";
 			};
 			name = Release;

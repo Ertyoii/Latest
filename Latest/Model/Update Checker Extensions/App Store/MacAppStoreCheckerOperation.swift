@@ -30,16 +30,18 @@ class MacAppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperati
 	
 	required init(with app: App.Bundle, repository: UpdateRepository?, completionBlock: @escaping UpdateCheckerCompletionBlock) {
 		self.app = app
+		self.updateCheckerCompletionBlock = completionBlock
 		
 		super.init()
 
-		self.completionBlock = {
+		self.completionBlock = { [weak self] in
+			guard let self else { return }
 			guard !self.isCancelled else { return }
 			
 			if let update = self.update {
-				completionBlock(.success(update))
+				self.updateCheckerCompletionBlock(.success(update))
 			} else {
-				completionBlock(.failure(self.error ?? LatestError.updateInfoUnavailable))
+				self.updateCheckerCompletionBlock(.failure(self.error ?? LatestError.updateInfoUnavailable))
 			}
 		}
 	}
@@ -49,6 +51,8 @@ class MacAppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperati
 
 	/// The update fetched during this operation.
 	fileprivate var update: App.Update?
+	
+	private let updateCheckerCompletionBlock: UpdateCheckerCompletionBlock
 
 	
 	// MARK: - Operation

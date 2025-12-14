@@ -11,6 +11,7 @@ import Foundation
 /**
  Protocol that defines some methods on reporting the progress of the update checking process.
  */
+@MainActor
 protocol UpdateCheckProgressReporting : AnyObject {
     
 	/// Indicates that the scan process has been started.
@@ -34,7 +35,7 @@ protocol UpdateCheckProgressReporting : AnyObject {
  UpdateCheckCoordinator handles the logic for checking for updates.
  Each new method of checking for updates should be implemented in its own extension and then included in the `updateMethods` array
  */
-class UpdateCheckCoordinator {
+final class UpdateCheckCoordinator: @unchecked Sendable {
     
     typealias UpdateCheckerCallback = (_ app: App.Bundle) -> Void
 	
@@ -82,7 +83,18 @@ class UpdateCheckCoordinator {
 	
 	/// Initiate the update check, if not already running.
 	func run() {
-		self.progressDelegate?.updateCheckerDidStartScanningForApps(self)
+		if Thread.isMainThread {
+			MainActor.assumeIsolated {
+				self.progressDelegate?.updateCheckerDidStartScanningForApps(self)
+			}
+		} else {
+			DispatchQueue.main.async { [weak self] in
+				guard let self else { return }
+				MainActor.assumeIsolated {
+					self.progressDelegate?.updateCheckerDidStartScanningForApps(self)
+				}
+			}
+		}
 
 		if self.waitForInitialCheck {
 			self.waitForInitialCheck = false

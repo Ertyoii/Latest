@@ -39,12 +39,6 @@ class SettingsTabViewController: NSTabViewController {
 	override func viewWillAppear() {
 		super.viewWillAppear()
 		prepareForPresentation(of: tabView.selectedTabViewItem)
-		
-		// Fix icons for old OSes
-		if #unavailable(macOS 11.0) {
-			tabView.tabViewItems[0].image = NSImage(named: NSImage.preferencesGeneralName)
-			tabView.tabViewItems[1].image = NSImage(named: "PreferencesLocation")
-		}
 	}
 	
 	override func viewDidAppear() {
