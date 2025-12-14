@@ -20,61 +20,15 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Import Code-Signing Certificates
-        env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          # create variables
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-
-          # import certificate and provision
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode --output $CERTIFICATE_PATH
-
-          # create temporary keychain
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-
-          # import certificate to keychain
-          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t agg -f pkcs12 -k $KEYCHAIN_PATH
-          
-          # Fix: Append temp keychain to the existing list to keep System Root CAs available
-          security list-keychains -d user -s $KEYCHAIN_PATH $(security list-keychains -d user | sed 's/"//g')
-
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          
-          # Debug: check for valid identities
-          echo "Checking for valid identities..."
-          security find-identity -v -p codesigning
-          
-          # Get the first valid identity hash
-          IDENTITY_HASH=$(security find-identity -v -p codesigning | head -1 | awk '{print $2}')
-          
-          if [ -z "$IDENTITY_HASH" ]; then
-            echo "::error::No valid signing identity found in keychain! This means your .p12 export was incorrect (missing private key) or the password was wrong."
-            exit 1
-          fi
-          
-          echo "Using Identity Hash: $IDENTITY_HASH"
-
       - name: Build App
         run: |
-          # Get the identity hash again or pass it via env
-          IDENTITY_HASH=$(security find-identity -v -p codesigning | head -1 | awk '{print $2}')
-          
           xcodebuild -project Latest.xcodeproj \
             -scheme "Latest" \
             -configuration Release \
             -derivedDataPath build \
-            CODE_SIGN_IDENTITY="$IDENTITY_HASH" \
-            CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGN_STYLE=Manual \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            DEVELOPMENT_TEAM=${{ secrets.TEAM_ID }} \
-            OTHER_CODE_SIGN_FLAGS="--keychain $RUNNER_TEMP/app-signing.keychain-db"
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
 
       - name: Install create-dmg
         run: brew install create-dmg
@@ -93,24 +47,6 @@ jobs:
             --app-drop-link 600 185 \
             "Latest.dmg" \
             "build/Build/Products/Release/Latest.app"
-
-      - name: Notarize App
-        run: |
-          # Store credentials
-          xcrun notarytool store-credentials "AC_PASSWORD" \
-            --issuer "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}" \
-            --key-id "${{ secrets.APP_STORE_CONNECT_KEY_ID }}" \
-            --key <(echo "${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}") \
-            --keychain "$RUNNER_TEMP/app-signing.keychain-db"
-
-          # Submit for notarization
-          xcrun notarytool submit "Latest.dmg" \
-            --keychain-profile "AC_PASSWORD" \
-            --keychain "$RUNNER_TEMP/app-signing.keychain-db" \
-            --wait
-
-          # Staple the ticket to the DMG
-          xcrun stapler staple "Latest.dmg"
 
       - name: Upload DMG Artifact
         uses: actions/upload-artifact@v4
