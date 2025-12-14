@@ -55,12 +55,23 @@ class HomebrewCheckerOperation: StatefulOperation, UpdateCheckerOperation, @unch
 			return
 		}
 		
-		repository.updateInfo(for: bundle) { bundle, version, minimumOSVersion in
+		repository.updateInfo(for: bundle) { bundle, entry in
 			defer { self.finish() }
-			guard let version else { return }
-			self.update = App.Update(app: bundle, remoteVersion: version, minimumOSVersion: minimumOSVersion, source: .homebrew, date: nil, releaseNotes: nil, updateAction: .external(label: bundle.name, block: { app in
-				app.open()
-			}))
+			guard let entry else { return }
+			
+			let actionLabel = App.Source.homebrew.sourceName ?? "Homebrew"
+			let releaseNotes = entry.releaseNotesURL.map { App.Update.ReleaseNotes.url(url: $0) }
+			self.update = App.Update(
+				app: bundle,
+				remoteVersion: entry.version,
+				minimumOSVersion: entry.minimumOSVersion,
+				source: .homebrew,
+				date: nil,
+				releaseNotes: releaseNotes,
+				updateAction: .external(label: actionLabel, block: { _ in
+					NSWorkspace.shared.open(entry.caskPageURL)
+				})
+			)
 		}
 	}
 	

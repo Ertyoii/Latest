@@ -118,67 +118,7 @@ extension MacAppStoreUpdateCheckerOperation {
 	
 	/// Fetches update info and returns the result in the given completion handler.
 	private func fetchAppInfo(completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> ()) {
-		// We need a two-level fetch process. `desktopSoftware` delivers metadata for mac-native software. `macSoftware` seems to be more broad, also includes Catalyst and iOS-only software. The former however is more accurate, as `macSoftware` might return iPad metadata for certain apps. We therefore prefer `desktopSoftware` and fall back to `macSoftware` if no info was found.
-		self.fetchAppInfo(with: "desktopSoftware") { result in
-			switch result {
-			case .success(let entry):
-				// Success, forward data
-				completion(.success(entry))
-				
-			case .failure(_):
-				// Data could not be fetched, try the broader entity type
-				self.fetchAppInfo(with: "macSoftware", completion: completion)
-			}
-		}
-	}
-	
-	/// Fetches update info and returns the result in the given completion handler.
-	///
-	/// The entity describes the kind of app which will be looked for.
-	private func fetchAppInfo(with entityType: String, completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> ()) {
-		// Build URL
-		guard let endpoint = URL(string: "https://itunes.apple.com/lookup") else {
-			completion(.failure(MalformedURLError))
-			return
-		}
-
-		// Add parameters
-		let languageCode = Locale.current.region?.identifier ?? "US"
-		var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
-		components?.queryItems = [
-			URLQueryItem(name: "limit", value: "1"),
-			URLQueryItem(name: "entity", value: entityType),
-			URLQueryItem(name: "country", value: languageCode),
-			URLQueryItem(name: "bundleId", value: self.app.bundleIdentifier)
-		]
-		guard let url = components?.url else {
-			completion(.failure(MalformedURLError))
-			return
-		}
-		
-		// Perform request
-		let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 30)
-		let dataTask = URLSession.shared.dataTask(with: request) { (data, response, error) in
-			guard error == nil, let data = data else {
-				completion(.failure(MalformedURLError))
-				return
-			}
-			
-			do {
-				guard let entry = try JSONDecoder().decode(EntryList.self, from: data).results.first else {
-					completion(.failure(LatestError.updateInfoUnavailable))
-					return
-				}
-				
-				completion(.success(entry))
-			}
-			
-			catch let error {
-				completion(.failure(error))
-			}
-		}
-		
-		dataTask.resume()
+		AppStoreLookupBatcher.shared.lookup(bundleIdentifier: self.app.bundleIdentifier, completion: completion)
 	}
 		
 }
@@ -189,12 +129,15 @@ extension MacAppStoreUpdateCheckerOperation {
 fileprivate struct EntryList: Decodable {
 	
 	/// The list of entries found while fetching information from the app store.
-	let results: [AppStoreEntry]
+	let results: [FailableDecodable<AppStoreEntry>]
 	
 }
 
 /// Object representing a single entry in fetched information from the app store.
 fileprivate struct AppStoreEntry: Decodable {
+	
+	/// The bundle identifier of the app.
+	let bundleIdentifier: String?
 	
 	/// The version number of the entry.
 	let versionNumber: String
@@ -218,6 +161,7 @@ fileprivate struct AppStoreEntry: Decodable {
 	// MARK: - Decoding
 	
 	enum CodingKeys: String, CodingKey {
+		case bundleIdentifier = "bundleId"
 		case versionNumber = "version"
 		case releaseNotes = "releaseNotes"
 		case date = "currentVersionReleaseDate"
@@ -229,6 +173,7 @@ fileprivate struct AppStoreEntry: Decodable {
 	init(from decoder: Decoder) throws {
 		let container = try decoder.container(keyedBy: CodingKeys.self)
 		
+		self.bundleIdentifier = try container.decodeIfPresent(String.self, forKey: .bundleIdentifier)
 		self.versionNumber = try container.decode(String.self, forKey: .versionNumber)
 		
 		let releaseNotes = try container.decodeIfPresent(String.self, forKey: .releaseNotes)
@@ -276,4 +221,206 @@ fileprivate struct AppStoreEntry: Decodable {
 		return dateFormatter
 	}()
 	
+}
+
+// MARK: - Batched Lookup
+
+/// Batches App Store lookups for multiple bundle identifiers to reduce network overhead during large update checks.
+fileprivate final class AppStoreLookupBatcher: @unchecked Sendable {
+	static let shared = AppStoreLookupBatcher()
+	
+	typealias Completion = @Sendable (Result<AppStoreEntry, Error>) -> Void
+	
+	private let queue = DispatchQueue(label: "appStoreLookupBatcherQueue")
+	private let session: URLSession = {
+		let configuration = URLSessionConfiguration.default
+		configuration.httpMaximumConnectionsPerHost = 4
+		return URLSession(configuration: configuration)
+	}()
+	
+	/// Results cached for this process run, keyed by (country, bundleIdentifier).
+	private var cache = [CacheKey: Result<AppStoreEntry, Error>]()
+	
+	/// Bundle identifiers currently waiting to be requested.
+	private var pending = [CacheKey: [Completion]]()
+	
+	/// Bundle identifiers currently being requested.
+	private var inFlight = Set<CacheKey>()
+	
+	private var scheduledFlush: DispatchWorkItem?
+	
+	private struct CacheKey: Hashable {
+		let country: String
+		let bundleIdentifier: String
+	}
+	
+	func lookup(bundleIdentifier: String, completion: @escaping Completion) {
+		let country = Locale.current.region?.identifier ?? "US"
+		let key = CacheKey(country: country, bundleIdentifier: bundleIdentifier)
+		
+		queue.async {
+			if let cached = self.cache[key] {
+				DispatchQueue.global().async { completion(cached) }
+				return
+			}
+			
+			self.pending[key, default: []].append(completion)
+			self.scheduleFlush()
+		}
+	}
+	
+	private func scheduleFlush() {
+		if scheduledFlush != nil { return }
+		
+		let item = DispatchWorkItem { [weak self] in
+			self?.flush()
+		}
+		scheduledFlush = item
+		
+		// Small delay to collect multiple requests from concurrently executing operations.
+		queue.asyncAfter(deadline: .now() + 0.05, execute: item)
+	}
+	
+	private func flush() {
+		queue.async {
+			self.scheduledFlush = nil
+			
+			let keysToRequest = self.pending.keys.filter { !self.inFlight.contains($0) }
+			guard !keysToRequest.isEmpty else { return }
+			
+			keysToRequest.forEach { self.inFlight.insert($0) }
+			
+			// Group by country and split into chunks to avoid overly large requests.
+			let groupedByCountry = Dictionary(grouping: keysToRequest, by: { $0.country })
+			for (_, keys) in groupedByCountry {
+				for chunk in keys.chunked(into: 50) {
+					self.performLookup(for: chunk, entityType: "desktopSoftware") { [weak self] desktopResult in
+						guard let self else { return }
+						
+						switch desktopResult {
+						case .failure(let error):
+							self.finish(chunk, with: .failure(error))
+							
+						case .success(let desktopResults):
+							// Any missing results are retried with the broader entity type.
+							let missing = chunk.filter { desktopResults[$0] == nil }
+							if missing.isEmpty {
+								self.finish(chunk, with: .success(desktopResults))
+								return
+							}
+							
+							self.performLookup(for: missing, entityType: "macSoftware") { [weak self] macResult in
+								guard let self else { return }
+								
+								switch macResult {
+								case .failure(let error):
+									// Preserve successful desktop results, only fail missing keys.
+									var combined = desktopResults
+									self.finish(chunk, with: .success(combined), missingError: error, missingKeys: missing)
+									
+								case .success(let macResults):
+									var combined = desktopResults
+									macResults.forEach { combined[$0.key] = $0.value }
+									self.finish(chunk, with: .success(combined))
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	private func performLookup(for keys: [CacheKey], entityType: String, completion: @escaping @Sendable (Result<[CacheKey: AppStoreEntry], Error>) -> Void) {
+		guard let endpoint = URL(string: "https://itunes.apple.com/lookup") else {
+			completion(.failure(MalformedURLError))
+			return
+		}
+		
+		guard let country = keys.first?.country, keys.allSatisfy({ $0.country == country }) else {
+			completion(.failure(MalformedURLError))
+			return
+		}
+		
+		let bundleIDs = keys.map { $0.bundleIdentifier }.joined(separator: ",")
+		var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
+		components?.queryItems = [
+			URLQueryItem(name: "entity", value: entityType),
+			URLQueryItem(name: "country", value: country),
+			URLQueryItem(name: "bundleId", value: bundleIDs)
+		]
+		
+		guard let url = components?.url else {
+			completion(.failure(MalformedURLError))
+			return
+		}
+		
+		let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 30)
+		let dataTask = session.dataTask(with: request) { data, _, error in
+			guard error == nil, let data else {
+				completion(.failure(error ?? MalformedURLError))
+				return
+			}
+			
+			do {
+				let list = try JSONDecoder().decode(EntryList.self, from: data)
+				let decoded = list.results.compactMap { $0.base }
+				var mapped = [CacheKey: AppStoreEntry]()
+				for entry in decoded {
+					guard let bundleIdentifier = entry.bundleIdentifier else { continue }
+					let key = CacheKey(country: country, bundleIdentifier: bundleIdentifier)
+					mapped[key] = entry
+				}
+				completion(.success(mapped))
+			} catch {
+				completion(.failure(error))
+			}
+		}
+		
+		dataTask.resume()
+	}
+	
+	private func finish(_ requested: [CacheKey], with result: Result<[CacheKey: AppStoreEntry], Error>, missingError: Error? = nil, missingKeys: [CacheKey] = []) {
+		queue.async {
+			for key in requested {
+				let resolved: Result<AppStoreEntry, Error> = switch result {
+				case .failure(let error):
+					.failure(error)
+				case .success(let results):
+					if let entry = results[key] {
+						.success(entry)
+					} else if missingError != nil, missingKeys.contains(key) {
+						.failure(missingError!)
+					} else {
+						.failure(LatestError.updateInfoUnavailable)
+					}
+				}
+				
+				self.cache[key] = resolved
+				self.inFlight.remove(key)
+				
+				let completions = self.pending.removeValue(forKey: key) ?? []
+				if !completions.isEmpty {
+					DispatchQueue.global().async {
+						completions.forEach { $0(resolved) }
+					}
+				}
+			}
+		}
+	}
+}
+
+fileprivate extension Array {
+	func chunked(into size: Int) -> [[Element]] {
+		guard size > 0 else { return [self] }
+		var result: [[Element]] = []
+		result.reserveCapacity((count + size - 1) / size)
+		var index = startIndex
+		while index < endIndex {
+			let end = self.index(index, offsetBy: size, limitedBy: endIndex) ?? endIndex
+			result.append(Array(self[index..<end]))
+			index = end
+		}
+		return result
+	}
 }

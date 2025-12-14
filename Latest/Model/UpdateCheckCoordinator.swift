@@ -107,7 +107,7 @@ final class UpdateCheckCoordinator: @unchecked Sendable {
 	
 	/// Performs the update check on the given bundles.
 	private func runUpdateCheck(on bundles: [App.Bundle]) {
-		let repository = UpdateRepository.newRepository()
+		let repository: UpdateRepository? = bundles.contains(where: { $0.source == .none }) ? UpdateRepository.newRepository() : nil
 		let operations = bundles.compactMap { bundle in
 			return Self.operation(forChecking: bundle, repository: repository) { result in
 				self.didCheck(bundle, result)

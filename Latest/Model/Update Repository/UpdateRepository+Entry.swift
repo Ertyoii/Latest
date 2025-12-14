@@ -21,6 +21,8 @@ extension UpdateRepository {
 			case token
 			case rawVersion = "version"
 			case minimumOSVersion = "depends_on"
+			case homepage
+			case downloadURL = "url"
 		}
 		
 		private struct MinimumOS: Decodable {
@@ -54,6 +56,12 @@ extension UpdateRepository {
 		/// The brew identifier for the app.
 		let token: String
 		
+		/// The homepage of the app, if provided by Homebrew.
+		let homepage: URL?
+		
+		/// The download URL of the cask, if provided by Homebrew.
+		let downloadURL: URL?
+		
 		/// The minimum os version required for the update.
 		let minimumOSVersion: OperatingSystemVersion?
 				
@@ -63,6 +71,8 @@ extension UpdateRepository {
 			// Trivial keys
 			rawVersion = try container.decode(String.self, forKey: .rawVersion)
 			token = try container.decode(String.self, forKey: .token)
+			homepage = try? container.decode(URL.self, forKey: .homepage)
+			downloadURL = try? container.decode(URL.self, forKey: .downloadURL)
 			
 			// Artifacts: Contains application names and bundle identifiers.
 			let artifacts = try container.decode([FailableDecodable<Artifact>].self, forKey: .artifacts)
@@ -81,7 +91,7 @@ extension UpdateRepository {
 			bundleIdentifiers = Set(artifacts.identifiers)
 
 			// OS Version
-			if let osVersion = try container.decode(MinimumOS.self, forKey: .minimumOSVersion).macos?.version?.first {
+			if let osVersion = (try? container.decode(MinimumOS.self, forKey: .minimumOSVersion))?.macos?.version?.first {
 				minimumOSVersion = try OperatingSystemVersion(string: osVersion)
 			} else {
 				minimumOSVersion = nil
@@ -96,11 +106,99 @@ extension UpdateRepository {
 			return VersionParser.parse(combinedVersionNumber: rawVersion)
 		}
 		
+		/// The Homebrew cask page for this entry.
+		var caskPageURL: URL {
+			return URL(string: "https://formulae.brew.sh/cask/\(token)")!
+		}
+		
+		/// A best-effort release notes URL for this entry.
+		///
+		/// Homebrew itself does not expose canonical release notes. We only return a URL when we can reliably infer an
+		/// upstream release page (e.g. GitHub), otherwise return `nil`.
+		var releaseNotesURL: URL? {
+			if let tagURL = Self.githubReleaseTagURL(from: downloadURL) {
+				return tagURL
+			}
+			
+			if let repo = Self.githubRepositoryURL(from: downloadURL) ?? Self.githubRepositoryURL(from: homepage) {
+				return repo.appendingPathComponent("releases")
+			}
+			
+			return nil
+		}
+		
 	}
 
 }
 
 fileprivate extension UpdateRepository.Entry {
+	
+	static func githubRepositoryURL(from url: URL?) -> URL? {
+		guard let url else { return nil }
+		
+		// Common GitHub patterns:
+		// - https://github.com/<owner>/<repo>/...
+		// - https://raw.githubusercontent.com/<owner>/<repo>/...
+		let host = (url.host ?? "").lowercased()
+		guard host == "github.com" || host == "raw.githubusercontent.com" else { return nil }
+		
+		let components = url.pathComponents.filter { $0 != "/" }
+		guard components.count >= 2 else { return nil }
+		
+		let owner = components[0]
+		let repo = components[1]
+		guard !owner.isEmpty, !repo.isEmpty else { return nil }
+		
+		// GitHub has many non-repository top-level routes (e.g. /features/<page>).
+		// To avoid showing nonsense content as "release notes", only treat URLs as repos if the first path component
+		// doesn't match common reserved routes.
+		let reservedTopLevelRoutes: Set<String> = [
+			"about",
+			"apps",
+			"blog",
+			"business",
+			"collections",
+			"contact",
+			"customer-stories",
+			"enterprise",
+			"events",
+			"explore",
+			"features",
+			"login",
+			"logout",
+			"marketplace",
+			"new",
+			"notifications",
+			"pricing",
+			"security",
+			"settings",
+			"sponsors",
+			"topics",
+			"trending"
+		]
+		guard !reservedTopLevelRoutes.contains(owner.lowercased()) else { return nil }
+		
+		return URL(string: "https://github.com/\(owner)/\(repo)")
+	}
+	
+	static func githubReleaseTagURL(from url: URL?) -> URL? {
+		guard let url else { return nil }
+		
+		let host = (url.host ?? "").lowercased()
+		guard host == "github.com" else { return nil }
+		
+		let components = url.pathComponents.filter { $0 != "/" }
+		guard components.count >= 5 else { return nil }
+		
+		// https://github.com/<owner>/<repo>/releases/download/<tag>/...
+		guard components[2] == "releases", components[3] == "download" else { return nil }
+		let owner = components[0]
+		let repo = components[1]
+		let tag = components[4]
+		guard !owner.isEmpty, !repo.isEmpty, !tag.isEmpty else { return nil }
+		
+		return URL(string: "https://github.com/\(owner)/\(repo)/releases/tag/\(tag)")
+	}
 	
 	/// One entry datapoint containing possible application names and bundle identifiers.
 	struct Artifact: Decodable {
@@ -239,4 +337,3 @@ fileprivate extension KeyedDecodingContainer {
 	}
 	
 }
-
