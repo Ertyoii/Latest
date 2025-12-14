@@ -9,7 +9,7 @@
 import Cocoa
 
 /// The combined representation of an app bundle and its associated update information.
-class App {
+final class App: @unchecked Sendable {
 	
 	/// The bundle of the locally available app.
 	let bundle: App.Bundle

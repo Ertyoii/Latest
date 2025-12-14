@@ -6,6 +6,8 @@
 //  Copyright © 2022 Max Langer. All rights reserved.
 //
 
+import Foundation
+
 /// Provides errors within the app's error domain.
 enum LatestError: LocalizedError {
 	

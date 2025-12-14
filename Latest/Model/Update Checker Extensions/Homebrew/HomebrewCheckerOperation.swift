@@ -22,6 +22,7 @@ class HomebrewCheckerOperation: StatefulOperation, UpdateCheckerOperation, @unch
 	fileprivate var update: App.Update?
 	
 	private let repository: UpdateRepository?
+	private let updateCheckerCompletionBlock: UpdateCheckerCompletionBlock
 	
 	static func canPerformUpdateCheck(forAppAt url: URL) -> Bool {
 		return true
@@ -30,14 +31,17 @@ class HomebrewCheckerOperation: StatefulOperation, UpdateCheckerOperation, @unch
 	required init(with bundle: App.Bundle, repository: UpdateRepository?, completionBlock: @escaping UpdateCheckerCompletionBlock) {
 		self.bundle =  bundle
 		self.repository = repository
+		self.updateCheckerCompletionBlock = completionBlock
 		
 		super.init()
 		
-		self.completionBlock = {
+		self.completionBlock = { [weak self] in
+			guard let self else { return }
+
 			if let update = self.update {
-				completionBlock(.success(update))
+				self.updateCheckerCompletionBlock(.success(update))
 			} else {
-				completionBlock(.failure(self.error ?? LatestError.updateInfoUnavailable))
+				self.updateCheckerCompletionBlock(.failure(self.error ?? LatestError.updateInfoUnavailable))
 			}
 		}
 	}

@@ -9,7 +9,7 @@
 import Foundation
 
 /// Observes the local collection of apps and notifies its owner of changes.
-class AppLibrary {
+final class AppLibrary: @unchecked Sendable {
 	
 	/// The handler to be called when apps change locally.
 	typealias UpdateHandler = ([App.Bundle]) -> Void

@@ -9,10 +9,11 @@
 import AppKit
 
 /// A cache for app icons.
-class IconCache {
+@MainActor
+final class IconCache {
     
 	/// The shared cache object.
-    static var shared = IconCache()
+	static let shared = IconCache()
     
 	/// Initializes the cache.
     private init() {
@@ -29,12 +30,9 @@ class IconCache {
 			return
         }
         
-        DispatchQueue.main.async {
-            let icon = NSWorkspace.shared.icon(forFile: app.fileURL.path)
-            self.cache.setObject(icon, forKey: app)
-
-            completion(icon)
-        }
+		let icon = NSWorkspace.shared.icon(forFile: app.fileURL.path)
+		self.cache.setObject(icon, forKey: app)
+		completion(icon)
     }
     
 }

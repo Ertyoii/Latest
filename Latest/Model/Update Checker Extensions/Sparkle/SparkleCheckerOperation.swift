@@ -26,19 +26,22 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 	required init(with app: App.Bundle, repository: UpdateRepository?, completionBlock: @escaping UpdateCheckerCompletionBlock) {
 		self.app = app
 		self.url = Self.feedURL(from: app.fileURL)
+		self.updateCheckerCompletionBlock = completionBlock
 		
 		super.init()
 
-		self.completionBlock = {
+		self.completionBlock = { [weak self] in
+			guard let self else { return }
+
 			if self.isCancelled {
-				completionBlock(.failure(CancellationError()))
+				self.updateCheckerCompletionBlock(.failure(CancellationError()))
 				return
 			}
 
 			if let update = self.update {
-				completionBlock(.success(update))
+				self.updateCheckerCompletionBlock(.success(update))
 			} else {
-				completionBlock(.failure(self.error ?? LatestError.updateInfoUnavailable))
+				self.updateCheckerCompletionBlock(.failure(self.error ?? LatestError.updateInfoUnavailable))
 			}
 		}
 	}
@@ -54,6 +57,8 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 	
 	/// The url to check for updates.
 	private let url: URL?
+
+	private let updateCheckerCompletionBlock: UpdateCheckerCompletionBlock
 	
 	/// The update fetched during the checking operation.
 	fileprivate var update: App.Update?

@@ -13,7 +13,7 @@ import Cocoa
  */
 class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate, Observer {
 	
-	var id = UUID()
+	nonisolated let id = UUID()
 	
     /// The array holding the apps that have an update available.
 	var snapshot: AppListSnapshot = AppListSnapshot(withApps: [], filterQuery: nil) {
@@ -76,14 +76,12 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
         self.tableViewMenu.delegate = self
         self.tableView.menu = self.tableViewMenu
 		
-		if #available(macOS 11.0, *) {
-			// In newer macOS versions, scroll views can apply automatic content insets which can
-			// create a large blank area above the first row in the sidebar list.
-			if let scrollView = tableView.enclosingScrollView {
-				scrollView.automaticallyAdjustsContentInsets = false
-				scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-				scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-			}
+		// In newer macOS versions, scroll views can apply automatic content insets which can
+		// create a large blank area above the first row in the sidebar list.
+		if let scrollView = tableView.enclosingScrollView {
+			scrollView.automaticallyAdjustsContentInsets = false
+			scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+			scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
 		}
 		
 		AppListSettings.shared.add(self, handler: self.updateSnapshot)
@@ -93,13 +91,11 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 			self.updateTitleAndBatch()
 		}
 		
-		if #available(macOS 11, *) {
-			self.updatesLabel.isHidden = true
-			self.updatesLabelContainerView.isHidden = true
-			self.updatesLabelContainerHeightConstraint.constant = 0
-			// Keep the table content snug under the search field on modern macOS.
-			self.searchFieldToUpdatesLabelContainerConstraint.constant = 0
-		}
+		self.updatesLabel.isHidden = true
+		self.updatesLabelContainerView.isHidden = true
+		self.updatesLabelContainerHeightConstraint.constant = 0
+		// Keep the table content snug under the search field on modern macOS.
+		self.searchFieldToUpdatesLabelContainerConstraint.constant = 0
 		
 		if #available(macOS 26, *) {
 			self.topTableConstraint.constant = 0
@@ -117,9 +113,11 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 		// Search field is fully constrained in the storyboard.
 		self.view.window?.makeFirstResponder(nil)
 	}
-	
-	deinit {
+
+	override func viewDidDisappear() {
+		super.viewDidDisappear()
 		AppListSettings.shared.remove(self)
+		UpdateCheckCoordinator.shared.appProvider.removeObserver(self)
 	}
     
     
@@ -225,12 +223,7 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 				action.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: nil)
 			}
             
-			// Teal on macOS 11 / below is the same as Cyan on macOS 12+
-			if #available(macOS 12.0, *) {
-				action.backgroundColor = .systemCyan
-			} else {
-				action.backgroundColor = .systemTeal
-			}
+			action.backgroundColor = .systemCyan
             
             return [action]
         } else if edge == .leading {
@@ -517,11 +510,7 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
         
 		self.scrubber?.reloadData()
 		
-		if #available(macOS 11, *) {
-			self.view.window?.subtitle = statusText
-		} else {
-			self.updatesLabel.stringValue = statusText
-		}
+		self.view.window?.subtitle = statusText
     }
 	
 	private func ensureSelection() {

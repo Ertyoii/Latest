@@ -6,12 +6,15 @@
 //  Copyright © 2022 Max Langer. All rights reserved.
 //
 
+import Foundation
+
 /// Describes the contents of the app list.
 ///
 /// This structure supports the following states:
 /// - All apps with updates available
 /// - All installed apps, separated from the ones with updates through sections
 /// - A filtered list of apps based on a given filter string
+@MainActor
 struct AppListSnapshot {
 	
 	/// The query after which apps can be filtered

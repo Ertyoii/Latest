@@ -9,6 +9,7 @@
 import WebKit
 
 /// Object that loads websites for given URLs and returns their content as HTML.
+@MainActor
 class WebContentLoader: NSObject {
 	
 	/// Loads contents for the given URL.
@@ -46,9 +47,7 @@ class WebContentLoader: NSObject {
 		webView.navigationDelegate = self
 		
 		// Ensure the web view renders with full performance
-		if #available(macOS 14.0, *) {
-			webView.configuration.preferences.inactiveSchedulingPolicy = .none
-		}
+		webView.configuration.preferences.inactiveSchedulingPolicy = .none
 		
 		return webView
 	}()

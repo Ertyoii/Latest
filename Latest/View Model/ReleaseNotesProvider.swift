@@ -6,9 +6,12 @@
 //  Copyright © 2022 Max Langer. All rights reserved.
 //
 
+import AppKit
+
 /// Handles release notes conversion and loading.
 ///
 /// The object provides release notes in a uniform representation and caches remote contents for faster access.
+@MainActor
 class ReleaseNotesProvider {
 	
 	/// The return value, containing either the desired release notes, or an error if unavailable.

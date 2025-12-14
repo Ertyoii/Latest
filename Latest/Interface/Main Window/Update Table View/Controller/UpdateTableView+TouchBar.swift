@@ -69,7 +69,7 @@ extension UpdateTableViewController: NSTouchBarDelegate {
 }
 
 /// An extension of the Updates Table View that handles the scrubber bar that displays all available updates
-extension UpdateTableViewController: NSScrubberDataSource, NSScrubberDelegate, NSScrubberFlowLayoutDelegate {
+extension UpdateTableViewController: @preconcurrency NSScrubberDataSource, @preconcurrency NSScrubberDelegate, @preconcurrency NSScrubberFlowLayoutDelegate {
     
     // MARK: Data Source
     

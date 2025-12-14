@@ -9,7 +9,7 @@ import Foundation
 import QuartzCore
 
 /// Cross-platform convenience for accessing a DisplayLink.
-class DisplayLink: NSObject {
+final class DisplayLink: NSObject, @unchecked Sendable {
 
 	/// The amount of time the display link should be running. If  set to `nil`, the display link runs indefinitely. 
     private(set) var duration : Double?

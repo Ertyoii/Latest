@@ -6,6 +6,8 @@
 //  Copyright © 2022 Max Langer. All rights reserved.
 //
 
+import Foundation
+
 private let SortOptionsKey = "SortOptionsKey"
 private let ShowInstalledUpdatesKey = "ShowInstalledUpdatesKey"
 private let ShowIgnoredUpdatesKey = "ShowIgnoredUpdatesKey"
@@ -14,6 +16,7 @@ private let IncludeUnsupportedAppsKey = "ShowUnsupportedUpdatesKey"
 private let IncludeAppsWithLimitedSupportKey = "IncludeAppsWithLimitedSupportKey"
 
 /// Observable front end to app list preferences.
+@MainActor
 struct AppListSettings: Observable {
 	
 	/// Sorting options available to the app list.

@@ -9,9 +9,11 @@
 import Foundation
 
 /// A uniquely identifiable observer.
+@MainActor
 protocol Observer: Identifiable where ID == UUID {}
 
 /// An observable object.
+@MainActor
 protocol Observable {
 	
 	/// The handler called when an observation is notified.

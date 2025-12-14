@@ -9,6 +9,7 @@
 import Foundation
 
 /// Observable front end to app list preferences.
+@MainActor
 struct UpdateCheckSettings: Observable {
 	
 	enum Setting: String, CaseIterable {
