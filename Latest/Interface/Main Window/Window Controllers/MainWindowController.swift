@@ -58,7 +58,11 @@ class MainWindowController: NSWindowController, NSMenuItemValidation, NSMenuDele
     
 		self.window?.titlebarAppearsTransparent = true
 		self.window?.title = Bundle.main.localizedInfoDictionary?[kCFBundleNameKey as String] as! String
-		self.window?.toolbarStyle = .unified
+		if #available(macOS 11.0, *) {
+			self.window?.toolbarStyle = .unified
+		} else {
+			self.window?.titleVisibility = .hidden
+		}
         
 		// Set ourselves as the view menu delegate. Deferring this avoids touching/modifying the
 		// main menu while AppKit is still wiring the menu graph during launch on macOS 26.

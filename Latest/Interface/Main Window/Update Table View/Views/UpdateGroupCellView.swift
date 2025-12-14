@@ -16,17 +16,16 @@ class UpdateGroupCellView: NSTableCellView {
 
 	/// The visual effect view behind the section header.
 	@IBOutlet private weak var backgroundEffectView: NSVisualEffectView!
-	
 	/// The number formatter formatting the app counter
 	private static let numberFormatter = NumberFormatter()
-
+	
 	override func awakeFromNib() {
 		super.awakeFromNib()
-		if #available(macOS 26.0, *) {
+		if #available(macOS 11.0, *) {
 			backgroundEffectView.isHidden = true
 		}
 	}
-	
+
 	/// The section to be presented by this view.
 	var section: AppListSnapshot.Section? {
 		didSet {

@@ -12,4 +12,6 @@ import Cocoa
 class UpdateGroupRowView: NSTableRowView {
 	// Prevent any row view drawing
 	override func drawBackground(in dirtyRect: NSRect) {}
+	
+	override func drawSeparator(in dirtyRect: NSRect) {}
 }
