@@ -11,7 +11,7 @@ import Cocoa
 extension App {
 	
 	/// An object representing a single application that is available on the computer.
-	class Bundle {
+	class Bundle: @unchecked Sendable {
 		
 		typealias Identifier = URL
 		

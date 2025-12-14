@@ -260,7 +260,7 @@ private enum SparkleAppcastParser {
 		private func chooseReleaseNotesURL(from candidates: [(lang: String?, url: URL)]) -> URL? {
 			guard !candidates.isEmpty else { return nil }
 			
-			let preferredLang = Locale.current.languageCode
+			let preferredLang = Locale.current.language.languageCode?.identifier
 			if let preferredLang, let match = candidates.first(where: { $0.lang == preferredLang }) {
 				return match.url
 			}

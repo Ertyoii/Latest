@@ -11,6 +11,7 @@ import Cocoa
 /**
  The cell that is used in the list of available updates
  */
+@MainActor
 class UpdateCell: NSTableCellView {
 	
 	// MARK: - View Lifecycle
@@ -45,8 +46,10 @@ class UpdateCell: NSTableCellView {
 	override func awakeFromNib() {
 		super.awakeFromNib()
 
-		self.leadingConstraint.constant = 0
-		self.trailingConstraint.constant = 0
+		Task { @MainActor [weak self] in
+			self?.leadingConstraint.constant = 0
+			self?.trailingConstraint.constant = 0
+		}
 	}
 	
 	

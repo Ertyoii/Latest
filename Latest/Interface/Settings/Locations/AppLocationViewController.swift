@@ -23,8 +23,10 @@ class AppDirectoryViewController: SettingsTabItemViewController, NSTableViewData
 	
 	private lazy var directoryStore: AppDirectoryStore = {
 		AppDirectoryStore(updateHandler: { [weak self] in
-			self?.tableView.reloadData()
-			self?.validateButtons()
+			Task { @MainActor [weak self] in
+				self?.tableView.reloadData()
+				self?.validateButtons()
+			}
 		})
 	}()
 	

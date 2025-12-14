@@ -83,8 +83,7 @@ class MacAppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperati
 	
 	/// Returns the app store receipt path for the app at the given URL, if available.
 	static fileprivate func receiptPath(forAppAt url: URL) -> String? {
-		let bundle = Bundle(path: url.path)
-		return bundle?.appStoreReceiptURL?.path
+		return url.appendingPathComponent("Contents/_MASReceipt/receipt").path
 	}
 	
 	/// Returns whether the app at the given URL is an iOS app wrapped to run on macOS.
@@ -118,7 +117,7 @@ extension MacAppStoreUpdateCheckerOperation {
 	}
 	
 	/// Fetches update info and returns the result in the given completion handler.
-	private func fetchAppInfo(completion: @escaping (_ result: Result<AppStoreEntry, Error>) -> ()) {
+	private func fetchAppInfo(completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> ()) {
 		// We need a two-level fetch process. `desktopSoftware` delivers metadata for mac-native software. `macSoftware` seems to be more broad, also includes Catalyst and iOS-only software. The former however is more accurate, as `macSoftware` might return iPad metadata for certain apps. We therefore prefer `desktopSoftware` and fall back to `macSoftware` if no info was found.
 		self.fetchAppInfo(with: "desktopSoftware") { result in
 			switch result {
@@ -136,7 +135,7 @@ extension MacAppStoreUpdateCheckerOperation {
 	/// Fetches update info and returns the result in the given completion handler.
 	///
 	/// The entity describes the kind of app which will be looked for.
-	private func fetchAppInfo(with entityType: String, completion: @escaping (_ result: Result<AppStoreEntry, Error>) -> ()) {
+	private func fetchAppInfo(with entityType: String, completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> ()) {
 		// Build URL
 		guard let endpoint = URL(string: "https://itunes.apple.com/lookup") else {
 			completion(.failure(MalformedURLError))
@@ -144,7 +143,7 @@ extension MacAppStoreUpdateCheckerOperation {
 		}
 
 		// Add parameters
-		let languageCode = Locale.current.regionCode ?? "US"
+		let languageCode = Locale.current.region?.identifier ?? "US"
 		var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
 		components?.queryItems = [
 			URLQueryItem(name: "limit", value: "1"),

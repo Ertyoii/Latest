@@ -161,7 +161,9 @@ class ReleaseNotesViewController: NSViewController {
 
 		// Delay the loading screen to avoid flickering
 		let timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { (_) in
-			self.loadContent(.loading)
+            Task { @MainActor [weak self] in
+			    self?.loadContent(.loading)
+            }
 		}
 		releaseNotesProvider.releaseNotes(for: app) { result in
 			timer.invalidate()

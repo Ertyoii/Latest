@@ -11,135 +11,84 @@ import QuartzCore
 /// Cross-platform convenience for accessing a DisplayLink.
 final class DisplayLink: NSObject, @unchecked Sendable {
 
-	/// The amount of time the display link should be running. If  set to `nil`, the display link runs indefinitely. 
-    private(set) var duration : Double?
-	
-	/// An optional completion handler called after the display link stopped animating.
-    var completionHandler : (() -> ())?
-	
-	/// The current  animation progress. Only useful if a duration has been set.
-	private(set) var progress : Double = 0
-    
-    #if os(macOS)
-    private var displayLink : CVDisplayLink!
-    #else
-    private var displayLink : CADisplayLink!
-    #endif
-    
-	/// Frames used to calculate the animation progress
-    private var _currentFrame : Double = 0
-    private var _frames : Double = 0
-    
-	/// The callback called for each animation step.
-    private(set) var callback : ((_ progress: Double) -> Void)!
-    
-	
-	// MARK: - Initialization
-	
-	/// Initializes the display link with the given duration and callback.
-	init(duration: Double?, callback: @escaping ((_ progress: Double) -> Void)) {
-        super.init()
-        
+    /// The amount of time the display link should be running. `nil` makes it indefinite.
+    private let duration: Double?
+
+    /// Optional completion handler called after the animation finishes.
+    var completionHandler: (() -> Void)?
+
+    /// The current animation progress.
+    private(set) var progress: Double = 0
+
+    /// Timer driving the animation updates.
+    private var timer: Timer?
+
+    /// Callback invoked every tick.
+    private(set) var callback: ((_ progress: Double) -> Void)!
+
+    /// Tracking timestamps for duration calculations.
+    private var startTime: CFTimeInterval = 0
+    private var lastTimestamp: CFTimeInterval = 0
+
+
+    // MARK: - Initialization
+
+    /// Initializes the display link with a duration and callback.
+    init(duration: Double?, callback: @escaping ((_ progress: Double) -> Void)) {
         self.duration = duration
         self.callback = callback
-        
-		#if os(macOS)
-		func displayLinkOutputCallback(_ displayLink: CVDisplayLink, _ inNow: UnsafePointer<CVTimeStamp>, _ inOutputTime: UnsafePointer<CVTimeStamp>, _ flagsIn: CVOptionFlags, _ flagsOut: UnsafeMutablePointer<CVOptionFlags>, _ displayLinkContext: UnsafeMutableRawPointer?) -> CVReturn {
-			guard let displayLinkContext else { return kCVReturnInvalidArgument }
-			
-			unsafeBitCast(displayLinkContext, to: DisplayLink.self).displayTick()
-			return kCVReturnSuccess
-		}
-		
-		CVDisplayLinkCreateWithActiveCGDisplays(&self.displayLink)
-		CVDisplayLinkSetOutputCallback(self.displayLink, displayLinkOutputCallback, UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()))
-		#else
-		self.displayLink = CADisplayLink(target: self,
-									   selector: #selector(DisplayLink.displayTick))
-		self.displayLink.add(to: .current, forMode: .common)
-		#endif
-	}
-	
-	deinit {
-		#if os(macOS)
-		// Immediately remove callback to avoid access to the deallocated access to this object from the callback on a background thread
-		CVDisplayLinkSetOutputCallback(self.displayLink, nil, nil)
-		#endif
-	}
+        super.init()
+    }
 
-	
-	// MARK: - Animation
-    
-    @objc private func displayTick() {
-        guard let displayLink = self.displayLink else { return }
-        
-		if let duration = self.duration {
-			#if os(macOS)
-				let rate = CVDisplayLinkGetActualOutputVideoRefreshPeriod(displayLink)
-				self._frames = duration / rate
-			#else
-				let rate = (1 / (displayLink.targetTimestamp - displayLink.timestamp)).rounded()
-				self._frames = duration * rate
-			#endif
-		}
-		
-		else {
-			self._frames = 1
-		}
-        
-#if os(macOS)
-		// Make 60 FPS the default rate and adjust progress increases based on the actual refresh rate of the display.
-		self._currentFrame += CVDisplayLinkGetActualOutputVideoRefreshPeriod(displayLink) / (1 / 60.0)
-#else
-		self._currentFrame += 1
-#endif
-        
-		// Forward progress to the observer
-		DispatchQueue.main.async {
-			self.progress = self._currentFrame / self._frames
-			if self.duration != nil, self.progress >= 1 {
-                self.completionHandler?()
-				self.stop()
-            }
-            
-			self.callback(self.progress)
+
+    // MARK: - Animation
+
+    @objc private func displayTick(_ timer: Timer) {
+        let now = CACurrentMediaTime()
+        let delta = now - self.lastTimestamp
+        self.lastTimestamp = now
+
+        if let duration = self.duration {
+            let elapsed = now - self.startTime
+            self.progress = min(1, elapsed / duration)
+        } else {
+            self.progress += delta * 60
         }
-	}
-    
-	
-	// MARK: - Actions
-	
-	/// Starts the display link.
+
+        self.callback(self.progress)
+
+        if self.duration != nil && self.progress >= 1 {
+            self.completionHandler?()
+            self.stop()
+        }
+    }
+
+
+    // MARK: - Actions
+
+    /// Starts the animation loop.
     func start() {
-        self._currentFrame = 0
-                
-        #if os(macOS)
-        CVDisplayLinkStart(displayLink)
-        #else
-        displayLink.isPaused = false
-        #endif
+        self.stop()
+
+        let now = CACurrentMediaTime()
+        self.startTime = now
+        self.lastTimestamp = now
+        self.progress = 0
+
+        let timer = Timer(timeInterval: 1.0 / 60.0, target: self, selector: #selector(displayTick(_:)), userInfo: nil, repeats: true)
+        self.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
-    
-	/// Stops the display link.
+
+    /// Stops the animation loop.
     func stop() {
-        #if os(macOS)
-		// Must not be called on sync Main Thread, as it causes a deadlock there.
-		DispatchQueue.global().async { [weak self] in
-			guard let self = self else { return }
-			CVDisplayLinkStop(self.displayLink)
-		}
-        #else
-        displayLink.isPaused = true
-        #endif
+        self.timer?.invalidate()
+        self.timer = nil
     }
-    
-	/// Whether the display link is currently running.
-    var isRunning : Bool {
-        #if os(macOS)
-        return CVDisplayLinkIsRunning(displayLink)
-        #else
-        return displayLink.isPaused
-        #endif
+
+    /// Whether the display link is actively running.
+    var isRunning: Bool {
+        self.timer != nil
     }
-    
+
 }

@@ -93,10 +93,13 @@ class SettingsTabViewController: NSTabViewController {
 		window.setFrame(newFrame, display: false, animate: animated)
 
 		if animated {
+			let animatedController = tabViewItem.viewController as? SettingsTabItemViewController
 			NSAnimationContext.runAnimationGroup { context in
 				context.duration = window.animationResizeTime(newFrame)
-			} completionHandler: {
-				(tabViewItem.viewController as? SettingsTabItemViewController)?.commitAnimation()
+			} completionHandler: { [weak animatedController] in
+				Task { @MainActor in
+					animatedController?.commitAnimation()
+				}
 			}
 		} else {
 			(tabViewItem.viewController as? SettingsTabItemViewController)?.commitAnimation()
