@@ -50,6 +50,9 @@ jobs:
             -derivedDataPath build \
             CODE_SIGN_IDENTITY="Developer ID Application" \
             CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            DEVELOPMENT_TEAM=${{ secrets.TEAM_ID }} \
             OTHER_CODE_SIGN_FLAGS="--keychain $RUNNER_TEMP/app-signing.keychain-db"
 
       - name: Install create-dmg
