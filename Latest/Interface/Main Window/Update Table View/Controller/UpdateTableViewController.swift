@@ -35,13 +35,15 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 	
 	/// The label indicating how many updates are available
     @IBOutlet weak var updatesLabel: NSTextField!
-	@IBOutlet private weak var updatesLabelContainerView: NSView!
-	@IBOutlet private weak var updatesLabelContainerHeightConstraint: NSLayoutConstraint!
-	@IBOutlet private weak var searchFieldToUpdatesLabelContainerConstraint: NSLayoutConstraint!
+
         
     /// The menu displayed on secondary clicks on cells in the list
     @IBOutlet weak var tableViewMenu: NSMenu!
     
+
+	/// Constraint controlling the top constraint of the table view.
+	@IBOutlet weak var topTableConstraint: NSLayoutConstraint!
+	
 	/// The currently selected app within the UI.
 	var selectedApp: App? {
 		willSet {
@@ -88,11 +90,11 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 			self.updateTitleAndBatch()
 		}
 		
-		self.updatesLabel.isHidden = true
-		self.updatesLabelContainerView.isHidden = true
-		self.updatesLabelContainerHeightConstraint.constant = 0
-		// Keep the table content snug under the search field on modern macOS.
-		self.searchFieldToUpdatesLabelContainerConstraint.constant = 0
+		if #available(macOS 11, *) {
+			self.updatesLabel.isHidden = true
+		}
+		
+
     }
     
     override func viewWillAppear() {
@@ -101,8 +103,8 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 		// Setup title
 		self.updateTitleAndBatch()
 		
-		// Search field is fully constrained in the storyboard.
-		self.view.window?.makeFirstResponder(nil)
+        // Setup search field
+        NSLayoutConstraint(item: self.searchField!, attribute: .top, relatedBy: .equal, toItem: self.view.window?.contentLayoutGuide, attribute: .top, multiplier: 1.0, constant: 1).isActive = true
 	}
 
 	override func viewDidDisappear() {
@@ -209,6 +211,10 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
                 self.updateApp(atIndex: row)
 				tableView.rowActionsVisible = false
             })
+			
+			if #available(macOS 11.0, *) {
+				action.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: nil)
+			}
             
 			action.backgroundColor = .systemCyan
             
@@ -224,7 +230,12 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 				tableView.rowActionsVisible = false
             })
 			reveal.backgroundColor = .systemGray
-
+			
+			if #available(macOS 11.0, *) {
+				open.image = NSImage(systemSymbolName: "arrow.up.forward.app", accessibilityDescription: nil)
+				reveal.image = NSImage(systemSymbolName: "finder", accessibilityDescription: nil)
+			}
+			
             return [open, reveal]
         }
         
