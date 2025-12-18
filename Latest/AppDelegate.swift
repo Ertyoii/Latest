@@ -7,21 +7,10 @@
 //
 
 import Cocoa
-import Sparkle
+
 
 @main
 class AppDelegate: NSObject, NSApplicationDelegate {
-	
-	private lazy var sparkleUpdaterController = SPUStandardUpdaterController(
-		startingUpdater: true,
-		updaterDelegate: nil,
-		userDriverDelegate: nil
-	)
-	
-	private lazy var settingsWindowController: NSWindowController? = {
-		NSStoryboard(name: "Main", bundle: nil)
-			.instantiateController(withIdentifier: "SettingsWindowController") as? NSWindowController
-	}()
 	
 	func applicationDidFinishLaunching(_ aNotification: Notification) {
     }
@@ -46,17 +35,5 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 	func applicationShouldRestoreApplicationState(_ sender: NSApplication) -> Bool {
 		false
 	}
-	
-	@IBAction func checkForUpdates(_ sender: Any?) {
-		sparkleUpdaterController.checkForUpdates(sender)
-	}
-	
-	@IBAction func showPreferences(_ sender: Any?) {
-		settingsWindowController?.showWindow(sender)
-		settingsWindowController?.window?.makeKeyAndOrderFront(sender)
-		NSApp.activate(ignoringOtherApps: true)
-	}
-	
-
     
 }

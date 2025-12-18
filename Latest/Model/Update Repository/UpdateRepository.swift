@@ -31,28 +31,23 @@ class UpdateRepository: @unchecked Sendable {
 
 	// MARK: - Init
 	
-	let fetchCompletedGroup = DispatchGroup()
+
+	
+	private var loadingTask: Task<Void, Never>?
 	
 	private init(testMode: Bool = false) {
 		if testMode {
-			// Mark repository as loaded; tests can inject entries directly.
-			self.pendingRequests = nil
 			return
 		}
 		
-		fetchCompletedGroup.enter()
-		fetchCompletedGroup.notify(queue: .main) { [weak self] in
-			self?.finalize()
+		self.loadingTask = Task {
+			await self.load()
 		}
 	}
 	
 	/// Returns a new repository with up to date update information.
 	static func newRepository() -> UpdateRepository {
-		let repository = UpdateRepository()
-		repository.load()
-		repository.fetchCompletedGroup.leave()
-		
-		return repository
+		return UpdateRepository()
 	}
 	
 	#if DEBUG
@@ -70,21 +65,29 @@ class UpdateRepository: @unchecked Sendable {
 	
 	/// Returns update information for the given bundle.
 	func updateInfo(for bundle: App.Bundle, handler: @escaping @Sendable (_ bundle: App.Bundle, _ entry: Entry?) -> Void) {
-		let checkApp: @Sendable () -> Void = {
+		Task {
+			_ = await self.loadingTask?.value
 			handler(bundle, self.entry(for: bundle))
 		}
+	}
+	
+	/// Checks for local changelog files in the app bundle.
+	func localChangelog(for bundle: App.Bundle) -> App.Update.ReleaseNotes? {
+		let candidates = ["CHANGELOG", "Changelog", "changelog", "HISTORY", "History", "history", "Changes"]
+		let extensions = ["md", "txt", "rtf", "html"]
 		
-		/// Entries are still being fetched, add the request to the queue.
-		queue.async { [weak self] in
-			guard let self else { return }
-			
-			if self.pendingRequests != nil {
-				self.pendingRequests?.append(checkApp)
-			} else {
-				checkApp()
+		for name in candidates {
+			for ext in extensions {
+				if let nsBundle = Bundle(url: bundle.fileURL),
+				   let url = nsBundle.url(forResource: name, withExtension: ext) {
+					return .url(url: url)
+				}
 			}
 		}
+		
+		return nil
 	}
+
 	
 	/// List of entries stored within the repository.
 	private var entries = [Entry]()
@@ -98,26 +101,55 @@ class UpdateRepository: @unchecked Sendable {
 	/// A list of requests being performed while the repository was still fetching data.
 	///
 	/// It also acts as a flag for whether initialization finished. The array is initialized when the repository is created. It will be set to nil once `finalize()` is being called.
-	private var pendingRequests: [ @Sendable () -> Void ]? = []
-	
 	/// A set of bundle identifiers for which update checking is currently not supported.
 	private var unsupportedBundleIdentifiers: Set<String> = []
 	
-	/// Sets the given entries and performs pending requests.
-	private func finalize() {
-		queue.async { [weak self] in
-			guard let self else { return }
-			guard let pendingRequests else {
-				fatalError("Finalize must only be called once!")
+	// MARK: - Cache Handling
+	
+	/// Loads the repository data asynchronously.
+	private func load() async {
+		await withTaskGroup(of: Void.self) { group in
+			RemoteURL.allCases.forEach { urlType in
+				group.addTask {
+					await self.fetch(urlType)
+				}
 			}
+		}
+	}
+	
+	private func fetch(_ urlType: RemoteURL) async {
+		// Check for valid cache file
+		let timeInterval = UserDefaults.standard.double(forKey: urlType.userDefaultsKey) as TimeInterval
+		if timeInterval > 0, timeInterval.distance(to: Date.timeIntervalSinceReferenceDate) < Self.cacheInvalidationDuration,
+		   let cacheURL = urlType.cacheURL, let data = try? Data(contentsOf: cacheURL)  {
+			self.handle(data, for: urlType)
+			return
+		}
+		
+		// Fetch data from server
+		do {
+			let (data, _) = try await session.data(from: urlType.url)
+			self.handle(data, for: urlType)
 			
-			// Perform any pending requests
-			pendingRequests.forEach { request in
-				request()
+			// Store in cache
+			if let cacheURL = urlType.cacheURL {
+				try? FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+				try? data.write(to: cacheURL)
+				UserDefaults.standard.setValue(Date.timeIntervalSinceReferenceDate, forKey: urlType.userDefaultsKey)
 			}
-			
-			// Mark repository as loaded.
-			self.pendingRequests = nil
+		} catch {
+			if let data = urlType.fallbackData {
+				self.handle(data, for: urlType)
+			}
+		}
+	}
+	
+	private func handle(_ data: Data, for urlType: RemoteURL) {
+		switch urlType {
+		case .repository:
+			self.parse(data)
+		case .unsupportedApps:
+			self.loadUnsupportedApps(from: data)
 		}
 	}
 	
@@ -221,51 +253,7 @@ class UpdateRepository: @unchecked Sendable {
 	
 	// MARK: - Cache Handling
 	
-	/// Loads the repository data.
-	private func load() {
-		RemoteURL.allCases.forEach { urlType in
-			self.fetchCompletedGroup.enter()
-			
-			@Sendable func handle(_ data: Data) {
-				switch urlType {
-				case .repository:
-					parse(data)
-				case .unsupportedApps:
-					loadUnsupportedApps(from: data)
-				}
-				
-				self.fetchCompletedGroup.leave()
-			}
-			
-			// Check for valid cache file
-			let timeInterval = UserDefaults.standard.double(forKey: urlType.userDefaultsKey) as TimeInterval
-			if timeInterval > 0, timeInterval.distance(to: Date.timeIntervalSinceReferenceDate) < Self.cacheInvalidationDuration,
-			   let cacheURL = urlType.cacheURL, let data = try? Data(contentsOf: cacheURL)  {
-				handle(data)
-				return
-			}
-			
-			// Fetch data from server
-			let task = session.dataTask(with: urlType.url) { [weak self] data, _, _ in
-				guard let self else { return }
-				guard let data = data ?? urlType.fallbackData else {
-					self.fetchCompletedGroup.leave()
-					return
-				}
-				
-				handle(data)
-				
-				// Store in cache
-				if let cacheURL = urlType.cacheURL {
-					try? FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-					try? data.write(to: cacheURL)
-					UserDefaults.standard.setValue(Date.timeIntervalSinceReferenceDate, forKey: urlType.userDefaultsKey)
-				}
-			}
-			task.resume()
 
-		}
-	}
 	
 	/// Parses the given repository data and finishes loading.
 	private func parse(_ repositoryData: Data) {

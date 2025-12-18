@@ -68,7 +68,9 @@ class ReleaseNotesProvider {
 		if let releaseNotes = app.releaseNotes {
 			switch releaseNotes {
 				case .html(let html):
-					completion(self.releaseNotes(from: html, baseURL: nil))
+					Task {
+						completion(await self.releaseNotes(from: html, baseURL: nil))
+					}
 				case .url(let url):
 					self.releaseNotes(from: url, with: completion)
 				case .encoded(let data):
@@ -86,15 +88,17 @@ class ReleaseNotesProvider {
 			switch releaseNotes {
 			case .html(let html):
 				// Parse on MainActor (current context)
-				let result = self.releaseNotes(from: html, baseURL: nil)
 				return AsyncThrowingStream { continuation in
-					switch result {
-					case .success(let str):
-						continuation.yield(ReleaseNotesContent(attributedString: str))
-					case .failure(let err):
-						continuation.finish(throwing: err)
+					Task {
+						let result = await self.releaseNotes(from: html, baseURL: nil)
+						switch result {
+						case .success(let str):
+							continuation.yield(ReleaseNotesContent(attributedString: str))
+						case .failure(let err):
+							continuation.finish(throwing: err)
+						}
+						continuation.finish()
 					}
-					continuation.finish()
 				}
 			case .url(let url):
 				return self.releaseNotes(from: url)
@@ -145,7 +149,7 @@ class ReleaseNotesProvider {
 			Task { @MainActor in
 				do {
 					for try await html in upstream {
-						let result = self.releaseNotes(from: html, baseURL: url)
+						let result = await self.releaseNotes(from: html, baseURL: url)
 						switch result {
 						case .success(let string):
 							continuation.yield(ReleaseNotesContent(attributedString: string))
@@ -229,7 +233,7 @@ class ReleaseNotesProvider {
 					</html>
 					"""
 					
-					let result = self.releaseNotes(from: html, baseURL: nil)
+					let result = await self.releaseNotes(from: html, baseURL: nil)
 					switch result {
 					case .success(let string):
 						continuation.yield(ReleaseNotesContent(attributedString: string))
@@ -246,8 +250,11 @@ class ReleaseNotesProvider {
 	
 	
 	/// Returns rich text from the given HTML string.
-	private func releaseNotes(from html: String, baseURL: URL?) -> ReleaseNotes {
-		let normalizedHTML = Self.normalizeHTMLForAttributedString(html)
+	private func releaseNotes(from html: String, baseURL: URL?) async -> ReleaseNotes {
+		// Perform normalization off the main actor as it involves heavy regex operations
+		let normalizedHTML = await Task.detached(priority: .userInitiated) {
+			return Self.normalizeHTMLForAttributedString(html)
+		}.value
 		
 		guard let data = normalizedHTML.data(using: .utf16) else {
 			return .failure(LatestError.releaseNotesUnavailable)
@@ -303,11 +310,63 @@ private extension ReleaseNotesProvider {
 		return escaped
 	}
 	
-	static func normalizeHTMLForAttributedString(_ html: String) -> String {
+	nonisolated static func normalizeHTMLForAttributedString(_ html: String) -> String {
 		// Only touch HTML that contains lists; this avoids unexpected changes for simple release notes.
-		guard html.range(of: "<li", options: [.caseInsensitive]) != nil else { return html }
+		// NOTE: We also want to clean up clutter even if there are no lists, so we remove the guard or make it more permissible if needed.
+		// However, for safety regarding the original logic, let's keep the core normalization logic but append the cleaning logic.
 		
 		var normalized = html
+		
+		// 1. Remove "Included Localizations" section and everything that follows until end or specific headers?
+		// The user example shows "Included Localizations" followed by a list.
+		// We'll target specific headers and their content if possible, or just the blocks.
+		
+		// Remove "Included Localizations" block
+		normalized = normalized.replacingOccurrences(
+			of: "(?s)<p>Included Localizations.*?(?=<h[1-6]>|$)",
+			with: "",
+			options: [.regularExpression, .caseInsensitive]
+		)
+		
+		// Remove "Special thanks" block
+		normalized = normalized.replacingOccurrences(
+			of: "(?s)(<p>)?Special thanks to all contributors.*?(?=<h[1-6]>|$)",
+			with: "",
+			options: [.regularExpression, .caseInsensitive]
+		)
+
+		// Remove "Important information..." block
+		normalized = normalized.replacingOccurrences(
+			of: "(?s)(<p>|<h3>)?Important information if you are updating.*?(?=<h[1-6]>|$)",
+			with: "",
+			options: [.regularExpression, .caseInsensitive]
+		)
+
+		// Remove "Free upgrade..." block
+		normalized = normalized.replacingOccurrences(
+			of: "(?s)(<p>|<h3>)?Free upgrade if you purchased Pro.*?(?=<h[1-6]>|$)",
+			with: "",
+			options: [.regularExpression, .caseInsensitive]
+		)
+		
+		// Remove "Developed by @waydabber" line
+		normalized = normalized.replacingOccurrences(
+			of: "Developed by @waydabber\\.?",
+			with: "",
+			options: [.regularExpression, .caseInsensitive]
+		)
+		
+		// Remove "View on GitHub" redundancy if present in body (we add our own link)
+		normalized = normalized.replacingOccurrences(
+			of: "View on GitHub",
+			with: "",
+			options: [.caseInsensitive]
+		)
+
+		
+		// --- Original Normalization Logic ---
+		
+		guard normalized.range(of: "<li", options: [.caseInsensitive]) != nil else { return normalized }
 		
 		// Normalize paragraph-based list items.
 		normalized = normalized.replacingOccurrences(
@@ -365,7 +424,7 @@ private extension ReleaseNotesProvider {
 		return normalized
 	}
 	
-	static func normalizeGitHubBodyHTML(_ html: String) -> String {
+	nonisolated static func normalizeGitHubBodyHTML(_ html: String) -> String {
 		// GitHub renders Markdown list items as <li><p>…</p><p>…</p></li> which often looks like multiple bullets in
 		// NSAttributedString's HTML renderer. Flatten paragraphs inside list items, then render lists as plain bullet
 		// paragraphs to avoid the list layout quirks of the HTML renderer.

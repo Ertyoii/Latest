@@ -78,19 +78,29 @@ class WebContentLoader: NSObject {
 	/// The current async continuation.
 	private var currentContinuation: AsyncThrowingStream<String, Error>.Continuation?
 	
+	/// The current update task to debounce events.
+	private var currentUpdateTask: Task<Void, Error>?
+
 	
 	// MARK: - Utilities
 	
 	/// Forwards the current page contents to the caller of the load method.
 	fileprivate func notifyContentUpdate() {
-		webView.evaluateJavaScript("document.documentElement.outerHTML.toString()") { html, error in
-			// WebKit callbacks are already on the main thread, but explicit MainActor context is safe.
-			if let html = html as? String, !html.isEmpty {
-				self.currentUpdateHandler?(.success(html))
-				self.currentContinuation?.yield(html)
-			} else if let error = error {
-				self.currentUpdateHandler?(.failure(error))
-				self.currentContinuation?.finish(throwing: error)
+		currentUpdateTask?.cancel()
+		
+		currentUpdateTask = Task { @MainActor [weak self] in
+			// Debounce updates to avoid flooding the main thread
+			try await Task.sleep(nanoseconds: 200 * 1_000_000)
+			
+			self?.webView.evaluateJavaScript("document.documentElement.outerHTML.toString()") { html, error in
+				// WebKit callbacks are already on the main thread, but explicit MainActor context is safe.
+				if let html = html as? String, !html.isEmpty {
+					self?.currentUpdateHandler?(.success(html))
+					self?.currentContinuation?.yield(html)
+				} else if let error = error {
+					self?.currentUpdateHandler?(.failure(error))
+					self?.currentContinuation?.finish(throwing: error)
+				}
 			}
 		}
 	}

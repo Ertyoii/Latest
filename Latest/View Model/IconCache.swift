@@ -30,9 +30,14 @@ final class IconCache {
 			return
         }
         
-		let icon = NSWorkspace.shared.icon(forFile: app.fileURL.path)
-		self.cache.setObject(icon, forKey: app)
-		completion(icon)
+		Task {
+			let icon = await Task.detached(priority: .userInitiated) {
+				return NSWorkspace.shared.icon(forFile: app.fileURL.path)
+			}.value
+			
+			self.cache.setObject(icon, forKey: app)
+			completion(icon)
+		}
     }
     
 }

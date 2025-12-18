@@ -26,6 +26,7 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 	required init(with app: App.Bundle, repository: UpdateRepository?, completionBlock: @escaping UpdateCheckerCompletionBlock) {
 		self.app = app
 		self.url = Self.feedURL(from: app.fileURL)
+		self.repository = repository
 		self.updateCheckerCompletionBlock = completionBlock
 		
 		super.init()
@@ -57,6 +58,9 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 	
 	/// The url to check for updates.
 	private let url: URL?
+
+	/// The repository used for fallback information.
+	private let repository: UpdateRepository?
 
 	private let updateCheckerCompletionBlock: UpdateCheckerCompletionBlock
 	
@@ -116,19 +120,39 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 					releaseNotes = .url(url: url)
 				}
 				
-				self.update = App.Update(
-					app: self.app,
-					remoteVersion: version,
-					minimumOSVersion: minimumOSVersion,
-					source: .sparkle,
-					date: item.pubDate,
-					releaseNotes: releaseNotes,
-					updateAction: .builtIn(block: { app in
-						UpdateQueue.shared.addOperation(SparkleUpdateOperation(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier))
-					})
-				)
+				// Fallback: If no release notes are found in the feed, try to fetch them from our internal repository
+				// This allows us to point to GitHub Releases even if the feed only provides the binary
+				let finishWithUpdate: @Sendable (App.Update.ReleaseNotes?) -> Void = { releaseNotes in
+					self.update = App.Update(
+						app: self.app,
+						remoteVersion: version,
+						minimumOSVersion: minimumOSVersion,
+						source: .sparkle,
+						date: item.pubDate,
+						releaseNotes: releaseNotes,
+						updateAction: .builtIn(block: { app in
+							UpdateQueue.shared.addOperation(SparkleUpdateOperation(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier))
+						})
+					)
+					
+					self.finishIfNeeded()
+				}
 				
-				self.finishIfNeeded()
+				if releaseNotes == nil, let repository = self.repository {
+					repository.updateInfo(for: self.app) { _, entry in
+						let fallbackReleaseNotes = entry?.releaseNotesURL.map { App.Update.ReleaseNotes.url(url: $0) }
+						
+						if let fallbackReleaseNotes {
+							finishWithUpdate(fallbackReleaseNotes)
+						} else {
+							// Last resort: Check for localized changelog files
+							let localNotes = repository.localChangelog(for: self.app)
+							finishWithUpdate(localNotes)
+						}
+					}
+				} else {
+					finishWithUpdate(releaseNotes)
+				}
 			} catch {
 				self.finishIfNeeded(with: error)
 			}

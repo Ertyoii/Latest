@@ -81,6 +81,8 @@ final class UpdateCheckCoordinator: @unchecked Sendable {
 		return operationQueue
 	}()
 	
+
+	
 	/// Initiate the update check, if not already running.
 	func run() {
 		if Thread.isMainThread {
@@ -108,32 +110,34 @@ final class UpdateCheckCoordinator: @unchecked Sendable {
 	/// Performs the update check on the given bundles.
 	private func runUpdateCheck(on bundles: [App.Bundle]) {
 		let repository: UpdateRepository? = bundles.contains(where: { $0.source == .none }) ? UpdateRepository.newRepository() : nil
-		let operations = bundles.compactMap { bundle in
-			return Self.operation(forChecking: bundle, repository: repository) { result in
-				self.didCheck(bundle, result)
-			}
-		}
 		
-		DispatchQueue.global().async {
-			self.performUpdateCheck(with: operations)
+		Task {
+			await withTaskGroup(of: Void.self) { group in
+				for bundle in bundles {
+					group.addTask {
+						await self.check(bundle, using: repository)
+					}
+				}
+			}
+			
+			await MainActor.run {
+				self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self)
+			}
 		}
 	}
 	
-	/// Performs update checks for the given check operations.
-	private func performUpdateCheck(with operations: [UpdateCheckerOperation]) {
-		assert(!Thread.current.isMainThread, "Must not be called on main thread.")
-		
-		// Inform delegate of update check
-		DispatchQueue.main.async {
-			self.progressDelegate?.updateChecker(self, didStartCheckingApps: operations.count)
-		}
-		
-		// Start update check
-		self.updateOperationQueue.addOperations(operations, waitUntilFinished: true)
+	private func check(_ bundle: App.Bundle, using repository: UpdateRepository?) async {
+		return await withCheckedContinuation { continuation in
+			let operation = Self.operation(forChecking: bundle, repository: repository) { result in
+				self.didCheck(bundle, result)
+				continuation.resume()
+			}
 			
-		DispatchQueue.main.async {
-			// Update Checks finished
-			self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self)
+			if let operation {
+				self.updateOperationQueue.addOperation(operation)
+			} else {
+				continuation.resume()
+			}
 		}
 	}
     

@@ -55,7 +55,7 @@ struct AppListSnapshot {
 			}
 
 			// Filter installed updates
-			if !AppListSettings.shared.showInstalledUpdates && !(app.updateAvailable || app.isIgnored) {
+			if !AppListSettings.shared.showInstalledUpdates && !(app.updateAvailable || app.isIgnored || app.isPendingCheck) {
 				return false
 			}
 						
@@ -88,12 +88,12 @@ struct AppListSnapshot {
 		})
 		
 		// Build final list. This is a very inefficient solution. Find a better one
-		var availableUpdates = filteredApps.filter({ $0.updateAvailable && !$0.isIgnored }).map({ Entry.app($0) })
+		var availableUpdates = filteredApps.filter({ ($0.updateAvailable || $0.isPendingCheck) && !$0.isIgnored }).map({ Entry.app($0) })
 		if !availableUpdates.isEmpty {
 			availableUpdates = [.section(Self.updatableAppsSection(withCount: availableUpdates.count))] + availableUpdates
 		}
 		
-		var installedUpdates = filteredApps.filter({ !$0.updateAvailable && !$0.isIgnored }).map({ Entry.app($0) })
+		var installedUpdates = filteredApps.filter({ !$0.updateAvailable && !$0.isPendingCheck && !$0.isIgnored }).map({ Entry.app($0) })
 		if !installedUpdates.isEmpty {
 			installedUpdates = [.section(Self.updatedAppsSection(withCount: installedUpdates.count))] + installedUpdates
 		}

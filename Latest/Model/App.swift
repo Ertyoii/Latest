@@ -20,24 +20,31 @@ final class App: @unchecked Sendable {
 	/// Whether the app is ignored.
 	let isIgnored: Bool
 	
+	/// Whether the app is currently pending an update check (used to stabilize list on startup).
+	let isPendingCheck: Bool
+	
 	
 	// MARK: - Initialization
 	
 	/// Initializes the app with the given parameters.
-	init(bundle: App.Bundle, update: Result<Update, Error>?, isIgnored: Bool) {
+
+	
+	/// Initializes the app with the given parameters.
+	init(bundle: App.Bundle, update: Result<Update, Error>?, isIgnored: Bool, isPendingCheck: Bool = false) {
 		self.bundle = bundle
 		self.updateResult = Self.sanitize(update: update, for: bundle)
 		self.isIgnored = isIgnored
+		self.isPendingCheck = isPendingCheck
 	}
 	
 	/// Returns a new app object with an updated bundle.
 	func with(bundle: Bundle) -> App {
-		return App(bundle: bundle, update: self.updateResult, isIgnored: self.isIgnored)
+		return App(bundle: bundle, update: self.updateResult, isIgnored: self.isIgnored, isPendingCheck: self.isPendingCheck)
 	}
 	
 	/// Returns a new app object with an updated ignored state.
 	func with(ignoredState: Bool) -> App {
-		return App(bundle: self.bundle, update: self.updateResult, isIgnored: ignoredState)
+		return App(bundle: self.bundle, update: self.updateResult, isIgnored: ignoredState, isPendingCheck: self.isPendingCheck)
 	}
 	
 	

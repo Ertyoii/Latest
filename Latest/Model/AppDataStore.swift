@@ -103,12 +103,16 @@ final class AppDataStore: AppProviding, @unchecked Sendable {
 	func set(appBundles: Set<App.Bundle>) -> Set<App> {
 		self.updateQueue.sync {
 			let oldApps = self.apps
+			let cachedUpdatableApps = self.cachedUpdatableAppIdentifiers
+			
 			self.apps = Set(appBundles.map({ bundle in
 				if let app = oldApps.first(where: { $0.identifier == bundle.identifier }) {
 					return app.with(bundle: bundle)
 				}
 				
-				return App(bundle: bundle, update: nil, isIgnored: self.isIdentifierIgnored(bundle.bundleIdentifier))
+				// New apps start as pending check if they were known to have updates
+				let isPendingCheck = cachedUpdatableApps.contains(bundle.bundleIdentifier)
+				return App(bundle: bundle, update: nil, isIgnored: self.isIdentifierIgnored(bundle.bundleIdentifier), isPendingCheck: isPendingCheck)
 			}))
 			
 			return self.apps.subtracting(oldApps)
@@ -122,7 +126,7 @@ final class AppDataStore: AppProviding, @unchecked Sendable {
 				fatalError("App not in data store")
 			}
 			
-			let app = App(bundle: bundle, update: update, isIgnored: oldApp.isIgnored)
+			let app = App(bundle: bundle, update: update, isIgnored: oldApp.isIgnored, isPendingCheck: false)
 			self.update(app)
 			
 			return app
@@ -172,6 +176,22 @@ final class AppDataStore: AppProviding, @unchecked Sendable {
 	}
 
 		
+	// MARK: - Update Caching
+	
+	/// The key for storing a list of apps that had updates in the last session.
+	private static let CachedUpdatesKey = "CachedUpdatesKey"
+	
+	/// Returns the identifiers of apps that had updates in the last session.
+	private var cachedUpdatableAppIdentifiers: Set<String> {
+		return Set((UserDefaults.standard.array(forKey: Self.CachedUpdatesKey) as? [String]) ?? [])
+	}
+	
+	private func cacheUpdatableApps(_ apps: [App]) {
+		let identifiers = apps.filter({ $0.updateAvailable && !$0.isIgnored }).map({ $0.bundleIdentifier })
+		UserDefaults.standard.set(identifiers, forKey: Self.CachedUpdatesKey)
+	}
+
+		
 	// MARK: - Observer Handling
 	
 	/// A mapping of observers associated with apps.
@@ -194,6 +214,8 @@ final class AppDataStore: AppProviding, @unchecked Sendable {
 		
 	/// Notifies observers about state changes.
 	@MainActor private func notifyObservers(_ apps: [App]) {
+		// Cache the current state for the next launch
+		self.cacheUpdatableApps(apps)
 		observers.values.forEach { $0(apps) }
 	}
 		
