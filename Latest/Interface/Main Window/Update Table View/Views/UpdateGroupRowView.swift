@@ -10,8 +10,8 @@ import Cocoa
 
 /// The row view used by the group rows in the update tableView
 class UpdateGroupRowView: NSTableRowView {
-	// Prevent any row view drawing
-	override func drawBackground(in dirtyRect: NSRect) {}
-	
-	override func drawSeparator(in dirtyRect: NSRect) {}
+    // Prevent any row view drawing
+    override func drawBackground(in _: NSRect) {}
+
+    override func drawSeparator(in _: NSRect) {}
 }

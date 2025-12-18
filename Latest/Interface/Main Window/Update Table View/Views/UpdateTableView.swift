@@ -10,19 +10,17 @@ import Cocoa
 
 /// The tableView behind the updates list
 class UpdateTableView: NSTableView {
-
     /// Only the separator lines for populated rows will be drawn
-    override func drawGrid(inClipRect clipRect: NSRect) {}
- 
-    override func menu(for event: NSEvent) -> NSMenu? {
-        let clickedPoint = self.convert(event.locationInWindow, from: nil)
-        let row = self.row(at: clickedPoint)
+    override func drawGrid(inClipRect _: NSRect) {}
 
-        if row < 0 || self.delegate?.tableView!(self, isGroupRow: row) ?? false {
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let clickedPoint = convert(event.locationInWindow, from: nil)
+        let row = row(at: clickedPoint)
+
+        if row < 0 || delegate?.tableView!(self, isGroupRow: row) ?? false {
             return nil
         }
-        
+
         return super.menu(for: event)
     }
-    
 }

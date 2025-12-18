@@ -10,76 +10,74 @@ import AppKit
 
 /// Base view controller for settings views.
 class SettingsTabItemViewController: NSViewController {
-	
-	@IBOutlet weak var animatingTrailingConstraint: NSLayoutConstraint!
-	@IBOutlet weak var animatingBottomConstraint: NSLayoutConstraint!
-	
-	/// Asks the controller to prepare its contents for animation.
-	///
-	/// This controller deactivates two constraints which allow the window frame to be animated.
-	func prepareForAnimation() {
-		animatingTrailingConstraint.priority = .init(10)
-		animatingBottomConstraint.priority = .init(10)
-	}
-	
-	/// Asks the controller to revert any changes to its contents done for animating.
-	///
-	/// This controller deactivates two constraints which allow the window frame to be animated.
-	func commitAnimation() {
-		animatingTrailingConstraint.priority = .required
-		animatingBottomConstraint.priority = .required
-	}
+    @IBOutlet var animatingTrailingConstraint: NSLayoutConstraint!
+    @IBOutlet var animatingBottomConstraint: NSLayoutConstraint!
+
+    /// Asks the controller to prepare its contents for animation.
+    ///
+    /// This controller deactivates two constraints which allow the window frame to be animated.
+    func prepareForAnimation() {
+        animatingTrailingConstraint.priority = .init(10)
+        animatingBottomConstraint.priority = .init(10)
+    }
+
+    /// Asks the controller to revert any changes to its contents done for animating.
+    ///
+    /// This controller deactivates two constraints which allow the window frame to be animated.
+    func commitAnimation() {
+        animatingTrailingConstraint.priority = .required
+        animatingBottomConstraint.priority = .required
+    }
 }
 
 /// Tab bar controller handling animation transitions between tab items.
 class SettingsTabViewController: NSTabViewController {
-	
-	// MARK: - View Lifecycle
-	
-	override func viewWillAppear() {
-		super.viewWillAppear()
-		prepareForPresentation(of: tabView.selectedTabViewItem)
-	}
-	
-	override func viewDidAppear() {
-		super.viewDidAppear()
-		commitPresentation(of: tabView.selectedTabViewItem, animated: false)
-	}
+    // MARK: - View Lifecycle
 
-	// MARK: - Tab View
-	
-    override func tabView(_ tabView: NSTabView, willSelect tabViewItem: NSTabViewItem?) {
-        super.tabView(tabView, willSelect: tabViewItem)
-		prepareForPresentation(of: tabViewItem)
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        prepareForPresentation(of: tabView.selectedTabViewItem)
     }
 
-	override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
-		super.tabView(tabView, didSelect: tabViewItem)
-		commitPresentation(of: tabViewItem, animated: true)
-	}
-	
-	// MARK: - Animation
-	
-	private lazy var tabViewSizes: [NSTabViewItem: NSSize] = [:]
-	
-	private func prepareForPresentation(of tabViewItem: NSTabViewItem?) {
-		(tabViewItem?.viewController as? SettingsTabItemViewController)?.prepareForAnimation()
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        commitPresentation(of: tabView.selectedTabViewItem, animated: false)
+    }
 
-		// Cache the size of the tab item
-		if let tabViewItem = tabViewItem, let size = tabViewItem.view?.frame.size {
-			tabViewSizes[tabViewItem] = size
-		}
-	}
-	
-	private func commitPresentation(of tabViewItem: NSTabViewItem?, animated: Bool) {
-		if let tabViewItem = tabViewItem {
-			view.window?.title = tabViewItem.label
-			resizeWindowToFit(tabViewItem: tabViewItem, animated: animated)
-		}
-	}
-	
+    // MARK: - Tab View
+
+    override func tabView(_ tabView: NSTabView, willSelect tabViewItem: NSTabViewItem?) {
+        super.tabView(tabView, willSelect: tabViewItem)
+        prepareForPresentation(of: tabViewItem)
+    }
+
+    override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
+        super.tabView(tabView, didSelect: tabViewItem)
+        commitPresentation(of: tabViewItem, animated: true)
+    }
+
+    // MARK: - Animation
+
+    private lazy var tabViewSizes: [NSTabViewItem: NSSize] = [:]
+
+    private func prepareForPresentation(of tabViewItem: NSTabViewItem?) {
+        (tabViewItem?.viewController as? SettingsTabItemViewController)?.prepareForAnimation()
+
+        // Cache the size of the tab item
+        if let tabViewItem, let size = tabViewItem.view?.frame.size {
+            tabViewSizes[tabViewItem] = size
+        }
+    }
+
+    private func commitPresentation(of tabViewItem: NSTabViewItem?, animated: Bool) {
+        if let tabViewItem {
+            view.window?.title = tabViewItem.label
+            resizeWindowToFit(tabViewItem: tabViewItem, animated: animated)
+        }
+    }
+
     /// Resizes the window so that it fits the content of the tab.
-	private func resizeWindowToFit(tabViewItem: NSTabViewItem, animated: Bool) {
+    private func resizeWindowToFit(tabViewItem: NSTabViewItem, animated: Bool) {
         guard let size = tabViewSizes[tabViewItem], let window = view.window else {
             return
         }
@@ -89,20 +87,20 @@ class SettingsTabViewController: NSTabViewController {
         let toolbarHeight = window.frame.size.height - contentFrame.size.height
         let newOrigin = NSPoint(x: window.frame.origin.x, y: window.frame.origin.y + toolbarHeight)
         let newFrame = NSRect(origin: newOrigin, size: contentFrame.size)
-		
-		window.setFrame(newFrame, display: false, animate: animated)
 
-		if animated {
-			let animatedController = tabViewItem.viewController as? SettingsTabItemViewController
-			NSAnimationContext.runAnimationGroup { context in
-				context.duration = window.animationResizeTime(newFrame)
-			} completionHandler: { [weak animatedController] in
-				Task { @MainActor in
-					animatedController?.commitAnimation()
-				}
-			}
-		} else {
-			(tabViewItem.viewController as? SettingsTabItemViewController)?.commitAnimation()
-		}
+        window.setFrame(newFrame, display: false, animate: animated)
+
+        if animated {
+            let animatedController = tabViewItem.viewController as? SettingsTabItemViewController
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = window.animationResizeTime(newFrame)
+            } completionHandler: { [weak animatedController] in
+                Task { @MainActor in
+                    animatedController?.commitAnimation()
+                }
+            }
+        } else {
+            (tabViewItem.viewController as? SettingsTabItemViewController)?.commitAnimation()
+        }
     }
 }

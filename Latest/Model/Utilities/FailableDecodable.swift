@@ -12,13 +12,11 @@ import Foundation
 ///
 /// Ensures that the overall decoding succeeds even if individual items may fail to decode.
 /// Based on: https://stackoverflow.com/a/46369152/4113940
-struct FailableDecodable<Content : Decodable> : Decodable {
-	
-	let base: Content?
-	
-	init(from decoder: Decoder) throws {
-		let container = try decoder.singleValueContainer()
-		self.base = try? container.decode(Content.self)
-	}
-	
+struct FailableDecodable<Content: Decodable>: Decodable {
+    let base: Content?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        base = try? container.decode(Content.self)
+    }
 }
