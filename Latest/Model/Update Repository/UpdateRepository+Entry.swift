@@ -18,9 +18,6 @@ extension UpdateRepository {
 
 		enum CodingKeys: String, CodingKey {
 			case artifacts
-			case desc
-			case homepage
-			case name
 			case token
 			case rawVersion = "version"
 			case minimumOSVersion = "depends_on"
@@ -54,15 +51,6 @@ extension UpdateRepository {
 		/// The raw version string of the app.
 		private let rawVersion: String
 
-		/// Human-readable names provided by Homebrew.
-		private let displayNames: [String]
-
-		/// The short Homebrew cask description.
-		private let desc: String?
-
-		/// The homepage for the app, if Homebrew provides one.
-		private let homepage: URL?
-
 		/// The brew identifier for the app.
 		let token: String
 
@@ -75,9 +63,6 @@ extension UpdateRepository {
 			// Trivial keys
 			rawVersion = try container.decode(String.self, forKey: .rawVersion)
 			token = try container.decode(String.self, forKey: .token)
-			displayNames = (try? container.decode([String].self, forKey: .name)) ?? []
-			desc = try container.decodeIfPresent(String.self, forKey: .desc)
-			homepage = try container.decodeIfPresent(URL.self, forKey: .homepage)
 
 			// Artifacts: Contains application names and bundle identifiers.
 			let artifacts = try container.decode([FailableDecodable<Artifact>].self, forKey: .artifacts)
@@ -111,47 +96,11 @@ extension UpdateRepository {
 			return VersionParser.parse(combinedVersionNumber: rawVersion)
 		}
 
-		/// Fallback release notes synthesized from Homebrew cask metadata.
-		var releaseNotes: App.Update.ReleaseNotes {
-			let title = (displayNames.first ?? names.sorted().first ?? token).htmlEscaped
-			let version = rawVersion.htmlEscaped
-			let caskURL = "https://formulae.brew.sh/cask/\(token.urlPathEscaped)"
-
-			var html = """
-			<h2>\(title)</h2>
-			<p><strong>Version:</strong> \(version)</p>
-			"""
-
-			if let desc, !desc.isEmpty {
-				html += "\n<p>\(desc.htmlEscaped)</p>"
-			}
-
-			html += "\n<p><strong>Homebrew Cask:</strong> <a href=\"\(caskURL)\">\(token.htmlEscaped)</a></p>"
-
-			if let homepage {
-				let url = homepage.absoluteString
-				html += "\n<p><strong>Homepage:</strong> <a href=\"\(url.htmlEscaped)\">\(url.htmlEscaped)</a></p>"
-			}
-
-			return .html(string: html)
+		/// Homebrew cask metadata does not include release notes.
+		var releaseNotes: App.Update.ReleaseNotes? {
+			nil
 		}
 
-	}
-
-}
-
-fileprivate extension String {
-
-	var htmlEscaped: String {
-		replacingOccurrences(of: "&", with: "&amp;")
-			.replacingOccurrences(of: "\"", with: "&quot;")
-			.replacingOccurrences(of: "'", with: "&#39;")
-			.replacingOccurrences(of: "<", with: "&lt;")
-			.replacingOccurrences(of: ">", with: "&gt;")
-	}
-
-	var urlPathEscaped: String {
-		addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? self
 	}
 
 }

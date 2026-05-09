@@ -49,6 +49,8 @@ class ReleaseNotesTextViewController: NSViewController {
      */
     private func format(_ attributedString: NSAttributedString) -> NSAttributedString {
         let string = NSMutableAttributedString(attributedString: attributedString)
+		string.mutableString.replaceOccurrences(of: "\t", with: " ", options: [], range: NSMakeRange(0, string.length))
+
         let textRange = NSMakeRange(0, attributedString.length)
         let defaultFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         
@@ -65,6 +67,14 @@ class ReleaseNotesTextViewController: NSViewController {
         // Reset font
         string.removeAttribute(.font, range: textRange)
         string.addAttribute(.font, value: defaultFont, range: textRange)
+
+		let paragraphStyle = NSMutableParagraphStyle()
+		paragraphStyle.alignment = .left
+		paragraphStyle.firstLineHeadIndent = 0
+		paragraphStyle.headIndent = 0
+		paragraphStyle.tabStops = []
+		string.removeAttribute(.paragraphStyle, range: textRange)
+		string.addAttribute(.paragraphStyle, value: paragraphStyle, range: textRange)
         
         // Copy traits like italic and bold
         attributedString.enumerateAttribute(NSAttributedString.Key.font, in: textRange, options: .reverse) { (fontObject, range, stopPointer) in

@@ -49,7 +49,7 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertEqual(VersionParser.parse(combinedVersionNumber: ""), Version(versionNumber: nil, buildNumber: nil))
 	}
 
-	func testHomebrewCaskEntryProvidesFormattedFallbackReleaseNotes() throws {
+	func testHomebrewCaskEntryDoesNotUseMetadataAsReleaseNotes() throws {
 		let json = """
 		{
 			"token": "example-app",
@@ -71,15 +71,25 @@ final class VersionParserTest: XCTestCase {
 		"""
 		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
 
-		guard case .html(let html) = entry.releaseNotes else {
-			return XCTFail("Expected Homebrew entries to provide fallback HTML release notes.")
-		}
+		XCTAssertNil(entry.releaseNotes)
+	}
 
-		XCTAssertTrue(html.contains("<h2>Example App</h2>"))
-		XCTAssertTrue(html.contains("Notes, tasks &amp; reminders"))
-		XCTAssertTrue(html.contains("<strong>Version:</strong> 2.4.1"))
-		XCTAssertTrue(html.contains("https://formulae.brew.sh/cask/example-app"))
-		XCTAssertTrue(html.contains("<a href=\"https://example.com\">https://example.com</a>"))
+	func testMarkdownReleaseNotesAreRenderedAsRichTextLists() throws {
+		let markdown = """
+		## IINA 1.4.2
+
+		### New
+
+		* * Added gapless audio playback options, #5433.
+		* The system media keys are now configurable, #5933.
+		"""
+
+		let string = try ReleaseNotesMarkup.attributedString(from: markdown, baseURL: nil).get()
+
+		XCTAssertTrue(string.string.contains("IINA 1.4.2"))
+		XCTAssertTrue(string.string.contains("Added gapless audio playback options"))
+		XCTAssertFalse(string.string.contains("* Added"))
+		XCTAssertFalse(string.string.contains("•        •"))
 	}
 	
 }

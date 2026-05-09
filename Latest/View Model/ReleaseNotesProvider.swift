@@ -6,6 +6,8 @@
 //  Copyright © 2022 Max Langer. All rights reserved.
 //
 
+import AppKit
+
 /// Handles release notes conversion and loading.
 ///
 /// The object provides release notes in a uniform representation and caches remote contents for faster access.
@@ -60,11 +62,11 @@ class ReleaseNotesProvider {
 		if let releaseNotes = app.releaseNotes {
 			switch releaseNotes {
 				case .html(let html):
-					completion(self.releaseNotes(from: html, baseURL: nil))
+					completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: nil))
 				case .url(let url):
 					self.releaseNotes(from: url, with: completion)
 				case .encoded(let data):
-					completion(self.releaseNotes(from: data))
+					completion(ReleaseNotesMarkup.attributedString(from: data, baseURL: nil))
 			}
 		} else if let error = app.error {
 			completion(.failure(error))
@@ -79,33 +81,30 @@ class ReleaseNotesProvider {
 		webContentLoader.load(from: url) { result in
 			switch result {
 			case .success(let html):
-				completion(self.releaseNotes(from: html, baseURL: url))
+				completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: url))
 			case .failure(let error):
 				completion(.failure(error))
 			}
 		}
 	}
-	
-	
-	/// Returns rich text from the given HTML string.
-	private func releaseNotes(from html: String, baseURL: URL?) -> ReleaseNotes {
-		guard let data = html.data(using: .utf16) else {
-			return .failure(LatestError.releaseNotesUnavailable)
+
+}
+
+enum ReleaseNotesMarkup {
+
+	static func attributedString(from markup: String, baseURL: URL?) -> ReleaseNotesProvider.ReleaseNotes {
+		if Self.prefersMarkdown(markup) {
+			return .success(Self.attributedString(fromMarkdown: markup))
 		}
-		
-		if let baseURL, let string = NSAttributedString(html: data, baseURL: baseURL, documentAttributes: nil) {
-			return .success(string)
-		}
-		
-		guard let string = NSAttributedString(html: data, documentAttributes: nil) else {
-			return .failure(LatestError.releaseNotesUnavailable)
-		}
-		
-		return .success(string)
+
+		return Self.attributedString(fromHTML: markup, baseURL: baseURL)
 	}
 
-	/// Extracts release notes from the given data.
-	private func releaseNotes(from data: Data) -> ReleaseNotes {
+	static func attributedString(from data: Data, baseURL: URL?) -> ReleaseNotesProvider.ReleaseNotes {
+		if let markup = String(data: data, encoding: .utf8), Self.prefersMarkdown(markup) {
+			return Self.attributedString(from: markup, baseURL: baseURL)
+		}
+
 		var options : [NSAttributedString.DocumentReadingOptionKey: Any] = [.documentType: NSAttributedString.DocumentType.html]
 		
 		var string: NSAttributedString
@@ -129,6 +128,83 @@ class ReleaseNotesProvider {
 		}
 		
 		return .success(string)
+	}
+
+	private static func attributedString(fromMarkdown markdown: String) -> NSAttributedString {
+		let result = NSMutableAttributedString()
+		let headingFont = NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)
+		let bodyFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+
+		markdown.components(separatedBy: .newlines).forEach { line in
+			let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+			let text: String
+			let font: NSFont
+
+			if let headingRange = trimmedLine.range(of: #"^#{1,6}\s+"#, options: .regularExpression) {
+				text = String(trimmedLine[headingRange.upperBound...])
+				font = headingFont
+			} else if let bulletRange = trimmedLine.range(of: #"^(\*|-|•)\s+"#, options: .regularExpression) {
+				text = "• " + Self.removingLeadingBulletMarkers(from: String(trimmedLine[bulletRange.upperBound...]))
+				font = bodyFont
+			} else if let numberedRange = trimmedLine.range(of: #"^\d+\.\s+"#, options: .regularExpression) {
+				text = String(trimmedLine[..<numberedRange.upperBound]) + String(trimmedLine[numberedRange.upperBound...])
+				font = bodyFont
+			} else {
+				text = trimmedLine
+				font = bodyFont
+			}
+
+			result.append(NSAttributedString(string: text + "\n", attributes: [.font: font]))
+		}
+
+		return result
+	}
+
+	private static func attributedString(fromHTML html: String, baseURL: URL?) -> ReleaseNotesProvider.ReleaseNotes {
+		guard let data = html.data(using: .utf16) else {
+			return .failure(LatestError.releaseNotesUnavailable)
+		}
+
+		if let baseURL, let string = NSAttributedString(html: data, baseURL: baseURL, documentAttributes: nil) {
+			return .success(string)
+		}
+
+		guard let string = NSAttributedString(html: data, documentAttributes: nil) else {
+			return .failure(LatestError.releaseNotesUnavailable)
+		}
+
+		return .success(string)
+	}
+
+	private static func prefersMarkdown(_ string: String) -> Bool {
+		guard !string.containsHTMLTag else { return false }
+
+		return string.split(whereSeparator: \.isNewline).contains { line in
+			let trimmedLine = line.drop(while: \.isWhitespace)
+			return trimmedLine.hasPrefix("#") ||
+			trimmedLine.hasPrefix("* ") ||
+			trimmedLine.hasPrefix("- ") ||
+			trimmedLine.hasPrefix("• ") ||
+			trimmedLine.range(of: #"^\d+\. "#, options: .regularExpression) != nil
+		}
+	}
+
+	private static func removingLeadingBulletMarkers(from string: String) -> String {
+		var result = string.trimmingCharacters(in: .whitespaces)
+
+		while let range = result.range(of: #"^(\*|-|•)\s+"#, options: .regularExpression) {
+			result = String(result[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+		}
+
+		return result
+	}
+
+}
+
+private extension String {
+
+	var containsHTMLTag: Bool {
+		range(of: #"<\s*/?\s*(html|body|p|br|div|span|ul|ol|li|h[1-6]|a|strong|em|table)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
 	}
 
 }
