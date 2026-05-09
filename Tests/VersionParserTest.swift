@@ -48,5 +48,38 @@ final class VersionParserTest: XCTestCase {
 		
 		XCTAssertEqual(VersionParser.parse(combinedVersionNumber: ""), Version(versionNumber: nil, buildNumber: nil))
 	}
+
+	func testHomebrewCaskEntryProvidesFormattedFallbackReleaseNotes() throws {
+		let json = """
+		{
+			"token": "example-app",
+			"version": "2.4.1",
+			"name": ["Example App"],
+			"desc": "Notes, tasks & reminders",
+			"homepage": "https://example.com",
+			"depends_on": {
+				"macos": {
+					">=": ["13.0"]
+				}
+			},
+			"artifacts": [
+				{
+					"app": ["Example App.app"]
+				}
+			]
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		guard case .html(let html) = entry.releaseNotes else {
+			return XCTFail("Expected Homebrew entries to provide fallback HTML release notes.")
+		}
+
+		XCTAssertTrue(html.contains("<h2>Example App</h2>"))
+		XCTAssertTrue(html.contains("Notes, tasks &amp; reminders"))
+		XCTAssertTrue(html.contains("<strong>Version:</strong> 2.4.1"))
+		XCTAssertTrue(html.contains("https://formulae.brew.sh/cask/example-app"))
+		XCTAssertTrue(html.contains("<a href=\"https://example.com\">https://example.com</a>"))
+	}
 	
 }
