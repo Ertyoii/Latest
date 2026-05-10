@@ -218,6 +218,30 @@ final class BundleCollectorTest: XCTestCase {
 		XCTAssertNil(bundle.version.versionNumber)
 	}
 
+	func testBundleModificationDateUsesContentsWhenPackageRootHasArchiveTimestamp() throws {
+		let directory = try makeTemporaryDirectory()
+		let appURL = try makeAppBundle(
+			named: "Archive Timestamp",
+			in: directory,
+			info: [
+				"CFBundleName": "Archive Timestamp",
+				"CFBundleExecutable": "Archive Timestamp",
+				"CFBundleIdentifier": "com.example.archive-timestamp",
+				"CFBundleVersion": "1"
+			]
+		)
+		let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
+		let archiveTimestamp = Date(timeIntervalSince1970: 315504000)
+		let contentsTimestamp = Date(timeIntervalSince1970: 1_778_179_586)
+
+		try setModificationDate(archiveTimestamp, for: appURL)
+		try setModificationDate(contentsTimestamp, for: contentsURL)
+
+		let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
+
+		XCTEqual(bundle.modificationDate, contentsTimestamp)
+	}
+
 	private func makeTemporaryDirectory() throws -> URL {
 		let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -237,6 +261,10 @@ final class BundleCollectorTest: XCTestCase {
 		try data.write(to: plistURL)
 
 		return appURL
+	}
+
+	private func setModificationDate(_ date: Date, for url: URL) throws {
+		try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
 	}
 
 }

@@ -44,8 +44,24 @@ extension App {
 			self.fileURL = fileURL
 			self.source = source
 			
-			let date = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-			self.modificationDate = date ?? Date.distantPast
+			self.modificationDate = Self.modificationDate(forBundleAt: fileURL)
+		}
+
+		private static func modificationDate(forBundleAt fileURL: URL) -> Date {
+			let candidateURLs = [
+				fileURL,
+				fileURL.appendingPathComponent("Contents", isDirectory: true),
+				fileURL.appendingPathComponent("Contents/Info.plist", isDirectory: false),
+				fileURL.appendingPathComponent("Contents/PkgInfo", isDirectory: false),
+				fileURL.appendingPathComponent("Contents/MacOS", isDirectory: true),
+				fileURL.appendingPathComponent("Contents/Resources", isDirectory: true),
+				fileURL.appendingPathComponent("Contents/Frameworks", isDirectory: true),
+				fileURL.appendingPathComponent("Contents/_CodeSignature/CodeResources", isDirectory: false)
+			]
+
+			return candidateURLs.compactMap { url in
+				try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+			}.max() ?? Date.distantPast
 		}
 
 
@@ -108,4 +124,3 @@ extension App.Bundle: CustomDebugStringConvertible {
 		return "\(name), \(version)"
 	}
 }
-
