@@ -38,8 +38,11 @@ struct AppListSettings: Observable {
 	var observers = [UUID : ObservationHandler]()
 
 	private init() {
-		// Show installed updates by default
-		UserDefaults.standard.register(defaults: [ShowInstalledUpdatesKey: true])
+		UserDefaults.standard.register(defaults: [
+			ShowInstalledUpdatesKey: true,
+			IncludeUnsupportedAppsKey: true,
+			IncludeAppsWithLimitedSupportKey: true
+		])
 	}
 	
 	static var shared: AppListSettings = {

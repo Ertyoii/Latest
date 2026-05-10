@@ -1,0 +1,4 @@
+interface:
+  display_name: "Replace macOS App Build"
+  short_description: "Build, install, register, and clean local macOS app bundles."
+  default_prompt: "Use this skill to replace an installed /Applications macOS app with the latest local build, update Spotlight and Dock resolution, and clean stale build artifacts."

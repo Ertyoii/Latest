@@ -15,11 +15,13 @@ class AppDirectory {
 	let url : URL
 	
 	/// The bundles collected within this directory.
-	var bundles = [App.Bundle]() {
-		didSet {
-			handler()
+	var bundles: [App.Bundle] {
+		collectionQueue.sync {
+			collectedBundles
 		}
 	}
+
+	private var collectedBundles = [App.Bundle]()
 	
 	typealias UpdateHandler = () -> Void
 	
@@ -27,7 +29,7 @@ class AppDirectory {
 	let handler: UpdateHandler
 	
 	/// The queue on which updates to the collection are being performed.
-	private var collectionQueue = DispatchQueue(label: "DataStoreQueue")
+	private let collectionQueue: DispatchQueue
 
 	
 	/// The file system listener
@@ -47,6 +49,7 @@ class AppDirectory {
 	init(url: URL, updateHandler: @escaping UpdateHandler) {
 		self.url = url
 		self.handler = updateHandler
+		self.collectionQueue = DispatchQueue(label: "AppDirectoryCollectionQueue.\(url.path)")
 		
 		resumeTracking()
 	}
@@ -63,7 +66,10 @@ class AppDirectory {
 	
 	/// Triggers an update run
 	private func collectBundles() {
-		bundles = BundleCollector.collectBundles(at: self.url)
+		collectionQueue.async {
+			self.collectedBundles = BundleCollector.collectBundles(at: self.url)
+			self.handler()
+		}
 	}
 	
 }

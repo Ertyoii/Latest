@@ -26,11 +26,15 @@ enum BundleCollector {
 
 	/// Returns a list of application bundles at the given URL.
 	static func collectBundles(at url: URL) -> [App.Bundle] {
-		let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles, .skipsPackageDescendants])
+		let enumerator = FileManager.default.enumerator(
+			at: url,
+			includingPropertiesForKeys: [.isApplicationKey, .isPackageKey, .contentModificationDateKey],
+			options: [.skipsHiddenFiles, .skipsPackageDescendants]
+		)
 
 		var bundles = [App.Bundle]()
 		while let bundleURL = enumerator?.nextObject() as? URL {
-			guard !excludedSubfolders.contains(where: { bundleURL.path.contains($0) }) else {
+			guard !isExcludedSubfolder(bundleURL) else {
 				enumerator?.skipDescendants()
 				continue
 			}
@@ -52,12 +56,15 @@ enum BundleCollector {
 
 	// MARK: - Utilities
 
+	private static func isExcludedSubfolder(_ url: URL) -> Bool {
+		let pathComponents = Set(url.pathComponents)
+		return excludedSubfolders.contains(where: pathComponents.contains)
+	}
+
 	/// Returns a bundle representation for the app at the given url, without Spotlight Metadata.
 	static private func bundle(forAppAt url: URL) -> App.Bundle? {
 		guard let appBundle = Bundle(url: url),
-			  let buildNumber = appBundle.uncachedBundleVersion,
 			  let identifier = appBundle.bundleIdentifier,
-			  let versionNumber = appBundle.versionNumber,
 			  let appName = appBundle.bundleName else {
 			return nil
 		}
@@ -73,7 +80,10 @@ enum BundleCollector {
 		}
 
 		// Build version. Skip bundle if no version is provided.
-		let version = Version(versionNumber: VersionParser.parse(versionNumber: versionNumber), buildNumber: VersionParser.parse(buildNumber: buildNumber))
+		let version = Version(
+			versionNumber: appBundle.versionNumber.flatMap { VersionParser.parse(versionNumber: $0) },
+			buildNumber: appBundle.uncachedBundleVersion.flatMap { VersionParser.parse(buildNumber: $0) }
+		)
 		guard !version.isEmpty else {
 			return nil
 		}
@@ -100,6 +110,8 @@ fileprivate extension Bundle {
 	/// Returns the bundle name when working without Spotlight.
 	var bundleName: String? {
 		return infoDictionary?["CFBundleName"] as? String
+			?? infoDictionary?["CFBundleDisplayName"] as? String
+			?? infoDictionary?["CFBundleExecutable"] as? String
 	}
 
 	/// Returns the short version string when working without Spotlight.

@@ -26,19 +26,24 @@ class AppDirectoryStore {
 	
 	/// The URLs stored in this object.
 	var URLs: [URL] {
-		Self.defaultURLs + customURLs
+		(Self.defaultURLs + customURLs).deduplicated()
 	}
 	
 	/// Set of URLs that will always be checked.
 	private static let defaultURLs: [URL] = {
 		let fileManager = FileManager.default
-		let urls = [FileManager.SearchPathDomainMask.localDomainMask, .userDomainMask].flatMap { (domainMask) -> [URL] in
+		let applicationURLs = [FileManager.SearchPathDomainMask.localDomainMask, .userDomainMask].flatMap { (domainMask) -> [URL] in
 			return fileManager.urls(for: .applicationDirectory, in: domainMask)
 		}
-		
-		return urls.filter { url -> Bool in
+
+		let systemApplicationURLs = [
+			URL(filePath: "/System/Applications", directoryHint: .isDirectory),
+			URL(filePath: "/System/Library/CoreServices/Applications", directoryHint: .isDirectory)
+		]
+
+		return (applicationURLs + systemApplicationURLs).filter { url -> Bool in
 			return fileManager.fileExists(atPath: url.path)
-		}
+		}.deduplicated()
 	}()
 
 	/// User-definable URLs.
@@ -92,6 +97,15 @@ extension UserDefaults {
 		}
 		set {
 			setValue(newValue, forKey: Self.directoryPathsKey)
+		}
+	}
+}
+
+private extension Array where Element == URL {
+	func deduplicated() -> [URL] {
+		var seen = Set<URL>()
+		return filter { url in
+			seen.insert(url.standardizedFileURL).inserted
 		}
 	}
 }

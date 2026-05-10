@@ -93,3 +93,66 @@ final class VersionParserTest: XCTestCase {
 	}
 	
 }
+
+final class BundleCollectorTest: XCTestCase {
+
+	func testCollectsAppUsingDisplayNameWhenBundleNameIsMissing() throws {
+		let directory = try makeTemporaryDirectory()
+		let appURL = try makeAppBundle(
+			named: "Display Name Only",
+			in: directory,
+			info: [
+				"CFBundleDisplayName": "Display Name Only",
+				"CFBundleExecutable": "Display Name Only",
+				"CFBundleIdentifier": "com.example.display-name-only",
+				"CFBundleShortVersionString": "1.2.3",
+				"CFBundleVersion": "123"
+			]
+		)
+
+		let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
+
+		XCTAssertEqual(bundle.name, "Display Name Only")
+	}
+
+	func testCollectsAppUsingBuildVersionWhenShortVersionIsMissing() throws {
+		let directory = try makeTemporaryDirectory()
+		let appURL = try makeAppBundle(
+			named: "Build Version Only",
+			in: directory,
+			info: [
+				"CFBundleName": "Build Version Only",
+				"CFBundleExecutable": "Build Version Only",
+				"CFBundleIdentifier": "com.example.build-version-only",
+				"CFBundleVersion": "456"
+			]
+		)
+
+		let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
+
+		XCTAssertEqual(bundle.version.buildNumber, "456")
+		XCTAssertNil(bundle.version.versionNumber)
+	}
+
+	private func makeTemporaryDirectory() throws -> URL {
+		let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		addTeardownBlock {
+			try? FileManager.default.removeItem(at: directory)
+		}
+		return directory
+	}
+
+	private func makeAppBundle(named name: String, in directory: URL, info: [String: String]) throws -> URL {
+		let appURL = directory.appendingPathComponent("\(name).app", isDirectory: true)
+		let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
+		let plistURL = contentsURL.appendingPathComponent("Info.plist")
+
+		try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
+		let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+		try data.write(to: plistURL)
+
+		return appURL
+	}
+
+}
