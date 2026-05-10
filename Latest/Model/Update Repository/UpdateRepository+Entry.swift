@@ -18,6 +18,7 @@ extension UpdateRepository {
 
 		enum CodingKeys: String, CodingKey {
 			case artifacts
+			case names = "name"
 			case token
 			case rawVersion = "version"
 			case minimumOSVersion = "depends_on"
@@ -48,6 +49,9 @@ extension UpdateRepository {
 		/// Used for matching app bundles with repository entries.
 		let bundleIdentifiers: Set<String>
 
+		/// Whether this entry was matched through broad cask metadata and must be verified with its bundle identifier.
+		let requiresBundleIdentifierMatch: Bool
+
 		/// The raw version string of the app.
 		private let rawVersion: String
 
@@ -77,8 +81,17 @@ extension UpdateRepository {
 
 					return result
 				}
-			names = Set(artifacts.names)
 			bundleIdentifiers = Set(artifacts.identifiers)
+			let artifactNames = Set(artifacts.names)
+
+			if artifactNames.isEmpty, !bundleIdentifiers.isEmpty {
+				let displayNames = try container.decodeIfPresent([String].self, forKey: .names) ?? []
+				names = Set(displayNames.compactMap(\.homebrewAppBundleName))
+				requiresBundleIdentifierMatch = !names.isEmpty
+			} else {
+				names = artifactNames
+				requiresBundleIdentifierMatch = false
+			}
 
 			// OS Version
 			if let osVersion = try container.decode(MinimumOS.self, forKey: .minimumOSVersion).macos?.version?.first {
@@ -94,6 +107,11 @@ extension UpdateRepository {
 		/// The current version of the app.
 		var version: Version {
 			return VersionParser.parse(combinedVersionNumber: rawVersion)
+		}
+
+		/// Whether the cask represents the default stable channel.
+		var isStableRelease: Bool {
+			return !token.contains("@")
 		}
 
 		/// Homebrew cask metadata does not include release notes.
@@ -134,22 +152,22 @@ fileprivate extension UpdateRepository.Entry {
 		init(from decoder: Decoder) throws {
 			let container = try decoder.container(keyedBy: CodingKeys.self)
 
-			// App names, if present no identifiers will be parsed.
+			var names = [String]()
+			var identifiers = [String]()
+
+			// App names.
 			if let appNames = try? Self.decodeAppNames(container) {
-				self.names = Set(appNames)
-				self.identifiers = []
-				return
+				names.append(contentsOf: appNames)
 			}
 
 			// Extract everything else.
-			var identifiers = (try? Self.decodeZap(container)) ?? []
+			identifiers.append(contentsOf: (try? Self.decodeZap(container)) ?? [])
 			if let uninstall = try? Self.decodeUninstall(container) {
-				names = Set(uninstall.names)
+				names.append(contentsOf: uninstall.names)
 				identifiers.append(contentsOf: uninstall.identifiers)
-			} else {
-				names = []
 			}
 
+			self.names = Set(names)
 			self.identifiers = Set(identifiers.flatMap { path in
 				let string = path as NSString
 				guard !string.pathExtension.isEmpty else { return [String]() }
@@ -185,11 +203,13 @@ fileprivate extension UpdateRepository.Entry {
 		private static func decodeZap(_ container: KeyedDecodingContainer<CodingKeys>) throws -> [String] {
 			enum ZapKeys: String, CodingKey {
 				case trash
+				case delete
 			}
 
 			var nestedContainer = try container.nestedUnkeyedContainer(forKey: .zap)
 			let zapContainer = try nestedContainer.nestedContainer(keyedBy: ZapKeys.self)
-			return try zapContainer.decodeVariable(String.self, forKey: .trash)
+			return ((try? zapContainer.decodeVariable(String.self, forKey: .trash)) ?? [])
+				+ ((try? zapContainer.decodeVariable(String.self, forKey: .delete)) ?? [])
 		}
 
 		private static func decodeUninstall(_ container: KeyedDecodingContainer<CodingKeys>) throws -> (names: [String], identifiers: [String]) {
@@ -241,6 +261,21 @@ fileprivate extension KeyedDecodingContainer {
 			value = try decode([T].self, forKey: key)
 		}
 		return value
+	}
+
+}
+
+fileprivate extension String {
+
+	/// Returns the value as an application bundle name.
+	var homebrewAppBundleName: String? {
+		let name = trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !name.isEmpty else { return nil }
+		guard (name as NSString).pathExtension.caseInsensitiveCompare("app") != .orderedSame else {
+			return name
+		}
+
+		return name + ".app"
 	}
 
 }

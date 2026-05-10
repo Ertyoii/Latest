@@ -74,6 +74,90 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertNil(entry.releaseNotes)
 	}
 
+	func testHomebrewCaskEntryKeepsBundleIdentifiersWhenAppArtifactExists() throws {
+		let json = """
+		{
+			"token": "example-app",
+			"version": "2.4.1",
+			"artifacts": [
+				{
+					"app": ["Example App.app"]
+				},
+				{
+					"zap": [
+						{
+							"trash": [
+								"~/Library/Preferences/com.example.app.plist"
+							],
+							"delete": [
+								"~/Library/Application Support/com.example.helper"
+							]
+						}
+					]
+				}
+			],
+			"depends_on": {
+				"macos": {}
+			}
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		XCTAssertEqual(entry.names, ["Example App.app"])
+		XCTAssertTrue(entry.bundleIdentifiers.contains("com.example.app"))
+		XCTAssertTrue(entry.bundleIdentifiers.contains("com.example.helper"))
+		XCTFalse(entry.requiresBundleIdentifierMatch)
+	}
+
+	func testHomebrewCaskEntryUsesNameStanzaForPkgInstalledApps() throws {
+		let json = """
+		{
+			"token": "garmin-express",
+			"name": ["Garmin Express"],
+			"version": "7.28.0",
+			"artifacts": [
+				{
+					"uninstall": [
+						{
+							"quit": ["com.garmin.renu.client"]
+						}
+					]
+				},
+				{
+					"pkg": ["Install Garmin Express.pkg"]
+				}
+			],
+			"depends_on": {
+				"macos": {}
+			}
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		XCTAssertEqual(entry.names, ["Garmin Express.app"])
+		XCTEqual(entry.bundleIdentifiers, ["com.garmin.renu.client"])
+		XCTTrue(entry.requiresBundleIdentifierMatch)
+	}
+
+	func testHomebrewRepositoryPrefersStableCaskAfterIdentifierMatch() throws {
+		let stable = try homebrewEntry(token: "telegram-desktop", bundleIdentifier: "com.tdesktop.Telegram")
+		let beta = try homebrewEntry(token: "telegram-desktop@beta", bundleIdentifier: "com.tdesktop.Telegram")
+		let other = try homebrewEntry(token: "telegram", bundleIdentifier: "ru.keepcoder.Telegram")
+
+		let entry = UpdateRepository.preferredEntry(from: [other, stable, beta], for: "com.tdesktop.Telegram")
+
+		XCTAssertEqual(entry?.token, "telegram-desktop")
+	}
+
+	func testHomebrewRepositoryPrefersShortestStableCaskWhenIdentifierMatchesMultipleEntries() throws {
+		let stable = try homebrewEntry(token: "zoom", bundleIdentifier: "us.zoom.xos")
+		let admin = try homebrewEntry(token: "zoom-for-it-admins", bundleIdentifier: "us.zoom.xos")
+
+		let entry = UpdateRepository.preferredEntry(from: [admin, stable], for: "us.zoom.xos")
+
+		XCTAssertEqual(entry?.token, "zoom")
+	}
+
 	func testMarkdownReleaseNotesAreRenderedAsRichTextLists() throws {
 		let markdown = """
 		## IINA 1.4.2
@@ -155,4 +239,32 @@ final class BundleCollectorTest: XCTestCase {
 		return appURL
 	}
 
+}
+
+private func homebrewEntry(token: String, bundleIdentifier: String) throws -> UpdateRepository.Entry {
+	let json = """
+	{
+		"token": "\(token)",
+		"version": "1.0",
+		"artifacts": [
+			{
+				"app": ["Example App.app"]
+			},
+			{
+				"zap": [
+					{
+						"trash": [
+							"~/Library/Preferences/\(bundleIdentifier).plist"
+						]
+					}
+				]
+			}
+		],
+		"depends_on": {
+			"macos": {}
+		}
+	}
+	"""
+
+	return try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
 }

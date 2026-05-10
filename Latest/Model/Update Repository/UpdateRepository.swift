@@ -114,17 +114,38 @@ class UpdateRepository {
 		var possibleEntries = entriesByName[name] ?? []
 
 		guard !possibleEntries.isEmpty else { return nil }
+		possibleEntries = possibleEntries.filter {
+			!$0.requiresBundleIdentifierMatch || $0.bundleIdentifiers.contains(bundle.bundleIdentifier)
+		}
+
+		return Self.preferredEntry(from: possibleEntries, for: bundle.bundleIdentifier)
+	}
+
+	static func preferredEntry(from possibleEntries: [Entry], for bundleIdentifier: String) -> Entry? {
+		guard !possibleEntries.isEmpty else { return nil }
 		if possibleEntries.count == 1 {
 			return possibleEntries.first
 		}
 
-		// Match bundle identifier
-		possibleEntries = possibleEntries.filter { entry in
-			entry.bundleIdentifiers.contains(bundle.bundleIdentifier)
+		let matchingIdentifierEntries = possibleEntries.filter { entry in
+			entry.bundleIdentifiers.contains(bundleIdentifier)
+		}
+		if matchingIdentifierEntries.count == 1 {
+			return matchingIdentifierEntries.first
 		}
 
-		// Only return an entry if we fixed the disambiguation
-		return (possibleEntries.count == 1 ? possibleEntries.first : nil)
+		let narrowedEntries = matchingIdentifierEntries.isEmpty ? possibleEntries : matchingIdentifierEntries
+		let stableEntries = narrowedEntries.filter(\.isStableRelease)
+		if stableEntries.count == 1 {
+			return stableEntries.first
+		}
+
+		guard let shortestTokenLength = stableEntries.map(\.token.count).min() else {
+			return nil
+		}
+
+		let shortestStableEntries = stableEntries.filter { $0.token.count == shortestTokenLength }
+		return shortestStableEntries.count == 1 ? shortestStableEntries.first : nil
 	}
 
 
