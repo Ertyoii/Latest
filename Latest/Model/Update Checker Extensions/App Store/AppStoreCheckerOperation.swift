@@ -79,16 +79,30 @@ class AppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation,
 	// MARK: - Bundle Operations
 	
 	/// Returns the app store receipt path for the app at the given URL, if available.
-	static fileprivate func receiptPath(forAppAt url: URL) -> String? {
+	static func receiptPath(forAppAt url: URL) -> String? {
 		let bundle = Bundle(path: url.path)
 		return bundle?.appStoreReceiptURL?.path
 	}
 	
 	/// Returns whether the app at the given URL is an iOS app wrapped to run on macOS.
-	static fileprivate func isIOSAppBundle(at url: URL) -> Bool {
+	static func isIOSAppBundle(at url: URL) -> Bool {
 		// iOS apps are wrapped inside a macOS bundle
 		let path = receiptPath(forAppAt: url)
 		return path?.contains("WrappedBundle") ?? false
+	}
+
+	/// Returns the App Store lookup entities to try, in priority order.
+	static func lookupEntityTypes(forAppAt url: URL) -> [String] {
+		return lookupEntityTypes(isIOSAppBundle: isIOSAppBundle(at: url))
+	}
+
+	static func lookupEntityTypes(isIOSAppBundle: Bool) -> [String] {
+		// Wrapped iOS apps never resolve as native desktop software, so skip the guaranteed miss.
+		if isIOSAppBundle {
+			return ["macSoftware"]
+		}
+
+		return ["desktopSoftware", "macSoftware"]
 	}
 	
 }
@@ -129,16 +143,24 @@ extension AppStoreUpdateCheckerOperation {
 	
 	/// Fetches update info and returns the result in the given completion handler.
 	private func fetchAppInfo(completion: @escaping (_ result: Result<AppStoreEntry, Error>) -> ()) {
-		// We need a two-level fetch process. `desktopSoftware` delivers metadata for mac-native software. `macSoftware` seems to be more broad, also includes Catalyst and iOS-only software. The former however is more accurate, as `macSoftware` might return iPad metadata for certain apps. We therefore prefer `desktopSoftware` and fall back to `macSoftware` if no info was found.
-		self.fetchAppInfo(with: "desktopSoftware") { result in
+		self.fetchAppInfo(with: Self.lookupEntityTypes(forAppAt: app.fileURL), completion: completion)
+	}
+
+	private func fetchAppInfo(with entityTypes: [String], completion: @escaping (_ result: Result<AppStoreEntry, Error>) -> ()) {
+		guard let entityType = entityTypes.first else {
+			completion(.failure(LatestError.updateInfoUnavailable))
+			return
+		}
+
+		// For native Mac apps, prefer `desktopSoftware` because `macSoftware` can return broader Catalyst or iOS metadata. Wrapped iOS apps skip the desktop request above.
+		self.fetchAppInfo(with: entityType) { result in
 			switch result {
 			case .success(let entry):
 				// Success, forward data
 				completion(.success(entry))
 				
 			case .failure(_):
-				// Data could not be fetched, try the broader entity type
-				self.fetchAppInfo(with: "macSoftware", completion: completion)
+				self.fetchAppInfo(with: Array(entityTypes.dropFirst()), completion: completion)
 			}
 		}
 	}
