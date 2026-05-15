@@ -65,7 +65,8 @@ enum BundleCollector {
 	static private func bundle(forAppAt url: URL) -> App.Bundle? {
 		guard let appBundle = Bundle(url: url),
 			  let identifier = appBundle.bundleIdentifier,
-			  let appName = appBundle.bundleName else {
+			  let infoDictionary = appBundle.uncachedInfoDictionary,
+			  let appName = infoDictionary.bundleName else {
 			return nil
 		}
 
@@ -81,8 +82,8 @@ enum BundleCollector {
 
 		// Build version. Skip bundle if no version is provided.
 		let version = Version(
-			versionNumber: appBundle.versionNumber.flatMap { VersionParser.parse(versionNumber: $0) },
-			buildNumber: appBundle.uncachedBundleVersion.flatMap { VersionParser.parse(buildNumber: $0) }
+			versionNumber: infoDictionary.versionNumber.flatMap { VersionParser.parse(versionNumber: $0) },
+			buildNumber: infoDictionary.bundleVersion.flatMap { VersionParser.parse(buildNumber: $0) }
 		)
 		guard !version.isEmpty else {
 			return nil
@@ -96,26 +97,40 @@ enum BundleCollector {
 
 fileprivate extension Bundle {
 
-	/// Returns the bundle version which is guaranteed to be current.
-	var uncachedBundleVersion: String? {
+	/// Returns the bundle info dictionary which is guaranteed to be current.
+	var uncachedInfoDictionary: [String: Any]? {
 		let bundleRef = CFBundleCreate(.none, self.bundleURL as CFURL)
 
 		// (NS)Bundle has a cache for (all?) properties, presumably to reduce disk access. Therefore, after updating an app, the old bundle version may be
 		// returned. Flushing the cache (private method) resolves this.
 		_CFBundleFlushBundleCaches(bundleRef)
 
-		return infoDictionary?["CFBundleVersion"] as? String
+		let infoPlistURL = self.bundleURL.appendingPathComponent("Contents/Info.plist", isDirectory: false)
+		guard let data = try? Data(contentsOf: infoPlistURL) else {
+			return nil
+		}
+
+		return (try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)) as? [String: Any]
 	}
+
+}
+
+fileprivate extension Dictionary where Key == String, Value == Any {
 
 	/// Returns the bundle name when working without Spotlight.
 	var bundleName: String? {
-		return infoDictionary?["CFBundleName"] as? String
-			?? infoDictionary?["CFBundleDisplayName"] as? String
-			?? infoDictionary?["CFBundleExecutable"] as? String
+		return self["CFBundleName"] as? String
+			?? self["CFBundleDisplayName"] as? String
+			?? self["CFBundleExecutable"] as? String
 	}
 
 	/// Returns the short version string when working without Spotlight.
 	var versionNumber: String? {
-		return infoDictionary?["CFBundleShortVersionString"] as? String
+		return self["CFBundleShortVersionString"] as? String
+	}
+
+	/// Returns the bundle version when working without Spotlight.
+	var bundleVersion: String? {
+		return self["CFBundleVersion"] as? String
 	}
 }

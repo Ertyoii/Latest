@@ -49,14 +49,14 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertEqual(VersionParser.parse(combinedVersionNumber: ""), Version(versionNumber: nil, buildNumber: nil))
 	}
 
-	func testHomebrewCaskEntryDoesNotUseMetadataAsReleaseNotes() throws {
+	func testHomebrewCaskEntryUsesHomepageChangelogCandidatesWithoutMetadataAsNotes() throws {
 		let json = """
 		{
 			"token": "example-app",
 			"version": "2.4.1",
 			"name": ["Example App"],
 			"desc": "Notes, tasks & reminders",
-			"homepage": "https://example.com",
+			"homepage": "https://example.com/",
 			"depends_on": {
 				"macos": {
 					">=": ["13.0"]
@@ -71,7 +71,70 @@ final class VersionParserTest: XCTestCase {
 		"""
 		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
 
-		XCTAssertNil(entry.releaseNotes)
+		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback) = entry.releaseNotes else {
+			return XCTFail("Expected changelog release notes")
+		}
+
+		XCTAssertEqual(versionPrefix, "2.4")
+		XCTFalse(allowsLatestFallback)
+		XCTEqual(urls.first?.absoluteString, "https://example.com/changelog")
+		XCTFalse(urls.map(\.absoluteString).contains("Notes, tasks & reminders"))
+	}
+
+	func testHomebrewCaskEntryDerivesGitHubReleaseNotesFromDownloadURL() throws {
+		let json = """
+		{
+			"token": "eqmac",
+			"version": "1.8.15",
+			"name": ["eqMac"],
+			"homepage": "https://eqmac.app/",
+			"url": "https://github.com/bitgapp/eqMac/releases/download/v1.8.15/eqMac.dmg",
+			"artifacts": [
+				{
+					"app": ["eqMac.app"]
+				}
+			],
+			"depends_on": {
+				"macos": {}
+			}
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		guard case .githubRelease(let apiURL) = entry.releaseNotes else {
+			return XCTFail("Expected GitHub release notes")
+		}
+
+		XCTEqual(apiURL.absoluteString, "https://api.github.com/repos/bitgapp/eqMac/releases/tags/v1.8.15")
+	}
+
+	func testHomebrewCaskEntryUsesCursorChangelogSource() throws {
+		let json = """
+		{
+			"token": "cursor",
+			"version": "3.4.16,abcdef",
+			"name": ["Cursor"],
+			"homepage": "https://www.cursor.com/",
+			"url": "https://downloads.cursor.com/production/abcdef/darwin/arm64/Cursor-darwin-arm64.zip",
+			"artifacts": [
+				{
+					"app": ["Cursor.app"]
+				}
+			],
+			"depends_on": {
+				"macos": {}
+			}
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback) = entry.releaseNotes else {
+			return XCTFail("Expected changelog release notes")
+		}
+
+		XCTEqual(versionPrefix, "3.4")
+		XCTTrue(allowsLatestFallback)
+		XCTEqual(urls, [URL(string: "https://cursor.com/changelog")!])
 	}
 
 	func testHomebrewCaskEntryKeepsBundleIdentifiersWhenAppArtifactExists() throws {
@@ -175,6 +238,37 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertFalse(string.string.contains("* Added"))
 		XCTAssertFalse(string.string.contains("•        •"))
 	}
+
+	func testReleaseNotesMarkupKeepsOnlyRelevantVersionSection() throws {
+		let changelog = """
+		eqMac Changelog
+		v1.8.15 - AirPods loop fix
+		- Fixed AirPods causing eqMac to go into a device swap loop and freezing
+		v1.8.14 - Device Routing fixes
+		- Fixed Output Device routing issues introduced in v1.8.13
+		"""
+
+		let string = try ReleaseNotesMarkup.attributedString(from: changelog, baseURL: nil, relevantVersion: "1.8.15").get()
+
+		XCTAssertTrue(string.string.contains("AirPods loop fix"))
+		XCTAssertFalse(string.string.contains("Device Routing fixes"))
+	}
+
+	func testReleaseNotesMarkupExtractsFirstSectionFromVersionlessChangelog() throws {
+		let changelog = """
+		Changelog
+		May 13, 2026
+		Development environments for cloud agents
+		Agents can now configure environments.
+		May 11, 2026
+		Cursor in Microsoft Teams
+		"""
+
+		let text = try XCTUnwrap(ReleaseNotesMarkup.relevantText(from: changelog, version: "3.4", allowFirstSectionFallback: true))
+
+		XCTAssertTrue(text.contains("Development environments"))
+		XCTAssertFalse(text.contains("Cursor in Microsoft Teams"))
+	}
 	
 }
 
@@ -242,6 +336,40 @@ final class BundleCollectorTest: XCTestCase {
 		XCTEqual(bundle.modificationDate, contentsTimestamp)
 	}
 
+	func testCollectingUpdatedBundleReadsCurrentInfoPlistVersions() throws {
+		let directory = try makeTemporaryDirectory()
+		let appURL = try makeAppBundle(
+			named: "Updated In Place",
+			in: directory,
+			info: [
+				"CFBundleName": "Updated In Place",
+				"CFBundleExecutable": "Updated In Place",
+				"CFBundleIdentifier": "com.example.updated-in-place",
+				"CFBundleShortVersionString": "1.2.3",
+				"CFBundleVersion": "123"
+			]
+		)
+
+		let oldBundle = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
+		XCTAssertEqual(oldBundle.version.versionNumber, "1.2.3")
+		XCTAssertEqual(oldBundle.version.buildNumber, "123")
+
+		try writeInfoPlist(
+			forAppAt: appURL,
+			info: [
+				"CFBundleName": "Updated In Place",
+				"CFBundleExecutable": "Updated In Place",
+				"CFBundleIdentifier": "com.example.updated-in-place",
+				"CFBundleShortVersionString": "1.2.5",
+				"CFBundleVersion": "125"
+			]
+		)
+
+		let updatedBundle = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
+		XCTAssertEqual(updatedBundle.version.versionNumber, "1.2.5")
+		XCTAssertEqual(updatedBundle.version.buildNumber, "125")
+	}
+
 	private func makeTemporaryDirectory() throws -> URL {
 		let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -254,13 +382,17 @@ final class BundleCollectorTest: XCTestCase {
 	private func makeAppBundle(named name: String, in directory: URL, info: [String: String]) throws -> URL {
 		let appURL = directory.appendingPathComponent("\(name).app", isDirectory: true)
 		let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
-		let plistURL = contentsURL.appendingPathComponent("Info.plist")
 
 		try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
-		let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
-		try data.write(to: plistURL)
+		try writeInfoPlist(forAppAt: appURL, info: info)
 
 		return appURL
+	}
+
+	private func writeInfoPlist(forAppAt appURL: URL, info: [String: String]) throws {
+		let plistURL = appURL.appendingPathComponent("Contents/Info.plist", isDirectory: false)
+		let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+		try data.write(to: plistURL)
 	}
 
 	private func setModificationDate(_ date: Date, for url: URL) throws {

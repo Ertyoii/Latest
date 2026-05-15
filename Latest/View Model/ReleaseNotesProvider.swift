@@ -62,11 +62,15 @@ class ReleaseNotesProvider {
 		if let releaseNotes = app.releaseNotes {
 			switch releaseNotes {
 				case .html(let html):
-					completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: nil))
+					completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: nil, relevantVersion: app.remoteVersion?.versionNumber))
 				case .url(let url):
 					self.releaseNotes(from: url, with: completion)
 				case .encoded(let data):
 					completion(ReleaseNotesMarkup.attributedString(from: data, baseURL: nil))
+				case .githubRelease(let apiURL):
+					self.githubReleaseNotes(from: apiURL, relevantVersion: app.remoteVersion?.versionNumber, with: completion)
+				case .changelog(let urls, let versionPrefix, let allowsLatestFallback):
+					self.changelogReleaseNotes(from: urls, versionPrefix: versionPrefix ?? app.remoteVersion?.versionNumber, allowsLatestFallback: allowsLatestFallback, with: completion)
 			}
 		} else if let error = app.error {
 			completion(.failure(error))
@@ -88,11 +92,84 @@ class ReleaseNotesProvider {
 		}
 	}
 
+	private func githubReleaseNotes(from url: URL, relevantVersion: String?, with completion: @escaping (ReleaseNotes) -> Void) {
+		URLSession.shared.dataTask(with: url) { data, _, error in
+			DispatchQueue.main.async {
+				if let error {
+					completion(.failure(error))
+					return
+				}
+
+				guard let data else {
+					completion(.failure(LatestError.releaseNotesUnavailable))
+					return
+				}
+
+				do {
+					let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
+					let body = release.body.trimmingCharacters(in: .whitespacesAndNewlines)
+					guard !body.isEmpty else {
+						completion(.failure(LatestError.releaseNotesUnavailable))
+						return
+					}
+
+					let title = release.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+					let markdown = ([title, ReleaseNotesMarkup.relevantText(from: body, version: relevantVersion, allowFirstSectionFallback: true)]
+						.compactMap { text in
+							guard let text, !text.isEmpty else { return nil }
+							return text
+						} as [String]).joined(separator: "\n\n")
+
+					completion(ReleaseNotesMarkup.attributedString(from: markdown, baseURL: nil))
+				} catch {
+					completion(.failure(error))
+				}
+			}
+		}.resume()
+	}
+
+	private func changelogReleaseNotes(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, with completion: @escaping (ReleaseNotes) -> Void) {
+		var remainingURLs = urls
+
+		func loadNext() {
+			guard !remainingURLs.isEmpty else {
+				completion(.failure(LatestError.releaseNotesUnavailable))
+				return
+			}
+
+			let url = remainingURLs.removeFirst()
+			webContentLoader.load(from: url) { result in
+				switch result {
+				case .success(let html):
+					guard let text = ReleaseNotesMarkup.plainText(fromHTML: html),
+						  let relevantText = ReleaseNotesMarkup.relevantText(from: text, version: versionPrefix, allowFirstSectionFallback: allowsLatestFallback),
+						  !relevantText.isEmpty else {
+						loadNext()
+						return
+					}
+
+					completion(ReleaseNotesMarkup.attributedString(from: relevantText, baseURL: url))
+				case .failure:
+					loadNext()
+				}
+			}
+		}
+
+		loadNext()
+	}
+
+}
+
+private struct GitHubRelease: Decodable {
+	let name: String?
+	let body: String
 }
 
 enum ReleaseNotesMarkup {
 
-	static func attributedString(from markup: String, baseURL: URL?) -> ReleaseNotesProvider.ReleaseNotes {
+	static func attributedString(from markup: String, baseURL: URL?, relevantVersion: String? = nil) -> ReleaseNotesProvider.ReleaseNotes {
+		let markup = Self.relevantText(from: markup, version: relevantVersion, allowFirstSectionFallback: false) ?? markup
+
 		if Self.prefersMarkdown(markup) {
 			return .success(Self.attributedString(fromMarkdown: markup))
 		}
@@ -128,6 +205,52 @@ enum ReleaseNotesMarkup {
 		}
 		
 		return .success(string)
+	}
+
+	static func plainText(fromHTML html: String) -> String? {
+		guard let data = html.data(using: .utf16),
+			  let string = NSAttributedString(html: data, documentAttributes: nil) else {
+			return nil
+		}
+
+		return string.string
+	}
+
+	static func relevantText(from text: String, version: String?, allowFirstSectionFallback: Bool) -> String? {
+		let lines = text.components(separatedBy: .newlines).map {
+			$0.trimmingCharacters(in: .whitespacesAndNewlines)
+		}.filter { !$0.isEmpty }
+
+		guard !lines.isEmpty else { return nil }
+
+		let versionCandidates = Self.versionCandidates(from: version)
+		var startIndex: Int?
+
+		if !versionCandidates.isEmpty {
+			startIndex = lines.firstIndex { line in
+				versionCandidates.contains { version in
+					line.range(of: #"(^|[^\d])v?\#(NSRegularExpression.escapedPattern(for: version))([^\d]|\z)"#, options: [.regularExpression, .caseInsensitive]) != nil
+				}
+			}
+		}
+
+		if startIndex == nil, allowFirstSectionFallback {
+			startIndex = lines.firstIndex { line in
+				Self.looksLikeReleaseBoundary(line)
+			}
+		}
+
+		guard let startIndex else { return nil }
+		let endIndex = lines[(startIndex + 1)...].firstIndex { line in
+			Self.looksLikeReleaseBoundary(line) && !versionCandidates.contains { version in
+				line.localizedCaseInsensitiveContains(version)
+			}
+		} ?? lines.endIndex
+
+		let selectedLines = lines[startIndex..<endIndex]
+		guard !selectedLines.isEmpty else { return nil }
+
+		return selectedLines.joined(separator: "\n")
 	}
 
 	private static func attributedString(fromMarkdown markdown: String) -> NSAttributedString {
@@ -197,6 +320,26 @@ enum ReleaseNotesMarkup {
 		}
 
 		return result
+	}
+
+	private static func versionCandidates(from version: String?) -> [String] {
+		guard let version = version?.trimmingCharacters(in: .whitespacesAndNewlines), !version.isEmpty else {
+			return []
+		}
+
+		var candidates = [version]
+		let parts = version.split(separator: ".", omittingEmptySubsequences: true)
+		if parts.count >= 2 {
+			candidates.append(parts.prefix(2).joined(separator: "."))
+		}
+
+		return Array(Set(candidates)).sorted { $0.count > $1.count }
+	}
+
+	private static func looksLikeReleaseBoundary(_ line: String) -> Bool {
+		line.range(of: #"^#{1,6}\s*v?\d+(\.\d+){1,}"#, options: [.regularExpression, .caseInsensitive]) != nil ||
+		line.range(of: #"^v?\d+(\.\d+){1,}(\s|$|-)"#, options: [.regularExpression, .caseInsensitive]) != nil ||
+		line.range(of: #"^[A-Z][a-z]+ \d{1,2}, \d{4}"#, options: .regularExpression) != nil
 	}
 
 }

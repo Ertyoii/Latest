@@ -18,8 +18,10 @@ extension UpdateRepository {
 
 		enum CodingKeys: String, CodingKey {
 			case artifacts
+			case homepage
 			case names = "name"
 			case token
+			case url
 			case rawVersion = "version"
 			case minimumOSVersion = "depends_on"
 		}
@@ -55,6 +57,12 @@ extension UpdateRepository {
 		/// The raw version string of the app.
 		private let rawVersion: String
 
+		/// The upstream download URL of the app.
+		private let url: URL?
+
+		/// The upstream homepage of the app.
+		private let homepage: URL?
+
 		/// The brew identifier for the app.
 		let token: String
 
@@ -67,6 +75,8 @@ extension UpdateRepository {
 			// Trivial keys
 			rawVersion = try container.decode(String.self, forKey: .rawVersion)
 			token = try container.decode(String.self, forKey: .token)
+			url = try container.decodeIfPresent(URL.self, forKey: .url)
+			homepage = try container.decodeIfPresent(URL.self, forKey: .homepage)
 
 			// Artifacts: Contains application names and bundle identifiers.
 			let artifacts = try container.decode([FailableDecodable<Artifact>].self, forKey: .artifacts)
@@ -114,11 +124,65 @@ extension UpdateRepository {
 			return !token.contains("@")
 		}
 
-		/// Homebrew cask metadata does not include release notes.
+		/// Release notes derived from upstream metadata where possible.
 		var releaseNotes: App.Update.ReleaseNotes? {
-			nil
+			if let githubReleaseURL {
+				return .githubRelease(apiURL: githubReleaseURL)
+			}
+
+			let changelogURLs = self.changelogURLs
+			if !changelogURLs.isEmpty {
+				return .changelog(urls: changelogURLs, versionPrefix: version.versionNumber?.majorMinorVersionPrefix, allowsLatestFallback: allowsLatestChangelogFallback)
+			}
+
+			return nil
 		}
 
+	}
+
+}
+
+private extension UpdateRepository.Entry {
+
+	var githubReleaseURL: URL? {
+		guard let url, url.host?.caseInsensitiveCompare("github.com") == .orderedSame else { return nil }
+
+		let components = url.pathComponents
+		guard components.count > 5, components[3] == "releases", components[4] == "download" else { return nil }
+
+		let owner = components[1]
+		let repository = components[2]
+		let tag = components[5]
+
+		return URL(string: "https://api.github.com/repos/\(owner)/\(repository)/releases/tags/\(tag)")
+	}
+
+	var changelogURLs: [URL] {
+		if token == "cursor" || homepage?.host?.contains("cursor.com") == true {
+			return [URL(string: "https://cursor.com/changelog")!]
+		}
+
+		guard let homepage else { return [] }
+
+		let releasePaths = ["changelog", "release-notes", "releases", "whats-new"]
+		return releasePaths.compactMap { path in
+			URL(string: path, relativeTo: homepage)?.absoluteURL
+		}
+	}
+
+	var allowsLatestChangelogFallback: Bool {
+		token == "cursor" || homepage?.host?.contains("cursor.com") == true
+	}
+
+}
+
+private extension String {
+
+	var majorMinorVersionPrefix: String? {
+		let parts = split(separator: ".", omittingEmptySubsequences: true)
+		guard parts.count >= 2 else { return self.isEmpty ? nil : self }
+
+		return parts.prefix(2).joined(separator: ".")
 	}
 
 }
