@@ -83,8 +83,6 @@
 		50C9F10A2346386B00FD1802 /* AppStoreCheckerOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C9F1092346386B00FD1802 /* AppStoreCheckerOperation.swift */; };
 		50C9F10C234641E000FD1802 /* SparkleCheckerOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C9F10B234641E000FD1802 /* SparkleCheckerOperation.swift */; };
 		50D6EF5F281461A3002D7006 /* Sparkle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50D6EF5E281461A3002D7006 /* Sparkle.swift */; };
-		50DAEF4021047E5100B32E8A /* UpdateTableView+TouchBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DAEF3F21047E5100B32E8A /* UpdateTableView+TouchBar.swift */; };
-		50DAEF4421047FA900B32E8A /* UpdateItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DAEF4321047FA900B32E8A /* UpdateItemView.swift */; };
 		50E4EB072B17DACB00A70A7D /* VersionParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50E4EB062B17DACB00A70A7D /* VersionParser.swift */; };
 		50E4EB092B17DFCE00A70A7D /* VersionParserTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50E4EB082B17DFCE00A70A7D /* VersionParserTest.swift */; };
 		50F36B952F2E90CB00C0FD0B /* UpdateInstallHelperAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50F36B942F2E90B300C0FD0B /* UpdateInstallHelperAlert.swift */; };
@@ -348,8 +346,6 @@
 		50D6697628DBAC6E00FD3F6A /* el */ = {isa = PBXFileReference; lastKnownFileType = text.plist.stringsdict; name = el; path = el.lproj/Localizable.stringsdict; sourceTree = "<group>"; };
 		50D6697728DBAC7200FD3F6A /* el */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = el; path = el.lproj/Localizable.strings; sourceTree = "<group>"; };
 		50D6EF5E281461A3002D7006 /* Sparkle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sparkle.swift; sourceTree = "<group>"; };
-		50DAEF3F21047E5100B32E8A /* UpdateTableView+TouchBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UpdateTableView+TouchBar.swift"; sourceTree = "<group>"; };
-		50DAEF4321047FA900B32E8A /* UpdateItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateItemView.swift; sourceTree = "<group>"; };
 		50E4EB062B17DACB00A70A7D /* VersionParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionParser.swift; sourceTree = "<group>"; };
 		50E4EB082B17DFCE00A70A7D /* VersionParserTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionParserTest.swift; sourceTree = "<group>"; };
 		50E65CDD247A84BC00DFEB47 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Main.strings; sourceTree = "<group>"; };
@@ -784,7 +780,6 @@
 			isa = PBXGroup;
 			children = (
 				509512321FF36380003D2D7F /* UpdateTableViewController.swift */,
-				50DAEF3F21047E5100B32E8A /* UpdateTableView+TouchBar.swift */,
 				50ACE3F121D58DAD002FB72D /* UpdateTableView+Search.swift */,
 			);
 			path = Controller;
@@ -794,7 +789,6 @@
 			isa = PBXGroup;
 			children = (
 				5095122F1FF36378003D2D7F /* UpdateCell.swift */,
-				50DAEF4321047FA900B32E8A /* UpdateItemView.swift */,
 				50037512245EA9FA00D3BB0D /* UpdateGroupCellView.swift */,
 				50B5A50321246E2500E96AEC /* UpdateGroupRowView.swift */,
 				506DF7772125580400D792FC /* UpdateTableView.swift */,
@@ -1112,9 +1106,7 @@
 				506A77172D6099FE00A69579 /* SupportStatusInfoViewController.swift in Sources */,
 				50BBF3FF2B21120200AB4D26 /* UpdateRepository+Entry.swift in Sources */,
 				5039DE8522CA396F0088B39B /* UpdateQueue.swift in Sources */,
-				50DAEF4421047FA900B32E8A /* UpdateItemView.swift in Sources */,
 				50037513245EA9FA00D3BB0D /* UpdateGroupCellView.swift in Sources */,
-				50DAEF4021047E5100B32E8A /* UpdateTableView+TouchBar.swift in Sources */,
 				506DF7782125580400D792FC /* UpdateTableView.swift in Sources */,
 				509512301FF36378003D2D7F /* UpdateCell.swift in Sources */,
 				505062262F0DBEE000998F84 /* UpdateInstallerProtocol.swift in Sources */,
@@ -1397,7 +1389,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -1454,7 +1446,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -1470,7 +1462,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 999267;
+				CURRENT_PROJECT_VERSION = 999268;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1486,7 +1478,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.12.1005;
+				MARKETING_VERSION = 0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_NAME = "Latest Dev";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1504,7 +1496,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 999267;
+				CURRENT_PROJECT_VERSION = 999268;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1520,7 +1512,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.12.1005;
+				MARKETING_VERSION = 0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_NAME = "Latest Dev";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1547,7 +1539,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_OUTPUT_FORMAT = binary;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.latest.UpdateInstaller";
@@ -1578,7 +1570,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_OUTPUT_FORMAT = binary;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.latest.UpdateInstaller";
 				PRODUCT_NAME = LatestUpdateInstaller;

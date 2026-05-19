@@ -199,12 +199,7 @@ class UpdateButton: NSButton {
 			()
 		}
 		
-		// Beginning with macOS 14, the button text is no longer uppercase
-		if #available(macOS 14.0, *) {
-			self.title = title ?? ""
-		} else {
-			self.title = title?.localizedUppercase ?? ""
-		}
+		self.title = title ?? ""
 		self.image = image
 	}
 	

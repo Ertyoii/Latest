@@ -23,10 +23,8 @@ class UpdateGroupCellView: NSTableCellView {
 
 	override func awakeFromNib() {
 		super.awakeFromNib()
-		if #available(macOS 26.0, *) {
-			MainActor.assumeIsolated {
-				backgroundEffectView.isHidden = true
-			}
+		MainActor.assumeIsolated {
+			backgroundEffectView.isHidden = true
 		}
 	}
 	

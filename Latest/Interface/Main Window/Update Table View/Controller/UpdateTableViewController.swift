@@ -82,11 +82,9 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 		
 		self.updatesLabel.isHidden = true
 		
-		if #available(macOS 26, *) {
-			self.topTableConstraint.constant = 0
-			self.tableView.enclosingScrollView?.contentInsets = .init(top: 78, left: 0, bottom: 0, right: 0)
-			self.tableView.enclosingScrollView?.scrollerInsets = .init(top: 0, left: 0, bottom: 10, right: 0)
-		}
+		self.topTableConstraint.constant = 0
+		self.tableView.enclosingScrollView?.contentInsets = .init(top: 78, left: 0, bottom: 0, right: 0)
+		self.tableView.enclosingScrollView?.scrollerInsets = .init(top: 0, left: 0, bottom: 10, right: 0)
     }
     
     override func viewWillAppear() {
@@ -317,10 +315,9 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
      - parameter index: The index of the given app. If nil, the currently selected app is deselected.
      */
     func selectApp(at index: Int?) {
-        guard let index = index, index >= 0, let app = self.snapshot.app(at: index) else {
+		guard let index = index, index >= 0, let app = self.snapshot.app(at: index) else {
 			self.selectedApp = nil
             self.tableView.deselectAll(nil)
-			self.scrubber?.animator().selectedIndex = -1
 			
 			// Clear release notes
 			if let detailViewController = self.releaseNotesViewController {
@@ -334,9 +331,6 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 			return
 		}
 		
-		self.scrubber?.animator().scrollItem(at: index, to: .center)
-		self.scrubber?.animator().selectedIndex = index
-        
         self.tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
         self.tableView.scrollRowToVisible(index)
 			
@@ -487,7 +481,6 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 		let format = NSLocalizedString("NumberOfUpdatesAvailable", comment: "number of updates available")
 		statusText = String.localizedStringWithFormat(format, count)
         
-		self.scrubber?.reloadData()
 		self.view.window?.subtitle = statusText
 	}
 	

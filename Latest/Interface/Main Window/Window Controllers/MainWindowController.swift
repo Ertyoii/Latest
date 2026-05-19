@@ -50,9 +50,6 @@ class MainWindowController: NSWindowController, NSMenuItemValidation, NSMenuDele
 		return progressIndicator
 	}()
     
-    /// The button that triggers an reload/recheck for updates
-    @IBOutlet weak var reloadTouchBarButton: NSButton!
-    
     override func windowDidLoad() {
         super.windowDidLoad()
     
@@ -240,7 +237,6 @@ class MainWindowController: NSWindowController, NSMenuItemValidation, NSMenuDele
 	/// Whether an update check is currently running
 	private var isRunningUpdateCheck: Bool = false {
 		didSet {
-			self.reloadTouchBarButton.isEnabled = !isRunningUpdateCheck
 			self.progressIndicator.isHidden = !isRunningUpdateCheck
 		}
 	}
@@ -269,15 +265,7 @@ class MainWindowController: NSWindowController, NSMenuItemValidation, NSMenuDele
 	
 }
 
-extension MainWindowController: NSWindowDelegate {
-	
-	@available(macOS, deprecated: 11.0)
-	func window(_ window: NSWindow, willPositionSheet sheet: NSWindow, using rect: NSRect) -> NSRect {
-		// Always position sheets at the top of the window, ignoring toolbar insets
-		return NSRect(x: rect.minX, y: window.frame.height, width: rect.width, height: rect.height)
-	}
-    
-}
+extension MainWindowController: NSWindowDelegate {}
 
 extension MainWindowController: NSToolbarItemValidation {
 	func validateToolbarItem(_ item: NSToolbarItem) -> Bool {

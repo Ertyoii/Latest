@@ -39,16 +39,7 @@ class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
 	}
 	
 	fileprivate static let requiresManualInstallation: Bool = {
-		let version = ProcessInfo.processInfo.operatingSystemVersion
-		
-		return switch version.majorVersion {
-		case 14:
-			ProcessInfo.processInfo.isOperatingSystemAtLeast(.init(majorVersion: 14, minorVersion: 8, patchVersion: 2))
-		case 15:
-			ProcessInfo.processInfo.isOperatingSystemAtLeast(.init(majorVersion: 15, minorVersion: 7, patchVersion: 2))
-		default:
-			ProcessInfo.processInfo.isOperatingSystemAtLeast(.init(majorVersion: 26, minorVersion: 1, patchVersion: 0))
-		}
+		ProcessInfo.processInfo.isOperatingSystemAtLeast(.init(majorVersion: 26, minorVersion: 1, patchVersion: 0))
 	}()
 	
 	
@@ -158,10 +149,12 @@ extension AppStoreUpdateOperation: CKDownloadQueueObserver {
 		}
 		
 		// No manual installation possible, abort with error
-		guard let installerPackageURL, let receiptData = download.metadata.receiptData, let bundle = Bundle(identifier: bundleIdentifier), let receiptURL = bundle.appStoreReceiptURL else {
+		guard let installerPackageURL, let receiptData = download.metadata.receiptData, let bundle = Bundle(identifier: bundleIdentifier) else {
 			self.finish(with: status.error)
 			return
 		}
+		let bundleURL = URL(fileURLWithPath: bundle.bundlePath, isDirectory: true)
+		let receiptURL = AppStoreReceipt.standardReceiptURL(forAppAt: bundleURL)
 		
 		Task { [weak self] in
 			guard let self, !self.isCancelled else {

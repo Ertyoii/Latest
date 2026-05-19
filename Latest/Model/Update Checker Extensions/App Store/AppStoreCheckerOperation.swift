@@ -80,8 +80,7 @@ class AppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation,
 	
 	/// Returns the app store receipt path for the app at the given URL, if available.
 	static func receiptPath(forAppAt url: URL) -> String? {
-		let bundle = Bundle(path: url.path)
-		return bundle?.appStoreReceiptURL?.path
+		AppStoreReceipt.url(forAppAt: url)?.path
 	}
 	
 	/// Returns whether the app at the given URL is an iOS app wrapped to run on macOS.
@@ -105,6 +104,42 @@ class AppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation,
 		return ["desktopSoftware", "macSoftware"]
 	}
 	
+}
+
+enum AppStoreReceipt {
+	static func url(forAppAt appURL: URL) -> URL? {
+		if let existingReceiptURL = existingReceiptURL(forAppAt: appURL) {
+			return existingReceiptURL
+		}
+
+		guard appURL.pathExtension == "app" else { return nil }
+		return standardReceiptURL(forAppAt: appURL)
+	}
+
+	static func standardReceiptURL(forAppAt appURL: URL) -> URL {
+		appURL.appendingPathComponent("Contents/_MASReceipt/receipt", isDirectory: false)
+	}
+
+	private static func existingReceiptURL(forAppAt appURL: URL) -> URL? {
+		let fileManager = FileManager.default
+		guard let enumerator = fileManager.enumerator(
+			at: appURL,
+			includingPropertiesForKeys: [.isRegularFileKey],
+			options: [.skipsHiddenFiles]
+		) else {
+			return nil
+		}
+
+		for case let url as URL in enumerator {
+			guard url.lastPathComponent == "receipt", url.deletingLastPathComponent().lastPathComponent == "_MASReceipt" else {
+				continue
+			}
+
+			return url
+		}
+
+		return nil
+	}
 }
 
 extension AppStoreUpdateCheckerOperation {

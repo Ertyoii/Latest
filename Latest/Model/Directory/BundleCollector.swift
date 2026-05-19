@@ -21,7 +21,6 @@ enum BundleCollector {
 		"com.apple.Safari.WebApp"
 	])
 
-	@available(macOS 11.0, *)
 	private static let appExtension = UTType.applicationBundle.preferredFilenameExtension
 
 	/// Returns a list of application bundles at the given URL.

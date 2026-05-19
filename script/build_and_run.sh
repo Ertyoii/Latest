@@ -2,11 +2,11 @@
 set -euo pipefail
 
 MODE="${1:-run}"
-APP_NAME="Latest"
+APP_NAME="Latest Dev"
 PROJECT="Latest.xcodeproj"
 SCHEME="Latest"
 CONFIGURATION="Debug"
-BUNDLE_ID="com.max-langer.Latest"
+BUNDLE_ID="com.max-langer.Latest.dev"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build"

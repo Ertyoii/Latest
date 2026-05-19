@@ -46,10 +46,8 @@ class WebContentLoader: NSObject {
 		let webView = WKWebView(frame: .zero, configuration: config)
 		webView.navigationDelegate = self
 		
-		// Ensure the web view renders with full performance
-		if #available(macOS 14.0, *) {
-			webView.configuration.preferences.inactiveSchedulingPolicy = .none
-		}
+		// Ensure the web view renders with full performance.
+		webView.configuration.preferences.inactiveSchedulingPolicy = .none
 		
 		return webView
 	}()

@@ -25,9 +25,6 @@ extension UpdateTableViewController {
 			searchQuery = nil
 		}
 		self.scheduleTableViewUpdate(with: self.snapshot.updated(with: searchQuery), animated: false)
-		
-		// Reload all visible lists
-		self.scrubber?.reloadData()
 	}
 	
 }

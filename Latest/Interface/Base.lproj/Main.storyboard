@@ -6,7 +6,6 @@
         <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="24506"/>
         <capability name="System colors introduced in macOS 10.14" minToolsVersion="10.0"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
-        <capability name="the Touch Bar" minToolsVersion="8.1" minSystemVersion="10.12.2" requiredIntegratedClassName="NSTouchBar"/>
     </dependencies>
     <scenes>
         <!--Application-->
@@ -440,45 +439,7 @@
                             <outlet property="delegate" destination="B8D-0N-5wS" id="5kS-Vl-rlN"/>
                         </connections>
                     </window>
-                    <touchBar key="touchBar" id="HV5-vO-LZq">
-                        <touchBarItems>
-                            <touchBarItem id="LKh-ep-17G">
-                                <viewController key="viewController" id="ivi-vL-a0q">
-                                    <button key="view" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="lhe-aF-0Fk">
-                                        <rect key="frame" x="0.0" y="0.0" width="72" height="30"/>
-                                        <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                        <buttonCell key="cell" type="push" bezelStyle="rounded" image="NSTouchBarSearchTemplate" imagePosition="overlaps" alignment="center" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="JIr-yU-jL8">
-                                            <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
-                                            <font key="font" usesAppearanceFont="YES"/>
-                                        </buttonCell>
-                                        <connections>
-                                            <action selector="performFindPanelAction:" target="Oky-zY-oP4" id="b9d-l1-Edb"/>
-                                        </connections>
-                                    </button>
-                                </viewController>
-                                <size key="designTimeSize" width="72" height="30"/>
-                            </touchBarItem>
-                            <touchBarItemOtherItemsProxy identifier="NSTouchBarItemIdentifierOtherItemsProxy" id="y5T-eL-TH6"/>
-                            <touchBarItem id="F32-ki-hFv">
-                                <viewController key="viewController" id="vt9-Kt-f18">
-                                    <button key="view" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="XDV-N5-XxD">
-                                        <rect key="frame" x="0.0" y="0.0" width="72" height="30"/>
-                                        <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                        <buttonCell key="cell" type="push" bezelStyle="rounded" image="NSTouchBarRefreshTemplate" imagePosition="overlaps" alignment="center" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="SMd-ka-re6">
-                                            <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
-                                            <font key="font" usesAppearanceFont="YES"/>
-                                        </buttonCell>
-                                        <connections>
-                                            <action selector="reload:" target="Oky-zY-oP4" id="kf3-9G-Df0"/>
-                                        </connections>
-                                    </button>
-                                </viewController>
-                                <size key="designTimeSize" width="72" height="30"/>
-                            </touchBarItem>
-                        </touchBarItems>
-                    </touchBar>
                     <connections>
-                        <outlet property="reloadTouchBarButton" destination="XDV-N5-XxD" id="tCc-NF-xZ1"/>
                         <segue destination="RAb-Ag-jja" kind="relationship" relationship="window.shadowedContentViewController" id="8Lr-Po-xG2"/>
                     </connections>
                 </windowController>
@@ -1675,8 +1636,6 @@
         <image name="NSFolder" width="32" height="32"/>
         <image name="NSRemoveTemplate" width="18" height="5"/>
         <image name="NSStatusAvailable" width="16" height="16"/>
-        <image name="NSTouchBarRefreshTemplate" width="18" height="21"/>
-        <image name="NSTouchBarSearchTemplate" width="20" height="20"/>
         <image name="app.dashed" catalog="system" width="15" height="14"/>
         <image name="arrow.clockwise" catalog="system" width="14" height="16"/>
         <image name="arrow.trianglehead.2.clockwise.rotate.90" catalog="system" width="16" height="15"/>
