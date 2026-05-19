@@ -9,6 +9,7 @@
 import Cocoa
 
 /// The button controlling and displaying the entire update procedure.
+@MainActor
 class UpdateButton: NSButton {
 
 	/// Internal state that represents the current display mode
@@ -89,11 +90,13 @@ class UpdateButton: NSButton {
 	override func awakeFromNib() {
 		super.awakeFromNib()
 		
-		self.target = self;
-		self.action = #selector(performAction(_:))
-		
-		self.isBordered = false
-		self.contentTintColor = .controlAccentColor
+		MainActor.assumeIsolated {
+			self.target = self;
+			self.action = #selector(performAction(_:))
+
+			self.isBordered = false
+			self.contentTintColor = .controlAccentColor
+		}
 	}
 	
 	deinit {

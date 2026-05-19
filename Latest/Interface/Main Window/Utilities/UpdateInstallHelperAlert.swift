@@ -12,6 +12,7 @@ import ServiceManagement
 /// An alert that handles setting up the install helper for app store updates.
 enum UpdateInstallHelperAlert {
 	/// Presents the alert with the given error.
+	@MainActor
 	static func present(with error: InstallHelperError, fallbackURL: URL) {
 		guard let window = NSApplication.shared.mainWindow else {
 			return

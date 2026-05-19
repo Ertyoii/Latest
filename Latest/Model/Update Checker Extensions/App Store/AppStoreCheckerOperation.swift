@@ -129,24 +129,26 @@ extension AppStoreUpdateCheckerOperation {
 	}
 	
 	private static func updateApp(_ app: App.Bundle, entry: AppStoreEntry) {
-		do {
-			try AppStoreUpdateOperation.prepareForUpdates()
-			UpdateQueue.shared.addOperation(AppStoreUpdateOperation(bundleIdentifier: app.bundleIdentifier, installURL: app.fileURL, appIdentifier: app.identifier, appStoreIdentifier: entry.appStoreIdentifier))
-		} catch {
-			UpdateInstallHelperAlert.present(with: error, fallbackURL: entry.pageURL)
+			do {
+				try AppStoreUpdateOperation.prepareForUpdates()
+				UpdateQueue.shared.addOperation(AppStoreUpdateOperation(bundleIdentifier: app.bundleIdentifier, installURL: app.fileURL, appIdentifier: app.identifier, appStoreIdentifier: entry.appStoreIdentifier))
+			} catch {
+				Task { @MainActor in
+					UpdateInstallHelperAlert.present(with: error, fallbackURL: entry.pageURL)
+				}
+			}
 		}
-	}
 	
 	private static func openAppStorePage(for entry: AppStoreEntry) {
 		NSWorkspace.shared.open(entry.pageURL)
 	}
 	
 	/// Fetches update info and returns the result in the given completion handler.
-	private func fetchAppInfo(completion: @escaping (_ result: Result<AppStoreEntry, Error>) -> ()) {
+	private func fetchAppInfo(completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> ()) {
 		self.fetchAppInfo(with: Self.lookupEntityTypes(forAppAt: app.fileURL), completion: completion)
 	}
 
-	private func fetchAppInfo(with entityTypes: [String], completion: @escaping (_ result: Result<AppStoreEntry, Error>) -> ()) {
+	private func fetchAppInfo(with entityTypes: [String], completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> ()) {
 		guard let entityType = entityTypes.first else {
 			completion(.failure(LatestError.updateInfoUnavailable))
 			return
@@ -168,7 +170,7 @@ extension AppStoreUpdateCheckerOperation {
 	/// Fetches update info and returns the result in the given completion handler.
 	///
 	/// The entity describes the kind of app which will be looked for.
-	private func fetchAppInfo(with entityType: String, completion: @escaping (_ result: Result<AppStoreEntry, Error>) -> ()) {
+	private func fetchAppInfo(with entityType: String, completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> ()) {
 		// Build URL
 		guard let endpoint = URL(string: "https://itunes.apple.com/lookup") else {
 			completion(.failure(MalformedURLError))

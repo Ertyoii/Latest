@@ -9,12 +9,13 @@
 import WebKit
 
 /// Object that loads websites for given URLs and returns their content as HTML.
+@MainActor
 class WebContentLoader: NSObject {
 	
 	/// Loads contents for the given URL.
 	///
 	/// The update handler may be called multiple times, if contents change. The caller is responsible for determining whether updates are still relevant.
-	func load(from url: URL, contentUpdateHandler: @escaping(Result<String, Error>) -> Void) {
+	func load(from url: URL, contentUpdateHandler: @escaping @MainActor (Result<String, Error>) -> Void) {
 		currentUpdateHandler = contentUpdateHandler
 		currentNavigation = webView.load(URLRequest(url: url))
 	}
@@ -57,7 +58,7 @@ class WebContentLoader: NSObject {
 	private var currentNavigation: WKNavigation?
 	
 	/// The current update handler.
-	private var currentUpdateHandler: ((Result<String, Error>) -> Void)?
+	private var currentUpdateHandler: (@MainActor (Result<String, Error>) -> Void)?
 	
 	
 	// MARK: - Utilities
@@ -65,7 +66,7 @@ class WebContentLoader: NSObject {
 	/// Forwards the current page contents to the caller of the load method.
 	fileprivate func notifyContentUpdate() {
 		webView.evaluateJavaScript("document.documentElement.outerHTML.toString()") { html, error in
-			DispatchQueue.main.async {
+			Task { @MainActor in
 				if let html = html as? String, !html.isEmpty {
 					self.currentUpdateHandler?(.success(html))
 				} else if let error = error {

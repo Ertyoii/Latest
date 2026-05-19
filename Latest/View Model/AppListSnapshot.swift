@@ -42,6 +42,13 @@ struct AppListSnapshot {
 	
 	/// Sorts and filters all available apps based on the given filter criteria.
 	private static func generateEntries(from apps: [App], filterQuery: String?) -> [Entry] {
+		let settings = AppListSettings.shared
+		let showInstalledUpdates = settings.showInstalledUpdates
+		let showIgnoredUpdates = settings.showIgnoredUpdates
+		let includeUnsupportedApps = settings.includeUnsupportedApps
+		let includeAppsWithLimitedSupport = settings.includeAppsWithLimitedSupport
+		let sortOrder = settings.sortOrder
+
 		// Mutable copy
 		var visibleApps = apps
 		
@@ -52,22 +59,22 @@ struct AppListSnapshot {
 			}
 
 			// Filter installed updates
-			if !AppListSettings.shared.showInstalledUpdates && !(app.updateAvailable || app.isIgnored) {
+			if !showInstalledUpdates && !(app.updateAvailable || app.isIgnored) {
 				return false
 			}
 						
 			// Filter ignored apps
-			if !AppListSettings.shared.showIgnoredUpdates && app.isIgnored {
+			if !showIgnoredUpdates && app.isIgnored {
 				return false
 			}
 
 			// Filter unsupported apps
-			if !AppListSettings.shared.includeUnsupportedApps && !app.supported {
+			if !includeUnsupportedApps && !app.supported {
 				return false
 			}
 			
 			// Filter apps not using the builtin updater
-			if !AppListSettings.shared.includeAppsWithLimitedSupport && app.updateAvailable && !app.usesBuiltInUpdater {
+			if !includeAppsWithLimitedSupport && app.updateAvailable && !app.usesBuiltInUpdater {
 				return false
 			}
 			
@@ -76,7 +83,7 @@ struct AppListSnapshot {
 		
 		// Sort apps based on setting
 		let filteredApps = visibleApps.sorted(by: { (app1, app2) -> Bool in
-			switch AppListSettings.shared.sortOrder {
+			switch sortOrder {
 			case .updateDate:
 				return app1.updateDate > app2.updateDate
 			case .name:
@@ -84,23 +91,39 @@ struct AppListSnapshot {
 			}
 		})
 		
-		// Build final list. This is a very inefficient solution. Find a better one
-		var availableUpdates = filteredApps.filter({ $0.updateAvailable && !$0.isIgnored }).map({ Entry.app($0) })
-		if !availableUpdates.isEmpty {
-			availableUpdates = [.section(Self.updatableAppsSection(withCount: availableUpdates.count))] + availableUpdates
+		var availableUpdates = [Entry]()
+		var installedUpdates = [Entry]()
+		var ignoredUpdates = [Entry]()
+
+		filteredApps.forEach { app in
+			let entry = Entry.app(app)
+			if app.isIgnored {
+				ignoredUpdates.append(entry)
+			} else if app.updateAvailable {
+				availableUpdates.append(entry)
+			} else {
+				installedUpdates.append(entry)
+			}
 		}
-		
-		var installedUpdates = filteredApps.filter({ !$0.updateAvailable && !$0.isIgnored }).map({ Entry.app($0) })
-		if !installedUpdates.isEmpty {
-			installedUpdates = [.section(Self.updatedAppsSection(withCount: installedUpdates.count))] + installedUpdates
-		}
-		
-		var ignoredUpdates = filteredApps.filter({ $0.isIgnored }).map({ Entry.app($0) })
-		if !ignoredUpdates.isEmpty {
-			ignoredUpdates = [.section(Self.ignoredAppsSection(withCount: ignoredUpdates.count))] + ignoredUpdates
-		}
-		
-		return availableUpdates + installedUpdates + ignoredUpdates
+
+		var entries = [Entry]()
+		entries.reserveCapacity(filteredApps.count + 3)
+		Self.appendSection(
+			availableUpdates,
+			section: Self.updatableAppsSection(withCount: availableUpdates.count),
+			to: &entries
+		)
+		Self.appendSection(
+			installedUpdates,
+			section: Self.updatedAppsSection(withCount: installedUpdates.count),
+			to: &entries
+		)
+		Self.appendSection(
+			ignoredUpdates,
+			section: Self.ignoredAppsSection(withCount: ignoredUpdates.count),
+			to: &entries
+		)
+		return entries
 	}
 	
 
@@ -151,6 +174,12 @@ struct AppListSnapshot {
 		let title = NSLocalizedString("IgnoredAppsSection", comment: "Table Section Header for ignored apps")
 		let shortTitle = NSLocalizedString("IgnoredSection", comment: "Touch Bar section title for ignored apps")
 		return Section(title: title, shortTitle: shortTitle, numberOfApps: numberOfApps)
+	}
+
+	private static func appendSection(_ sectionEntries: [Entry], section: Section, to entries: inout [Entry]) {
+		guard !sectionEntries.isEmpty else { return }
+		entries.append(.section(section))
+		entries.append(contentsOf: sectionEntries)
 	}
 
 }

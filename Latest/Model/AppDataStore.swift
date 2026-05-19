@@ -18,7 +18,7 @@ protocol AppProviding {
 	func countOfAvailableUpdates(where condition: (App) -> Bool) -> Int
 
 	/// The handler for notifying observers about changes to the update state.
-	typealias ObserverHandler = (_ newValue: [App]) -> Void
+	typealias ObserverHandler = @MainActor (_ newValue: [App]) -> Void
 
 	/// Adds the observer if it is not already registered.
 	func addObserver(_ observer: NSObject, handler: @escaping ObserverHandler)
@@ -32,7 +32,7 @@ protocol AppProviding {
 }
 
 /// The collection handling app bundles alongside there update representations.
-class AppDataStore: AppProviding {
+class AppDataStore: AppProviding, @unchecked Sendable {
 
 	/// The queue on which updates to the collection are being performed.
 	private var updateQueue = DispatchQueue(label: "DataStoreQueue")
@@ -91,7 +91,11 @@ class AppDataStore: AppProviding {
 	/// The cached count of apps with updates available
 	func countOfAvailableUpdates(where condition: (App) -> Bool) -> Int {
 		updateQueue.sync {
-			return self.apps.filter({ $0.updateAvailable && !$0.isIgnored && condition($0) }).count
+			return self.apps.reduce(into: 0) { count, app in
+				if app.updateAvailable && !app.isIgnored && condition(app) {
+					count += 1
+				}
+			}
 		}
 	}
 
@@ -101,8 +105,12 @@ class AppDataStore: AppProviding {
 	func set(appBundles: Set<App.Bundle>) -> Set<App> {
 		self.updateQueue.sync {
 			let oldApps = self.apps
+			let oldAppsByIdentifier = oldApps.reduce(into: [App.Bundle.Identifier: App]()) { appsByIdentifier, app in
+				appsByIdentifier[app.identifier] = appsByIdentifier[app.identifier] ?? app
+			}
+
 			self.apps = Set(appBundles.map({ bundle in
-				if let app = oldApps.first(where: { $0.identifier == bundle.identifier }) {
+				if let app = oldAppsByIdentifier[bundle.identifier] {
 					return app.with(bundle: bundle)
 				}
 
@@ -117,7 +125,7 @@ class AppDataStore: AppProviding {
 	func set(appBundle bundle: App.Bundle) -> App {
 		self.updateQueue.sync {
 			let app: App
-			if let oldApp = self.apps.first(where: { $0.identifier == bundle.identifier }) {
+			if let oldApp = self.app(withIdentifier: bundle.identifier) {
 				app = oldApp.with(bundle: bundle)
 			} else {
 				app = App(bundle: bundle, update: nil, isIgnored: self.isIdentifierIgnored(bundle.bundleIdentifier))
@@ -145,11 +153,15 @@ class AppDataStore: AppProviding {
 
 	/// Replaces an existing app entry in the data store with the given one.
 	private func update(_ app: App) {
-		if let oldApp = self.apps.first(where: { $0.identifier == app.identifier }) {
+		if let oldApp = self.app(withIdentifier: app.identifier) {
 			self.apps.remove(oldApp)
 		}
 
 		self.apps.insert(app)
+	}
+
+	private func app(withIdentifier identifier: App.Bundle.Identifier) -> App? {
+		self.apps.first(where: { $0.identifier == identifier })
 	}
 
 
@@ -189,35 +201,35 @@ class AppDataStore: AppProviding {
 	// MARK: - Observer Handling
 
 	/// A mapping of observers associated with apps.
-	private var observers = [NSObject: ObserverHandler]()
+	@MainActor private var observers = [ObjectIdentifier: ObserverHandler]()
 
 	/// Adds the observer if it is not already registered.
 	func addObserver(_ observer: NSObject, handler: @escaping ObserverHandler) {
-		DispatchQueue.main.async {
-			guard !self.observers.keys.contains(observer) else { return }
-			self.observers[observer] = handler
+		let observerID = ObjectIdentifier(observer)
+		Task { @MainActor in
+			guard self.observers[observerID] == nil else { return }
+			self.observers[observerID] = handler
 
 			self.updateQueue.sync {
 				// Call handler immediately to propagate initial state
 				let apps = Array(self.apps)
-				DispatchQueue.main.async {
-					handler(apps)
-				}
+				handler(apps)
 			}
 		}
 	}
 
 	/// Removes the observer.
 	func removeObserver(_ observer: NSObject) {
-		DispatchQueue.main.async {
-			self.observers.removeValue(forKey: observer)
+		let observerID = ObjectIdentifier(observer)
+		Task { @MainActor in
+			self.observers.removeValue(forKey: observerID)
 		}
 	}
 
 	/// Notifies observers about state changes.
 	private func notifyObservers(_ apps: [App]) {
-		DispatchQueue.main.async {
-			self.observers.forEach { (key: NSObject, handler: ObserverHandler) in
+		Task { @MainActor in
+			self.observers.forEach { (_, handler: ObserverHandler) in
 				handler(apps)
 			}
 		}

@@ -9,6 +9,7 @@
 import Cocoa
 
 /// The section header row of the update list.
+@MainActor
 class UpdateGroupCellView: NSTableCellView {
 
 	/// The label holding the sections title.
@@ -23,7 +24,9 @@ class UpdateGroupCellView: NSTableCellView {
 	override func awakeFromNib() {
 		super.awakeFromNib()
 		if #available(macOS 26.0, *) {
-			backgroundEffectView.isHidden = true
+			MainActor.assumeIsolated {
+				backgroundEffectView.isHidden = true
+			}
 		}
 	}
 	

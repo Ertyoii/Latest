@@ -142,6 +142,8 @@ extension App.Update {
 	
 }
 
+extension App.Update: @unchecked Sendable {}
+
 extension App.Update: CustomDebugStringConvertible {
 	var debugDescription: String {
 		return self.remoteVersion.debugDescription

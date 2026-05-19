@@ -11,10 +11,12 @@ import AppKit
 /// Handles release notes conversion and loading.
 ///
 /// The object provides release notes in a uniform representation and caches remote contents for faster access.
+@MainActor
 class ReleaseNotesProvider {
 	
 	/// The return value, containing either the desired release notes, or an error if unavailable.
 	typealias ReleaseNotes = Result<NSAttributedString, Error>
+	typealias Completion = @MainActor (ReleaseNotes) -> Void
 	
 	/// Initializes the provider.
 	init() {
@@ -27,7 +29,7 @@ class ReleaseNotesProvider {
 	private var currentApp: App?
 	
 	/// Provides release notes for the given app.
-	func releaseNotes(for app: App, with completion: @escaping (ReleaseNotes) -> Void) {
+	func releaseNotes(for app: App, with completion: @escaping Completion) {
 		currentApp = app
 		
 		if let releaseNotes = self.cache.object(forKey: app) {
@@ -58,7 +60,7 @@ class ReleaseNotesProvider {
 	/// Object loading HTML content for any given URL.
 	private lazy var webContentLoader = WebContentLoader()
 	
-	private func loadReleaseNotes(for app: App, with completion: @escaping (ReleaseNotes) -> Void) {
+	private func loadReleaseNotes(for app: App, with completion: @escaping Completion) {
 		if let releaseNotes = app.releaseNotes {
 			switch releaseNotes {
 				case .html(let html):
@@ -81,7 +83,7 @@ class ReleaseNotesProvider {
 	
 	
 	/// Fetches release notes from the given URL.
-	private func releaseNotes(from url: URL, with completion: @escaping (ReleaseNotes) -> Void) {
+	private func releaseNotes(from url: URL, with completion: @escaping Completion) {
 		webContentLoader.load(from: url) { result in
 			switch result {
 			case .success(let html):
@@ -92,9 +94,9 @@ class ReleaseNotesProvider {
 		}
 	}
 
-	private func githubReleaseNotes(from url: URL, relevantVersion: String?, with completion: @escaping (ReleaseNotes) -> Void) {
+	private func githubReleaseNotes(from url: URL, relevantVersion: String?, with completion: @escaping Completion) {
 		URLSession.shared.dataTask(with: url) { data, _, error in
-			DispatchQueue.main.async {
+			Task { @MainActor in
 				if let error {
 					completion(.failure(error))
 					return
@@ -128,7 +130,7 @@ class ReleaseNotesProvider {
 		}.resume()
 	}
 
-	private func changelogReleaseNotes(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, with completion: @escaping (ReleaseNotes) -> Void) {
+	private func changelogReleaseNotes(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, with completion: @escaping Completion) {
 		var remainingURLs = urls
 
 		func loadNext() {
@@ -217,9 +219,10 @@ enum ReleaseNotesMarkup {
 	}
 
 	static func relevantText(from text: String, version: String?, allowFirstSectionFallback: Bool) -> String? {
-		let lines = text.components(separatedBy: .newlines).map {
-			$0.trimmingCharacters(in: .whitespacesAndNewlines)
-		}.filter { !$0.isEmpty }
+		let lines = text.components(separatedBy: .newlines).compactMap { line -> String? in
+			let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+			return trimmedLine.isEmpty ? nil : trimmedLine
+		}
 
 		guard !lines.isEmpty else { return nil }
 

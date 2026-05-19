@@ -9,13 +9,13 @@ import Foundation
 import QuartzCore
 
 /// Cross-platform convenience for accessing a DisplayLink.
-class DisplayLink: NSObject {
+class DisplayLink: NSObject, @unchecked Sendable {
 
 	/// The amount of time the display link should be running. If  set to `nil`, the display link runs indefinitely. 
     private(set) var duration : Double?
 	
 	/// An optional completion handler called after the display link stopped animating.
-    var completionHandler : (() -> ())?
+    var completionHandler : (@MainActor () -> ())?
 	
 	/// The current  animation progress. Only useful if a duration has been set.
 	private(set) var progress : Double = 0
@@ -31,13 +31,13 @@ class DisplayLink: NSObject {
     private var _frames : Double = 0
     
 	/// The callback called for each animation step.
-    private(set) var callback : ((_ progress: Double) -> Void)!
+    private(set) var callback : (@MainActor (_ progress: Double) -> Void)!
     
 	
 	// MARK: - Initialization
 	
 	/// Initializes the display link with the given duration and callback.
-	init(duration: Double?, callback: @escaping ((_ progress: Double) -> Void)) {
+	init(duration: Double?, callback: @escaping @MainActor (_ progress: Double) -> Void) {
         super.init()
         
         self.duration = duration
@@ -95,15 +95,15 @@ class DisplayLink: NSObject {
 #endif
         
 		// Forward progress to the observer
-		DispatchQueue.main.async {
+		Task { @MainActor in
 			self.progress = self._currentFrame / self._frames
 			if self.duration != nil, self.progress >= 1 {
-                self.completionHandler?()
+				self.completionHandler?()
 				self.stop()
-            }
-            
+			}
+
 			self.callback(self.progress)
-        }
+		}
 	}
     
 	

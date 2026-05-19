@@ -45,7 +45,7 @@ struct AppListSettings: Observable {
 		])
 	}
 	
-	static var shared: AppListSettings = {
+	nonisolated(unsafe) static var shared: AppListSettings = {
 		return AppListSettings()
 	}()
 	
@@ -109,10 +109,7 @@ struct AppListSettings: Observable {
 	
 	private func set(_ value: Any, forKey key: String) {
 		UserDefaults.standard.set(value, forKey: key)
-		
-		DispatchQueue.main.async {
-			self.notify()
-		}
+		self.notify()
 	}
 	
 }

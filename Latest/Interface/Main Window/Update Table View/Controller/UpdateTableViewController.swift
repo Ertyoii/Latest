@@ -13,7 +13,7 @@ import Cocoa
  */
 class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate, Observer {
 	
-	var id = UUID()
+	nonisolated let id = UUID()
 	
     /// The array holding the apps that have an update available.
 	var snapshot: AppListSnapshot = AppListSnapshot(withApps: [], filterQuery: nil) {
@@ -406,12 +406,13 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
     
     // MARK: Delegate
     
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        let row = self.tableView.clickedRow
-        
-        guard row != -1, !self.snapshot.isSectionHeader(at: row) else { return }
-		menu.items.forEach({ $0.representedObject = self.snapshot.app(at: row) })
-    }
+	func menuNeedsUpdate(_ menu: NSMenu) {
+		let row = self.tableView.clickedRow
+
+		guard row != -1, !self.snapshot.isSectionHeader(at: row) else { return }
+		let app = self.snapshot.app(at: row)
+		menu.items.forEach({ $0.representedObject = app })
+	}
     
 	
 	// MARK: - Search

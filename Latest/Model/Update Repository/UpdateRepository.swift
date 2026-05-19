@@ -14,7 +14,7 @@ private let UpdateDateKey = "UpdateDateKey"
 /// A storage that fetches update information from an online source.
 ///
 /// Can be asked for update version information for a given application bundle.
-class UpdateRepository {
+class UpdateRepository: @unchecked Sendable {
 
 	/// Duration after which the cache will be invalidated. (1 hour in seconds)
 	private static let cacheInvalidationDuration: Double = 1 * 60 * 60
@@ -46,8 +46,8 @@ class UpdateRepository {
 	// MARK: - Accessors
 
 	/// Returns update information for the given bundle.
-	func updateInfo(for bundle: App.Bundle, handler: @escaping (_ bundle: App.Bundle, _ version: Version?, _ minimumOSVersion: OperatingSystemVersion?, _ releaseNotes: App.Update.ReleaseNotes?) -> Void) {
-		let checkApp = { [weak self] in
+	func updateInfo(for bundle: App.Bundle, handler: @escaping @Sendable (_ bundle: App.Bundle, _ version: Version?, _ minimumOSVersion: OperatingSystemVersion?, _ releaseNotes: App.Update.ReleaseNotes?) -> Void) {
+		let checkApp: @Sendable () -> Void = { [weak self] in
 			guard let self, let entry = self.entry(for: bundle) else {
 				handler(bundle, nil, nil, nil)
 				return
@@ -76,7 +76,7 @@ class UpdateRepository {
 	/// A list of requests being performed while the repository was still fetching data.
 	///
 	/// It also acts as a flag for whether initialization finished. The array is initialized when the repository is created. It will be set to nil once `finalize()` is being called.
-	private var pendingRequests: [() -> Void]? = []
+	private var pendingRequests: [@Sendable () -> Void]? = []
 
 	/// A set of bundle identifiers for which update checking is currently not supported.
 	private var unsupportedBundleIdentifiers: Set<String>!
@@ -140,12 +140,32 @@ class UpdateRepository {
 			return stableEntries.first
 		}
 
-		guard let shortestTokenLength = stableEntries.map(\.token.count).min() else {
-			return nil
+		return Self.uniqueShortestTokenEntry(in: stableEntries)
+	}
+
+	private static func uniqueShortestTokenEntry(in entries: [Entry]) -> Entry? {
+		var shortestEntry: Entry?
+		var shortestTokenLength: Int?
+		var shortestTokenLengthHasTie = false
+
+		for entry in entries {
+			let tokenLength = entry.token.count
+			guard let currentShortestTokenLength = shortestTokenLength else {
+				shortestEntry = entry
+				shortestTokenLength = tokenLength
+				continue
+			}
+
+			if tokenLength == currentShortestTokenLength {
+				shortestTokenLengthHasTie = true
+			} else if tokenLength < currentShortestTokenLength {
+				shortestEntry = entry
+				shortestTokenLength = tokenLength
+				shortestTokenLengthHasTie = false
+			}
 		}
 
-		let shortestStableEntries = stableEntries.filter { $0.token.count == shortestTokenLength }
-		return shortestStableEntries.count == 1 ? shortestStableEntries.first : nil
+		return shortestTokenLengthHasTie ? nil : shortestEntry
 	}
 
 
@@ -156,7 +176,7 @@ class UpdateRepository {
 		RemoteURL.allCases.forEach { urlType in
 			self.fetchCompletedGroup.enter()
 
-			func handle(_ data: Data) {
+			@Sendable func handle(_ data: Data) {
 				switch urlType {
 				case .repository:
 					parse(data)

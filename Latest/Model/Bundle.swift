@@ -124,3 +124,5 @@ extension App.Bundle: CustomDebugStringConvertible {
 		return "\(name), \(version)"
 	}
 }
+
+extension App.Bundle: @unchecked Sendable {}

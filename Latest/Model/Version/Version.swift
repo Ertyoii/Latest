@@ -148,7 +148,7 @@ struct Version : Hashable, Comparable {
 		if count1 != count2 {
 			let l = count1 > count2
 			let longerComponents = (l ? c1 : c2)[(l ? count2 : count1)...]
-			guard case .component(let atoms) = longerComponents.first(where: { if case .component(_) = $0 { true } else { false } }) else {
+			guard let atoms = firstComponentAtoms(in: longerComponents) else {
 				return .equal // Think "1.2" vs "1.2."
 			}
 
@@ -164,6 +164,14 @@ struct Version : Hashable, Comparable {
 		}
 
 		return .equal // Think "1.2" vs "1.2"
+	}
+
+	private static func firstComponentAtoms(in segments: ArraySlice<Segment>) -> [Segment.Atom]? {
+		for case .component(let atoms) in segments {
+			return atoms
+		}
+
+		return nil
 	}
 }
 

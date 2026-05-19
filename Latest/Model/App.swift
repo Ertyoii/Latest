@@ -280,3 +280,5 @@ extension App: CustomDebugStringConvertible {
 		
 	}
 }
+
+extension App: @unchecked Sendable {}

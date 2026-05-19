@@ -11,13 +11,15 @@ import Foundation
 /// Object that takes care of storing and observing application directories.
 class AppDirectoryStore {
 	
-	typealias UpdateHandler = () -> Void
+	typealias UpdateHandler = @MainActor @Sendable () -> Void
 	private let observer: NSKeyValueObservation?
 
 	/// Initializes the store with the given update handler.
 	init(updateHandler: @escaping UpdateHandler) {
 		observer = UserDefaults.standard.observe(\.directoryPaths, changeHandler: { _, _ in
-			updateHandler()
+			Task { @MainActor in
+				updateHandler()
+			}
 		})
 	}
 	
@@ -41,7 +43,9 @@ class AppDirectoryStore {
 			URL(filePath: "/System/Library/CoreServices/Applications", directoryHint: .isDirectory)
 		]
 
-		return (applicationURLs + systemApplicationURLs).filter { url -> Bool in
+		var defaultURLs = applicationURLs
+		defaultURLs.append(contentsOf: systemApplicationURLs)
+		return defaultURLs.filter { url -> Bool in
 			return fileManager.fileExists(atPath: url.path)
 		}.deduplicated()
 	}()

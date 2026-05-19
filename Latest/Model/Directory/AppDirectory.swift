@@ -9,7 +9,7 @@
 import Cocoa
 
 /// The folder listener listens for changes in the given directory and then runs the update checker on changes
-class AppDirectory {
+class AppDirectory: @unchecked Sendable {
 	
 	/// The url on which the listener reacts to changes on
 	let url : URL

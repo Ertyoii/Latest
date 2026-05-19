@@ -11,6 +11,7 @@ import Foundation
 /**
  Protocol that defines some methods on reporting the progress of the update checking process.
  */
+@MainActor
 protocol UpdateCheckProgressReporting : AnyObject {
 
 	/// Indicates that the scan process has been started.
@@ -34,7 +35,7 @@ protocol UpdateCheckProgressReporting : AnyObject {
  UpdateCheckCoordinator handles the logic for checking for updates.
  Each new method of checking for updates should be implemented in its own extension and then included in the `updateMethods` array
  */
-class UpdateCheckCoordinator {
+class UpdateCheckCoordinator: @unchecked Sendable {
 
     typealias UpdateCheckerCallback = (_ app: App.Bundle) -> Void
 
@@ -99,6 +100,7 @@ class UpdateCheckCoordinator {
 	}()
 
 	/// Initiate the update check, if not already running.
+	@MainActor
 	func run() {
 		self.progressDelegate?.updateCheckerDidStartScanningForApps(self)
 
@@ -130,14 +132,14 @@ class UpdateCheckCoordinator {
 		assert(!Thread.current.isMainThread, "Must not be called on main thread.")
 
 		// Inform delegate of update check
-		DispatchQueue.main.async {
+		Task { @MainActor in
 			self.progressDelegate?.updateChecker(self, didStartCheckingApps: operations.count)
 		}
 
 		// Start update check
 		self.updateOperationQueue.addOperations(operations, waitUntilFinished: true)
 
-		DispatchQueue.main.async {
+		Task { @MainActor in
 			// Update Checks finished
 			self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self)
 		}
@@ -147,7 +149,7 @@ class UpdateCheckCoordinator {
 	private func didCheck(_ bundle: App.Bundle, _ update: Result<App.Update, Error>?) {
 		let app = self.dataStore.set(update, for: bundle)
 
-		DispatchQueue.main.async {
+		Task { @MainActor in
 			self.progressDelegate?.updateChecker(self, didCheckApp: app)
 		}
     }

@@ -90,16 +90,27 @@ class SettingsTabViewController: NSTabViewController {
         let newOrigin = NSPoint(x: window.frame.origin.x, y: window.frame.origin.y + toolbarHeight)
         let newFrame = NSRect(origin: newOrigin, size: contentFrame.size)
 		
-		window.setFrame(newFrame, display: false, animate: animated)
+			window.setFrame(newFrame, display: false, animate: animated)
 
-		if animated {
-			NSAnimationContext.runAnimationGroup { context in
-				context.duration = window.animationResizeTime(newFrame)
-			} completionHandler: {
-				(tabViewItem.viewController as? SettingsTabItemViewController)?.commitAnimation()
-			}
-		} else {
+			if animated {
+				let tabViewItemBox = SendableTabViewItemBox(tabViewItem)
+				NSAnimationContext.runAnimationGroup { context in
+					context.duration = window.animationResizeTime(newFrame)
+				} completionHandler: {
+					MainActor.assumeIsolated {
+						(tabViewItemBox.item?.viewController as? SettingsTabItemViewController)?.commitAnimation()
+					}
+				}
+			} else {
 			(tabViewItem.viewController as? SettingsTabItemViewController)?.commitAnimation()
-		}
-    }
+	}
+}
+
+private final class SendableTabViewItemBox: @unchecked Sendable {
+	weak var item: NSTabViewItem?
+
+	init(_ item: NSTabViewItem) {
+		self.item = item
+	}
+}
 }

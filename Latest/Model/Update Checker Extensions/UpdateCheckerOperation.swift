@@ -12,7 +12,7 @@ import Cocoa
 protocol UpdateCheckerOperation: StatefulOperation {
 	
 	/// The completion block called after the update check completes
-	typealias UpdateCheckerCompletionBlock = ((Result<App.Update, Error>) -> Void)
+	typealias UpdateCheckerCompletionBlock = @Sendable (Result<App.Update, Error>) -> Void
 	
 	/// Initializes the operation. May return nil if the app at the given URL can't be checked using the given update checker operation.
 	init(with bundle: App.Bundle, repository: UpdateRepository?, completionBlock: @escaping UpdateCheckerCompletionBlock)
