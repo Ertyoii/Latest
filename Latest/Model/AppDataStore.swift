@@ -210,11 +210,11 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 			guard self.observers[observerID] == nil else { return }
 			self.observers[observerID] = handler
 
-			self.updateQueue.sync {
-				// Call handler immediately to propagate initial state
-				let apps = Array(self.apps)
-				handler(apps)
+			// Call handler immediately to propagate initial state.
+			let apps = self.updateQueue.sync {
+				Array(self.apps)
 			}
+			handler(apps)
 		}
 	}
 
