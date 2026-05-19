@@ -8,6 +8,10 @@
 
 import AppKit
 
+private extension NSUserInterfaceItemIdentifier {
+	static let directoryCell = NSUserInterfaceItemIdentifier("directoryCellView")
+}
+
 /// View displaying a list of directories to be checked for apps with updates.
 class AppDirectoryViewController: SettingsTabItemViewController, NSTableViewDataSource, NSTableViewDelegate {
 	
@@ -36,7 +40,7 @@ class AppDirectoryViewController: SettingsTabItemViewController, NSTableViewData
 	}
 
 	func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-		guard let view = tableView.makeView(withIdentifier: NSUserInterfaceItemIdentifier("directoryCellView"), owner: self) as? AppDirectoryCellView else { return nil }
+		guard let view = tableView.makeView(withIdentifier: .directoryCell, owner: self) as? AppDirectoryCellView else { return nil }
 		view.url = directoryStore.URLs[row]
 		
 		return view

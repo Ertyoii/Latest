@@ -9,6 +9,7 @@
 import Cocoa
 
 /// View that holds a single location checked for updates.
+@MainActor
 class AppDirectoryCellView: NSTableCellView {
 	
 	/// The label holding the path of the directory.
@@ -28,12 +29,15 @@ class AppDirectoryCellView: NSTableCellView {
 		didSet {
 			guard url != oldValue else { return }
 			
+			appCountTask?.cancel()
 			isReachable = (try? url?.checkResourceIsReachable()) == true
 			setUpView()
 		}
 	}
 	
 	var isReachable: Bool = false
+
+	private var appCountTask: Task<Void, Never>?
 	
 	private func setUpView() {
 		guard let url else {
@@ -53,13 +57,16 @@ class AppDirectoryCellView: NSTableCellView {
 		// App Count
 		activityIndicator.startAnimation(nil)
 		appCountLabel.isHidden = true
-		DispatchQueue.global().async {
-			let count = BundleCollector.collectBundles(at: url).count
-			DispatchQueue.main.async {
-				self.appCountLabel.isHidden = false
-				self.activityIndicator.stopAnimation(nil)
-				self.appCountLabel.stringValue = NumberFormatter.localizedString(from: NSNumber(value: count), number: .none)
-			}
+		appCountTask = Task {
+			let count = await Task.detached(priority: .utility) {
+				BundleCollector.collectBundles(at: url).count
+			}.value
+
+			guard !Task.isCancelled, self.url == url else { return }
+
+			self.appCountLabel.isHidden = false
+			self.activityIndicator.stopAnimation(nil)
+			self.appCountLabel.stringValue = NumberFormatter.localizedString(from: NSNumber(value: count), number: .none)
 		}
 	}
 	

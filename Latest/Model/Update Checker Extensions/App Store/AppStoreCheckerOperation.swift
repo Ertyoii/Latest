@@ -9,7 +9,7 @@
 import Cocoa
 import ServiceManagement
 
-let MalformedURLError = NSError(domain: NSURLErrorDomain, code: NSURLErrorUnsupportedURL, userInfo: nil)
+private let malformedURLError = NSError(domain: NSURLErrorDomain, code: NSURLErrorUnsupportedURL)
 
 /// The operation for checking for updates for a Mac App Store app.
 class AppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, @unchecked Sendable {
@@ -179,11 +179,11 @@ extension AppStoreUpdateCheckerOperation {
 	}
 	
 	/// Fetches update info and returns the result in the given completion handler.
-	private func fetchAppInfo(completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> ()) {
+	private func fetchAppInfo(completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> Void) {
 		self.fetchAppInfo(with: Self.lookupEntityTypes(forAppAt: app.fileURL), completion: completion)
 	}
 
-	private func fetchAppInfo(with entityTypes: [String], completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> ()) {
+	private func fetchAppInfo(with entityTypes: [String], completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> Void) {
 		guard let entityType = entityTypes.first else {
 			completion(.failure(LatestError.updateInfoUnavailable))
 			return
@@ -205,10 +205,10 @@ extension AppStoreUpdateCheckerOperation {
 	/// Fetches update info and returns the result in the given completion handler.
 	///
 	/// The entity describes the kind of app which will be looked for.
-	private func fetchAppInfo(with entityType: String, completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> ()) {
+	private func fetchAppInfo(with entityType: String, completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> Void) {
 		// Build URL
 		guard let endpoint = URL(string: "https://itunes.apple.com/lookup") else {
-			completion(.failure(MalformedURLError))
+			completion(.failure(malformedURLError))
 			return
 		}
 
@@ -222,15 +222,15 @@ extension AppStoreUpdateCheckerOperation {
 			URLQueryItem(name: "bundleId", value: self.app.bundleIdentifier)
 		]
 		guard let url = components?.url else {
-			completion(.failure(MalformedURLError))
+			completion(.failure(malformedURLError))
 			return
 		}
 		
 		// Perform request
 		let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 30)
-		let dataTask = URLSession.shared.dataTask(with: request) { (data, response, error) in
+		let dataTask = URLSession.shared.dataTask(with: request) { data, _, error in
 			guard error == nil, let data = data else {
-				completion(.failure(MalformedURLError))
+				completion(.failure(malformedURLError))
 				return
 			}
 			
@@ -312,7 +312,7 @@ fileprivate struct AppStoreEntry: Decodable {
 		
 		let pageURL = try container.decode(String.self, forKey: .pageURL)
 		guard let url = URL(string: pageURL.replacingOccurrences(of: "https", with: "macappstore")) else {
-			throw MalformedURLError
+			throw malformedURLError
 		}
 		self.pageURL = url
 		

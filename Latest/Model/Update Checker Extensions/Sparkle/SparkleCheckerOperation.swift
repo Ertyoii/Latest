@@ -67,7 +67,7 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 			return
 		}
 		
-		DispatchQueue.main.async {
+		Task { @MainActor in
 			// Instantiate a new updater that performs the update
 			let updater = SPUUpdater(hostBundle: bundle, applicationBundle: bundle, userDriver: self, delegate: self)
 			
@@ -105,9 +105,9 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 			UpdateQueue.shared.addOperation(SparkleUpdateOperation(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier))
 		}))
 
-		DispatchQueue.main.async(execute: {
+		Task { @MainActor in
 			self.finish()
-		})
+		}
 	}
 }
 

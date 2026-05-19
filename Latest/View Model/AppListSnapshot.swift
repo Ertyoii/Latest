@@ -12,6 +12,7 @@
 /// - All apps with updates available
 /// - All installed apps, separated from the ones with updates through sections
 /// - A filtered list of apps based on a given filter string
+@MainActor
 struct AppListSnapshot {
 	
 	/// The query after which apps can be filtered
@@ -138,8 +139,8 @@ struct AppListSnapshot {
 		return nil
 	}
 	
-	func index(of app: App) -> Int? {
-		return self.entries.firstIndex(where: { $0.isSimilar(to: .app(app)) })
+	func firstIndex(of app: App) -> Int? {
+		self.entries.firstIndex { $0.isSimilar(to: .app(app)) }
 	}
 	
 	func contains(_ app: App) -> Bool {

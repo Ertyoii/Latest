@@ -64,12 +64,13 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 	// MARK: - Observer Handling
 	
 	/// The handler for notifying observers about changes to the update state.
-	typealias ObserverHandler = (_: UpdateOperation.ProgressState) -> Void
+	typealias ObserverHandler = @MainActor (_: UpdateOperation.ProgressState) -> Void
 
 	/// A mapping of observers associated with apps.
 	private var observers = [App.Bundle.Identifier : [NSObject: ObserverHandler]]()
 	
 	/// Adds the observer if it is not already registered.
+	@MainActor
 	func addObserver(_ observer: NSObject, to identifier: App.Bundle.Identifier, handler: @escaping ObserverHandler) {
 		var observers = self.observers[identifier] ?? [:]
 		
@@ -96,7 +97,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 	private func notifyObservers(for identifier: App.Bundle.Identifier) {
 		let state = self.state(for: identifier)
 		
-		DispatchQueue.main.async {
+		Task { @MainActor in
 			self.observers[identifier]?.forEach { (key: NSObject, handler: UpdateQueue.ObserverHandler) in
 				handler(state)
 			}

@@ -33,8 +33,8 @@ extension ReleaseNotesErrorViewController: ReleaseNotesContentProtocol {
     
     typealias ReleaseNotesContentController = ReleaseNotesErrorViewController
     
-    static var StoryboardIdentifier: String {
-        return "ReleaseNotesErrorViewControllerIdentifier"
+    static var storyboardIdentifier: NSStoryboard.SceneIdentifier {
+        ReleaseNotesContentStoryboardIdentifier.error
     }
     
 }

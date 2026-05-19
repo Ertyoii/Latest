@@ -8,8 +8,6 @@
 
 import Cocoa
 
-fileprivate let ReleaseNotesTextParagraphCellIdentifier = NSUserInterfaceItemIdentifier(rawValue: "ReleaseNotesTextParagraphCellIdentifier")
-
 /// The controller displaying the actual release notes
 class ReleaseNotesTextViewController: NSViewController {
 
@@ -96,8 +94,8 @@ extension ReleaseNotesTextViewController: ReleaseNotesContentProtocol {
     
     typealias ReleaseNotesContentController = ReleaseNotesTextViewController
     
-    static var StoryboardIdentifier: String {
-        return "ReleaseNotesTextViewControllerIdentifier"
+    static var storyboardIdentifier: NSStoryboard.SceneIdentifier {
+        ReleaseNotesContentStoryboardIdentifier.text
     }
     
 }

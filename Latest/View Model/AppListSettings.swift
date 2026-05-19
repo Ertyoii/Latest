@@ -6,6 +6,8 @@
 //  Copyright © 2022 Max Langer. All rights reserved.
 //
 
+import Foundation
+
 private let SortOptionsKey = "SortOptionsKey"
 private let ShowInstalledUpdatesKey = "ShowInstalledUpdatesKey"
 private let ShowIgnoredUpdatesKey = "ShowIgnoredUpdatesKey"
@@ -14,7 +16,8 @@ private let IncludeUnsupportedAppsKey = "ShowUnsupportedUpdatesKey"
 private let IncludeAppsWithLimitedSupportKey = "IncludeAppsWithLimitedSupportKey"
 
 /// Observable front end to app list preferences.
-struct AppListSettings: Observable {
+@MainActor
+final class AppListSettings: Observable {
 	
 	/// Sorting options available to the app list.
 	enum SortOptions: Int, CaseIterable {
@@ -45,9 +48,11 @@ struct AppListSettings: Observable {
 		])
 	}
 	
-	nonisolated(unsafe) static var shared: AppListSettings = {
-		return AppListSettings()
-	}()
+	static let shared = AppListSettings()
+
+	func removeObserver(withID id: UUID) {
+		observers.removeValue(forKey: id)
+	}
 	
 	/// The order the app list should be shown in.
 	var sortOrder: SortOptions {

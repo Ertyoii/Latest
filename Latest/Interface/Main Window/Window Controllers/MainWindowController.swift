@@ -8,6 +8,10 @@
 
 import Cocoa
 
+private extension NSUserInterfaceItemIdentifier {
+	static let sortByMenu = NSUserInterfaceItemIdentifier("sortByMenu")
+}
+
 /**
  This class controls the main window of the app. It includes the list of apps that have an update available as well as the release notes for the specific update.
  */
@@ -151,9 +155,9 @@ class MainWindowController: NSWindowController, NSMenuItemValidation, NSMenuDele
     }
     
     func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.items.forEach { (menuItem) in
+		menu.items.forEach { (menuItem) in
 			// Sort By menu constructed dynamically
-			if menuItem.identifier == NSUserInterfaceItemIdentifier(rawValue: "sortByMenu") {
+			if menuItem.identifier == .sortByMenu {
 				menuItem.submenu?.items = sortByMenuItems
 			}
 

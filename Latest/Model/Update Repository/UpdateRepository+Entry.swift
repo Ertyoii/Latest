@@ -314,7 +314,7 @@ fileprivate extension KeyedDecodingContainer {
 	/// Returns an array with objects of the given type for the given key.
 	///
 	/// Can decode single objects and arrays.
-	func decodeVariable<T>(_ type: T.Type, forKey key: KeyedDecodingContainer<K>.Key) throws -> [T] where T : Decodable {
+	func decodeVariable<T>(_ type: T.Type, forKey key: KeyedDecodingContainer<K>.Key) throws -> [T] where T: Decodable {
 		var value: [T] = []
 		do {
 			// Attempt to decode single object.

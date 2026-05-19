@@ -11,20 +11,21 @@ import Foundation
 /// A uniquely identifiable observer.
 protocol Observer: Identifiable where ID == UUID {}
 
-/// An observable object.
-protocol Observable {
+/// A main-actor observable object.
+@MainActor
+protocol Observable: AnyObject {
 	
 	/// The handler called when an observation is notified.
-	typealias ObservationHandler = () -> Void
+	typealias ObservationHandler = @MainActor () -> Void
 	
 	/// The list of observers.
 	var observers: [UUID: ObservationHandler] { get set }
 
 	/// Adds the observer with the given handler to the list of observers.
-	mutating func add(_ observer: any Observer, handler: @escaping ObservationHandler)
+	func add(_ observer: any Observer, handler: @escaping ObservationHandler)
 	
 	/// Removes the given observer from the list.
-	mutating func remove(_ observer: any Observer)
+	func remove(_ observer: any Observer)
 	
 	/// Notifies the observers of an observation.
 	func notify()
@@ -33,11 +34,11 @@ protocol Observable {
 
 extension Observable {
 	
-	mutating func add(_ observer: any Observer, handler: @escaping ObservationHandler) {
+	func add(_ observer: any Observer, handler: @escaping ObservationHandler) {
 		observers[observer.id] = handler
 	}
 	
-	mutating func remove(_ observer: any Observer) {
+	func remove(_ observer: any Observer) {
 		observers.removeValue(forKey: observer.id)
 	}
 	

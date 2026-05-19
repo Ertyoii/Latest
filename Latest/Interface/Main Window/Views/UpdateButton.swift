@@ -12,6 +12,12 @@ import Cocoa
 @MainActor
 class UpdateButton: NSButton {
 
+	enum Style {
+		static let backgroundColor = #colorLiteral(red: 0.9488552213, green: 0.9487094283, blue: 0.9693081975, alpha: 1)
+		static let highlightedBackgroundColor = #colorLiteral(red: 0.7995074391, green: 0.8113409281, blue: 0.8403512836, alpha: 1)
+		static let tintColor = NSColor.controlAccentColor
+	}
+
 	/// Internal state that represents the current display mode
 	private enum InterfaceState {
 		/// No update progress should be shown.
@@ -73,9 +79,9 @@ class UpdateButton: NSButton {
 	var contentCell: UpdateButtonCell {
 		return self.cell as! UpdateButtonCell
 	}
-	
+
 	/// The background color for this button. Animatable.
-	@objc dynamic var backgroundColor: NSColor = #colorLiteral(red: 0.9488552213, green: 0.9487094283, blue: 0.9693081975, alpha: 1) {
+	@objc dynamic var backgroundColor: NSColor = Style.backgroundColor {
 		didSet {
 			self.needsDisplay = true
 		}
@@ -89,13 +95,13 @@ class UpdateButton: NSButton {
 	
 	override func awakeFromNib() {
 		super.awakeFromNib()
-		
-		MainActor.assumeIsolated {
-			self.target = self;
+
+		Task { @MainActor in
+			self.target = self
 			self.action = #selector(performAction(_:))
 
 			self.isBordered = false
-			self.contentTintColor = .controlAccentColor
+			self.contentTintColor = Style.tintColor
 		}
 	}
 	

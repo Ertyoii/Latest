@@ -52,7 +52,7 @@ class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
 			return
 		}
 		
-		DispatchQueue.main.async {
+		Task { @MainActor in
 			// Instantiate a new updater that performs the update
 			let updater = SPUUpdater(hostBundle: bundle, applicationBundle: bundle, userDriver: self, delegate: self)
 			

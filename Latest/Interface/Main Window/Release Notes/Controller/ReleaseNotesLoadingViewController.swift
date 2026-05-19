@@ -27,8 +27,8 @@ extension ReleaseNotesLoadingViewController: ReleaseNotesContentProtocol {
     
     typealias ReleaseNotesContentController = ReleaseNotesLoadingViewController
     
-    static var StoryboardIdentifier: String {
-        return "ReleaseNotesLoadingViewControllerIdentifier"
+    static var storyboardIdentifier: NSStoryboard.SceneIdentifier {
+        ReleaseNotesContentStoryboardIdentifier.loading
     }
     
 }

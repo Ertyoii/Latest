@@ -38,7 +38,7 @@ class AppLibrary: @unchecked Sendable {
 
 	/// Starts the update checking process
 	func startQuery() {
-		DispatchQueue.global().async {
+		Task.detached(priority: .utility) {
 			self.setupDirectoryObservers()
 		}
 	}
@@ -66,7 +66,7 @@ class AppLibrary: @unchecked Sendable {
 			})
 		})
 
-		dispatchGroup?.notify(queue: .global()) {
+		dispatchGroup?.notify(queue: updateSchedulingQueue) {
 			// Call update immediately. Using the scheduler delays the update.
 			self.performUpdate()
 			dispatchGroup = nil

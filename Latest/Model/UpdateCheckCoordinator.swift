@@ -122,7 +122,7 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 			}
 		}
 
-		DispatchQueue.global().async {
+		Task.detached(priority: .userInitiated) {
 			self.performUpdateCheck(with: operations)
 		}
 	}
@@ -159,7 +159,10 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 			return
 		}
 
-		DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { [weak self] in
+		Task.detached(priority: .utility) { [weak self] in
+			try? await Task.sleep(for: .milliseconds(300))
+			guard !Task.isCancelled else { return }
+
 			guard let self, let bundle = BundleCollector.collectBundle(at: appIdentifier) else {
 				return
 			}

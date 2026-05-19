@@ -9,6 +9,7 @@
 import AppKit
 
 /// Base view controller for settings views.
+@MainActor
 class SettingsTabItemViewController: NSViewController {
 	
 	@IBOutlet weak var animatingTrailingConstraint: NSLayoutConstraint!
@@ -32,6 +33,7 @@ class SettingsTabItemViewController: NSViewController {
 }
 
 /// Tab bar controller handling animation transitions between tab items.
+@MainActor
 class SettingsTabViewController: NSTabViewController {
 	
 	// MARK: - View Lifecycle
@@ -48,10 +50,10 @@ class SettingsTabViewController: NSTabViewController {
 
 	// MARK: - Tab View
 	
-    override func tabView(_ tabView: NSTabView, willSelect tabViewItem: NSTabViewItem?) {
-        super.tabView(tabView, willSelect: tabViewItem)
+	override func tabView(_ tabView: NSTabView, willSelect tabViewItem: NSTabViewItem?) {
+		super.tabView(tabView, willSelect: tabViewItem)
 		prepareForPresentation(of: tabViewItem)
-    }
+	}
 
 	override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
 		super.tabView(tabView, didSelect: tabViewItem)
@@ -78,39 +80,39 @@ class SettingsTabViewController: NSTabViewController {
 		}
 	}
 	
-    /// Resizes the window so that it fits the content of the tab.
+	/// Resizes the window so that it fits the content of the tab.
 	private func resizeWindowToFit(tabViewItem: NSTabViewItem, animated: Bool) {
-        guard let size = tabViewSizes[tabViewItem], let window = view.window else {
-            return
-        }
+		guard let size = tabViewSizes[tabViewItem], let window = view.window else {
+			return
+		}
 
-        let contentRect = NSRect(x: 0, y: 0, width: size.width, height: size.height)
-        let contentFrame = window.frameRect(forContentRect: contentRect)
-        let toolbarHeight = window.frame.size.height - contentFrame.size.height
-        let newOrigin = NSPoint(x: window.frame.origin.x, y: window.frame.origin.y + toolbarHeight)
-        let newFrame = NSRect(origin: newOrigin, size: contentFrame.size)
-		
-			window.setFrame(newFrame, display: false, animate: animated)
+		let contentRect = NSRect(x: 0, y: 0, width: size.width, height: size.height)
+		let contentFrame = window.frameRect(forContentRect: contentRect)
+		let toolbarHeight = window.frame.size.height - contentFrame.size.height
+		let newOrigin = NSPoint(x: window.frame.origin.x, y: window.frame.origin.y + toolbarHeight)
+		let newFrame = NSRect(origin: newOrigin, size: contentFrame.size)
 
-			if animated {
-				let tabViewItemBox = SendableTabViewItemBox(tabViewItem)
-				NSAnimationContext.runAnimationGroup { context in
-					context.duration = window.animationResizeTime(newFrame)
-				} completionHandler: {
-					MainActor.assumeIsolated {
-						(tabViewItemBox.item?.viewController as? SettingsTabItemViewController)?.commitAnimation()
-					}
+		window.setFrame(newFrame, display: false, animate: animated)
+
+		if animated {
+			let tabViewItemBox = SendableTabViewItemBox(tabViewItem)
+			NSAnimationContext.runAnimationGroup { context in
+				context.duration = window.animationResizeTime(newFrame)
+			} completionHandler: {
+				Task { @MainActor in
+					(tabViewItemBox.item?.viewController as? SettingsTabItemViewController)?.commitAnimation()
 				}
-			} else {
+			}
+		} else {
 			(tabViewItem.viewController as? SettingsTabItemViewController)?.commitAnimation()
+		}
 	}
-}
 
-private final class SendableTabViewItemBox: @unchecked Sendable {
-	weak var item: NSTabViewItem?
+	private final class SendableTabViewItemBox: @unchecked Sendable {
+		weak var item: NSTabViewItem?
 
-	init(_ item: NSTabViewItem) {
-		self.item = item
+		init(_ item: NSTabViewItem) {
+			self.item = item
+		}
 	}
-}
 }

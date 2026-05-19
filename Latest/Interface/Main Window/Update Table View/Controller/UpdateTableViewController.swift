@@ -8,6 +8,11 @@
 
 import Cocoa
 
+private extension NSUserInterfaceItemIdentifier {
+	static let updateCell = NSUserInterfaceItemIdentifier("MLMUpdateCellIdentifier")
+	static let updateSectionCell = NSUserInterfaceItemIdentifier("MLMUpdateCellSectionIdentifier")
+}
+
 /**
  This is the class handling the update process and displaying its results
  */
@@ -54,7 +59,7 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 	/// The index of the currently selected app within the UI.
 	var selectedAppIndex: Int? {
 		if let app = self.selectedApp {
-			return self.snapshot.index(of: app)
+			return self.snapshot.firstIndex(of: app)
 		}
 		
 		return nil
@@ -66,7 +71,7 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        if let cell = tableView.makeView(withIdentifier: NSUserInterfaceItemIdentifier(rawValue: "MLMUpdateCellIdentifier"), owner: self) {
+        if let cell = tableView.makeView(withIdentifier: .updateCell, owner: self) {
             self.tableView.rowHeight = cell.frame.height
         }
                         
@@ -99,7 +104,10 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 	}
 	
 	deinit {
-		AppListSettings.shared.remove(self)
+		let observerID = self.id
+		Task { @MainActor in
+			AppListSettings.shared.removeObserver(withID: observerID)
+		}
 	}
     
     
@@ -117,7 +125,7 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
     // MARK: Table View Delegate
 	
 	private func contentCell(for app: App) -> NSView? {
-        guard let cell = tableView.makeView(withIdentifier: NSUserInterfaceItemIdentifier(rawValue: "MLMUpdateCellIdentifier"), owner: self) as? UpdateCell else {
+        guard let cell = tableView.makeView(withIdentifier: .updateCell, owner: self) as? UpdateCell else {
             return nil
         }
 		
@@ -135,7 +143,7 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 	}
 	
 	private func headerCell(of section: AppListSnapshot.Section) -> NSView? {
-		let view = self.tableView.makeView(withIdentifier: NSUserInterfaceItemIdentifier(rawValue: "MLMUpdateCellSectionIdentifier"), owner: self) as? UpdateGroupCellView
+		let view = self.tableView.makeView(withIdentifier: .updateSectionCell, owner: self) as? UpdateGroupCellView
 		
 		view?.section = section
 		
@@ -342,7 +350,7 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
     // MARK: - Menu Item Stuff
 	
 	private func rowIndex(forMenuItem menuItem: NSMenuItem?) -> Int {
-		guard let app = menuItem?.representedObject as? App, let index = self.snapshot.index(of: app) else { return self.tableView.selectedRow }
+		guard let app = menuItem?.representedObject as? App, let index = self.snapshot.firstIndex(of: app) else { return self.tableView.selectedRow }
 		return index
 	}
     
@@ -420,11 +428,11 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
     /// Updates the app at the given index.
     private func updateApp(atIndex index: Int) {
 		guard let app = self.app(at: index) else { return }
-		
+
 		// Delay update to improve animations
-        DispatchQueue.main.async {
+		Task { @MainActor in
 			app.performUpdate()
-        }
+		}
     }
 	
 	/// Sets the ignored state for the app at the given index
