@@ -275,13 +275,13 @@ class ReleaseNotesViewController: NSViewController {
     private func initializeContent(of type: ReleaseNotesContent.ContentType) {
         switch type {
         case .loading:
-            let controller = ReleaseNotesLoadingViewController.fromStoryboard()
+            let controller = ReleaseNotesLoadingViewController.makeController()
             self.content = .loading(controller)
         case .error:
-            let controller = ReleaseNotesErrorViewController.fromStoryboard()
+            let controller = ReleaseNotesErrorViewController.makeController()
             self.content = .error(controller)
         case .text:
-            let controller = ReleaseNotesTextViewController.fromStoryboard()
+            let controller = ReleaseNotesTextViewController.makeController()
             self.content = .text(controller)
         }
     }
@@ -312,7 +312,7 @@ class ReleaseNotesViewController: NSViewController {
 	override func prepare(for segue: NSStoryboardSegue, sender: Any?) {
 		switch segue.identifier {
 		case "presentSupportStateInfo":
-			guard let controller = segue.destinationController as? SupportStatusInfoViewController else { fatalError("Unknown controller for segue \(String(describing: segue.identifier))")}
+			guard let controller = segue.destinationController as? SupportStatusInfoViewController else { return }
 			controller.app = self.app
 		default:
 			break

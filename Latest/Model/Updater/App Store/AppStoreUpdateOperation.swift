@@ -9,8 +9,29 @@
 import CommerceKit
 import StoreFoundation
 
+/// Public boundary for App Store updates backed by private Apple frameworks.
+enum AppStoreUpdater {
+
+	/// Verifies whether the app can prepare App Store updates.
+	static func prepareForUpdates() throws(InstallHelperError) {
+		try AppStoreUpdateOperation.prepareForUpdates()
+	}
+
+	/// Enqueues an App Store update operation.
+	static func enqueueUpdate(for app: App.Bundle, appStoreIdentifier: UInt64) {
+		let operation = AppStoreUpdateOperation(
+			bundleIdentifier: app.bundleIdentifier,
+			installURL: app.fileURL,
+			appIdentifier: app.identifier,
+			appStoreIdentifier: appStoreIdentifier
+		)
+		UpdateQueue.shared.addOperation(operation)
+	}
+
+}
+
 /// The operation updating Mac App Store apps.
-class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
+fileprivate class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
 
 	/// The purchase associated with the to be updated app.
 	private var purchase: SSPurchase!

@@ -31,22 +31,75 @@ private enum AppStoreLookupCacheValue {
 	}
 }
 
-private final class AppStoreLookupCache: @unchecked Sendable {
+private actor AppStoreLookupCache {
 	static let shared = AppStoreLookupCache()
 
-	private let queue = DispatchQueue(label: "AppStoreLookupCache")
 	private var values = [AppStoreLookupCacheKey: AppStoreLookupCacheValue]()
 
 	func value(for key: AppStoreLookupCacheKey) -> AppStoreLookupCacheValue? {
-		queue.sync {
-			values[key]
-		}
+		values[key]
 	}
 
 	func set(_ value: AppStoreLookupCacheValue, for key: AppStoreLookupCacheKey) {
-		queue.sync {
-			values[key] = value
+		values[key] = value
+	}
+}
+
+private final class AppStoreLookupClient: @unchecked Sendable {
+	static let shared = AppStoreLookupClient()
+
+	private let endpoint = URL(string: "https://itunes.apple.com/lookup")
+	private let cache = AppStoreLookupCache.shared
+	private let session: URLSession
+
+	init(session: URLSession = .shared) {
+		self.session = session
+	}
+
+	func lookup(bundleIdentifier: String, entityTypes: [String]) async throws -> AppStoreEntry {
+		var lastError: Error = LatestError.updateInfoUnavailable
+		for entityType in entityTypes {
+			do {
+				return try await lookup(bundleIdentifier: bundleIdentifier, entityType: entityType)
+			} catch {
+				lastError = error
+			}
 		}
+
+		throw lastError
+	}
+
+	private func lookup(bundleIdentifier: String, entityType: String) async throws -> AppStoreEntry {
+		let countryCode = Locale.current.region?.identifier ?? "US"
+		let cacheKey = AppStoreLookupCacheKey(bundleIdentifier: bundleIdentifier, countryCode: countryCode, entityType: entityType)
+		if let cachedValue = await cache.value(for: cacheKey) {
+			return try cachedValue.result.get()
+		}
+
+		guard let endpoint else {
+			throw malformedURLError
+		}
+
+		var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
+		components?.queryItems = [
+			URLQueryItem(name: "limit", value: "1"),
+			URLQueryItem(name: "entity", value: entityType),
+			URLQueryItem(name: "country", value: countryCode),
+			URLQueryItem(name: "bundleId", value: bundleIdentifier)
+		]
+		guard let url = components?.url else {
+			throw malformedURLError
+		}
+
+		let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 30)
+		let (data, _) = try await session.data(for: request)
+		guard let entry = try JSONDecoder().decode(EntryList.self, from: data).results.first else {
+			await cache.set(.unavailable, for: cacheKey)
+			throw LatestError.updateInfoUnavailable
+		}
+
+		await cache.set(.entry(entry), for: cacheKey)
+		return entry
 	}
 }
 
@@ -90,6 +143,8 @@ class AppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation,
 	/// The update fetched during this operation.
 	fileprivate var update: App.Update?
 
+	private var lookupTask: Task<Void, Never>?
+
 	
 	// MARK: - Operation
 	
@@ -98,20 +153,26 @@ class AppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation,
 			self.finish()
 			return
 		}
-		
-		self.fetchAppInfo { result in
-			switch result {
-			// Process fetched info
-			case .success(let entry):
+
+		self.lookupTask = Task {
+			do {
+				let entry = try await self.fetchAppInfo()
+				guard !self.isCancelled else {
+					self.finish()
+					return
+				}
+
 				self.update = self.update(from: entry)
 				self.finish()
-
-			// Forward fetch error
-			case .failure(let error):
+			} catch {
 				self.finish(with: error)
-
 			}
 		}
+	}
+
+	override func cancel() {
+		self.lookupTask?.cancel()
+		super.cancel()
 	}
 	
 	
@@ -204,8 +265,8 @@ extension AppStoreUpdateCheckerOperation {
 	
 	private static func updateApp(_ app: App.Bundle, entry: AppStoreEntry) {
 			do {
-				try AppStoreUpdateOperation.prepareForUpdates()
-				UpdateQueue.shared.addOperation(AppStoreUpdateOperation(bundleIdentifier: app.bundleIdentifier, installURL: app.fileURL, appIdentifier: app.identifier, appStoreIdentifier: entry.appStoreIdentifier))
+				try AppStoreUpdater.prepareForUpdates()
+				AppStoreUpdater.enqueueUpdate(for: app, appStoreIdentifier: entry.appStoreIdentifier)
 			} catch {
 				Task { @MainActor in
 					UpdateInstallHelperAlert.present(with: error, fallbackURL: entry.pageURL)
@@ -217,85 +278,13 @@ extension AppStoreUpdateCheckerOperation {
 		NSWorkspace.shared.open(entry.pageURL)
 	}
 	
-	/// Fetches update info and returns the result in the given completion handler.
-	private func fetchAppInfo(completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> Void) {
-		self.fetchAppInfo(with: Self.lookupEntityTypes(forAppAt: app.fileURL), completion: completion)
-	}
-
-	private func fetchAppInfo(with entityTypes: [String], completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> Void) {
-		guard let entityType = entityTypes.first else {
-			completion(.failure(LatestError.updateInfoUnavailable))
-			return
-		}
-
+	/// Fetches update info using the App Store lookup entities in priority order.
+	private func fetchAppInfo() async throws -> AppStoreEntry {
 		// For native Mac apps, prefer `desktopSoftware` because `macSoftware` can return broader Catalyst or iOS metadata. Wrapped iOS apps skip the desktop request above.
-		self.fetchAppInfo(with: entityType) { result in
-			switch result {
-			case .success(let entry):
-				// Success, forward data
-				completion(.success(entry))
-				
-			case .failure(_):
-				self.fetchAppInfo(with: Array(entityTypes.dropFirst()), completion: completion)
-			}
-		}
-	}
-	
-	/// Fetches update info and returns the result in the given completion handler.
-	///
-	/// The entity describes the kind of app which will be looked for.
-	private func fetchAppInfo(with entityType: String, completion: @escaping @Sendable (_ result: Result<AppStoreEntry, Error>) -> Void) {
-		// Build URL
-		guard let endpoint = URL(string: "https://itunes.apple.com/lookup") else {
-			completion(.failure(malformedURLError))
-			return
-		}
-
-		// Add parameters
-		let countryCode = Locale.current.region?.identifier ?? "US"
-		let cacheKey = AppStoreLookupCacheKey(bundleIdentifier: app.bundleIdentifier, countryCode: countryCode, entityType: entityType)
-		if let cachedValue = AppStoreLookupCache.shared.value(for: cacheKey) {
-			completion(cachedValue.result)
-			return
-		}
-
-		var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
-		components?.queryItems = [
-			URLQueryItem(name: "limit", value: "1"),
-			URLQueryItem(name: "entity", value: entityType),
-			URLQueryItem(name: "country", value: countryCode),
-			URLQueryItem(name: "bundleId", value: self.app.bundleIdentifier)
-		]
-		guard let url = components?.url else {
-			completion(.failure(malformedURLError))
-			return
-		}
-		
-		// Perform request
-		let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 30)
-		let dataTask = URLSession.shared.dataTask(with: request) { data, _, error in
-			guard error == nil, let data = data else {
-				completion(.failure(malformedURLError))
-				return
-			}
-			
-			do {
-				guard let entry = try JSONDecoder().decode(EntryList.self, from: data).results.first else {
-					AppStoreLookupCache.shared.set(.unavailable, for: cacheKey)
-					completion(.failure(LatestError.updateInfoUnavailable))
-					return
-				}
-				
-				AppStoreLookupCache.shared.set(.entry(entry), for: cacheKey)
-				completion(.success(entry))
-			}
-			
-			catch let error {
-				completion(.failure(error))
-			}
-		}
-		
-		dataTask.resume()
+		try await AppStoreLookupClient.shared.lookup(
+			bundleIdentifier: app.bundleIdentifier,
+			entityTypes: Self.lookupEntityTypes(forAppAt: app.fileURL)
+		)
 	}
 		
 }

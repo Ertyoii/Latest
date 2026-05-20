@@ -8,36 +8,14 @@
 
 import AppKit
 
-/// Storyboard identifiers for release-notes content controllers.
-enum ReleaseNotesContentStoryboardIdentifier {
-	static let loading = NSStoryboard.SceneIdentifier("ReleaseNotesLoadingViewControllerIdentifier")
-	static let error = NSStoryboard.SceneIdentifier("ReleaseNotesErrorViewControllerIdentifier")
-	static let text = NSStoryboard.SceneIdentifier("ReleaseNotesTextViewControllerIdentifier")
-}
-
-/// This protocol manages the instantiation of the content controllers
+/// This protocol manages the instantiation of release-notes content controllers.
 @MainActor
 protocol ReleaseNotesContentProtocol {
     
     /// The type of the viewController
     associatedtype ReleaseNotesContentController: NSViewController
     
-    /// The identifier from which the object is instantiated
-    static var storyboardIdentifier: NSStoryboard.SceneIdentifier { get }
+    /// Creates a release-notes content controller.
+    static func makeController() -> ReleaseNotesContentController
     
-    /// The method loading the storyboard
-    static func fromStoryboard() -> ReleaseNotesContentController?
-    
-}
-
-extension ReleaseNotesContentProtocol {
-    static func fromStoryboard() -> ReleaseNotesContentController? {
-        let storyboard = NSStoryboard(name: .main, bundle: nil)
-        
-        return storyboard.instantiateController(withIdentifier: storyboardIdentifier) as? ReleaseNotesContentController
-    }
-}
-
-private extension NSStoryboard.Name {
-	static let main = NSStoryboard.Name("Main")
 }

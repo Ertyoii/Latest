@@ -79,11 +79,11 @@ extension App {
 		/// Updates the app.
 		final func perform(isBulkUpdate: Bool) {
 			guard !self.isUpdating else {
-				fatalError("Attempt to perform update on app that is already updating.")
+				return
 			}
 			
 			guard self.updateAvailable else {
-				fatalError("Attempt to perform update on app that is already up to date.")
+				return
 			}
 			
 			self.updateAction.perform(with: self.app, isBulkUpdate: isBulkUpdate)

@@ -10,6 +10,8 @@ import Cocoa
 
 /// View explaining the support state of the given app.
 class SupportStatusInfoViewController: NSViewController {
+
+	private static let issueURL = URL(string: "https://github.com/mangerlahn/Latest/issues")
 	
 	/// The app for which the support state is explained.
 	var app: App? {
@@ -57,6 +59,7 @@ class SupportStatusInfoViewController: NSViewController {
 	
 	/// Opens the issue page on GitHub.
 	@IBAction func reportIssue(_ sender: NSButton) {
-		NSWorkspace.shared.open(URL(string: "https://github.com/mangerlahn/Latest/issues")!)
+		guard let url = Self.issueURL else { return }
+		NSWorkspace.shared.open(url)
 	}
 }

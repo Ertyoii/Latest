@@ -50,13 +50,7 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 	@IBOutlet weak var topTableConstraint: NSLayoutConstraint!
 	
 	/// The currently selected app within the UI.
-	var selectedApp: App? {
-		willSet {
-			if let app = newValue, !self.snapshot.contains(app) {
-				fatalError("Attempted to select app that is not available.")
-			}
-		}
-	}
+	var selectedApp: App?
 
 	/// The index of the currently selected app within the UI.
 	var selectedAppIndex: Int? {
@@ -212,59 +206,63 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 	// MARK: Update Scheduling
 	
 	/// The next snapshot to be applied to the table view.
-	private var newSnapshot: AppListSnapshot?
+	private var pendingSnapshot: AppListSnapshot?
 	
 	/// Whether an table view update is already scheduled.
-	private var tableViewUpdateScheduled = false
+	private var isTableViewUpdateScheduled = false
 	
 	/// Whether a table view update is currently ongoing.
-	private var tableViewUpdateInProgress = false
+	private var isApplyingTableViewUpdate = false
 	
 	/// Schedules a table view update with the given snapshot.
 	func scheduleTableViewUpdate(with snapshot: AppListSnapshot, animated: Bool) {
-		self.newSnapshot = snapshot
+		self.pendingSnapshot = snapshot
 
-		if self.tableViewUpdateInProgress {
-			self.tableViewUpdateScheduled = true
+		if self.isApplyingTableViewUpdate {
+			self.isTableViewUpdateScheduled = true
 			return
 		}
 				
 		if animated {
-			if self.tableViewUpdateScheduled {
+			if self.isTableViewUpdateScheduled {
 				return
 			}
 
-			self.tableViewUpdateScheduled = true
-			self.perform(#selector(updateTableViewAnimated), with: nil, afterDelay: 0.1)
+			self.isTableViewUpdateScheduled = true
+			self.perform(#selector(applyScheduledTableViewUpdate), with: nil, afterDelay: 0.1)
 			return
 		}
 		
-		self.tableViewUpdateScheduled = false
-		self.newSnapshot = nil
-		self.snapshot = snapshot
-		self.tableView.reloadData()
-		
-		// Update selected app
-		self.ensureSelection()
+		self.apply(snapshot, animated: false)
 	}
 	
-	@objc func updateTableViewAnimated() {
-		guard self.tableViewUpdateScheduled, let snapshot = newSnapshot else {
+	@objc private func applyScheduledTableViewUpdate() {
+		guard self.isTableViewUpdateScheduled, let snapshot = pendingSnapshot else {
 			return
 		}
-		self.tableViewUpdateScheduled = false
-		self.tableViewUpdateInProgress = true
-		
+		self.apply(snapshot, animated: true)
+
+		if self.isTableViewUpdateScheduled {
+			self.applyScheduledTableViewUpdate()
+		}
+	}
+
+	private func apply(_ snapshot: AppListSnapshot, animated: Bool) {
+		self.isTableViewUpdateScheduled = false
+		self.isApplyingTableViewUpdate = true
+
 		let oldSnapshot = self.snapshot
 		self.snapshot = snapshot
-		self.newSnapshot = nil
-		self.updateTableView(with: oldSnapshot, with: self.snapshot)
+		self.pendingSnapshot = nil
+
+		if animated {
+			self.applyTableViewChanges(from: oldSnapshot, to: snapshot)
+		} else {
+			self.tableView.reloadData()
+		}
 		
-		// Update selected app
 		self.ensureSelection()
-		
-		self.tableViewUpdateInProgress = false
-		self.updateTableViewAnimated()
+		self.isApplyingTableViewUpdate = false
 	}
     
     
@@ -344,11 +342,10 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 	}
 	
 	/// Animates changes made to the apps list
-	private func updateTableView(with oldSnapshot: AppListSnapshot, with newSnapshot: AppListSnapshot) {
-		let changes = TableViewSnapshotChanges(from: oldSnapshot.entries, to: newSnapshot.entries)
-		guard changes.requiresUpdate else { return }
+	private func applyTableViewChanges(from oldSnapshot: AppListSnapshot, to newSnapshot: AppListSnapshot) {
+		guard let change = TableViewSnapshotDiff(from: oldSnapshot.entries, to: newSnapshot.entries).change else { return }
 
-		switch changes.kind {
+		switch change {
 		case .reload(let indexes):
 			self.tableView.reloadData(forRowIndexes: indexes, columnIndexes: IndexSet(integer: 0))
 		case .append(let indexes):
@@ -362,43 +359,34 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 	
 }
 
-private struct TableViewSnapshotChanges {
+private struct TableViewSnapshotDiff {
 
-	enum Kind {
+	enum Change {
 		case reload(IndexSet)
 		case append(IndexSet)
 		case remove(IndexSet)
 		case reloadAll
 	}
 
-	let kind: Kind
-
-	var requiresUpdate: Bool {
-		switch kind {
-		case .reload(let indexes), .append(let indexes), .remove(let indexes):
-			return !indexes.isEmpty
-		case .reloadAll:
-			return true
-		}
-	}
+	let change: Change?
 
 	init(from oldEntries: [AppListSnapshot.Entry], to newEntries: [AppListSnapshot.Entry]) {
 		if oldEntries.count == newEntries.count, oldEntries.identityMatches(newEntries) {
-			self.kind = .reload(IndexSet(oldEntries.indices))
+			self.change = oldEntries.isEmpty ? nil : .reload(IndexSet(oldEntries.indices))
 			return
 		}
 
 		if oldEntries.exactlyMatchesPrefix(of: newEntries) {
-			self.kind = .append(IndexSet(oldEntries.count..<newEntries.count))
+			self.change = .append(IndexSet(oldEntries.count..<newEntries.count))
 			return
 		}
 
 		if newEntries.exactlyMatchesPrefix(of: oldEntries) {
-			self.kind = .remove(IndexSet(newEntries.count..<oldEntries.count))
+			self.change = .remove(IndexSet(newEntries.count..<oldEntries.count))
 			return
 		}
 
-		self.kind = .reloadAll
+		self.change = .reloadAll
 	}
 
 }

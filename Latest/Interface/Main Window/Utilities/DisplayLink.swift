@@ -23,7 +23,7 @@ class DisplayLink: NSObject, @unchecked Sendable {
 	/// The current  animation progress. Only useful if a duration has been set.
 	private(set) var progress : Double = 0
 
-	private var displayLink : CADisplayLink!
+	private var displayLink: CADisplayLink?
 
 	/// Frames used to calculate the animation progress
 	private var _currentFrame : Double = 0
@@ -31,6 +31,8 @@ class DisplayLink: NSObject, @unchecked Sendable {
 
 	/// The callback called for each animation step.
 	private(set) var callback : (@MainActor (_ progress: Double) -> Void)!
+
+	private var fallbackTimer: Timer?
 
 	
 	// MARK: - Initialization
@@ -43,32 +45,39 @@ class DisplayLink: NSObject, @unchecked Sendable {
 		self.callback = callback
 
 		#if os(macOS)
-		guard let screen = NSScreen.main ?? NSScreen.screens.first else {
-			fatalError("A display link requires an active screen.")
+		if let screen = NSScreen.main ?? NSScreen.screens.first {
+			self.displayLink = screen.displayLink(target: self, selector: #selector(DisplayLink.displayTick(_:)))
 		}
-		self.displayLink = screen.displayLink(target: self, selector: #selector(DisplayLink.displayTick(_:)))
 		#else
 		self.displayLink = CADisplayLink(target: self, selector: #selector(DisplayLink.displayTick(_:)))
 		#endif
-		self.displayLink.add(to: .current, forMode: .common)
-		self.displayLink.isPaused = true
+		self.displayLink?.add(to: .current, forMode: .common)
+		self.displayLink?.isPaused = true
 	}
 
 	deinit {
-		self.displayLink.invalidate()
+		self.displayLink?.invalidate()
+		self.fallbackTimer?.invalidate()
 	}
 
 
 	// MARK: - Animation
 
 	@objc private func displayTick(_ displayLink: CADisplayLink) {
+		self.advanceFrame(frameDuration: displayLink.duration > 0 ? displayLink.duration : 1 / 60.0)
+	}
+
+	private func timerTick() {
+		self.advanceFrame(frameDuration: 1 / 60.0)
+	}
+
+	private func advanceFrame(frameDuration: Double) {
 		if let duration = self.duration {
 			self._frames = duration / (1 / 60.0)
 		} else {
 			self._frames = 1
 		}
 
-		let frameDuration = displayLink.duration > 0 ? displayLink.duration : 1 / 60.0
 		self._currentFrame += frameDuration / (1 / 60.0)
 
 		// Forward progress to the observer
@@ -89,17 +98,30 @@ class DisplayLink: NSObject, @unchecked Sendable {
 	/// Starts the display link.
 	func start() {
 		self._currentFrame = 0
-		displayLink.isPaused = false
+		if let displayLink {
+			displayLink.isPaused = false
+		} else {
+			let timer = Timer(timeInterval: 1 / 60.0, repeats: true) { [weak self] _ in
+				self?.timerTick()
+			}
+			self.fallbackTimer = timer
+			RunLoop.current.add(timer, forMode: .common)
+		}
 	}
 
 	/// Stops the display link.
 	func stop() {
-		displayLink.isPaused = true
+		displayLink?.isPaused = true
+		fallbackTimer?.invalidate()
+		fallbackTimer = nil
 	}
 
 	/// Whether the display link is currently running.
 	var isRunning : Bool {
-		return !displayLink.isPaused
+		if let displayLink {
+			return !displayLink.isPaused
+		}
+		return fallbackTimer != nil
 	}
 
 }

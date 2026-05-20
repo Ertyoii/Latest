@@ -19,6 +19,8 @@ class UpdateRepository: @unchecked Sendable {
 	/// Queue on which requests will be handled.
 	private var queue = DispatchQueue(label: "repositoryQueue")
 
+	private let dataSource = RemoteDataSource()
+
 	// MARK: - Init
 
 	let fetchCompletedGroup = DispatchGroup()
@@ -64,19 +66,13 @@ class UpdateRepository: @unchecked Sendable {
 		}
 	}
 
-	/// List of entries stored within the repository.
-	private var entries = [Entry]()
-
-	/// Repository entries grouped by lowercased application bundle name.
-	private var entriesByName = [String: [Entry]]()
-
 	/// A list of requests being performed while the repository was still fetching data.
 	///
 	/// It also acts as a flag for whether initialization finished. The array is initialized when the repository is created. It will be set to nil once `finalize()` is being called.
 	private var pendingRequests: [@Sendable () -> Void]? = []
 
-	/// A set of bundle identifiers for which update checking is currently not supported.
-	private var unsupportedBundleIdentifiers = Set<String>()
+	/// Matches app bundles against loaded repository entries.
+	private var entryMatcher = EntryMatcher(entries: [], unsupportedBundleIdentifiers: [])
 
 	/// Sets the given entries and performs pending requests.
 	private func finalize() {
@@ -98,7 +94,144 @@ class UpdateRepository: @unchecked Sendable {
 
 	/// Returns a repository entry for the given name, if available.
 	private func entry(for bundle: App.Bundle) -> Entry? {
-		// Don't return an entry for unsupported apps
+		entryMatcher.entry(for: bundle)
+	}
+
+	static func preferredEntry(from possibleEntries: [Entry], for bundleIdentifier: String) -> Entry? {
+		EntryMatcher.preferredEntry(from: possibleEntries, for: bundleIdentifier)
+	}
+
+
+	// MARK: - Cache Handling
+
+	/// Loads the repository data.
+	private func load() {
+		RemoteURL.allCases.forEach { urlType in
+			self.fetchCompletedGroup.enter()
+
+			dataSource.load(urlType) { [weak self] data in
+				guard let self else { return }
+
+				self.queue.async {
+					defer {
+						self.fetchCompletedGroup.leave()
+					}
+					guard let data else {
+						return
+					}
+
+					switch urlType {
+					case .repository:
+						self.parse(data)
+					case .unsupportedApps:
+						self.loadUnsupportedApps(from: data)
+					}
+				}
+			}
+		}
+	}
+
+	/// Parses the given repository data and finishes loading.
+	private func parse(_ repositoryData: Data) {
+		do {
+			let entries = try JSONDecoder().decode([Entry].self, from: repositoryData)
+
+			entryMatcher.update(entries: entries.filter { !$0.names.isEmpty })
+		} catch {
+			entryMatcher.update(entries: [])
+		}
+	}
+
+	private func loadUnsupportedApps(from data: Data) {
+		guard let propertyList = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String] else {
+			entryMatcher.update(unsupportedBundleIdentifiers: [])
+			return
+		}
+
+		entryMatcher.update(unsupportedBundleIdentifiers: Set(propertyList))
+	}
+
+
+	// MARK: - Repository URL
+
+	fileprivate enum RemoteURL: String, CaseIterable {
+
+		/// The URL update information is being fetched from.
+		case repository = "RepositoryCache"
+
+		/// Duration after which the cache will be invalidated. (1 hour in seconds)
+		case unsupportedApps = "UnsupportedApps"
+
+		/// The actual remote URL the information can be fetched from.
+		var url: URL? {
+			let urlString = switch self {
+			case .repository:
+				"https://formulae.brew.sh/api/cask.json"
+			case .unsupportedApps:
+				"https://raw.githubusercontent.com/mangerlahn/Latest/main/Latest/Resources/ExcludedAppIdentifiers.plist"
+			}
+
+			return URL(string: urlString)
+		}
+
+		/// The URL where the cached data will be stored.
+		var cacheURL: URL? {
+			let name = rawValue
+			let pathExtension = switch self {
+			case .repository:
+				"json"
+			case .unsupportedApps:
+				"plist"
+			}
+
+			return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+				.appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.max-langer.Latest")
+				.appendingPathComponent(name).appendingPathExtension(pathExtension)
+		}
+
+		/// Possible fallback data within the binary if the remote content could not be fetched.
+		var fallbackData: Data? {
+			switch self {
+			case .repository:
+				return nil
+			case .unsupportedApps:
+				guard let fallbackURL = Bundle.main.url(forResource: "ExcludedAppIdentifiers", withExtension: "plist") else {
+					return nil
+				}
+
+				return try? Data(contentsOf: fallbackURL)
+			}
+		}
+
+		/// The user defaults key used for storing the cache access information.
+		var userDefaultsKey: String {
+			rawValue + UpdateDateKey
+		}
+
+	}
+
+}
+
+private struct EntryMatcher {
+
+	private var entriesByName: [String: [UpdateRepository.Entry]]
+	private var unsupportedBundleIdentifiers: Set<String>
+
+	init(entries: [UpdateRepository.Entry], unsupportedBundleIdentifiers: Set<String>) {
+		self.entriesByName = Self.entriesByName(entries)
+		self.unsupportedBundleIdentifiers = unsupportedBundleIdentifiers
+	}
+
+	mutating func update(entries: [UpdateRepository.Entry]) {
+		self.entriesByName = Self.entriesByName(entries)
+	}
+
+	mutating func update(unsupportedBundleIdentifiers: Set<String>) {
+		self.unsupportedBundleIdentifiers = unsupportedBundleIdentifiers
+	}
+
+	func entry(for bundle: App.Bundle) -> UpdateRepository.Entry? {
+		// Don't return an entry for unsupported apps.
 		guard !unsupportedBundleIdentifiers.contains(bundle.bundleIdentifier) else { return nil }
 
 		// Finding the correct entry is not trivial as there is no bundle identifier stored in an entry. We have a list of app names (could be ambiguous) and a list of bundle identifier guesses.
@@ -108,17 +241,14 @@ class UpdateRepository: @unchecked Sendable {
 		//
 		// Strategy: Find all entries that point to the given app name. If only one entry comes up, return that. Otherwise, try to match bundle identifiers to narrow it down.
 		let name = bundle.fileURL.lastPathComponent.lowercased()
-		var possibleEntries = entriesByName[name] ?? []
-
-		guard !possibleEntries.isEmpty else { return nil }
-		possibleEntries = possibleEntries.filter {
+		let possibleEntries = (entriesByName[name] ?? []).filter {
 			!$0.requiresBundleIdentifierMatch || $0.bundleIdentifiers.contains(bundle.bundleIdentifier)
 		}
 
 		return Self.preferredEntry(from: possibleEntries, for: bundle.bundleIdentifier)
 	}
 
-	static func preferredEntry(from possibleEntries: [Entry], for bundleIdentifier: String) -> Entry? {
+	static func preferredEntry(from possibleEntries: [UpdateRepository.Entry], for bundleIdentifier: String) -> UpdateRepository.Entry? {
 		guard !possibleEntries.isEmpty else { return nil }
 		if possibleEntries.count == 1 {
 			return possibleEntries.first
@@ -137,11 +267,19 @@ class UpdateRepository: @unchecked Sendable {
 			return stableEntries.first
 		}
 
-		return Self.uniqueShortestTokenEntry(in: stableEntries)
+		return uniqueShortestTokenEntry(in: stableEntries)
 	}
 
-	private static func uniqueShortestTokenEntry(in entries: [Entry]) -> Entry? {
-		var shortestEntry: Entry?
+	private static func entriesByName(_ entries: [UpdateRepository.Entry]) -> [String: [UpdateRepository.Entry]] {
+		Dictionary(grouping: entries.flatMap { entry in
+			entry.names.map { ($0.lowercased(), entry) }
+		}, by: { $0.0 }).mapValues { pairs in
+			pairs.map { $0.1 }
+		}
+	}
+
+	private static func uniqueShortestTokenEntry(in entries: [UpdateRepository.Entry]) -> UpdateRepository.Entry? {
+		var shortestEntry: UpdateRepository.Entry?
 		var shortestTokenLength: Int?
 		var shortestTokenLengthHasTie = false
 
@@ -165,134 +303,32 @@ class UpdateRepository: @unchecked Sendable {
 		return shortestTokenLengthHasTie ? nil : shortestEntry
 	}
 
+}
 
-	// MARK: - Cache Handling
+private final class RemoteDataSource: @unchecked Sendable {
 
-	/// Loads the repository data.
-	private func load() {
-		RemoteURL.allCases.forEach { urlType in
-			self.fetchCompletedGroup.enter()
-
-			@Sendable func handle(_ data: Data) {
-				switch urlType {
-				case .repository:
-					parse(data)
-				case .unsupportedApps:
-					loadUnsupportedApps(from: data)
-				}
-
-				self.fetchCompletedGroup.leave()
-			}
-
-			let cache = UpdateRepositoryCache(cacheURL: urlType.cacheURL, userDefaultsKey: urlType.userDefaultsKey)
-			if let data = cache.cachedData() {
-				handle(data)
-				return
-			}
-
-			// Fetch data from server
-			let session = URLSession(configuration: .default)
-			let task = session.dataTask(with: urlType.url) { [weak self] data, response, error in
-				guard let self else { return }
-				guard let data = data ?? urlType.fallbackData else {
-					self.fetchCompletedGroup.leave()
-					return
-				}
-
-				handle(data)
-
-				// Store in cache
-				cache.store(data)
-			}
-			task.resume()
-
-		}
-	}
-
-	/// Parses the given repository data and finishes loading.
-	private func parse(_ repositoryData: Data) {
-		do {
-			let entries = try JSONDecoder().decode([Entry].self, from: repositoryData)
-
-			// Filter out any entries without application name
-			self.entries = entries.filter { !$0.names.isEmpty }
-			self.entriesByName = Dictionary(grouping: self.entries.flatMap { entry in
-				entry.names.map { ($0.lowercased(), entry) }
-			}, by: { $0.0 }).mapValues { pairs in
-				pairs.map { $0.1 }
-			}
-		} catch {
-			self.entries = []
-			self.entriesByName = [:]
-		}
-	}
-
-	private func loadUnsupportedApps(from data: Data) {
-		guard let propertyList = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String] else {
-			unsupportedBundleIdentifiers = []
+	func load(_ urlType: UpdateRepository.RemoteURL, completion: @escaping @Sendable (Data?) -> Void) {
+		let cache = UpdateRepositoryCache(cacheURL: urlType.cacheURL, userDefaultsKey: urlType.userDefaultsKey)
+		if let data = cache.cachedData() {
+			completion(data)
 			return
 		}
 
-		unsupportedBundleIdentifiers = Set(propertyList)
-	}
+		guard let url = urlType.url else {
+			completion(nil)
+			return
+		}
 
-
-	// MARK: - Repository URL
-
-	private enum RemoteURL: String, CaseIterable {
-
-		/// The URL update information is being fetched from.
-		case repository = "RepositoryCache"
-
-		/// Duration after which the cache will be invalidated. (1 hour in seconds)
-		case unsupportedApps = "UnsupportedApps"
-
-		/// The actual remote URL the information can be fetched from.
-		var url: URL {
-			let urlString = switch self {
-			case .repository:
-				"https://formulae.brew.sh/api/cask.json"
-			case .unsupportedApps:
-				"https://raw.githubusercontent.com/mangerlahn/Latest/main/Latest/Resources/ExcludedAppIdentifiers.plist"
+		let task = URLSession(configuration: .default).dataTask(with: url) { data, _, _ in
+			guard let data = data ?? urlType.fallbackData else {
+				completion(nil)
+				return
 			}
 
-			return URL(string: urlString)!
+			cache.store(data)
+			completion(data)
 		}
-
-		/// The URL where the cached data will be stored.
-		var cacheURL: URL? {
-			let name = rawValue
-			let pathExtension = switch self {
-			case .repository:
-				"json"
-			case .unsupportedApps:
-				"plist"
-			}
-
-			return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-				.appendingPathComponent(Bundle.main.bundleIdentifier!)
-				.appendingPathComponent(name).appendingPathExtension(pathExtension)
-		}
-
-		/// Possible fallback data within the binary if the remote content could not be fetched.
-		var fallbackData: Data? {
-			switch self {
-			case .repository:
-				return nil
-			case .unsupportedApps:
-				guard let fallbackURL = Bundle.main.url(forResource: "ExcludedAppIdentifiers", withExtension: "plist") else {
-					return nil
-				}
-
-				return try? Data(contentsOf: fallbackURL)
-			}
-		}
-
-		/// The user defaults key used for storing the cache access information.
-		var userDefaultsKey: String {
-			rawValue + UpdateDateKey
-		}
-
+		task.resume()
 	}
 
 }

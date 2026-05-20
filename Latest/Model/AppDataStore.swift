@@ -149,11 +149,8 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 	/// Sets the given update for the given bundle and returns the combined object.
 	func set(_ update: Result<App.Update, Error>?, for bundle: App.Bundle) -> App {
 		self.updateQueue.sync {
-			guard let oldApp = self.app(withIdentifier: bundle.identifier) else {
-				fatalError("App not in data store")
-			}
-
-			let app = App(bundle: bundle, update: update, isIgnored: oldApp.isIgnored)
+			let isIgnored = self.app(withIdentifier: bundle.identifier)?.isIgnored ?? self.isIdentifierIgnored(bundle.bundleIdentifier)
+			let app = App(bundle: bundle, update: update, isIgnored: isIgnored)
 			self.update(app)
 
 			return app
@@ -210,14 +207,13 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 	// MARK: - Observer Handling
 
 	/// A mapping of observers associated with apps.
-	@MainActor private var observers = [ObjectIdentifier: ObserverHandler]()
+	@MainActor private let observers = MainActorObserverRegistry<[App]>()
 
 	/// Adds the observer if it is not already registered.
 	func addObserver(_ observer: NSObject, handler: @escaping ObserverHandler) {
-		let observerID = ObjectIdentifier(observer)
+		let observerIdentifier = ObjectIdentifier(observer)
 		Task { @MainActor in
-			guard self.observers[observerID] == nil else { return }
-			self.observers[observerID] = handler
+			guard self.observers.add(observerIdentifier, handler: handler) else { return }
 
 			// Call handler immediately to propagate initial state.
 			let apps = self.updateQueue.sync {
@@ -229,18 +225,16 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 
 	/// Removes the observer.
 	func removeObserver(_ observer: NSObject) {
-		let observerID = ObjectIdentifier(observer)
+		let observerIdentifier = ObjectIdentifier(observer)
 		Task { @MainActor in
-			self.observers.removeValue(forKey: observerID)
+			self.observers.remove(observerIdentifier)
 		}
 	}
 
 	/// Notifies observers about state changes.
 	private func notifyObservers(_ apps: [App]) {
 		Task { @MainActor in
-			self.observers.forEach { (_, handler: ObserverHandler) in
-				handler(apps)
-			}
+			self.observers.notify(with: apps)
 		}
 	}
 

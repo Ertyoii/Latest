@@ -93,8 +93,8 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 	private let updateOperationQueue: OperationQueue = {
 		let operationQueue = OperationQueue()
 
-		// Allow 10 simultaneous updates
-		operationQueue.maxConcurrentOperationCount = 10
+		operationQueue.qualityOfService = .userInitiated
+		operationQueue.maxConcurrentOperationCount = 6
 
 		return operationQueue
 	}()
@@ -122,14 +122,18 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 			}
 		}
 
-		Task.detached(priority: .userInitiated) {
-			self.performUpdateCheck(with: operations)
-		}
+		self.performUpdateCheck(with: operations)
 	}
 
 	/// Performs update checks for the given check operations.
 	private func performUpdateCheck(with operations: [UpdateCheckerOperation]) {
-		assert(!Thread.current.isMainThread, "Must not be called on main thread.")
+		guard !operations.isEmpty else {
+			Task { @MainActor in
+				self.progressDelegate?.updateChecker(self, didStartCheckingApps: 0)
+				self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self)
+			}
+			return
+		}
 
 		// Inform delegate of update check
 		Task { @MainActor in
@@ -137,11 +141,12 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 		}
 
 		// Start update check
-		self.updateOperationQueue.addOperations(operations, waitUntilFinished: true)
-
-		Task { @MainActor in
-			// Update Checks finished
-			self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self)
+		self.updateOperationQueue.addOperations(operations, waitUntilFinished: false)
+		self.updateOperationQueue.addBarrierBlock { [weak self] in
+			guard let self else { return }
+			Task { @MainActor in
+				self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self)
+			}
 		}
 	}
 

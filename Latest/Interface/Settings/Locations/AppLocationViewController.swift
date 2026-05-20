@@ -94,7 +94,8 @@ class AppDirectoryViewController: SettingsTabItemViewController, NSTableViewData
 		panel.canChooseFiles = false
 		panel.canChooseDirectories = true
 		
-		panel.beginSheetModal(for: self.view.window!) { response in
+		guard let window = self.view.window else { return }
+		panel.beginSheetModal(for: window) { response in
 			guard response == .OK else { return }
 			panel.urls.forEach { url in
 				self.directoryStore.add(url)

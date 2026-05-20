@@ -21,6 +21,12 @@ class MainWindowController: NSWindowController, NSMenuItemValidation, NSMenuDele
 	private enum MainMenuItem: Int {
 		case latest = 0, file, edit, view, window, help
 	}
+
+	private enum ExternalURL {
+		static let updatesPage = URL(string: "macappstore://apps.apple.com/updates")
+		static let website = URL(string: "https://max.codes/latest")
+		static let donationPage = URL(string: "https://max.codes/latest/donate/")
+	}
     
     /// The list view holding the apps
     lazy var listViewController : UpdateTableViewController = {
@@ -58,7 +64,7 @@ class MainWindowController: NSWindowController, NSMenuItemValidation, NSMenuDele
         super.windowDidLoad()
     
 		self.window?.titlebarAppearsTransparent = true
-		self.window?.title = Bundle.main.localizedInfoDictionary?[kCFBundleNameKey as String] as! String
+		self.window?.title = Bundle.main.localizedInfoDictionary?[kCFBundleNameKey as String] as? String ?? "Latest"
 		self.window?.toolbarStyle = .unified
 		
 		// Set ourselves as the view menu delegate
@@ -95,9 +101,9 @@ class MainWindowController: NSWindowController, NSMenuItemValidation, NSMenuDele
 		// Check if there are app store updates
 		if apps.contains(where: { $0.bundle.source == .appStore }) {
 			do {
-				try AppStoreUpdateOperation.prepareForUpdates()
+				try AppStoreUpdater.prepareForUpdates()
 			} catch {
-				let updatesPage = URL(string: "macappstore://apps.apple.com/updates")!
+				guard let updatesPage = ExternalURL.updatesPage else { return }
 				if !AppStoreUpdateSettings.alwaysPerformManualUpdates.active {
 					UpdateInstallHelperAlert.present(with: error, fallbackURL: updatesPage)
 				} else {
@@ -119,11 +125,13 @@ class MainWindowController: NSWindowController, NSMenuItemValidation, NSMenuDele
 	}
     
 	@IBAction func visitWebsite(_ sender: NSMenuItem?) {
-		NSWorkspace.shared.open(URL(string: "https://max.codes/latest")!)
+		guard let url = ExternalURL.website else { return }
+		NSWorkspace.shared.open(url)
     }
 	
 	@IBAction func donate(_ sender: NSMenuItem?) {
-		NSWorkspace.shared.open(URL(string: "https://max.codes/latest/donate/")!)
+		guard let url = ExternalURL.donationPage else { return }
+		NSWorkspace.shared.open(url)
 	}
     
 	fileprivate func validate(_ selector: Selector) -> Bool {
@@ -219,7 +227,8 @@ class MainWindowController: NSWindowController, NSMenuItemValidation, NSMenuDele
 	// MARK: - Actions
 	
 	@IBAction func changeSortOrder(_ sender: NSMenuItem?) {
-		AppListSettings.shared.sortOrder = sender?.representedObject as! AppListSettings.SortOptions
+		guard let sortOrder = sender?.representedObject as? AppListSettings.SortOptions else { return }
+		AppListSettings.shared.sortOrder = sortOrder
 	}
 
 	@IBAction func toggleShowInstalledUpdates(_ sender: NSMenuItem?) {

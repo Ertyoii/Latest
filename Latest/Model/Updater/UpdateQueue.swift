@@ -67,19 +67,13 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 	typealias ObserverHandler = @MainActor (_: UpdateOperation.ProgressState) -> Void
 
 	/// A mapping of observers associated with apps.
-	private var observers = [App.Bundle.Identifier : [NSObject: ObserverHandler]]()
+	@MainActor private var observers = [App.Bundle.Identifier: MainActorObserverRegistry<UpdateOperation.ProgressState>]()
 	
 	/// Adds the observer if it is not already registered.
 	@MainActor
 	func addObserver(_ observer: NSObject, to identifier: App.Bundle.Identifier, handler: @escaping ObserverHandler) {
-		var observers = self.observers[identifier] ?? [:]
-		
-		// Only add the observer, if it is not already installed.
-		guard observers[observer] == nil else {
-			return
-		}
-		
-		observers[observer] = handler
+		let observers = self.observers[identifier] ?? MainActorObserverRegistry()
+		guard observers.add(observer, handler: handler) else { return }
 		
 		// Call handler immediately to propagate initial state
 		handler(self.state(for: identifier))
@@ -90,7 +84,13 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 	
 	/// Removes the observer.
 	func removeObserver(_ observer: NSObject, for identifier: App.Bundle.Identifier) {
-		self.observers[identifier]?.removeValue(forKey: observer)
+		let observerIdentifier = ObjectIdentifier(observer)
+		Task { @MainActor in
+			self.observers[identifier]?.remove(observerIdentifier)
+			if self.observers[identifier]?.isEmpty == true {
+				self.observers.removeValue(forKey: identifier)
+			}
+		}
 	}
 		
 	/// Notifies observers about state changes.
@@ -98,9 +98,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 		let state = self.state(for: identifier)
 		
 		Task { @MainActor in
-			self.observers[identifier]?.forEach { (key: NSObject, handler: UpdateQueue.ObserverHandler) in
-				handler(state)
-			}
+			self.observers[identifier]?.notify(with: state)
 		}
 	}
 	

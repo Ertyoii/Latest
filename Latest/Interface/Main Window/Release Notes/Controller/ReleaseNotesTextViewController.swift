@@ -16,6 +16,30 @@ class ReleaseNotesTextViewController: NSViewController {
 	
     /// The view displaying the release notes
     @IBOutlet var textView: NSTextView!
+
+	override func loadView() {
+		let scrollView = NSScrollView()
+		scrollView.drawsBackground = false
+		scrollView.hasVerticalScroller = true
+		scrollView.autohidesScrollers = true
+
+		let textView = NSTextView()
+		textView.drawsBackground = false
+		textView.isEditable = false
+		textView.isSelectable = true
+		textView.textContainerInset = .zero
+		textView.textContainer?.widthTracksTextView = true
+		textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
+		textView.minSize = NSSize(width: 0, height: scrollView.contentSize.height)
+		textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+		textView.isVerticallyResizable = true
+		textView.isHorizontallyResizable = false
+		textView.autoresizingMask = [.width]
+
+		scrollView.documentView = textView
+		self.textView = textView
+		self.view = scrollView
+	}
     
     /// Updates the view with the given release notes
     func set(_ string: NSAttributedString) {
@@ -93,9 +117,9 @@ class ReleaseNotesTextViewController: NSViewController {
 extension ReleaseNotesTextViewController: ReleaseNotesContentProtocol {
     
     typealias ReleaseNotesContentController = ReleaseNotesTextViewController
-    
-    static var storyboardIdentifier: NSStoryboard.SceneIdentifier {
-        ReleaseNotesContentStoryboardIdentifier.text
-    }
+
+	static func makeController() -> ReleaseNotesTextViewController {
+		ReleaseNotesTextViewController()
+	}
     
 }

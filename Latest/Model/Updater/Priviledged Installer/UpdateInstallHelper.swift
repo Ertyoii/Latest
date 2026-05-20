@@ -31,7 +31,7 @@ actor InstallHelper {
 		case .enabled:
 			return
 		@unknown default:
-			fatalError("Unhandled SMAppService.Status case")
+			throw InstallHelperError.installHelperNotRegistered
 		}
 	}
 	
@@ -125,4 +125,3 @@ enum InstallHelperError: LocalizedError {
 		}
 	}
 }
-

@@ -11,9 +11,24 @@ import Cocoa
 /// The controller presenting a small activity indicator, showing the user that release notes are currently loading
 class ReleaseNotesLoadingViewController: NSViewController {
     
-	// Outlets
     @IBOutlet weak var activityIndicator: NSProgressIndicator!
-	@IBOutlet weak var horizontalConstraint: NSLayoutConstraint!
+
+	override func loadView() {
+		let view = NSView()
+		let activityIndicator = NSProgressIndicator()
+		activityIndicator.controlSize = .regular
+		activityIndicator.style = .spinning
+		activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+
+		view.addSubview(activityIndicator)
+		NSLayoutConstraint.activate([
+			activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+			activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+		])
+
+		self.activityIndicator = activityIndicator
+		self.view = view
+	}
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -26,9 +41,9 @@ class ReleaseNotesLoadingViewController: NSViewController {
 extension ReleaseNotesLoadingViewController: ReleaseNotesContentProtocol {
     
     typealias ReleaseNotesContentController = ReleaseNotesLoadingViewController
-    
-    static var storyboardIdentifier: NSStoryboard.SceneIdentifier {
-        ReleaseNotesContentStoryboardIdentifier.loading
-    }
+
+	static func makeController() -> ReleaseNotesLoadingViewController {
+		ReleaseNotesLoadingViewController()
+	}
     
 }

@@ -159,7 +159,7 @@ private extension UpdateRepository.Entry {
 
 	var changelogURLs: [URL] {
 		if token == "cursor" || homepage?.host?.contains("cursor.com") == true {
-			return [URL(string: "https://cursor.com/changelog")!]
+			return URL(string: "https://cursor.com/changelog").map { [$0] } ?? []
 		}
 
 		guard let homepage else { return [] }
