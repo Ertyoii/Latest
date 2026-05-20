@@ -33,14 +33,17 @@ class AppDirectory: @unchecked Sendable {
 
 	
 	/// The file system listener
-	private lazy var listener : DispatchSourceFileSystemObject = {
+	private lazy var listener : DispatchSourceFileSystemObject? = {
 		let descriptor = open((self.url as NSURL).fileSystemRepresentation, O_EVTONLY)
-		guard descriptor != -1 else { fatalError("Unable to open folder at url") }
+		guard descriptor != -1 else { return nil }
 		
 		let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor,
 															   eventMask: .write)
 		
 		source.setEventHandler(handler: collectBundles)
+		source.setCancelHandler {
+			close(descriptor)
+		}
 		
 		return source
 	}()
@@ -55,12 +58,12 @@ class AppDirectory: @unchecked Sendable {
 	}
 	
 	deinit {
-		listener.cancel()
+		listener?.cancel()
 	}
 	
 	/// Resumes tracking if it is not already running
 	private func resumeTracking() {
-		listener.activate()
+		listener?.activate()
 		collectBundles()
 	}
 	

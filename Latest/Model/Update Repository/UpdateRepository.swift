@@ -16,9 +16,6 @@ private let UpdateDateKey = "UpdateDateKey"
 /// Can be asked for update version information for a given application bundle.
 class UpdateRepository: @unchecked Sendable {
 
-	/// Duration after which the cache will be invalidated. (1 hour in seconds)
-	private static let cacheInvalidationDuration: Double = 1 * 60 * 60
-
 	/// Queue on which requests will be handled.
 	private var queue = DispatchQueue(label: "repositoryQueue")
 
@@ -79,7 +76,7 @@ class UpdateRepository: @unchecked Sendable {
 	private var pendingRequests: [@Sendable () -> Void]? = []
 
 	/// A set of bundle identifiers for which update checking is currently not supported.
-	private var unsupportedBundleIdentifiers: Set<String>!
+	private var unsupportedBundleIdentifiers = Set<String>()
 
 	/// Sets the given entries and performs pending requests.
 	private func finalize() {
@@ -187,10 +184,8 @@ class UpdateRepository: @unchecked Sendable {
 				self.fetchCompletedGroup.leave()
 			}
 
-			// Check for valid cache file
-			let timeInterval = UserDefaults.standard.double(forKey: urlType.userDefaultsKey) as TimeInterval
-			if timeInterval > 0, timeInterval.distance(to: Date.timeIntervalSinceReferenceDate) < Self.cacheInvalidationDuration,
-			   let cacheURL = urlType.cacheURL, let data = try? Data(contentsOf: cacheURL)  {
+			let cache = UpdateRepositoryCache(cacheURL: urlType.cacheURL, userDefaultsKey: urlType.userDefaultsKey)
+			if let data = cache.cachedData() {
 				handle(data)
 				return
 			}
@@ -207,10 +202,7 @@ class UpdateRepository: @unchecked Sendable {
 				handle(data)
 
 				// Store in cache
-				if let cacheURL = urlType.cacheURL {
-					try? data.write(to: cacheURL)
-					UserDefaults.standard.setValue(Date.timeIntervalSinceReferenceDate, forKey: urlType.userDefaultsKey)
-				}
+				cache.store(data)
 			}
 			task.resume()
 
@@ -236,7 +228,11 @@ class UpdateRepository: @unchecked Sendable {
 	}
 
 	private func loadUnsupportedApps(from data: Data) {
-		let propertyList = try! PropertyListSerialization.propertyList(from: data, format: nil) as! [String]
+		guard let propertyList = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String] else {
+			unsupportedBundleIdentifiers = []
+			return
+		}
+
 		unsupportedBundleIdentifiers = Set(propertyList)
 	}
 
@@ -284,7 +280,11 @@ class UpdateRepository: @unchecked Sendable {
 			case .repository:
 				return nil
 			case .unsupportedApps:
-				return try! Data(contentsOf: Bundle.main.url(forResource: "ExcludedAppIdentifiers", withExtension: "plist")!)
+				guard let fallbackURL = Bundle.main.url(forResource: "ExcludedAppIdentifiers", withExtension: "plist") else {
+					return nil
+				}
+
+				return try? Data(contentsOf: fallbackURL)
 			}
 		}
 

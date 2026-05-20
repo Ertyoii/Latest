@@ -76,8 +76,19 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 	/// The collection holding all apps that have been found.
 	private(set) var apps = Set<App>() {
 		didSet {
+			self.rebuildAppIndex()
+
 			// Schedule an update for observers
 			self.scheduleFilterUpdate()
+		}
+	}
+
+	/// Apps indexed by their bundle URL identifier.
+	private var appsByIdentifier = [App.Bundle.Identifier: App]()
+
+	private func rebuildAppIndex() {
+		self.appsByIdentifier = apps.reduce(into: [App.Bundle.Identifier: App]()) { appsByIdentifier, app in
+			appsByIdentifier[app.identifier] = appsByIdentifier[app.identifier] ?? app
 		}
 	}
 
@@ -105,9 +116,7 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 	func set(appBundles: Set<App.Bundle>) -> Set<App> {
 		self.updateQueue.sync {
 			let oldApps = self.apps
-			let oldAppsByIdentifier = oldApps.reduce(into: [App.Bundle.Identifier: App]()) { appsByIdentifier, app in
-				appsByIdentifier[app.identifier] = appsByIdentifier[app.identifier] ?? app
-			}
+			let oldAppsByIdentifier = self.appsByIdentifier
 
 			self.apps = Set(appBundles.map({ bundle in
 				if let app = oldAppsByIdentifier[bundle.identifier] {
@@ -140,7 +149,7 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 	/// Sets the given update for the given bundle and returns the combined object.
 	func set(_ update: Result<App.Update, Error>?, for bundle: App.Bundle) -> App {
 		self.updateQueue.sync {
-			guard let oldApp = self.apps.first(where: { $0.bundle == bundle }) else {
+			guard let oldApp = self.app(withIdentifier: bundle.identifier) else {
 				fatalError("App not in data store")
 			}
 
@@ -161,7 +170,7 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 	}
 
 	private func app(withIdentifier identifier: App.Bundle.Identifier) -> App? {
-		self.apps.first(where: { $0.identifier == identifier })
+		self.appsByIdentifier[identifier]
 	}
 
 

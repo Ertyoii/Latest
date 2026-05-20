@@ -11,6 +11,45 @@ import ServiceManagement
 
 private let malformedURLError = NSError(domain: NSURLErrorDomain, code: NSURLErrorUnsupportedURL)
 
+private struct AppStoreLookupCacheKey: Hashable {
+	let bundleIdentifier: String
+	let countryCode: String
+	let entityType: String
+}
+
+private enum AppStoreLookupCacheValue {
+	case entry(AppStoreEntry)
+	case unavailable
+
+	var result: Result<AppStoreEntry, Error> {
+		switch self {
+		case .entry(let entry):
+			return .success(entry)
+		case .unavailable:
+			return .failure(LatestError.updateInfoUnavailable)
+		}
+	}
+}
+
+private final class AppStoreLookupCache: @unchecked Sendable {
+	static let shared = AppStoreLookupCache()
+
+	private let queue = DispatchQueue(label: "AppStoreLookupCache")
+	private var values = [AppStoreLookupCacheKey: AppStoreLookupCacheValue]()
+
+	func value(for key: AppStoreLookupCacheKey) -> AppStoreLookupCacheValue? {
+		queue.sync {
+			values[key]
+		}
+	}
+
+	func set(_ value: AppStoreLookupCacheValue, for key: AppStoreLookupCacheKey) {
+		queue.sync {
+			values[key] = value
+		}
+	}
+}
+
 /// The operation for checking for updates for a Mac App Store app.
 class AppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, @unchecked Sendable {
 	
@@ -213,12 +252,18 @@ extension AppStoreUpdateCheckerOperation {
 		}
 
 		// Add parameters
-		let languageCode = Locale.current.region?.identifier ?? "US"
+		let countryCode = Locale.current.region?.identifier ?? "US"
+		let cacheKey = AppStoreLookupCacheKey(bundleIdentifier: app.bundleIdentifier, countryCode: countryCode, entityType: entityType)
+		if let cachedValue = AppStoreLookupCache.shared.value(for: cacheKey) {
+			completion(cachedValue.result)
+			return
+		}
+
 		var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
 		components?.queryItems = [
 			URLQueryItem(name: "limit", value: "1"),
 			URLQueryItem(name: "entity", value: entityType),
-			URLQueryItem(name: "country", value: languageCode),
+			URLQueryItem(name: "country", value: countryCode),
 			URLQueryItem(name: "bundleId", value: self.app.bundleIdentifier)
 		]
 		guard let url = components?.url else {
@@ -236,10 +281,12 @@ extension AppStoreUpdateCheckerOperation {
 			
 			do {
 				guard let entry = try JSONDecoder().decode(EntryList.self, from: data).results.first else {
+					AppStoreLookupCache.shared.set(.unavailable, for: cacheKey)
 					completion(.failure(LatestError.updateInfoUnavailable))
 					return
 				}
 				
+				AppStoreLookupCache.shared.set(.entry(entry), for: cacheKey)
 				completion(.success(entry))
 			}
 			

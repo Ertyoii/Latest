@@ -217,7 +217,8 @@ fileprivate extension UpdateRepository.Entry {
 			let container = try decoder.container(keyedBy: CodingKeys.self)
 
 			var names = [String]()
-			var identifiers = [String]()
+				var identifiers = [String]()
+				var identifierPaths = [String]()
 
 			// App names.
 			if let appNames = try? Self.decodeAppNames(container) {
@@ -225,19 +226,19 @@ fileprivate extension UpdateRepository.Entry {
 			}
 
 			// Extract everything else.
-			identifiers.append(contentsOf: (try? Self.decodeZap(container)) ?? [])
-			if let uninstall = try? Self.decodeUninstall(container) {
-				names.append(contentsOf: uninstall.names)
-				identifiers.append(contentsOf: uninstall.identifiers)
-			}
+				identifierPaths.append(contentsOf: (try? Self.decodeZap(container)) ?? [])
+				if let uninstall = try? Self.decodeUninstall(container) {
+					names.append(contentsOf: uninstall.names)
+					identifiers.append(contentsOf: uninstall.identifiers)
+				}
 
-			self.names = Set(names)
-			self.identifiers = Set(identifiers.flatMap { path in
-				let string = path as NSString
-				guard !string.pathExtension.isEmpty else { return [String]() }
-				let identifier = string.lastPathComponent
-				return [identifier, (identifier as NSString).deletingPathExtension]
-			})
+				self.names = Set(names)
+				self.identifiers = Set(identifiers + identifierPaths.flatMap { path in
+					let string = path as NSString
+					guard !string.pathExtension.isEmpty else { return [String]() }
+					let identifier = string.lastPathComponent
+					return [identifier, (identifier as NSString).deletingPathExtension]
+				})
 
 		}
 

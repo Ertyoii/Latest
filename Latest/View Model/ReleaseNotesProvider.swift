@@ -70,7 +70,9 @@ class ReleaseNotesProvider {
 				case .encoded(let data):
 					completion(ReleaseNotesMarkup.attributedString(from: data, baseURL: nil))
 				case .githubRelease(let apiURL):
-					self.githubReleaseNotes(from: apiURL, relevantVersion: app.remoteVersion?.versionNumber, with: completion)
+					Task {
+						completion(await self.githubReleaseNotes(from: apiURL, relevantVersion: app.remoteVersion?.versionNumber))
+					}
 				case .changelog(let urls, let versionPrefix, let allowsLatestFallback):
 					self.changelogReleaseNotes(from: urls, versionPrefix: versionPrefix ?? app.remoteVersion?.versionNumber, allowsLatestFallback: allowsLatestFallback, with: completion)
 			}
@@ -94,40 +96,26 @@ class ReleaseNotesProvider {
 		}
 	}
 
-	private func githubReleaseNotes(from url: URL, relevantVersion: String?, with completion: @escaping Completion) {
-		URLSession.shared.dataTask(with: url) { data, _, error in
-			Task { @MainActor in
-				if let error {
-					completion(.failure(error))
-					return
-				}
-
-				guard let data else {
-					completion(.failure(LatestError.releaseNotesUnavailable))
-					return
-				}
-
-				do {
-					let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
-					let body = release.body.trimmingCharacters(in: .whitespacesAndNewlines)
-					guard !body.isEmpty else {
-						completion(.failure(LatestError.releaseNotesUnavailable))
-						return
-					}
-
-					let title = release.name?.trimmingCharacters(in: .whitespacesAndNewlines)
-					let markdown = ([title, ReleaseNotesMarkup.relevantText(from: body, version: relevantVersion, allowFirstSectionFallback: true)]
-						.compactMap { text in
-							guard let text, !text.isEmpty else { return nil }
-							return text
-						} as [String]).joined(separator: "\n\n")
-
-					completion(ReleaseNotesMarkup.attributedString(from: markdown, baseURL: nil))
-				} catch {
-					completion(.failure(error))
-				}
+	private func githubReleaseNotes(from url: URL, relevantVersion: String?) async -> ReleaseNotes {
+		do {
+			let (data, _) = try await URLSession.shared.data(from: url)
+			let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
+			let body = release.body.trimmingCharacters(in: .whitespacesAndNewlines)
+			guard !body.isEmpty else {
+				return .failure(LatestError.releaseNotesUnavailable)
 			}
-		}.resume()
+
+			let title = release.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+			let markdown = ([title, ReleaseNotesMarkup.relevantText(from: body, version: relevantVersion, allowFirstSectionFallback: true)]
+				.compactMap { text in
+					guard let text, !text.isEmpty else { return nil }
+					return text
+				} as [String]).joined(separator: "\n\n")
+
+			return ReleaseNotesMarkup.attributedString(from: markdown, baseURL: nil)
+		} catch {
+			return .failure(error)
+		}
 	}
 
 	private func changelogReleaseNotes(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, with completion: @escaping Completion) {
@@ -211,7 +199,7 @@ enum ReleaseNotesMarkup {
 
 	static func plainText(fromHTML html: String) -> String? {
 		guard let data = html.data(using: .utf16),
-			  let string = NSAttributedString(html: data, documentAttributes: nil) else {
+			  let string = Self.attributedString(fromHTMLData: data, baseURL: nil) else {
 			return nil
 		}
 
@@ -244,11 +232,10 @@ enum ReleaseNotesMarkup {
 		}
 
 		guard let startIndex else { return nil }
-		let endIndex = lines[(startIndex + 1)...].firstIndex { line in
-			Self.looksLikeReleaseBoundary(line) && !versionCandidates.contains { version in
-				line.localizedCaseInsensitiveContains(version)
-			}
-		} ?? lines.endIndex
+			let exactVersion = version?.trimmingCharacters(in: .whitespacesAndNewlines)
+			let endIndex = lines[(startIndex + 1)...].firstIndex { line in
+				Self.looksLikeReleaseBoundary(line) && !(exactVersion.map { line.localizedCaseInsensitiveContains($0) } ?? false)
+			} ?? lines.endIndex
 
 		let selectedLines = lines[startIndex..<endIndex]
 		guard !selectedLines.isEmpty else { return nil }
@@ -291,15 +278,19 @@ enum ReleaseNotesMarkup {
 			return .failure(LatestError.releaseNotesUnavailable)
 		}
 
-		if let baseURL, let string = NSAttributedString(html: data, baseURL: baseURL, documentAttributes: nil) {
-			return .success(string)
-		}
-
-		guard let string = NSAttributedString(html: data, documentAttributes: nil) else {
+		guard let string = Self.attributedString(fromHTMLData: data, baseURL: baseURL) else {
 			return .failure(LatestError.releaseNotesUnavailable)
 		}
 
 		return .success(string)
+	}
+
+	private static func attributedString(fromHTMLData data: Data, baseURL: URL?) -> NSAttributedString? {
+		if let baseURL {
+			return NSAttributedString(html: data, baseURL: baseURL, documentAttributes: nil)
+		}
+
+		return NSAttributedString(html: data, documentAttributes: nil)
 	}
 
 	private static func prefersMarkdown(_ string: String) -> Bool {

@@ -18,6 +18,8 @@ private extension NSUserInterfaceItemIdentifier {
  */
 class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate, Observer {
 	
+	private static let badgeNumberFormatter = NumberFormatter()
+
 	nonisolated let id = UUID()
 	
     /// The array holding the apps that have an update available.
@@ -189,50 +191,6 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
         return self.snapshot.isSectionHeader(at: row)
     }
     
-    func tableView(_ tableView: NSTableView, rowActionsForRow row: Int, edge: NSTableView.RowActionEdge) -> [NSTableViewRowAction] {
-		// Ensure the index is valid
-		guard row >= 0 && row < self.apps.count else { return [] }
-
-		// Prevent section headers from displaying row actions
-		if self.snapshot.isSectionHeader(at: row) { return [] }
-		
-        if edge == .trailing {
-			guard let app = self.snapshot.app(at: row) else { return [] }
-			
-			// Don't provide an update action if the app has no update available
-			if !app.updateAvailable || app.isUpdating {
-				return []
-			}
-			
-            let action = NSTableViewRowAction(style: .regular, title: updateTitle(for: app), handler: { (action, row) in
-                self.updateApp(atIndex: row)
-				tableView.rowActionsVisible = false
-            })
-			
-			action.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: nil)
-			action.backgroundColor = .systemCyan
-			
-            return [action]
-        } else if edge == .leading {
-			let open = NSTableViewRowAction(style: .regular, title: NSLocalizedString("OpenAction", comment: "Action to open a given app.")) { action, row in
-				self.openApp(at: row)
-				tableView.rowActionsVisible = false
-			}
-			open.image = NSImage(systemSymbolName: "arrow.up.forward.app", accessibilityDescription: nil)
-			
-            let reveal = NSTableViewRowAction(style: .regular, title: NSLocalizedString("RevealAction", comment: "Revea in Finder Row action"), handler: { (action, row) in
-                self.showAppInFinder(at: row)
-				tableView.rowActionsVisible = false
-            })
-			reveal.backgroundColor = .systemGray
-			reveal.image = NSImage(systemSymbolName: "finder", accessibilityDescription: nil)
-			
-            return [open, reveal]
-        }
-        
-        return []
-    }
-    
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
 		// Ensure the index is valid
 		guard row >= 0 && row < self.apps.count else { return false }
@@ -347,120 +305,9 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
     }
     
     
-    // MARK: - Menu Item Stuff
-	
-	private func rowIndex(forMenuItem menuItem: NSMenuItem?) -> Int {
-		guard let app = menuItem?.representedObject as? App, let index = self.snapshot.firstIndex(of: app) else { return self.tableView.selectedRow }
-		return index
-	}
-    
-    /// Open a single app
-    @IBAction func updateApp(_ sender: NSMenuItem?) {
-		self.updateApp(atIndex: self.rowIndex(forMenuItem: sender))
-    }
-	
-	@IBAction func ignoreApp(_ sender: NSMenuItem?) {
-		self.setIgnored(true, forAppAt: self.rowIndex(forMenuItem: sender))
-	}
-	
-	@IBAction func unignoreApp(_ sender: NSMenuItem?) {
-		self.setIgnored(false, forAppAt: self.rowIndex(forMenuItem: sender))
-	}
-	
-	/// Opens the selected app
-	@IBAction func openApp(_ sender: NSMenuItem?) {
-		self.openApp(at: self.rowIndex(forMenuItem: sender))
-	}
-    
-    /// Show the bundle of an app in Finder
-    @IBAction func showAppInFinder(_ sender: NSMenuItem?) {
-        self.showAppInFinder(at: self.rowIndex(forMenuItem: sender))
-    }
-    
-    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        guard let action = menuItem.action else {
-            return true
-        }
-        
-		let index = self.rowIndex(forMenuItem: menuItem)
-		guard index >= 0, let app = self.snapshot.app(at: index) else {
-			return false
-		}
-		
-		switch action {
-		case #selector(updateApp(_:)):
-			menuItem.title = updateTitle(for: app)
-			return app.updateAvailable && !app.isUpdating
-		case #selector(openApp(_:)), #selector(showAppInFinder(_:)):
-            return true
-		case #selector(ignoreApp(_:)):
-			menuItem.isHidden = app.isIgnored
-			return true
-		case #selector(unignoreApp(_:)):
-			menuItem.isHidden = !app.isIgnored
-			return true
-        default:
-            ()
-        }
-		
-		return false
-    }
-    
-    // MARK: Delegate
-    
-	func menuNeedsUpdate(_ menu: NSMenu) {
-		let row = self.tableView.clickedRow
-
-		guard row != -1, !self.snapshot.isSectionHeader(at: row) else { return }
-		let app = self.snapshot.app(at: row)
-		menu.items.forEach({ $0.representedObject = app })
-	}
-    
-	
-	// MARK: - Search
-	
 	/// The search field used for filtering apps
 	@IBOutlet weak var searchField: NSSearchField!
-	
-	
-	// MARK: - Actions
-	
-    /// Updates the app at the given index.
-    private func updateApp(atIndex index: Int) {
-		guard let app = self.app(at: index) else { return }
 
-		// Delay update to improve animations
-		Task { @MainActor in
-			app.performUpdate()
-		}
-    }
-	
-	/// Sets the ignored state for the app at the given index
-	private func setIgnored(_ ignored: Bool, forAppAt index: Int) {
-		guard let app = self.app(at: index) else { return }
-		UpdateCheckCoordinator.shared.appProvider.setIgnoredState(ignored, for: app)
-	}
-    
-	/// Opens the app at a given index.
-	private func openApp(at index: Int) {
-		self.app(at: index)?.open()
-	}
-	
-    /// Reveals the app at a given index in Finder
-    private func showAppInFinder(at index: Int) {
-		self.app(at: index)?.showInFinder()
-    }
-	
-	/// Returns the app at the given index, if available.
-	private func app(at index: Int) -> App? {
-		guard index >= 0 && index < self.apps.count else {
-			return nil
-		}
-
-		return self.snapshot.app(at: index)
-	}
-	
-	
 	// MARK: - Interface Updating
     
     /// Updates the UI depending on available updates (show empty states or update list)
@@ -484,7 +331,7 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 		let statusText: String
 		
 		// Update dock badge
-		NSApplication.shared.dockTile.badgeLabel = count == 0 ? nil : NumberFormatter().string(from: count as NSNumber)
+		NSApplication.shared.dockTile.badgeLabel = count == 0 ? nil : Self.badgeNumberFormatter.string(from: count as NSNumber)
 		
 		let format = NSLocalizedString("NumberOfUpdatesAvailable", comment: "number of updates available")
 		statusText = String.localizedStringWithFormat(format, count)
@@ -498,63 +345,74 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 	
 	/// Animates changes made to the apps list
 	private func updateTableView(with oldSnapshot: AppListSnapshot, with newSnapshot: AppListSnapshot) {
-		let oldValue = oldSnapshot.entries
-		let newValue = newSnapshot.entries
-		
-		self.tableView.beginUpdates()
-		
-		var state = oldValue
-		var i = 0, j = 0
-		
-		// Iterate both states
-		while i < state.count || j < newValue.count {
-			self.tableView.reloadData(forRowIndexes: IndexSet(integer: i), columnIndexes: IndexSet(integer: 0))
-			
-			// Skip identical items
-			if i < state.count && j < newValue.count && state[i].isSimilar(to: newValue[j]) {
-				i += 1
-				j += 1
-				continue
-			}
-			
-			// Remove deleted elements
-			if i < state.count && !newValue.contains(state[i]) {
-				self.tableView.removeRows(at: IndexSet(integer: i), withAnimation: [.slideUp, .effectFade])
-				state.remove(at: i)
-				continue
-			}
-			
-			// Move existing elements
-			if let index = state.firstIndex(of: newValue[i]) {
-				let newIndex = i - (index < i ? 1 : 0)
-				self.tableView.moveRow(at: index, to: newIndex)
-				
-				state.remove(at: index)
-				state.insert(newValue[j], at: newIndex)
-				
-				i += 1
-				j += 1
-				continue
-			}
-			
-			// insert new elements
-			self.tableView.insertRows(at: IndexSet(integer: i), withAnimation: [.slideDown, .effectFade])
-			state.insert(newValue[j], at: i)
-			
-			i += 1
-			j += 1
+		let changes = TableViewSnapshotChanges(from: oldSnapshot.entries, to: newSnapshot.entries)
+		guard changes.requiresUpdate else { return }
+
+		switch changes.kind {
+		case .reload(let indexes):
+			self.tableView.reloadData(forRowIndexes: indexes, columnIndexes: IndexSet(integer: 0))
+		case .append(let indexes):
+			self.tableView.insertRows(at: indexes, withAnimation: [.slideDown, .effectFade])
+		case .remove(let indexes):
+			self.tableView.removeRows(at: indexes, withAnimation: [.slideUp, .effectFade])
+		case .reloadAll:
+			self.tableView.reloadData()
 		}
-		
-		self.tableView.endUpdates()
 	}
 	
-	/// Returns an appropriate title for update actions for the given app.
-	private func updateTitle(for app: App) -> String {
-		if let externalUpdater = app.externalUpdaterName {
-			String(format: NSLocalizedString("ExternalUpdateAction", comment: "Action to update a given app outside of Latest. The placeholder is filled with the name of the external updater. (App Store, App Name)"), externalUpdater)
-		} else {
-			NSLocalizedString("UpdateAction", comment: "Action to update a given app.")
+}
+
+private struct TableViewSnapshotChanges {
+
+	enum Kind {
+		case reload(IndexSet)
+		case append(IndexSet)
+		case remove(IndexSet)
+		case reloadAll
+	}
+
+	let kind: Kind
+
+	var requiresUpdate: Bool {
+		switch kind {
+		case .reload(let indexes), .append(let indexes), .remove(let indexes):
+			return !indexes.isEmpty
+		case .reloadAll:
+			return true
 		}
 	}
-    
+
+	init(from oldEntries: [AppListSnapshot.Entry], to newEntries: [AppListSnapshot.Entry]) {
+		if oldEntries.count == newEntries.count, oldEntries.identityMatches(newEntries) {
+			self.kind = .reload(IndexSet(oldEntries.indices))
+			return
+		}
+
+		if oldEntries.exactlyMatchesPrefix(of: newEntries) {
+			self.kind = .append(IndexSet(oldEntries.count..<newEntries.count))
+			return
+		}
+
+		if newEntries.exactlyMatchesPrefix(of: oldEntries) {
+			self.kind = .remove(IndexSet(newEntries.count..<oldEntries.count))
+			return
+		}
+
+		self.kind = .reloadAll
+	}
+
+}
+
+private extension Array where Element == AppListSnapshot.Entry {
+
+	func identityMatches(_ other: [Element]) -> Bool {
+		guard count == other.count else { return false }
+		return zip(self, other).allSatisfy { $0.isSimilar(to: $1) }
+	}
+
+	func exactlyMatchesPrefix(of other: [Element]) -> Bool {
+		guard count <= other.count else { return false }
+		return zip(self, other).allSatisfy(==)
+	}
+
 }

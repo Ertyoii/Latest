@@ -35,7 +35,10 @@ class AppStoreCheckerOperationTest: XCTestCase {
 		try FileManager.default.createDirectory(at: receiptURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 		try Data().write(to: receiptURL)
 
-		XCTAssertEqual(AppStoreReceipt.url(forAppAt: appURL), receiptURL)
+		XCTAssertEqual(
+			AppStoreReceipt.url(forAppAt: appURL)?.resolvingSymlinksInPath(),
+			receiptURL.resolvingSymlinksInPath()
+		)
 		XCTAssertTrue(AppStoreUpdateCheckerOperation.isIOSAppBundle(at: appURL))
 	}
 

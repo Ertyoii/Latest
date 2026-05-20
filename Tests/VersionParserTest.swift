@@ -76,9 +76,9 @@ final class VersionParserTest: XCTestCase {
 		}
 
 		XCTAssertEqual(versionPrefix, "2.4")
-		XCTFalse(allowsLatestFallback)
-		XCTEqual(urls.first?.absoluteString, "https://example.com/changelog")
-		XCTFalse(urls.map(\.absoluteString).contains("Notes, tasks & reminders"))
+		XCTAssertFalse(allowsLatestFallback)
+		XCTAssertEqual(urls.first?.absoluteString, "https://example.com/changelog")
+		XCTAssertFalse(urls.map(\.absoluteString).contains("Notes, tasks & reminders"))
 	}
 
 	func testHomebrewCaskEntryDerivesGitHubReleaseNotesFromDownloadURL() throws {
@@ -105,7 +105,7 @@ final class VersionParserTest: XCTestCase {
 			return XCTFail("Expected GitHub release notes")
 		}
 
-		XCTEqual(apiURL.absoluteString, "https://api.github.com/repos/bitgapp/eqMac/releases/tags/v1.8.15")
+		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/bitgapp/eqMac/releases/tags/v1.8.15")
 	}
 
 	func testHomebrewCaskEntryUsesCursorChangelogSource() throws {
@@ -132,9 +132,9 @@ final class VersionParserTest: XCTestCase {
 			return XCTFail("Expected changelog release notes")
 		}
 
-		XCTEqual(versionPrefix, "3.4")
-		XCTTrue(allowsLatestFallback)
-		XCTEqual(urls, [URL(string: "https://cursor.com/changelog")!])
+		XCTAssertEqual(versionPrefix, "3.4")
+		XCTAssertTrue(allowsLatestFallback)
+		XCTAssertEqual(urls, [URL(string: "https://cursor.com/changelog")!])
 	}
 
 	func testHomebrewCaskEntryKeepsBundleIdentifiersWhenAppArtifactExists() throws {
@@ -169,7 +169,7 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertEqual(entry.names, ["Example App.app"])
 		XCTAssertTrue(entry.bundleIdentifiers.contains("com.example.app"))
 		XCTAssertTrue(entry.bundleIdentifiers.contains("com.example.helper"))
-		XCTFalse(entry.requiresBundleIdentifierMatch)
+		XCTAssertFalse(entry.requiresBundleIdentifierMatch)
 	}
 
 	func testHomebrewCaskEntryUsesNameStanzaForPkgInstalledApps() throws {
@@ -198,8 +198,8 @@ final class VersionParserTest: XCTestCase {
 		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
 
 		XCTAssertEqual(entry.names, ["Garmin Express.app"])
-		XCTEqual(entry.bundleIdentifiers, ["com.garmin.renu.client"])
-		XCTTrue(entry.requiresBundleIdentifierMatch)
+		XCTAssertEqual(entry.bundleIdentifiers, ["com.garmin.renu.client"])
+		XCTAssertTrue(entry.requiresBundleIdentifierMatch)
 	}
 
 	func testHomebrewRepositoryPrefersStableCaskAfterIdentifierMatch() throws {
@@ -324,16 +324,18 @@ final class BundleCollectorTest: XCTestCase {
 				"CFBundleVersion": "1"
 			]
 		)
-		let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
-		let archiveTimestamp = Date(timeIntervalSince1970: 315504000)
-		let contentsTimestamp = Date(timeIntervalSince1970: 1_778_179_586)
+			let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
+			let infoPlistURL = contentsURL.appendingPathComponent("Info.plist", isDirectory: false)
+			let archiveTimestamp = Date(timeIntervalSince1970: 315504000)
+			let contentsTimestamp = Date(timeIntervalSince1970: 1_778_179_586)
 
-		try setModificationDate(archiveTimestamp, for: appURL)
-		try setModificationDate(contentsTimestamp, for: contentsURL)
+			try setModificationDate(archiveTimestamp, for: appURL)
+			try setModificationDate(contentsTimestamp, for: contentsURL)
+			try setModificationDate(contentsTimestamp, for: infoPlistURL)
 
 		let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
 
-		XCTEqual(bundle.modificationDate, contentsTimestamp)
+		XCTAssertEqual(bundle.modificationDate, contentsTimestamp)
 	}
 
 	func testCollectingUpdatedBundleReadsCurrentInfoPlistVersions() throws {
