@@ -213,7 +213,7 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 	func addObserver(_ observer: NSObject, handler: @escaping ObserverHandler) {
 		let observerIdentifier = ObjectIdentifier(observer)
 		Task { @MainActor in
-			guard self.observers.add(observerIdentifier, handler: handler) else { return }
+			self.observers.add(observerIdentifier, handler: handler)
 
 			// Call handler immediately to propagate initial state.
 			let apps = self.updateQueue.sync {

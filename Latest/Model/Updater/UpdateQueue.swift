@@ -73,7 +73,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 	@MainActor
 	func addObserver(_ observer: NSObject, to identifier: App.Bundle.Identifier, handler: @escaping ObserverHandler) {
 		let observers = self.observers[identifier] ?? MainActorObserverRegistry()
-		guard observers.add(observer, handler: handler) else { return }
+		observers.add(observer, handler: handler)
 		
 		// Call handler immediately to propagate initial state
 		handler(self.state(for: identifier))

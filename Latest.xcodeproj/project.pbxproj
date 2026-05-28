@@ -54,6 +54,7 @@
 		508D4E662FBD000000000001 /* AppListSnapshotTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 508D4E652FBD000000000001 /* AppListSnapshotTest.swift */; };
 		508D4E682FBA0A5C00C0D3C1 /* AppStoreCheckerOperationTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 508D4E672FBA0A5C00C0D3C1 /* AppStoreCheckerOperationTest.swift */; };
 		508D4E6A2FBC000000000001 /* AppDataStoreTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 508D4E692FBC000000000001 /* AppDataStoreTest.swift */; };
+		508D4E6C2FC000000000001 /* UpdateQueueTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 508D4E6B2FC000000000001 /* UpdateQueueTest.swift */; };
 		5093EF9C2B913A1C0041E6C1 /* AppDirectoryCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5093EF9B2B913A1C0041E6C1 /* AppDirectoryCellView.swift */; };
 		509512141FF362A1003D2D7F /* Version.swift in Sources */ = {isa = PBXBuildFile; fileRef = 509512101FF362A1003D2D7F /* Version.swift */; };
 		509512151FF362A1003D2D7F /* Update.swift in Sources */ = {isa = PBXBuildFile; fileRef = 509512111FF362A1003D2D7F /* Update.swift */; };
@@ -261,6 +262,7 @@
 		508D4E652FBD000000000001 /* AppListSnapshotTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppListSnapshotTest.swift; sourceTree = "<group>"; };
 		508D4E672FBA0A5C00C0D3C1 /* AppStoreCheckerOperationTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreCheckerOperationTest.swift; sourceTree = "<group>"; };
 		508D4E692FBC000000000001 /* AppDataStoreTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataStoreTest.swift; sourceTree = "<group>"; };
+		508D4E6B2FC000000000001 /* UpdateQueueTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateQueueTest.swift; sourceTree = "<group>"; };
 		5093EF9B2B913A1C0041E6C1 /* AppDirectoryCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDirectoryCellView.swift; sourceTree = "<group>"; };
 		5094821C27C19E4A00EC6B6B /* CFBundle_Private.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CFBundle_Private.h; sourceTree = "<group>"; };
 		5094823327C19F5800EC6B6B /* Latest Bridging_Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Latest Bridging_Header.h"; sourceTree = "<group>"; };
@@ -750,6 +752,7 @@
 				508D4E652FBD000000000001 /* AppListSnapshotTest.swift */,
 				508D4E672FBA0A5C00C0D3C1 /* AppStoreCheckerOperationTest.swift */,
 				50FEB87C2B1BE630006FB75D /* OSVersionTest.swift */,
+				508D4E6B2FC000000000001 /* UpdateQueueTest.swift */,
 				50C81D731FBADC9100324C2E /* VersionTest.swift */,
 				50E4EB082B17DFCE00A70A7D /* VersionParserTest.swift */,
 				50FEB87E2B1BE67E006FB75D /* VersionSanitizationTest.swift */,
@@ -1150,6 +1153,7 @@
 				508D4E662FBD000000000001 /* AppListSnapshotTest.swift in Sources */,
 				508D4E682FBA0A5C00C0D3C1 /* AppStoreCheckerOperationTest.swift in Sources */,
 				50FEB87D2B1BE630006FB75D /* OSVersionTest.swift in Sources */,
+				508D4E6C2FC000000000001 /* UpdateQueueTest.swift in Sources */,
 				50FEB87F2B1BE67F006FB75D /* VersionSanitizationTest.swift in Sources */,
 				50E4EB092B17DFCE00A70A7D /* VersionParserTest.swift in Sources */,
 			);
@@ -1481,7 +1485,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 999271;
+				CURRENT_PROJECT_VERSION = 999272;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1497,7 +1501,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.16;
+				MARKETING_VERSION = 0.17;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1520,7 +1524,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 999271;
+				CURRENT_PROJECT_VERSION = 999272;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1536,7 +1540,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.16;
+				MARKETING_VERSION = 0.17;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

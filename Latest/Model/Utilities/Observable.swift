@@ -68,12 +68,12 @@ final class MainActorObserverRegistry<Value> {
 		add(ObjectIdentifier(observer), handler: handler)
 	}
 
-	/// Adds the observer identifier if it is not already registered.
+	/// Adds or replaces the observer identifier.
 	@discardableResult
 	func add(_ identifier: ObjectIdentifier, handler: @escaping Handler) -> Bool {
-		guard handlers[identifier] == nil else { return false }
+		let isNewObserver = handlers[identifier] == nil
 		handlers[identifier] = handler
-		return true
+		return isNewObserver
 	}
 
 	/// Removes the given observer.
