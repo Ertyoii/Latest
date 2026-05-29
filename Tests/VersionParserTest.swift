@@ -382,6 +382,51 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertTrue(text.contains("Fixed an issue where using GPT models"))
 		XCTAssertFalse(text.contains("empty model dropdown"))
 	}
+
+	@MainActor
+	func testReleaseNotesProviderInvalidatesCacheWhenReleaseNoteSourceChanges() throws {
+		let provider = ReleaseNotesProvider()
+		let oldApp = makeReleaseNotesApp(html: "<p>Old release notes</p>")
+		let refreshedApp = makeReleaseNotesApp(html: "<p>Fresh release notes</p>")
+
+		let oldNotes = try releaseNotes(for: oldApp, provider: provider)
+		let refreshedNotes = try releaseNotes(for: refreshedApp, provider: provider)
+
+		XCTAssertTrue(oldNotes.string.contains("Old release notes"))
+		XCTAssertTrue(refreshedNotes.string.contains("Fresh release notes"))
+		XCTAssertFalse(refreshedNotes.string.contains("Old release notes"))
+	}
+
+	@MainActor
+	private func releaseNotes(for app: App, provider: ReleaseNotesProvider) throws -> NSAttributedString {
+		var result: ReleaseNotesProvider.ReleaseNotes?
+		provider.releaseNotes(for: app) { notes in
+			result = notes
+		}
+
+		return try XCTUnwrap(result).get()
+	}
+
+	private func makeReleaseNotesApp(html: String) -> App {
+		let bundle = App.Bundle(
+			version: Version(versionNumber: "1.4.2", buildNumber: nil),
+			name: "Zed",
+			bundleIdentifier: "dev.zed.Zed",
+			fileURL: URL(fileURLWithPath: "/Applications/Zed.app", isDirectory: true),
+			source: .homebrew
+		)
+		let update = App.Update(
+			app: bundle,
+			remoteVersion: Version(versionNumber: "1.4.4", buildNumber: nil),
+			minimumOSVersion: nil,
+			source: .homebrew,
+			date: nil,
+			releaseNotes: .html(string: html),
+			updateAction: .external(label: "Zed") { _ in }
+		)
+
+		return App(bundle: bundle, update: .success(update), isIgnored: false)
+	}
 	
 }
 

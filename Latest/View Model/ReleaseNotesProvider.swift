@@ -32,14 +32,15 @@ class ReleaseNotesProvider {
 	func releaseNotes(for app: App, with completion: @escaping Completion) {
 		currentApp = app
 		
-		if let releaseNotes = self.cache.object(forKey: app) {
+		let cacheKey = ReleaseNotesCacheKey(app: app)
+		if let releaseNotes = self.cache.object(forKey: cacheKey) {
 			completion(.success(releaseNotes))
 			return
 		}
 
 		self.loadReleaseNotes(for: app) { releaseNotes in
 			if case .success(let text) = releaseNotes {
-				self.cache.setObject(text, forKey: app)
+				self.cache.setObject(text, forKey: cacheKey)
 			}
 			
 			/// Release notes may be returned late or updated while another app was already requested. Don't forward this update, just cache in case of success.
@@ -55,7 +56,7 @@ class ReleaseNotesProvider {
 	/// The cache for release notes content.
 	///
 	/// All content is cached, since any given release notes object requires some sort of modification.
-	private var cache: NSCache<App, NSAttributedString>
+	private var cache: NSCache<ReleaseNotesCacheKey, NSAttributedString>
 	
 	/// Object loading HTML content for any given URL.
 	private lazy var webContentLoader = WebContentLoader()
@@ -158,6 +159,58 @@ class ReleaseNotesProvider {
 private struct GitHubRelease: Decodable {
 	let name: String?
 	let body: String
+}
+
+private final class ReleaseNotesCacheKey: NSObject {
+	private let identifier: App.Bundle.Identifier
+	private let localVersion: String
+	private let remoteVersion: String
+	private let releaseNotes: String
+
+	init(app: App) {
+		self.identifier = app.identifier
+		self.localVersion = app.version.debugDescription
+		self.remoteVersion = app.remoteVersion?.debugDescription ?? ""
+		self.releaseNotes = app.releaseNotes?.cacheIdentifier ?? ""
+	}
+
+	override var hash: Int {
+		var hasher = Hasher()
+		hasher.combine(identifier)
+		hasher.combine(localVersion)
+		hasher.combine(remoteVersion)
+		hasher.combine(releaseNotes)
+		return hasher.finalize()
+	}
+
+	override func isEqual(_ object: Any?) -> Bool {
+		guard let other = object as? ReleaseNotesCacheKey else {
+			return false
+		}
+
+		return identifier == other.identifier &&
+			localVersion == other.localVersion &&
+			remoteVersion == other.remoteVersion &&
+			releaseNotes == other.releaseNotes
+	}
+}
+
+private extension App.Update.ReleaseNotes {
+	var cacheIdentifier: String {
+		switch self {
+		case .url(let url):
+			return "url:\(url.absoluteString)"
+		case .html(let string):
+			return "html:\(string.hashValue)"
+		case .encoded(let data):
+			return "encoded:\(data.hashValue)"
+		case .githubRelease(let apiURL):
+			return "github:\(apiURL.absoluteString)"
+		case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML):
+			let urlList = urls.map(\.absoluteString).joined(separator: "|")
+			return "changelog:\(urlList):\(versionPrefix ?? ""):\(allowsLatestFallback):\(fallbackHTML?.hashValue ?? 0)"
+		}
+	}
 }
 
 enum ReleaseNotesMarkup {

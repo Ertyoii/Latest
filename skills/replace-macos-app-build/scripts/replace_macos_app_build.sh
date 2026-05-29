@@ -112,6 +112,21 @@ echo "Install target: $INSTALLED_APP"
 echo "Bundle id: $BUNDLE_ID"
 echo "Version: $MARKETING_VERSION ($BUILD_VERSION)"
 
+if [[ "$DRY_RUN" -eq 0 ]]; then
+  if [[ "$(osascript -e "application id \"$BUNDLE_ID\" is running" 2>/dev/null || true)" == "true" ]]; then
+    echo "Quitting running app..."
+    osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
+    for _ in {1..50}; do
+      if [[ "$(osascript -e "application id \"$BUNDLE_ID\" is running" 2>/dev/null || true)" != "true" ]]; then
+        break
+      fi
+      sleep 0.2
+    done
+  fi
+else
+  echo "[dry-run] would quit running app with bundle id $BUNDLE_ID before replacement"
+fi
+
 echo "Replacing installed app..."
 run rsync -a --delete "$BUILT_APP/" "$INSTALLED_APP/"
 
