@@ -73,8 +73,8 @@ class ReleaseNotesProvider {
 					Task {
 						completion(await self.githubReleaseNotes(from: apiURL, relevantVersion: app.remoteVersion?.versionNumber))
 					}
-				case .changelog(let urls, let versionPrefix, let allowsLatestFallback):
-					self.changelogReleaseNotes(from: urls, versionPrefix: versionPrefix ?? app.remoteVersion?.versionNumber, allowsLatestFallback: allowsLatestFallback, with: completion)
+				case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML):
+					self.changelogReleaseNotes(from: urls, versionPrefix: versionPrefix ?? app.remoteVersion?.versionNumber, allowsLatestFallback: allowsLatestFallback, fallbackHTML: fallbackHTML, with: completion)
 			}
 		} else if let error = app.error {
 			completion(.failure(error))
@@ -118,11 +118,16 @@ class ReleaseNotesProvider {
 		}
 	}
 
-	private func changelogReleaseNotes(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, with completion: @escaping Completion) {
+	private func changelogReleaseNotes(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, fallbackHTML: String?, with completion: @escaping Completion) {
 		var remainingURLs = urls
 
 		func loadNext() {
 			guard !remainingURLs.isEmpty else {
+				if let fallbackHTML {
+					completion(ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil))
+					return
+				}
+
 				completion(.failure(LatestError.releaseNotesUnavailable))
 				return
 			}
@@ -219,7 +224,9 @@ enum ReleaseNotesMarkup {
 
 		if !versionCandidates.isEmpty {
 			startIndex = lines.firstIndex { line in
-				versionCandidates.contains { version in
+				guard !Self.looksLikeVersionNavigation(line) else { return false }
+
+				return versionCandidates.contains { version in
 					line.range(of: #"(^|[^\d])v?\#(NSRegularExpression.escapedPattern(for: version))([^\d]|\z)"#, options: [.regularExpression, .caseInsensitive]) != nil
 				}
 			}
@@ -232,10 +239,13 @@ enum ReleaseNotesMarkup {
 		}
 
 		guard let startIndex else { return nil }
-			let exactVersion = version?.trimmingCharacters(in: .whitespacesAndNewlines)
-			let endIndex = lines[(startIndex + 1)...].firstIndex { line in
-				Self.looksLikeReleaseBoundary(line) && !(exactVersion.map { line.localizedCaseInsensitiveContains($0) } ?? false)
-			} ?? lines.endIndex
+		let exactVersion = version?.trimmingCharacters(in: .whitespacesAndNewlines)
+		let startLine = lines[startIndex]
+		let shouldEndAtVersionBoundary = Self.looksLikeVersionBoundary(startLine)
+		let endIndex = lines[(startIndex + 1)...].firstIndex { line in
+			let isBoundary = shouldEndAtVersionBoundary ? Self.looksLikeVersionBoundary(line) : Self.looksLikeReleaseBoundary(line)
+			return isBoundary && !(exactVersion.map { line.localizedCaseInsensitiveContains($0) } ?? false)
+		} ?? lines.endIndex
 
 		let selectedLines = lines[startIndex..<endIndex]
 		guard !selectedLines.isEmpty else { return nil }
@@ -331,9 +341,24 @@ enum ReleaseNotesMarkup {
 	}
 
 	private static func looksLikeReleaseBoundary(_ line: String) -> Bool {
-		line.range(of: #"^#{1,6}\s*v?\d+(\.\d+){1,}"#, options: [.regularExpression, .caseInsensitive]) != nil ||
-		line.range(of: #"^v?\d+(\.\d+){1,}(\s|$|-)"#, options: [.regularExpression, .caseInsensitive]) != nil ||
+		Self.looksLikeVersionBoundary(line) ||
 		line.range(of: #"^[A-Z][a-z]+ \d{1,2}, \d{4}"#, options: .regularExpression) != nil
+	}
+
+	private static func looksLikeVersionBoundary(_ line: String) -> Bool {
+		line.range(of: #"^#{1,6}\s*v?\d+(\.\d+){1,}"#, options: [.regularExpression, .caseInsensitive]) != nil ||
+		line.range(of: #"^v?\d+(\.\d+){1,}(\s|$|-)"#, options: [.regularExpression, .caseInsensitive]) != nil
+	}
+
+	private static func looksLikeVersionNavigation(_ line: String) -> Bool {
+		let matches = line.matches(of: /\bv?\d+(?:\.\d+){1,}\b/)
+		guard matches.count >= 4 else { return false }
+
+		let words = line.matches(of: /[A-Za-z]{3,}/).map { String(line[$0.range]) }
+		let navigationWords = Set(["versions", "version", "channel", "stable", "preview", "releases"])
+		let meaningfulWords = words.filter { !navigationWords.contains($0.lowercased()) }
+
+		return meaningfulWords.count <= 2
 	}
 
 }

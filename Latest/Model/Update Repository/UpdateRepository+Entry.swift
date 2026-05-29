@@ -18,6 +18,7 @@ extension UpdateRepository {
 
 		enum CodingKeys: String, CodingKey {
 			case artifacts
+			case desc
 			case homepage
 			case names = "name"
 			case token
@@ -63,6 +64,9 @@ extension UpdateRepository {
 		/// The upstream homepage of the app.
 		private let homepage: URL?
 
+		/// A short description of the app.
+		private let desc: String?
+
 		/// The brew identifier for the app.
 		let token: String
 
@@ -77,6 +81,7 @@ extension UpdateRepository {
 			token = try container.decode(String.self, forKey: .token)
 			url = try container.decodeIfPresent(URL.self, forKey: .url)
 			homepage = try container.decodeIfPresent(URL.self, forKey: .homepage)
+			desc = try container.decodeIfPresent(String.self, forKey: .desc)
 
 			// Artifacts: Contains application names and bundle identifiers.
 			let artifacts = try container.decode([FailableDecodable<Artifact>].self, forKey: .artifacts)
@@ -132,10 +137,10 @@ extension UpdateRepository {
 
 			let changelogURLs = self.changelogURLs
 			if !changelogURLs.isEmpty {
-				return .changelog(urls: changelogURLs, versionPrefix: version.versionNumber?.majorMinorVersionPrefix, allowsLatestFallback: allowsLatestChangelogFallback)
+				return .changelog(urls: changelogURLs, versionPrefix: changelogVersionPrefix, allowsLatestFallback: allowsLatestChangelogFallback, fallbackHTML: fallbackReleaseNotesHTML)
 			}
 
-			return nil
+			return fallbackReleaseNotesHTML.map { .html(string: $0) }
 		}
 
 	}
@@ -162,6 +167,10 @@ private extension UpdateRepository.Entry {
 			return URL(string: "https://cursor.com/changelog").map { [$0] } ?? []
 		}
 
+		if let zedReleaseURL {
+			return [zedReleaseURL]
+		}
+
 		guard let homepage else { return [] }
 
 		let releasePaths = ["changelog", "release-notes", "releases", "whats-new"]
@@ -174,15 +183,76 @@ private extension UpdateRepository.Entry {
 		token == "cursor" || homepage?.host?.contains("cursor.com") == true
 	}
 
+	var changelogVersionPrefix: String? {
+		if zedReleaseURL != nil {
+			return version.versionNumber
+		}
+
+		return version.versionNumber?.majorMinorVersionPrefix
+	}
+
+	var zedReleaseURL: URL? {
+		guard token == "zed" || token == "zed@preview",
+			  let versionNumber = version.versionNumber else {
+			return nil
+		}
+
+		let channel = token == "zed@preview" ? "preview" : "stable"
+		return URL(string: "https://zed.dev/releases/\(channel)/\(versionNumber)")
+	}
+
+	var fallbackReleaseNotesHTML: String? {
+		guard let versionNumber = version.versionNumber ?? version.buildNumber else {
+			return nil
+		}
+
+		let title = names.sorted().first?.homebrewDisplayName ?? token
+		let description = desc?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+		var paragraphs = [
+			"<p><strong>\(title.htmlEscaped) \(versionNumber.htmlEscaped)</strong> is available from Homebrew.</p>"
+		]
+
+		if let description, !description.isEmpty {
+			paragraphs.append("<p>\(description.htmlEscaped)</p>")
+		}
+
+		if let homepage {
+			let homepageString = homepage.absoluteString
+			paragraphs.append("<p><a href=\"\(homepageString.htmlEscaped)\">\(homepageString.htmlEscaped)</a></p>")
+		}
+
+		return paragraphs.joined()
+	}
+
 }
 
 private extension String {
+
+	var homebrewDisplayName: String {
+		if hasSuffix(".app") {
+			return String(dropLast(4))
+		}
+
+		return self
+	}
 
 	var majorMinorVersionPrefix: String? {
 		let parts = split(separator: ".", omittingEmptySubsequences: true)
 		guard parts.count >= 2 else { return self.isEmpty ? nil : self }
 
 		return parts.prefix(2).joined(separator: ".")
+	}
+
+}
+
+private extension String {
+
+	var htmlEscaped: String {
+		replacingOccurrences(of: "&", with: "&amp;")
+			.replacingOccurrences(of: "<", with: "&lt;")
+			.replacingOccurrences(of: ">", with: "&gt;")
+			.replacingOccurrences(of: "\"", with: "&quot;")
 	}
 
 }

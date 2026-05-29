@@ -136,7 +136,7 @@ extension App.Update {
 		case githubRelease(apiURL: URL)
 
 		/// Product changelog pages that should be filtered to the relevant version.
-		case changelog(urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool)
+		case changelog(urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, fallbackHTML: String?)
 		
 	}
 	

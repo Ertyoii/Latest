@@ -71,12 +71,14 @@ final class VersionParserTest: XCTestCase {
 		"""
 		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
 
-		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback) = entry.releaseNotes else {
+		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML) = entry.releaseNotes else {
 			return XCTFail("Expected changelog release notes")
 		}
 
 		XCTAssertEqual(versionPrefix, "2.4")
 		XCTAssertFalse(allowsLatestFallback)
+		XCTAssertTrue(fallbackHTML?.contains("Example App 2.4.1") == true)
+		XCTAssertTrue(fallbackHTML?.contains("Notes, tasks &amp; reminders") == true)
 		XCTAssertEqual(urls.first?.absoluteString, "https://example.com/changelog")
 		XCTAssertFalse(urls.map(\.absoluteString).contains("Notes, tasks & reminders"))
 	}
@@ -128,13 +130,103 @@ final class VersionParserTest: XCTestCase {
 		"""
 		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
 
-		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback) = entry.releaseNotes else {
+		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, _) = entry.releaseNotes else {
 			return XCTFail("Expected changelog release notes")
 		}
 
 		XCTAssertEqual(versionPrefix, "3.4")
 		XCTAssertTrue(allowsLatestFallback)
 		XCTAssertEqual(urls, [URL(string: "https://cursor.com/changelog")!])
+	}
+
+	func testHomebrewCaskEntryUsesExactZedStableReleasePage() throws {
+		let json = """
+		{
+			"token": "zed",
+			"version": "1.4.4",
+			"name": ["Zed"],
+			"homepage": "https://zed.dev/",
+			"url": "https://zed.dev/api/releases/stable/1.4.4/Zed-aarch64.dmg",
+			"artifacts": [
+				{
+					"app": ["Zed.app"]
+				}
+			],
+			"depends_on": {
+				"macos": {}
+			}
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, _) = entry.releaseNotes else {
+			return XCTFail("Expected changelog release notes")
+		}
+
+		XCTAssertEqual(versionPrefix, "1.4.4")
+		XCTAssertFalse(allowsLatestFallback)
+		XCTAssertEqual(urls, [URL(string: "https://zed.dev/releases/stable/1.4.4")!])
+	}
+
+	func testHomebrewCaskEntryUsesExactZedPreviewReleasePage() throws {
+		let json = """
+		{
+			"token": "zed@preview",
+			"version": "1.4.5",
+			"name": ["Zed Preview"],
+			"homepage": "https://zed.dev/",
+			"url": "https://zed.dev/api/releases/preview/1.4.5/Zed-aarch64.dmg",
+			"artifacts": [
+				{
+					"app": ["Zed Preview.app"]
+				}
+			],
+			"depends_on": {
+				"macos": {}
+			}
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, _) = entry.releaseNotes else {
+			return XCTFail("Expected changelog release notes")
+		}
+
+		XCTAssertEqual(versionPrefix, "1.4.5")
+		XCTAssertFalse(allowsLatestFallback)
+		XCTAssertEqual(urls, [URL(string: "https://zed.dev/releases/preview/1.4.5")!])
+	}
+
+	func testHomebrewCaskEntryProvidesFallbackReleaseNotesWhenNoChangelogExists() throws {
+		let json = """
+		{
+			"token": "expressvpn",
+			"version": "14.1.1.13156",
+			"name": ["ExpressVPN"],
+			"desc": "VPN client for secure & private internet access",
+			"artifacts": [
+				{
+					"uninstall": [
+						{
+							"quit": "com.express.vpn",
+							"delete": "/Applications/ExpressVPN.app"
+						}
+					]
+				}
+			],
+			"depends_on": {
+				"macos": {}
+			}
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		guard case .html(let html) = entry.releaseNotes else {
+			return XCTFail("Expected fallback HTML release notes")
+		}
+
+		XCTAssertTrue(html.contains("ExpressVPN 14.1.1.13156"))
+		XCTAssertTrue(html.contains("secure &amp; private"))
 	}
 
 	func testHomebrewCaskEntryKeepsBundleIdentifiersWhenAppArtifactExists() throws {
@@ -268,6 +360,27 @@ final class VersionParserTest: XCTestCase {
 
 		XCTAssertTrue(text.contains("Development environments"))
 		XCTAssertFalse(text.contains("Cursor in Microsoft Teams"))
+	}
+
+	func testReleaseNotesMarkupSkipsVersionNavigationWhenFindingRelevantSection() throws {
+		let changelog = """
+		Versions
+		• 1.4.4 • 1.4.3 • 1.4.2 • 1.3.7 • 1.3.6 • 1.3.5
+		May 2026
+		1.4.4
+		May 28, 2026
+		macOS
+		- Fixed an issue where using GPT models would return an error.
+		1.4.3
+		May 28, 2026
+		- Fixed GitHub Copilot Chat showing an empty model dropdown.
+		"""
+
+		let text = try XCTUnwrap(ReleaseNotesMarkup.relevantText(from: changelog, version: "1.4.4", allowFirstSectionFallback: false))
+
+		XCTAssertFalse(text.contains("1.4.3 • 1.4.2"))
+		XCTAssertTrue(text.contains("Fixed an issue where using GPT models"))
+		XCTAssertFalse(text.contains("empty model dropdown"))
 	}
 	
 }
