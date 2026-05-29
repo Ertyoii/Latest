@@ -296,8 +296,8 @@ enum ReleaseNotesMarkup {
 		}
 
 		let description = decodedDescription
-			.replacingOccurrences(of: #"\\r"#, with: "\r")
-			.replacingOccurrences(of: #"\\n"#, with: "\n")
+			.replacingOccurrences(of: "\\r", with: "\r")
+			.replacingOccurrences(of: "\\n", with: "\n")
 			.trimmingCharacters(in: .whitespacesAndNewlines)
 
 		return description.isEmpty ? nil : description

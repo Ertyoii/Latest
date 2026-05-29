@@ -394,6 +394,8 @@ final class VersionParserTest: XCTestCase {
 		let text = try XCTUnwrap(ReleaseNotesMarkup.zedReleaseText(fromHTML: html, version: "1.4.4", pageURL: URL(string: "https://zed.dev/releases/stable/1.4.4")!))
 
 		XCTAssertTrue(text.contains("invalid_request_body"))
+		XCTAssertFalse(text.contains(#"\r"#))
+		XCTAssertFalse(text.contains(#"\n"#))
 		XCTAssertFalse(text.contains("1.4.3"))
 		XCTAssertFalse(text.contains("Versions"))
 	}
