@@ -383,6 +383,21 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertFalse(text.contains("empty model dropdown"))
 	}
 
+	func testReleaseNotesMarkupExtractsZedReleasePayloadBeforeVersionNavigation() throws {
+		let html = """
+		<div>Versions</div>
+		<a href="/releases/stable/1.4.4">1.4.4</a>
+		<a href="/releases/stable/1.4.3">1.4.3</a>
+		<script>self.__next_f.push([1,"[[\\"$\\",\\"$L105\\",\\"Zed-aarch64.dmg\\",{\\"release\\":{\\"version\\":\\"1.4.4\\",\\"description\\":\\"- copilot: Fixed an issue where using GPT models would return an error in `invalid_request_body` ([#57979](https://github.com/zed-industries/zed/pull/57979))\\\\r\\\\n\\\\r\\\\n\\",\\"assets\\":[\\"Zed-aarch64.dmg\\"],\\"published_at\\":\\"2026-05-28T20:55:02.000Z\\",\\"channelType\\":\\"stable\\",\\"isLatest\\":true},\\"asset\\":\\"Zed-aarch64.dmg\\"}]]"])</script>
+		"""
+
+		let text = try XCTUnwrap(ReleaseNotesMarkup.zedReleaseText(fromHTML: html, version: "1.4.4", pageURL: URL(string: "https://zed.dev/releases/stable/1.4.4")!))
+
+		XCTAssertTrue(text.contains("invalid_request_body"))
+		XCTAssertFalse(text.contains("1.4.3"))
+		XCTAssertFalse(text.contains("Versions"))
+	}
+
 	@MainActor
 	func testReleaseNotesProviderInvalidatesCacheWhenReleaseNoteSourceChanges() throws {
 		let provider = ReleaseNotesProvider()

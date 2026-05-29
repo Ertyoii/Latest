@@ -137,6 +137,11 @@ class ReleaseNotesProvider {
 			webContentLoader.load(from: url) { result in
 				switch result {
 				case .success(let html):
+					if let relevantText = ReleaseNotesMarkup.zedReleaseText(fromHTML: html, version: versionPrefix, pageURL: url) {
+						completion(ReleaseNotesMarkup.attributedString(from: relevantText, baseURL: url))
+						return
+					}
+
 					guard let text = ReleaseNotesMarkup.plainText(fromHTML: html),
 						  let relevantText = ReleaseNotesMarkup.relevantText(from: text, version: versionPrefix, allowFirstSectionFallback: allowsLatestFallback),
 						  !relevantText.isEmpty else {
@@ -262,6 +267,40 @@ enum ReleaseNotesMarkup {
 		}
 
 		return string.string
+	}
+
+	static func zedReleaseText(fromHTML html: String, version: String?, pageURL: URL) -> String? {
+		guard pageURL.host?.localizedCaseInsensitiveContains("zed.dev") == true,
+			  let version = version?.trimmingCharacters(in: .whitespacesAndNewlines),
+			  !version.isEmpty else {
+			return nil
+		}
+
+		let escapedVersion = NSRegularExpression.escapedPattern(for: version)
+		let pattern = #"\\\"release\\\":\{\\\"version\\\":\\\""# + escapedVersion + #"\\\",\\\"description\\\":\\\"((?:\\\\.|[^\\\"])*)\\\""#
+		guard let regex = try? NSRegularExpression(pattern: pattern) else {
+			return nil
+		}
+
+		let htmlRange = NSRange(html.startIndex..<html.endIndex, in: html)
+		guard let match = regex.firstMatch(in: html, range: htmlRange),
+			  let descriptionRange = Range(match.range(at: 1), in: html) else {
+			return nil
+		}
+
+		let escapedDescription = String(html[descriptionRange])
+		let jsonString = "\"\(escapedDescription)\""
+		guard let data = jsonString.data(using: .utf8),
+			  let decodedDescription = try? JSONDecoder().decode(String.self, from: data) else {
+			return nil
+		}
+
+		let description = decodedDescription
+			.replacingOccurrences(of: #"\\r"#, with: "\r")
+			.replacingOccurrences(of: #"\\n"#, with: "\n")
+			.trimmingCharacters(in: .whitespacesAndNewlines)
+
+		return description.isEmpty ? nil : description
 	}
 
 	static func relevantText(from text: String, version: String?, allowFirstSectionFallback: Bool) -> String? {
