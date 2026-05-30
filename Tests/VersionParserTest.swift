@@ -20,7 +20,7 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertEqual(VersionParser.parse(buildNumber: "1.2 (r1234)"), "1234")
 		XCTAssertEqual(VersionParser.parse(buildNumber: "ab-1234"), "ab-1234")
 	}
-	
+
 	func testVersionNumberParsing() {
 		XCTAssertEqual(VersionParser.parse(versionNumber: "1234"), "1234")
 		XCTAssertEqual(VersionParser.parse(versionNumber: "v1234"), "1234")
@@ -41,11 +41,11 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertEqual(VersionParser.parse(combinedVersionNumber: "1.2.3.4,321ABC,70"), Version(versionNumber: "1.2.3.4", buildNumber: "321ABC"))
 		XCTAssertEqual(VersionParser.parse(combinedVersionNumber: "2.2.1-763"), Version(versionNumber: "2.2.1", buildNumber: "763"))
 	}
-	
+
 	func testEmptyVersionParsing() {
 		XCTAssertNil(VersionParser.parse(buildNumber: ""))
 		XCTAssertNil(VersionParser.parse(versionNumber: ""))
-		
+
 		XCTAssertEqual(VersionParser.parse(combinedVersionNumber: ""), Version(versionNumber: nil, buildNumber: nil))
 	}
 
@@ -400,6 +400,29 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertFalse(text.contains("Versions"))
 	}
 
+	func testReleaseNotesMarkupExtractsRelevantSectionFromHTMLWithoutRendering() throws {
+		let html = """
+		<html>
+		<head>
+			<script>window.versions = ["1.4.3"];</script>
+		</head>
+		<body>
+			<h2>1.4.4</h2>
+			<p>Fixed &amp; improved<br>Added &#33; support</p>
+			<h2>1.4.3</h2>
+			<p>Previous release</p>
+		</body>
+		</html>
+		"""
+
+		let text = try XCTUnwrap(ReleaseNotesMarkup.relevantChangelogText(fromHTML: html, version: "1.4.4", pageURL: URL(string: "https://example.com/changelog")!, allowFirstSectionFallback: false))
+
+		XCTAssertTrue(text.contains("Fixed & improved"))
+		XCTAssertTrue(text.contains("Added ! support"))
+		XCTAssertFalse(text.contains("Previous release"))
+		XCTAssertFalse(text.contains("window.versions"))
+	}
+
 	@MainActor
 	func testReleaseNotesProviderInvalidatesCacheWhenReleaseNoteSourceChanges() throws {
 		let provider = ReleaseNotesProvider()
@@ -444,7 +467,7 @@ final class VersionParserTest: XCTestCase {
 
 		return App(bundle: bundle, update: .success(update), isIgnored: false)
 	}
-	
+
 }
 
 final class BundleCollectorTest: XCTestCase {

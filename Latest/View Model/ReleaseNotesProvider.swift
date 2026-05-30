@@ -13,25 +13,31 @@ import AppKit
 /// The object provides release notes in a uniform representation and caches remote contents for faster access.
 @MainActor
 class ReleaseNotesProvider {
-	
+
 	/// The return value, containing either the desired release notes, or an error if unavailable.
 	typealias ReleaseNotes = Result<NSAttributedString, Error>
 	typealias Completion = @MainActor (ReleaseNotes) -> Void
-	
+
 	/// Initializes the provider.
 	init() {
 		self.cache = NSCache()
 	}
-	
+
 	/// Tracks the currently requested app.
 	///
 	/// Used to suppress completion calls from older requests.
 	private var currentApp: App?
-	
+
+	/// Tracks the currently requested release notes operation.
+	private var currentRequestID = UUID()
+
 	/// Provides release notes for the given app.
 	func releaseNotes(for app: App, with completion: @escaping Completion) {
+		let requestID = UUID()
 		currentApp = app
-		
+		currentRequestID = requestID
+		webContentLoader?.cancel()
+
 		let cacheKey = ReleaseNotesCacheKey(app: app)
 		if let releaseNotes = self.cache.object(forKey: cacheKey) {
 			completion(.success(releaseNotes))
@@ -42,32 +48,42 @@ class ReleaseNotesProvider {
 			if case .success(let text) = releaseNotes {
 				self.cache.setObject(text, forKey: cacheKey)
 			}
-			
+
 			/// Release notes may be returned late or updated while another app was already requested. Don't forward this update, just cache in case of success.
-			guard self.currentApp == app else { return }
-			
+			guard self.isCurrentRequest(requestID, for: app) else { return }
+
 			completion(releaseNotes)
 		}
 	}
-	
-	
+
+
 	// MARK: - Release Notes Handling
-	
+
 	/// The cache for release notes content.
 	///
 	/// All content is cached, since any given release notes object requires some sort of modification.
 	private var cache: NSCache<ReleaseNotesCacheKey, NSAttributedString>
-	
+
 	/// Object loading HTML content for any given URL.
-	private lazy var webContentLoader = WebContentLoader()
-	
+	private var webContentLoader: WebContentLoader?
+
+	private var activeWebContentLoader: WebContentLoader {
+		if let webContentLoader {
+			return webContentLoader
+		}
+
+		let webContentLoader = WebContentLoader()
+		self.webContentLoader = webContentLoader
+		return webContentLoader
+	}
+
 	private func loadReleaseNotes(for app: App, with completion: @escaping Completion) {
 		if let releaseNotes = app.releaseNotes {
 			switch releaseNotes {
 				case .html(let html):
 					completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: nil, relevantVersion: app.remoteVersion?.versionNumber))
 				case .url(let url):
-					self.releaseNotes(from: url, with: completion)
+					self.releaseNotes(from: url, requestID: currentRequestID, with: completion)
 				case .encoded(let data):
 					completion(ReleaseNotesMarkup.attributedString(from: data, baseURL: nil))
 				case .githubRelease(let apiURL):
@@ -75,7 +91,7 @@ class ReleaseNotesProvider {
 						completion(await self.githubReleaseNotes(from: apiURL, relevantVersion: app.remoteVersion?.versionNumber))
 					}
 				case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML):
-					self.changelogReleaseNotes(from: urls, versionPrefix: versionPrefix ?? app.remoteVersion?.versionNumber, allowsLatestFallback: allowsLatestFallback, fallbackHTML: fallbackHTML, with: completion)
+					self.changelogReleaseNotes(from: urls, versionPrefix: versionPrefix ?? app.remoteVersion?.versionNumber, allowsLatestFallback: allowsLatestFallback, fallbackHTML: fallbackHTML, requestID: currentRequestID, with: completion)
 			}
 		} else if let error = app.error {
 			completion(.failure(error))
@@ -83,13 +99,41 @@ class ReleaseNotesProvider {
 			completion(.failure(LatestError.releaseNotesUnavailable))
 		}
 	}
-	
-	
+
+	private func isCurrentRequest(_ requestID: UUID, for app: App? = nil) -> Bool {
+		guard requestID == currentRequestID else { return false }
+
+		if let app {
+			return currentApp == app
+		}
+
+		return true
+	}
+
+
 	/// Fetches release notes from the given URL.
-	private func releaseNotes(from url: URL, with completion: @escaping Completion) {
-		webContentLoader.load(from: url) { result in
+	private func releaseNotes(from url: URL, requestID: UUID, with completion: @escaping Completion) {
+		Task { [weak self] in
+			guard let self else { return }
+
+			if let html = try? await Self.fetchHTML(from: url) {
+				guard self.isCurrentRequest(requestID) else { return }
+				completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: url))
+				return
+			}
+
+			guard self.isCurrentRequest(requestID) else { return }
+			self.webReleaseNotes(from: url, requestID: requestID, with: completion)
+		}
+	}
+
+	private func webReleaseNotes(from url: URL, requestID: UUID, with completion: @escaping Completion) {
+		activeWebContentLoader.load(from: url) { result in
+			guard self.isCurrentRequest(requestID) else { return }
+
 			switch result {
 			case .success(let html):
+				self.webContentLoader?.cancel()
 				completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: url))
 			case .failure(let error):
 				completion(.failure(error))
@@ -119,37 +163,60 @@ class ReleaseNotesProvider {
 		}
 	}
 
-	private func changelogReleaseNotes(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, fallbackHTML: String?, with completion: @escaping Completion) {
+	private func changelogReleaseNotes(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, fallbackHTML: String?, requestID: UUID, with completion: @escaping Completion) {
+		Task { [weak self] in
+			guard let self else { return }
+
+			if let content = await Self.fetchChangelogContent(from: urls, versionPrefix: versionPrefix, allowsLatestFallback: allowsLatestFallback) {
+				guard self.isCurrentRequest(requestID) else { return }
+				completion(ReleaseNotesMarkup.attributedString(from: content.text, baseURL: content.baseURL))
+				return
+			}
+
+			guard self.isCurrentRequest(requestID) else { return }
+
+			if let fallbackHTML {
+				completion(ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil))
+				return
+			}
+
+			self.webChangelogReleaseNotes(from: urls, versionPrefix: versionPrefix, allowsLatestFallback: allowsLatestFallback, requestID: requestID, with: completion)
+		}
+	}
+
+	private func webChangelogReleaseNotes(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, requestID: UUID, with completion: @escaping Completion) {
 		var remainingURLs = urls
+		var activeAttemptID = UUID()
+		var didComplete = false
+
+		func finish(_ releaseNotes: ReleaseNotes) {
+			guard !didComplete else { return }
+			didComplete = true
+			self.webContentLoader?.cancel()
+			completion(releaseNotes)
+		}
 
 		func loadNext() {
 			guard !remainingURLs.isEmpty else {
-				if let fallbackHTML {
-					completion(ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil))
-					return
-				}
-
-				completion(.failure(LatestError.releaseNotesUnavailable))
+				finish(.failure(LatestError.releaseNotesUnavailable))
 				return
 			}
 
 			let url = remainingURLs.removeFirst()
-			webContentLoader.load(from: url) { result in
+			let attemptID = UUID()
+			activeAttemptID = attemptID
+
+			activeWebContentLoader.load(from: url) { result in
+				guard self.isCurrentRequest(requestID), activeAttemptID == attemptID, !didComplete else { return }
+
 				switch result {
 				case .success(let html):
-					if let relevantText = ReleaseNotesMarkup.zedReleaseText(fromHTML: html, version: versionPrefix, pageURL: url) {
-						completion(ReleaseNotesMarkup.attributedString(from: relevantText, baseURL: url))
+					if let relevantText = ReleaseNotesMarkup.relevantChangelogText(fromHTML: html, version: versionPrefix, pageURL: url, allowFirstSectionFallback: allowsLatestFallback) {
+						finish(ReleaseNotesMarkup.attributedString(from: relevantText, baseURL: url))
 						return
 					}
 
-					guard let text = ReleaseNotesMarkup.plainText(fromHTML: html),
-						  let relevantText = ReleaseNotesMarkup.relevantText(from: text, version: versionPrefix, allowFirstSectionFallback: allowsLatestFallback),
-						  !relevantText.isEmpty else {
-						loadNext()
-						return
-					}
-
-					completion(ReleaseNotesMarkup.attributedString(from: relevantText, baseURL: url))
+					loadNext()
 				case .failure:
 					loadNext()
 				}
@@ -159,11 +226,65 @@ class ReleaseNotesProvider {
 		loadNext()
 	}
 
+	private nonisolated static func fetchChangelogContent(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool) async -> ChangelogContent? {
+		await withTaskGroup(of: ChangelogContent?.self) { group in
+			for url in urls {
+				group.addTask {
+					guard !Task.isCancelled,
+						  let html = try? await Self.fetchHTML(from: url),
+						  let text = ReleaseNotesMarkup.relevantChangelogText(fromHTML: html, version: versionPrefix, pageURL: url, allowFirstSectionFallback: allowsLatestFallback) else {
+						return nil
+					}
+
+					return ChangelogContent(text: text, baseURL: url)
+				}
+			}
+
+			for await content in group {
+				if let content {
+					group.cancelAll()
+					return content
+				}
+			}
+
+			return nil
+		}
+	}
+
+	private nonisolated static func fetchHTML(from url: URL) async throws -> String {
+		var request = URLRequest(url: url)
+		request.cachePolicy = .returnCacheDataElseLoad
+		request.timeoutInterval = 4
+		request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+
+		let (data, response) = try await URLSession.shared.data(for: request)
+
+		if let response = response as? HTTPURLResponse,
+		   !(200..<400).contains(response.statusCode) {
+			throw LatestError.releaseNotesUnavailable
+		}
+
+		if let html = String(data: data, encoding: .utf8) {
+			return html
+		}
+
+		if let html = String(data: data, encoding: .isoLatin1) {
+			return html
+		}
+
+		throw LatestError.releaseNotesUnavailable
+	}
+
 }
 
 private struct GitHubRelease: Decodable {
 	let name: String?
 	let body: String
+}
+
+private struct ChangelogContent: Sendable {
+	let text: String
+	let baseURL: URL
 }
 
 private final class ReleaseNotesCacheKey: NSObject {
@@ -236,7 +357,7 @@ enum ReleaseNotesMarkup {
 		}
 
 		var options : [NSAttributedString.DocumentReadingOptionKey: Any] = [.documentType: NSAttributedString.DocumentType.html]
-		
+
 		var string: NSAttributedString
 		do {
 			string = try NSAttributedString(data: data, options: options, documentAttributes: nil)
@@ -249,24 +370,15 @@ enum ReleaseNotesMarkup {
 		// If anyone has a better idea for checking if the data is valid HTML or plain text, feel free to fix.
 		if string.string.split(separator: "\n").count == 1 {
 			options[.documentType] = NSAttributedString.DocumentType.plain
-			
+
 			do {
 				string = try NSAttributedString(data: data, options: options, documentAttributes: nil)
 			} catch let error {
 				return .failure(error)
 			}
 		}
-		
+
 		return .success(string)
-	}
-
-	static func plainText(fromHTML html: String) -> String? {
-		guard let data = html.data(using: .utf16),
-			  let string = Self.attributedString(fromHTMLData: data, baseURL: nil) else {
-			return nil
-		}
-
-		return string.string
 	}
 
 	static func zedReleaseText(fromHTML html: String, version: String?, pageURL: URL) -> String? {
@@ -301,6 +413,40 @@ enum ReleaseNotesMarkup {
 			.trimmingCharacters(in: .whitespacesAndNewlines)
 
 		return description.isEmpty ? nil : description
+	}
+
+	static func relevantChangelogText(fromHTML html: String, version: String?, pageURL: URL, allowFirstSectionFallback: Bool) -> String? {
+		if let relevantText = Self.zedReleaseText(fromHTML: html, version: version, pageURL: pageURL) {
+			return relevantText
+		}
+
+		guard let text = Self.plainText(fromHTML: html),
+			  let relevantText = Self.relevantText(from: text, version: version, allowFirstSectionFallback: allowFirstSectionFallback),
+			  !relevantText.isEmpty else {
+			return nil
+		}
+
+		return relevantText
+	}
+
+	static func plainText(fromHTML html: String) -> String? {
+		var text = html
+
+		text = text.replacingOccurrences(of: #"(?is)<(script|style|noscript|svg)\b.*?</\1>"#, with: "\n", options: .regularExpression)
+		text = text.replacingOccurrences(of: #"(?i)<br\s*/?>"#, with: "\n", options: .regularExpression)
+		text = text.replacingOccurrences(of: #"(?i)<li\b[^>]*>"#, with: "\n- ", options: .regularExpression)
+		text = text.replacingOccurrences(of: #"(?i)</(p|div|li|h[1-6]|tr|section|article|header|footer|table|ul|ol|dl|dt|dd)>"#, with: "\n", options: .regularExpression)
+		text = text.replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
+		text = Self.decodingHTMLEntities(in: text)
+		text = text.replacingOccurrences(of: "\u{00a0}", with: " ")
+
+		let lines = text.components(separatedBy: .newlines).compactMap { line -> String? in
+			let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+				.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+			return trimmedLine.isEmpty ? nil : trimmedLine
+		}
+
+		return lines.isEmpty ? nil : lines.joined(separator: "\n")
 	}
 
 	static func relevantText(from text: String, version: String?, allowFirstSectionFallback: Bool) -> String? {
@@ -413,6 +559,52 @@ enum ReleaseNotesMarkup {
 
 		while let range = result.range(of: #"^(\*|-|•)\s+"#, options: .regularExpression) {
 			result = String(result[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+		}
+
+		return result
+	}
+
+	private static func decodingHTMLEntities(in string: String) -> String {
+		var result = string
+		let replacements = [
+			"&nbsp;": " ",
+			"&amp;": "&",
+			"&lt;": "<",
+			"&gt;": ">",
+			"&quot;": "\"",
+			"&#39;": "'",
+			"&apos;": "'"
+		]
+
+		for (entity, replacement) in replacements {
+			result = result.replacingOccurrences(of: entity, with: replacement)
+		}
+
+		guard let regex = try? NSRegularExpression(pattern: #"&#(x?[0-9A-Fa-f]+);"#) else {
+			return result
+		}
+
+		let matches = regex.matches(in: result, range: NSRange(result.startIndex..<result.endIndex, in: result))
+		for match in matches.reversed() {
+			guard let matchRange = Range(match.range(at: 0), in: result),
+				  let valueRange = Range(match.range(at: 1), in: result) else {
+				continue
+			}
+
+			let rawValue = String(result[valueRange])
+			let scalarValue: UInt32?
+			if rawValue.lowercased().hasPrefix("x") {
+				scalarValue = UInt32(rawValue.dropFirst(), radix: 16)
+			} else {
+				scalarValue = UInt32(rawValue, radix: 10)
+			}
+
+			guard let scalarValue,
+				  let scalar = UnicodeScalar(scalarValue) else {
+				continue
+			}
+
+			result.replaceSubrange(matchRange, with: String(Character(scalar)))
 		}
 
 		return result
