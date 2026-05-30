@@ -133,7 +133,7 @@ extension App.Update {
 		case encoded(data: Data)
 
 		/// The release notes for a GitHub release.
-		case githubRelease(apiURL: URL)
+		case githubRelease(apiURL: URL, fallbackHTML: String?)
 
 		/// Product changelog pages that should be filtered to the relevant version.
 		case changelog(urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, fallbackHTML: String?)

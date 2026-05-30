@@ -94,9 +94,14 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 		
 		// Release Notes
 		var releaseNotes: App.Update.ReleaseNotes? = nil
+		let releaseNotesURL = appcastItem.releaseNotesURL ?? appcastItem.fullReleaseNotesURL
 		if let description = appcastItem.itemDescription {
-			releaseNotes = .html(string: description)
-		} else if let url = appcastItem.releaseNotesURL ?? appcastItem.fullReleaseNotesURL {
+			if ReleaseNotesMarkup.isUsefulReleaseNotesText(description, relevantVersion: version.versionNumber) {
+				releaseNotes = .html(string: description)
+			} else if let url = releaseNotesURL ?? ReleaseNotesMarkup.firstReleaseNotesURL(in: description, baseURL: self.url) {
+				releaseNotes = .url(url: url)
+			}
+		} else if let url = releaseNotesURL {
 			releaseNotes = .url(url: url)
 		}
 		

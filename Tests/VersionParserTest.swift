@@ -103,11 +103,12 @@ final class VersionParserTest: XCTestCase {
 		"""
 		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
 
-		guard case .githubRelease(let apiURL) = entry.releaseNotes else {
+		guard case .githubRelease(let apiURL, let fallbackHTML) = entry.releaseNotes else {
 			return XCTFail("Expected GitHub release notes")
 		}
 
 		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/bitgapp/eqMac/releases/tags/v1.8.15")
+		XCTAssertTrue(fallbackHTML?.contains("eqMac 1.8.15") == true)
 	}
 
 	func testHomebrewCaskEntryUsesCursorChangelogSource() throws {
@@ -346,6 +347,120 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertFalse(string.string.contains("Device Routing fixes"))
 	}
 
+	func testReleaseNotesMarkupKeepsOnlyCurrentReleaseFromHTMLHistory() throws {
+		let html = """
+		<h2>AppCleaner 3.6.8 - 4 July, 2023</h2>
+		<ul>
+			<li>New app icon.</li>
+			<li>Allow searching for related files of system apps.</li>
+		</ul>
+		<h2>AppCleaner 3.6.7 - 9 Dec, 2022</h2>
+		<ul>
+			<li>Fixed a bug causing SmartDelete to crash.</li>
+		</ul>
+		"""
+
+		let string = try ReleaseNotesMarkup.attributedString(from: html, baseURL: nil, relevantVersion: "3.6.8").get()
+
+		XCTAssertTrue(string.string.contains("AppCleaner 3.6.8"))
+		XCTAssertTrue(string.string.contains("New app icon"))
+		XCTAssertFalse(string.string.contains("AppCleaner 3.6.7"))
+		XCTAssertFalse(string.string.contains("SmartDelete"))
+	}
+
+	func testReleaseNotesMarkupRejectsVersionOnlyAndLinkOnlyText() throws {
+		XCTAssertThrowsError(try ReleaseNotesMarkup.attributedString(from: "v3.4.2", baseURL: nil, relevantVersion: "3.4.2").get())
+		XCTAssertThrowsError(try ReleaseNotesMarkup.attributedString(from: "<a href=\"https://example.com/details\">Details</a><br><a href=\"https://example.com/history\">Recent version history</a>", baseURL: nil, relevantVersion: "0.95").get())
+		XCTAssertThrowsError(try ReleaseNotesMarkup.attributedString(from: "1.12.7 https://obsidian.md/changelog/2026-03-23-desktop-v1.12.7/", baseURL: nil, relevantVersion: "1.12.7").get())
+	}
+
+	func testReleaseNotesMarkupPreservesPlainTextChangelogLineBreaks() throws {
+		let changelog = """
+		3.6 May 29, 2026
+		Auto-review Run Mode
+		Auto-review is a new run mode that allows Cursor to work for longer.
+		Configure your run mode in Settings > Cursor Settings > Agents > Run Mode.
+		3.5 May 20, 2026
+		Shared Canvases
+		"""
+
+		let string = try ReleaseNotesMarkup.attributedString(from: changelog, baseURL: nil, relevantVersion: "3.6").get()
+
+		XCTAssertTrue(string.string.contains("3.6 May 29, 2026\nAuto-review Run Mode"))
+		XCTAssertFalse(string.string.contains("3.5 May 20, 2026"))
+	}
+
+	func testReleaseNotesMarkupSeparatesCompactedSparkleChangelogText() throws {
+		let changelog = "3.6 May 29, 2026 · Changelog Auto-review Run Mode Auto-review is a new run mode that allows Cursor to work for longer with fewer approval prompts and safer execution. Configure your run mode in Settings > Cursor Settings > Agents > Run Mode."
+
+		let string = try ReleaseNotesMarkup.attributedString(from: changelog, baseURL: nil, relevantVersion: "3.6").get()
+
+		XCTAssertTrue(string.string.contains("3.6 May 29, 2026 · Changelog\nAuto-review Run Mode\nAuto-review is a new run mode"))
+	}
+
+	func testReleaseNotesMarkupDeduplicatesRepeatedLeadingVersionTitle() throws {
+		let markdown = """
+		IINA 1.4.3
+		IINA 1.4.3
+		IINA 1.4.3 fixes important security issues and regressions.
+		Bug Fixes
+		- Fix a security issue.
+		"""
+
+		let string = try ReleaseNotesMarkup.attributedString(from: markdown, baseURL: nil, relevantVersion: "1.4.3").get()
+
+		XCTAssertFalse(string.string.contains("IINA 1.4.3\nIINA 1.4.3\nIINA 1.4.3 fixes"))
+		XCTAssertTrue(string.string.contains("IINA 1.4.3\nFixes important security issues and regressions."))
+	}
+
+	func testReleaseNotesMarkupRejectsNavigationPageNoise() throws {
+		let html = """
+		<html><head><title>The AI workspace that works for you. | Notion Product</title></head>
+		<body>
+		<nav>Notion Your AI workspace</nav>
+		<p>-</p><p>Notion Calendar</p><p>-</p><p>Notion Mail</p><p>-</p>
+		<p>Notion AI AI tools for work</p><p>-</p>
+		<p>Agents Automate busywork</p><p>-</p>
+		<p>AI Meeting Notes Perfectly written by AI</p><p>-</p>
+		<p>Enterprise Search Find answers instantly</p><p>-</p>
+		<p>Knowledge Base Centralize your knowledge</p><p>-</p>
+		<p>Docs Simple and powerful</p><p>-</p>
+		<p>Projects Manage any project</p>
+		</body></html>
+		"""
+
+		XCTAssertThrowsError(try ReleaseNotesMarkup.attributedString(from: html, baseURL: URL(string: "https://www.notion.so/product")!, relevantVersion: "7.19").get())
+	}
+
+	func testReleaseNotesMarkupRejectsMojibakeText() throws {
+		let gibberish = """
+		Ñù¢x¿ëÆIw±¥ûs]z|².6 ç°^éÉ"st0Æñqd7wßZú¼üä,õ0!GéØ9cL=x16ãè³Ø´ÙÀ è på°7ÆgÝ².4,±ø}¿ õù±¯¾üiàpípjòÎ½c Ëp¾;µ¼,á{ÝVyÃ(ä¤Ç¶xs´i;»||
+		³HxåÿXèÕõ%ÍÁ÷9 óke  ˜&ó¼öU#êÒùñÛà¸}Òäwö¦¾¶Ex2EöòËÕÿÚüæ8Å/xÜcDøþéõ@ãÚ
+		"""
+
+		XCTAssertThrowsError(try ReleaseNotesMarkup.attributedString(from: gibberish, baseURL: nil, relevantVersion: "5.80.6").get())
+	}
+
+	func testReleaseNotesMarkupSeparatesHTMLChangelogHeadings() throws {
+		let html = """
+		<a href="/changelog/3-6">3.6 May 29, 2026</a> · <a href="/changelog">Changelog</a><h1>Auto-review Run Mode</h1>
+		<p>Auto-review is a new run mode that allows Cursor to work for longer.</p>
+		<a href="/changelog/3-5">3.5 May 20, 2026</a><h1>Shared Canvases</h1>
+		"""
+
+		let string = try ReleaseNotesMarkup.attributedString(from: html, baseURL: URL(string: "https://cursor.com/changelog")!, relevantVersion: "3.6").get()
+
+		XCTAssertTrue(string.string.contains("Changelog\nAuto-review Run Mode"))
+		XCTAssertFalse(string.string.contains("Shared Canvases"))
+	}
+
+	func testReleaseNotesMarkupExtractsFirstReleaseNotesURLFromStubText() throws {
+		let text = "1.12.7 https://obsidian.md/changelog/2026-03-23-desktop-v1.12.7/"
+		let url = try XCTUnwrap(ReleaseNotesMarkup.firstReleaseNotesURL(in: text, baseURL: nil))
+
+		XCTAssertEqual(url.absoluteString, "https://obsidian.md/changelog/2026-03-23-desktop-v1.12.7/")
+	}
+
 	func testReleaseNotesMarkupExtractsFirstSectionFromVersionlessChangelog() throws {
 		let changelog = """
 		Changelog
@@ -426,8 +541,8 @@ final class VersionParserTest: XCTestCase {
 	@MainActor
 	func testReleaseNotesProviderInvalidatesCacheWhenReleaseNoteSourceChanges() throws {
 		let provider = ReleaseNotesProvider()
-		let oldApp = makeReleaseNotesApp(html: "<p>Old release notes</p>")
-		let refreshedApp = makeReleaseNotesApp(html: "<p>Fresh release notes</p>")
+		let oldApp = makeReleaseNotesApp(html: "<p>Old release notes with bug fixes.</p>")
+		let refreshedApp = makeReleaseNotesApp(html: "<p>Fresh release notes with improvements.</p>")
 
 		let oldNotes = try releaseNotes(for: oldApp, provider: provider)
 		let refreshedNotes = try releaseNotes(for: refreshedApp, provider: provider)
@@ -435,6 +550,28 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertTrue(oldNotes.string.contains("Old release notes"))
 		XCTAssertTrue(refreshedNotes.string.contains("Fresh release notes"))
 		XCTAssertFalse(refreshedNotes.string.contains("Old release notes"))
+	}
+
+	@MainActor
+	func testReleaseNotesProviderRejectsDownloadLikeReleaseNotesURL() async {
+		let provider = ReleaseNotesProvider()
+		let app = makeReleaseNotesApp(releaseNotes: .url(url: URL(string: "https://example.com/Thunder.dmg")!))
+		let expectation = expectation(description: "release notes completion")
+		var capturedError: Error?
+
+		provider.releaseNotes(for: app) { result in
+			if case .failure(let error) = result {
+				capturedError = error
+			}
+			expectation.fulfill()
+		}
+
+		await fulfillment(of: [expectation], timeout: 1)
+
+		guard let error = capturedError as? LatestError,
+			  case .releaseNotesUnavailable = error else {
+			return XCTFail("Expected downloadable release note URLs to be rejected before the web loader.")
+		}
 	}
 
 	@MainActor
@@ -448,6 +585,10 @@ final class VersionParserTest: XCTestCase {
 	}
 
 	private func makeReleaseNotesApp(html: String) -> App {
+		makeReleaseNotesApp(releaseNotes: .html(string: html))
+	}
+
+	private func makeReleaseNotesApp(releaseNotes: App.Update.ReleaseNotes) -> App {
 		let bundle = App.Bundle(
 			version: Version(versionNumber: "1.4.2", buildNumber: nil),
 			name: "Zed",
@@ -461,7 +602,7 @@ final class VersionParserTest: XCTestCase {
 			minimumOSVersion: nil,
 			source: .homebrew,
 			date: nil,
-			releaseNotes: .html(string: html),
+			releaseNotes: releaseNotes,
 			updateAction: .external(label: "Zed") { _ in }
 		)
 

@@ -132,7 +132,7 @@ extension UpdateRepository {
 		/// Release notes derived from upstream metadata where possible.
 		var releaseNotes: App.Update.ReleaseNotes? {
 			if let githubReleaseURL {
-				return .githubRelease(apiURL: githubReleaseURL)
+				return .githubRelease(apiURL: githubReleaseURL, fallbackHTML: fallbackReleaseNotesHTML)
 			}
 
 			let changelogURLs = self.changelogURLs

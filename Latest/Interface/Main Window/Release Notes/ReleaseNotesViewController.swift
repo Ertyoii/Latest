@@ -290,6 +290,11 @@ class ReleaseNotesViewController: NSViewController {
 	///
 	/// - parameter data: The data to be displayed. It has to be some text or HTML, other types of data will result in an error message displayed to the user
     private func update(with string: NSAttributedString) {
+		guard !string.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+			self.show(LatestError.releaseNotesUnavailable)
+			return
+		}
+
         self.loadContent(.text)
         self.content?.textController?.set(string)
         self.updateInsets()

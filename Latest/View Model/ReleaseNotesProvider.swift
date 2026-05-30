@@ -39,12 +39,13 @@ class ReleaseNotesProvider {
 		webContentLoader?.cancel()
 
 		let cacheKey = ReleaseNotesCacheKey(app: app)
-		if let releaseNotes = self.cache.object(forKey: cacheKey) {
+		if let releaseNotes = self.cache.object(forKey: cacheKey), !Self.isEffectivelyEmpty(releaseNotes) {
 			completion(.success(releaseNotes))
 			return
 		}
 
 		self.loadReleaseNotes(for: app) { releaseNotes in
+			let releaseNotes = Self.validated(releaseNotes)
 			if case .success(let text) = releaseNotes {
 				self.cache.setObject(text, forKey: cacheKey)
 			}
@@ -83,12 +84,12 @@ class ReleaseNotesProvider {
 				case .html(let html):
 					completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: nil, relevantVersion: app.remoteVersion?.versionNumber))
 				case .url(let url):
-					self.releaseNotes(from: url, requestID: currentRequestID, with: completion)
+					self.releaseNotes(from: url, relevantVersion: app.remoteVersion?.versionNumber, requestID: currentRequestID, with: completion)
 				case .encoded(let data):
-					completion(ReleaseNotesMarkup.attributedString(from: data, baseURL: nil))
-				case .githubRelease(let apiURL):
+					completion(ReleaseNotesMarkup.attributedString(from: data, baseURL: nil, relevantVersion: app.remoteVersion?.versionNumber))
+				case .githubRelease(let apiURL, let fallbackHTML):
 					Task {
-						completion(await self.githubReleaseNotes(from: apiURL, relevantVersion: app.remoteVersion?.versionNumber))
+						completion(await self.githubReleaseNotes(from: apiURL, relevantVersion: app.remoteVersion?.versionNumber, fallbackHTML: fallbackHTML))
 					}
 				case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML):
 					self.changelogReleaseNotes(from: urls, versionPrefix: versionPrefix ?? app.remoteVersion?.versionNumber, allowsLatestFallback: allowsLatestFallback, fallbackHTML: fallbackHTML, requestID: currentRequestID, with: completion)
@@ -110,43 +111,64 @@ class ReleaseNotesProvider {
 		return true
 	}
 
-
-	/// Fetches release notes from the given URL.
-	private func releaseNotes(from url: URL, requestID: UUID, with completion: @escaping Completion) {
-		Task { [weak self] in
-			guard let self else { return }
-
-			if let html = try? await Self.fetchHTML(from: url) {
-				guard self.isCurrentRequest(requestID) else { return }
-				completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: url))
-				return
-			}
-
-			guard self.isCurrentRequest(requestID) else { return }
-			self.webReleaseNotes(from: url, requestID: requestID, with: completion)
+	private nonisolated static func validated(_ releaseNotes: ReleaseNotes) -> ReleaseNotes {
+		switch releaseNotes {
+		case .success(let text) where isEffectivelyEmpty(text):
+			return .failure(LatestError.releaseNotesUnavailable)
+		default:
+			return releaseNotes
 		}
 	}
 
-	private func webReleaseNotes(from url: URL, requestID: UUID, with completion: @escaping Completion) {
+	private nonisolated static func isEffectivelyEmpty(_ text: NSAttributedString) -> Bool {
+		text.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+	}
+
+
+	/// Fetches release notes from the given URL.
+	private func releaseNotes(from url: URL, relevantVersion: String?, requestID: UUID, with completion: @escaping Completion) {
+		Task { [weak self] in
+			guard let self else { return }
+
+			do {
+				let html = try await Self.fetchHTML(from: url)
+				guard self.isCurrentRequest(requestID) else { return }
+				completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: url, relevantVersion: relevantVersion))
+				return
+			} catch FetchHTMLError.unusableText {
+				guard self.isCurrentRequest(requestID) else { return }
+				completion(.failure(LatestError.releaseNotesUnavailable))
+				return
+			} catch {
+				guard self.isCurrentRequest(requestID) else { return }
+				self.webReleaseNotes(from: url, relevantVersion: relevantVersion, requestID: requestID, with: completion)
+			}
+		}
+	}
+
+	private func webReleaseNotes(from url: URL, relevantVersion: String?, requestID: UUID, with completion: @escaping Completion) {
 		activeWebContentLoader.load(from: url) { result in
 			guard self.isCurrentRequest(requestID) else { return }
 
 			switch result {
 			case .success(let html):
 				self.webContentLoader?.cancel()
-				completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: url))
+				completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: url, relevantVersion: relevantVersion))
 			case .failure(let error):
 				completion(.failure(error))
 			}
 		}
 	}
 
-	private func githubReleaseNotes(from url: URL, relevantVersion: String?) async -> ReleaseNotes {
+	private func githubReleaseNotes(from url: URL, relevantVersion: String?, fallbackHTML: String?) async -> ReleaseNotes {
 		do {
 			let (data, _) = try await URLSession.shared.data(from: url)
 			let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
-			let body = release.body.trimmingCharacters(in: .whitespacesAndNewlines)
-			guard !body.isEmpty else {
+			let body = Self.deduplicating(title: release.name, in: release.body.trimmingCharacters(in: .whitespacesAndNewlines))
+			guard ReleaseNotesMarkup.isUsefulReleaseNotesText(body, relevantVersion: relevantVersion) else {
+				if let fallbackHTML {
+					return ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil, relevantVersion: relevantVersion)
+				}
 				return .failure(LatestError.releaseNotesUnavailable)
 			}
 
@@ -157,8 +179,15 @@ class ReleaseNotesProvider {
 					return text
 				} as [String]).joined(separator: "\n\n")
 
-			return ReleaseNotesMarkup.attributedString(from: markdown, baseURL: nil)
+			let result = ReleaseNotesMarkup.attributedString(from: markdown, baseURL: nil, relevantVersion: relevantVersion)
+			if case .failure = result, let fallbackHTML {
+				return ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil, relevantVersion: relevantVersion)
+			}
+			return result
 		} catch {
+			if let fallbackHTML {
+				return ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil, relevantVersion: relevantVersion)
+			}
 			return .failure(error)
 		}
 	}
@@ -169,14 +198,14 @@ class ReleaseNotesProvider {
 
 			if let content = await Self.fetchChangelogContent(from: urls, versionPrefix: versionPrefix, allowsLatestFallback: allowsLatestFallback) {
 				guard self.isCurrentRequest(requestID) else { return }
-				completion(ReleaseNotesMarkup.attributedString(from: content.text, baseURL: content.baseURL))
+				completion(ReleaseNotesMarkup.attributedString(from: content.text, baseURL: content.baseURL, relevantVersion: versionPrefix))
 				return
 			}
 
 			guard self.isCurrentRequest(requestID) else { return }
 
 			if let fallbackHTML {
-				completion(ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil))
+				completion(ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil, relevantVersion: versionPrefix))
 				return
 			}
 
@@ -212,7 +241,7 @@ class ReleaseNotesProvider {
 				switch result {
 				case .success(let html):
 					if let relevantText = ReleaseNotesMarkup.relevantChangelogText(fromHTML: html, version: versionPrefix, pageURL: url, allowFirstSectionFallback: allowsLatestFallback) {
-						finish(ReleaseNotesMarkup.attributedString(from: relevantText, baseURL: url))
+						finish(ReleaseNotesMarkup.attributedString(from: relevantText, baseURL: url, relevantVersion: versionPrefix))
 						return
 					}
 
@@ -231,12 +260,11 @@ class ReleaseNotesProvider {
 			for url in urls {
 				group.addTask {
 					guard !Task.isCancelled,
-						  let html = try? await Self.fetchHTML(from: url),
-						  let text = ReleaseNotesMarkup.relevantChangelogText(fromHTML: html, version: versionPrefix, pageURL: url, allowFirstSectionFallback: allowsLatestFallback) else {
+						  let html = try? await Self.fetchHTML(from: url) else {
 						return nil
 					}
 
-					return ChangelogContent(text: text, baseURL: url)
+					return await Self.changelogContent(fromHTML: html, url: url, versionPrefix: versionPrefix, allowsLatestFallback: allowsLatestFallback)
 				}
 			}
 
@@ -251,7 +279,32 @@ class ReleaseNotesProvider {
 		}
 	}
 
+	private nonisolated static func changelogContent(fromHTML html: String, url: URL, versionPrefix: String?, allowsLatestFallback: Bool) async -> ChangelogContent? {
+		if let text = ReleaseNotesMarkup.relevantChangelogText(fromHTML: html, version: versionPrefix, pageURL: url, allowFirstSectionFallback: allowsLatestFallback) {
+			return ChangelogContent(text: text, baseURL: url)
+		}
+
+		guard let linkedURL = ReleaseNotesMarkup.linkedChangelogURL(fromHTML: html, version: versionPrefix, pageURL: url),
+			  linkedURL != url,
+			  let linkedHTML = try? await Self.fetchHTML(from: linkedURL) else {
+			return nil
+		}
+
+		if let text = ReleaseNotesMarkup.relevantChangelogText(fromHTML: linkedHTML, version: versionPrefix, pageURL: linkedURL, allowFirstSectionFallback: true) {
+			return ChangelogContent(text: text, baseURL: linkedURL)
+		}
+
+		guard let text = ReleaseNotesMarkup.plainText(fromHTML: linkedHTML),
+			  ReleaseNotesMarkup.isUsefulReleaseNotesText(text, relevantVersion: versionPrefix) else {
+			return nil
+		}
+
+		return ChangelogContent(text: text, baseURL: linkedURL)
+	}
+
 	private nonisolated static func fetchHTML(from url: URL) async throws -> String {
+		try await Self.validateURLCanContainHTML(url)
+
 		var request = URLRequest(url: url)
 		request.cachePolicy = .returnCacheDataElseLoad
 		request.timeoutInterval = 4
@@ -261,18 +314,104 @@ class ReleaseNotesProvider {
 
 		if let response = response as? HTTPURLResponse,
 		   !(200..<400).contains(response.statusCode) {
-			throw LatestError.releaseNotesUnavailable
+			throw FetchHTMLError.unusableText
 		}
 
-		if let html = String(data: data, encoding: .utf8) {
-			return html
+		guard Self.responseCanContainText(response),
+			  let html = Self.decodedText(from: data, response: response),
+			  !ReleaseNotesMarkup.looksLikeBinaryOrMojibakeText(html) else {
+			throw FetchHTMLError.unusableText
 		}
 
-		if let html = String(data: data, encoding: .isoLatin1) {
-			return html
+		return html
+	}
+
+}
+
+private enum FetchHTMLError: Error {
+	case unusableText
+}
+
+private extension ReleaseNotesProvider {
+
+	nonisolated static func validateURLCanContainHTML(_ url: URL) async throws {
+		if isLikelyDownloadURL(url) {
+			throw FetchHTMLError.unusableText
 		}
 
-		throw LatestError.releaseNotesUnavailable
+		var request = URLRequest(url: url)
+		request.httpMethod = "HEAD"
+		request.cachePolicy = .returnCacheDataElseLoad
+		request.timeoutInterval = 4
+		request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+
+		do {
+			let (_, response) = try await URLSession.shared.data(for: request)
+
+			if let response = response as? HTTPURLResponse {
+				if response.statusCode == 405 || response.statusCode == 501 {
+					return
+				}
+
+				guard (200..<400).contains(response.statusCode) else {
+					throw FetchHTMLError.unusableText
+				}
+			}
+
+			guard responseCanContainText(response) else {
+				throw FetchHTMLError.unusableText
+			}
+		} catch FetchHTMLError.unusableText {
+			throw FetchHTMLError.unusableText
+		} catch {
+			// Some changelog hosts reject HEAD while serving valid HTML to GET.
+			// In that case the body fetch below remains the source of truth.
+			return
+		}
+	}
+
+	nonisolated static func isLikelyDownloadURL(_ url: URL) -> Bool {
+		let downloadExtensions: Set<String> = [
+			"7z", "bz2", "dmg", "exe", "gz", "msi", "pkg", "rar", "tbz", "tgz", "xip", "xz", "zip"
+		]
+
+		return downloadExtensions.contains(url.pathExtension.lowercased())
+	}
+
+	nonisolated static func deduplicating(title: String?, in body: String) -> String {
+		guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
+			return body
+		}
+
+		var lines = body.components(separatedBy: .newlines)
+		while let firstLine = lines.first, ReleaseNotesMarkup.normalizedReleaseLine(firstLine) == ReleaseNotesMarkup.normalizedReleaseLine(title) {
+			lines.removeFirst()
+		}
+
+		return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+	}
+
+	nonisolated static func responseCanContainText(_ response: URLResponse) -> Bool {
+		guard let mimeType = response.mimeType?.lowercased() else { return true }
+		return mimeType.hasPrefix("text/") ||
+			mimeType == "application/json" ||
+			mimeType == "application/xml" ||
+			mimeType == "application/xhtml+xml" ||
+			mimeType == "application/rss+xml" ||
+			mimeType == "application/atom+xml"
+	}
+
+	nonisolated static func decodedText(from data: Data, response: URLResponse) -> String? {
+		if let text = String(data: data, encoding: .utf8) {
+			return text
+		}
+
+		let encodingName = response.textEncodingName?.lowercased() ?? ""
+		if encodingName.contains("iso-8859-1") || encodingName.contains("latin1") || encodingName.contains("windows-1252") {
+			return String(data: data, encoding: .isoLatin1)
+		}
+
+		return nil
 	}
 
 }
@@ -330,8 +469,8 @@ private extension App.Update.ReleaseNotes {
 			return "html:\(string.hashValue)"
 		case .encoded(let data):
 			return "encoded:\(data.hashValue)"
-		case .githubRelease(let apiURL):
-			return "github:\(apiURL.absoluteString)"
+		case .githubRelease(let apiURL, let fallbackHTML):
+			return "github:\(apiURL.absoluteString):\(fallbackHTML?.hashValue ?? 0)"
 		case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML):
 			let urlList = urls.map(\.absoluteString).joined(separator: "|")
 			return "changelog:\(urlList):\(versionPrefix ?? ""):\(allowsLatestFallback):\(fallbackHTML?.hashValue ?? 0)"
@@ -342,18 +481,40 @@ private extension App.Update.ReleaseNotes {
 enum ReleaseNotesMarkup {
 
 	static func attributedString(from markup: String, baseURL: URL?, relevantVersion: String? = nil) -> ReleaseNotesProvider.ReleaseNotes {
-		let markup = Self.relevantText(from: markup, version: relevantVersion, allowFirstSectionFallback: false) ?? markup
-
-		if Self.prefersMarkdown(markup) {
-			return .success(Self.attributedString(fromMarkdown: markup))
+		let trimmedMarkup = markup.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !trimmedMarkup.isEmpty else {
+			return .failure(LatestError.releaseNotesUnavailable)
 		}
 
-		return Self.attributedString(fromHTML: markup, baseURL: baseURL)
+		let sourceMarkup = trimmedMarkup.containsHTMLTag ? trimmedMarkup : Self.normalizedPlainText(trimmedMarkup)
+		let markup: String
+		if sourceMarkup.containsHTMLTag,
+		   let relevantVersion,
+		   let text = Self.relevantChangelogText(fromHTML: sourceMarkup, version: relevantVersion, pageURL: baseURL ?? URL(fileURLWithPath: "/"), allowFirstSectionFallback: false) {
+			markup = text
+		} else {
+			markup = Self.relevantText(from: sourceMarkup, version: relevantVersion, allowFirstSectionFallback: false) ?? sourceMarkup
+		}
+
+		let normalizedMarkup = Self.removingDuplicateLeadingLines(markup)
+		guard Self.isUsefulReleaseNotesText(normalizedMarkup, relevantVersion: relevantVersion) else {
+			return .failure(LatestError.releaseNotesUnavailable)
+		}
+
+		if Self.prefersMarkdown(normalizedMarkup) {
+			return .success(Self.attributedString(fromMarkdown: normalizedMarkup))
+		}
+
+		if !normalizedMarkup.containsHTMLTag {
+			return .success(Self.attributedString(fromPlainText: normalizedMarkup))
+		}
+
+		return Self.attributedString(fromHTML: normalizedMarkup, baseURL: baseURL)
 	}
 
-	static func attributedString(from data: Data, baseURL: URL?) -> ReleaseNotesProvider.ReleaseNotes {
-		if let markup = String(data: data, encoding: .utf8), Self.prefersMarkdown(markup) {
-			return Self.attributedString(from: markup, baseURL: baseURL)
+	static func attributedString(from data: Data, baseURL: URL?, relevantVersion: String? = nil) -> ReleaseNotesProvider.ReleaseNotes {
+		if let markup = String(data: data, encoding: .utf8), !Self.looksLikeBinaryOrMojibakeText(markup) {
+			return Self.attributedString(from: markup, baseURL: baseURL, relevantVersion: relevantVersion)
 		}
 
 		var options : [NSAttributedString.DocumentReadingOptionKey: Any] = [.documentType: NSAttributedString.DocumentType.html]
@@ -376,6 +537,10 @@ enum ReleaseNotesMarkup {
 			} catch let error {
 				return .failure(error)
 			}
+		}
+
+		guard Self.isUsefulReleaseNotesText(string.string, relevantVersion: relevantVersion) else {
+			return .failure(LatestError.releaseNotesUnavailable)
 		}
 
 		return .success(string)
@@ -422,7 +587,7 @@ enum ReleaseNotesMarkup {
 
 		guard let text = Self.plainText(fromHTML: html),
 			  let relevantText = Self.relevantText(from: text, version: version, allowFirstSectionFallback: allowFirstSectionFallback),
-			  !relevantText.isEmpty else {
+			  Self.isUsefulReleaseNotesText(relevantText, relevantVersion: version) else {
 			return nil
 		}
 
@@ -435,6 +600,7 @@ enum ReleaseNotesMarkup {
 		text = text.replacingOccurrences(of: #"(?is)<(script|style|noscript|svg)\b.*?</\1>"#, with: "\n", options: .regularExpression)
 		text = text.replacingOccurrences(of: #"(?i)<br\s*/?>"#, with: "\n", options: .regularExpression)
 		text = text.replacingOccurrences(of: #"(?i)<li\b[^>]*>"#, with: "\n- ", options: .regularExpression)
+		text = text.replacingOccurrences(of: #"(?i)<(p|div|h[1-6]|tr|section|article|header|footer|table|ul|ol|dl|dt|dd)\b[^>]*>"#, with: "\n", options: .regularExpression)
 		text = text.replacingOccurrences(of: #"(?i)</(p|div|li|h[1-6]|tr|section|article|header|footer|table|ul|ol|dl|dt|dd)>"#, with: "\n", options: .regularExpression)
 		text = text.replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
 		text = Self.decodingHTMLEntities(in: text)
@@ -447,6 +613,88 @@ enum ReleaseNotesMarkup {
 		}
 
 		return lines.isEmpty ? nil : lines.joined(separator: "\n")
+	}
+
+	static func firstReleaseNotesURL(in markup: String, baseURL: URL?) -> URL? {
+		if let hrefURL = Self.firstHrefURL(in: markup, baseURL: baseURL) {
+			return hrefURL
+		}
+
+		let pattern = #"https?://[^\s<>"']+"#
+		guard let regex = try? NSRegularExpression(pattern: pattern) else {
+			return nil
+		}
+
+		let range = NSRange(markup.startIndex..<markup.endIndex, in: markup)
+		guard let match = regex.firstMatch(in: markup, range: range),
+			  let matchRange = Range(match.range, in: markup) else {
+			return nil
+		}
+
+		let urlString = String(markup[matchRange]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;)"))
+		return URL(string: urlString)
+	}
+
+	static func linkedChangelogURL(fromHTML html: String, version: String?, pageURL: URL) -> URL? {
+		let candidates = versionCandidates(from: version)
+		guard !candidates.isEmpty else { return nil }
+
+		let pattern = #"(?is)<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a>"#
+		guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+
+		let range = NSRange(html.startIndex..<html.endIndex, in: html)
+		let matches = regex.matches(in: html, range: range)
+		for match in matches {
+			guard let hrefRange = Range(match.range(at: 1), in: html),
+				  let labelRange = Range(match.range(at: 2), in: html) else {
+				continue
+			}
+
+			let href = Self.decodingHTMLEntities(in: String(html[hrefRange]))
+			let labelHTML = String(html[labelRange])
+			let label = Self.plainText(fromHTML: labelHTML) ?? labelHTML
+			let searchText = href + "\n" + label
+			guard candidates.contains(where: { candidate in
+				searchText.range(of: candidate, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+			}) else {
+				continue
+			}
+
+			if let url = URL(string: href, relativeTo: pageURL)?.absoluteURL {
+				return url
+			}
+		}
+
+		return nil
+	}
+
+	static func isUsefulReleaseNotesText(_ text: String, relevantVersion: String? = nil) -> Bool {
+		let displayText = text.containsHTMLTag ? (Self.plainText(fromHTML: text) ?? text) : text
+		guard !Self.looksLikeBinaryOrMojibakeText(displayText),
+			  !Self.looksLikeWebPageChrome(displayText) else {
+			return false
+		}
+
+		var informationText = displayText
+		informationText = informationText.replacingOccurrences(of: #"https?://\S+"#, with: " ", options: .regularExpression)
+		informationText = informationText.replacingOccurrences(of: #"\[[^\]]*\]\([^)]+\)"#, with: " ", options: .regularExpression)
+		informationText = informationText.replacingOccurrences(of: #"\bv?\d+(?:\.\d+){1,}(?:\.\d+)?\b"#, with: " ", options: [.regularExpression, .caseInsensitive])
+		if let relevantVersion, !relevantVersion.isEmpty {
+			informationText = informationText.replacingOccurrences(of: relevantVersion, with: " ", options: [.caseInsensitive])
+		}
+		informationText = informationText.replacingOccurrences(of: #"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}\b"#, with: " ", options: [.regularExpression, .caseInsensitive])
+		informationText = informationText.replacingOccurrences(of: #"\b\d{4}-\d{2}-\d{2}\b"#, with: " ", options: .regularExpression)
+
+		let lowercasedInformationText = informationText.lowercased()
+		let words = lowercasedInformationText.matches(of: /[a-z][a-z0-9+-]{1,}/).map { String(lowercasedInformationText[$0.range]) }
+		let genericWords: Set<String> = [
+			"changelog", "changes", "details", "history", "latest", "link", "links",
+			"more", "note", "notes", "public", "recent", "release", "releases",
+			"version", "versions", "view", "whats", "what"
+		]
+		let meaningfulWords = words.filter { !genericWords.contains($0) }
+
+		return meaningfulWords.count >= 2 || meaningfulWords.joined().count >= 14
 	}
 
 	static func relevantText(from text: String, version: String?, allowFirstSectionFallback: Bool) -> String? {
@@ -491,6 +739,172 @@ enum ReleaseNotesMarkup {
 		return selectedLines.joined(separator: "\n")
 	}
 
+	static func normalizedReleaseLine(_ line: String) -> String {
+		var normalized = line.trimmingCharacters(in: .whitespacesAndNewlines)
+		normalized = normalized.replacingOccurrences(of: #"^#{1,6}\s+"#, with: "", options: .regularExpression)
+		normalized = normalized.replacingOccurrences(of: #"^(\*|-|•)\s+"#, with: "", options: .regularExpression)
+		normalized = normalized.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+		return normalized.trimmingCharacters(in: .punctuationCharacters.union(.whitespacesAndNewlines)).lowercased()
+	}
+
+	static func looksLikeBinaryOrMojibakeText(_ text: String) -> Bool {
+		let scalars = text.unicodeScalars.filter { !$0.properties.isWhitespace }
+		guard scalars.count > 40 else { return false }
+
+		if scalars.contains(where: { scalar in
+			(scalar.value < 32 || scalar.value == 127) && scalar.value != 10 && scalar.value != 9 && scalar.value != 13
+		}) {
+			return true
+		}
+
+		let cjkCount = scalars.filter { scalar in
+			(0x4E00...0x9FFF).contains(Int(scalar.value)) ||
+			(0x3040...0x30FF).contains(Int(scalar.value)) ||
+			(0xAC00...0xD7AF).contains(Int(scalar.value))
+		}.count
+		let cjkRatio = Double(cjkCount) / Double(scalars.count)
+		if cjkRatio > 0.2 {
+			return false
+		}
+
+		let latin1SupplementCount = scalars.filter { (0x00A0...0x00FF).contains(Int($0.value)) }.count
+		let nonASCIIPrintableCount = scalars.filter { $0.value > 127 }.count
+		let asciiWordCount = text.matches(of: /[A-Za-z][A-Za-z0-9+-]{2,}/).count
+		let latin1Ratio = Double(latin1SupplementCount) / Double(scalars.count)
+		let nonASCIIRatio = Double(nonASCIIPrintableCount) / Double(scalars.count)
+
+		return (latin1Ratio > 0.22 && asciiWordCount < 8) || (nonASCIIRatio > 0.55 && asciiWordCount < 4)
+	}
+
+	private static func looksLikeWebPageChrome(_ text: String) -> Bool {
+		let lines = text.components(separatedBy: .newlines).map {
+			$0.trimmingCharacters(in: .whitespacesAndNewlines)
+		}.filter { !$0.isEmpty }
+		guard lines.count >= 12 else { return false }
+
+		let separatorLineCount = lines.filter { $0 == "-" || $0 == "–" || $0 == "—" }.count
+		if separatorLineCount >= 4 {
+			return true
+		}
+
+		let lowercased = text.lowercased()
+		let releaseTerms = ["release", "changelog", "change log", "fixed", "bug", "improved", "added", "security", "resolved"]
+		let hasReleaseTerms = releaseTerms.contains { lowercased.contains($0) }
+		if lines.count >= 30 && !hasReleaseTerms {
+			return true
+		}
+
+		let shortNavigationLikeLines = lines.filter { line in
+			let wordCount = line.split(separator: " ").count
+			return wordCount <= 5 && !line.contains(".") && !line.contains(":")
+		}
+		return lines.count >= 18 && shortNavigationLikeLines.count >= 12 && !hasReleaseTerms
+	}
+
+	private static func removingDuplicateLeadingLines(_ text: String) -> String {
+		var lines = text.components(separatedBy: .newlines)
+		while lines.count > 1 {
+			let first = Self.normalizedReleaseLine(lines[0])
+			let second = Self.normalizedReleaseLine(lines[1])
+			guard !first.isEmpty, first == second else { break }
+			lines.remove(at: 1)
+		}
+
+		if lines.count > 1,
+		   let releaseTitle = Self.releaseTitleText(from: lines[0]),
+		   let bodyWithoutRepeatedTitle = Self.bodyLineWithoutRepeatedTitle(lines[1], releaseTitle: releaseTitle) {
+			lines[1] = bodyWithoutRepeatedTitle
+		}
+
+		return lines.joined(separator: "\n")
+	}
+
+	private static func releaseTitleText(from line: String) -> String? {
+		var title = line.trimmingCharacters(in: .whitespacesAndNewlines)
+		title = title.replacingOccurrences(of: #"^#{1,6}\s+"#, with: "", options: .regularExpression)
+		title = title.replacingOccurrences(of: #"^(\*|-|•)\s+"#, with: "", options: .regularExpression)
+		title = title.trimmingCharacters(in: .punctuationCharacters.union(.whitespacesAndNewlines))
+		return title.isEmpty ? nil : title
+	}
+
+	private static func bodyLineWithoutRepeatedTitle(_ line: String, releaseTitle: String) -> String? {
+		let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard let range = trimmedLine.range(of: releaseTitle, options: [.anchored, .caseInsensitive, .diacriticInsensitive]) else {
+			return nil
+		}
+
+		let suffix = trimmedLine[range.upperBound...]
+		guard suffix.first.map({ $0.isWhitespace || "-–—:".contains($0) }) ?? false else {
+			return nil
+		}
+
+		let remainder = suffix
+			.trimmingCharacters(in: CharacterSet(charactersIn: " -–—:").union(.whitespacesAndNewlines))
+		guard Self.looksLikeReleaseSentence(remainder) else {
+			return nil
+		}
+
+		return Self.capitalizingFirstLetter(remainder)
+	}
+
+	private static func looksLikeReleaseSentence(_ text: String) -> Bool {
+		guard let firstWord = text.split(separator: " ").first else { return false }
+		let bodyVerbs: Set<String> = [
+			"adds", "allows", "applies", "brings", "changes", "fixes",
+			"improves", "introduces", "lets", "makes", "resolves", "updates"
+		]
+		return bodyVerbs.contains(Self.normalizedToken(firstWord))
+	}
+
+	private static func capitalizingFirstLetter(_ text: String) -> String {
+		guard let first = text.first else { return text }
+		return first.uppercased() + text.dropFirst()
+	}
+
+	private static func normalizedPlainText(_ text: String) -> String {
+		var result = text
+		result = result.replacingOccurrences(of: #"(?i)(\s·\s*Changelog)\s+"#, with: "$1\n", options: .regularExpression)
+		result = result.replacingOccurrences(of: #"(?i)(^|\s)(v?\d+(?:\.\d+){1,}\s+[A-Z][a-z]+\s+\d{1,2},\s+\d{4})\s+(?!·)"#, with: "$1$2\n", options: .regularExpression)
+		result = result.replacingOccurrences(of: #"(\S)\s+(?=v?\d+(?:\.\d+){1,}\s+[A-Z][a-z]+\s+\d{1,2},\s+\d{4}\b)"#, with: "$1\n", options: [.regularExpression, .caseInsensitive])
+
+		let lines = result.components(separatedBy: .newlines).map { Self.splittingRepeatedHeadingPrefix(in: $0) }
+		return lines.joined(separator: "\n")
+	}
+
+	private static func splittingRepeatedHeadingPrefix(in line: String) -> String {
+		let tokens = line.split(separator: " ")
+		guard tokens.count >= 6 else { return line }
+
+		for headingLength in 2...min(8, tokens.count - 3) {
+			let repeatedTokenIndex = headingLength
+			guard Self.normalizedToken(tokens[0]) == Self.normalizedToken(tokens[repeatedTokenIndex]),
+				  Self.looksLikeBodyStart(tokens[repeatedTokenIndex...]) else {
+				continue
+			}
+
+			let heading = tokens[..<headingLength].joined(separator: " ")
+			let body = tokens[repeatedTokenIndex...].joined(separator: " ")
+			return heading + "\n" + body
+		}
+
+		return line
+	}
+
+	private static func normalizedToken(_ token: Substring) -> String {
+		token.trimmingCharacters(in: .punctuationCharacters).lowercased()
+	}
+
+	private static func looksLikeBodyStart(_ tokens: ArraySlice<Substring>) -> Bool {
+		guard tokens.count >= 2 else { return false }
+
+		let bodyVerbs: Set<String> = [
+			"adds", "allows", "applies", "are", "brings", "can", "changes",
+			"fixes", "has", "have", "improves", "introduces", "is", "lets",
+			"makes", "now", "updates", "uses", "was", "were", "will"
+		]
+		return bodyVerbs.contains(Self.normalizedToken(tokens[tokens.index(after: tokens.startIndex)]))
+	}
+
 	private static func attributedString(fromMarkdown markdown: String) -> NSAttributedString {
 		let result = NSMutableAttributedString()
 		let headingFont = NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)
@@ -519,6 +933,10 @@ enum ReleaseNotesMarkup {
 		}
 
 		return result
+	}
+
+	private static func attributedString(fromPlainText text: String) -> NSAttributedString {
+		NSAttributedString(string: text + "\n", attributes: [.font: NSFont.systemFont(ofSize: NSFont.systemFontSize)])
 	}
 
 	private static func attributedString(fromHTML html: String, baseURL: URL?) -> ReleaseNotesProvider.ReleaseNotes {
@@ -562,6 +980,22 @@ enum ReleaseNotesMarkup {
 		}
 
 		return result
+	}
+
+	private static func firstHrefURL(in html: String, baseURL: URL?) -> URL? {
+		let pattern = #"(?is)<a\b[^>]*\bhref\s*=\s*["']([^"']+)["']"#
+		guard let regex = try? NSRegularExpression(pattern: pattern) else {
+			return nil
+		}
+
+		let range = NSRange(html.startIndex..<html.endIndex, in: html)
+		guard let match = regex.firstMatch(in: html, range: range),
+			  let hrefRange = Range(match.range(at: 1), in: html) else {
+			return nil
+		}
+
+		let href = Self.decodingHTMLEntities(in: String(html[hrefRange]))
+		return URL(string: href, relativeTo: baseURL)?.absoluteURL
 	}
 
 	private static func decodingHTMLEntities(in string: String) -> String {
@@ -631,7 +1065,8 @@ enum ReleaseNotesMarkup {
 
 	private static func looksLikeVersionBoundary(_ line: String) -> Bool {
 		line.range(of: #"^#{1,6}\s*v?\d+(\.\d+){1,}"#, options: [.regularExpression, .caseInsensitive]) != nil ||
-		line.range(of: #"^v?\d+(\.\d+){1,}(\s|$|-)"#, options: [.regularExpression, .caseInsensitive]) != nil
+		line.range(of: #"^v?\d+(\.\d+){1,}(\s|$|-)"#, options: [.regularExpression, .caseInsensitive]) != nil ||
+		line.range(of: #"^(?![-*•])\D{1,60}v?\d+(\.\d+){1,}(\s|$|-)"#, options: [.regularExpression, .caseInsensitive]) != nil
 	}
 
 	private static func looksLikeVersionNavigation(_ line: String) -> Bool {
