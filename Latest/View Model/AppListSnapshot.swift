@@ -106,6 +106,17 @@ struct AppListSnapshot {
 				installedUpdates.append(entry)
 			}
 		}
+		installedUpdates.sort { entry1, entry2 in
+			guard case .app(let app1) = entry1, case .app(let app2) = entry2 else {
+				return false
+			}
+
+			if app1.bundle.modificationDate == app2.bundle.modificationDate {
+				return app1.name.lowercased() < app2.name.lowercased()
+			}
+
+			return app1.bundle.modificationDate > app2.bundle.modificationDate
+		}
 
 		var entries = [Entry]()
 		entries.reserveCapacity(filteredApps.count + 3)

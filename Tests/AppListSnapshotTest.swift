@@ -43,6 +43,24 @@ final class AppListSnapshotTest: XCTestCase {
 		XCTAssertEqual(snapshot.app(at: 1)?.name, "Alpha")
 	}
 
+	func testInstalledAppsAreSortedByBundleModificationDate() throws {
+		configureSettings()
+		AppListSettings.shared.sortOrder = .name
+
+		let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+			.appendingPathComponent(UUID().uuidString, isDirectory: true)
+		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		let older = try makeApp(name: "A Older", versionNumber: "1.0", modificationDate: Date(timeIntervalSince1970: 1), in: directory)
+		let newer = try makeApp(name: "Z Newer", versionNumber: "1.0", modificationDate: Date(timeIntervalSince1970: 2), in: directory)
+
+		let snapshot = AppListSnapshot(withApps: [older, newer], filterQuery: nil)
+
+		XCTAssertEqual(snapshot.app(at: 1)?.name, "Z Newer")
+		XCTAssertEqual(snapshot.app(at: 2)?.name, "A Older")
+	}
+
 	func testSnapshotMatchesUpdatedAppByIdentifier() {
 		configureSettings()
 
@@ -96,6 +114,21 @@ final class AppListSnapshotTest: XCTestCase {
 		}
 
 		return App(bundle: bundle, update: update, isIgnored: isIgnored)
+	}
+
+	private func makeApp(
+		name: String,
+		versionNumber: String,
+		modificationDate: Date,
+		in directory: URL
+	) throws -> App {
+		let url = directory.appendingPathComponent("\(name).app", isDirectory: true)
+		let contentsURL = url.appendingPathComponent("Contents", isDirectory: true)
+		try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
+		try FileManager.default.setAttributes([.modificationDate: modificationDate], ofItemAtPath: url.path)
+		try FileManager.default.setAttributes([.modificationDate: modificationDate], ofItemAtPath: contentsURL.path)
+
+		return makeApp(name: name, versionNumber: versionNumber, appURL: url)
 	}
 
 }

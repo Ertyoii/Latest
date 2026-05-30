@@ -38,14 +38,7 @@ class AppDirectoryStore {
 			return fileManager.urls(for: .applicationDirectory, in: domainMask)
 		}
 
-		let systemApplicationURLs = [
-			URL(filePath: "/System/Applications", directoryHint: .isDirectory),
-			URL(filePath: "/System/Library/CoreServices/Applications", directoryHint: .isDirectory)
-		]
-
-		var defaultURLs = applicationURLs
-		defaultURLs.append(contentsOf: systemApplicationURLs)
-		return defaultURLs.filter { url -> Bool in
+		return applicationURLs.filter { url -> Bool in
 			return fileManager.fileExists(atPath: url.path)
 		}.deduplicated()
 	}()
