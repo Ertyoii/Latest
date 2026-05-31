@@ -313,15 +313,21 @@ private struct EntryMatcher {
 			return possibleEntries.first
 		}
 
-		let matchingIdentifierEntries = possibleEntries.filter { entry in
-			entry.bundleIdentifiers.contains(bundleIdentifier)
+		var matchingIdentifierEntries = [UpdateRepository.Entry]()
+		matchingIdentifierEntries.reserveCapacity(possibleEntries.count)
+		for entry in possibleEntries where entry.bundleIdentifiers.contains(bundleIdentifier) {
+			matchingIdentifierEntries.append(entry)
 		}
 		if matchingIdentifierEntries.count == 1 {
 			return matchingIdentifierEntries.first
 		}
 
 		let narrowedEntries = matchingIdentifierEntries.isEmpty ? possibleEntries : matchingIdentifierEntries
-		let stableEntries = narrowedEntries.filter(\.isStableRelease)
+		var stableEntries = [UpdateRepository.Entry]()
+		stableEntries.reserveCapacity(narrowedEntries.count)
+		for entry in narrowedEntries where entry.isStableRelease {
+			stableEntries.append(entry)
+		}
 		if stableEntries.count == 1 {
 			return stableEntries.first
 		}
@@ -330,10 +336,10 @@ private struct EntryMatcher {
 	}
 
 	private static func entriesByName(_ entries: [UpdateRepository.Entry]) -> [String: [UpdateRepository.Entry]] {
-		Dictionary(grouping: entries.flatMap { entry in
-			entry.names.map { ($0.lowercased(), entry) }
-		}, by: { $0.0 }).mapValues { pairs in
-			pairs.map { $0.1 }
+		entries.reduce(into: [String: [UpdateRepository.Entry]]()) { entriesByName, entry in
+			for name in entry.names {
+				entriesByName[name.lowercased(), default: []].append(entry)
+			}
 		}
 	}
 

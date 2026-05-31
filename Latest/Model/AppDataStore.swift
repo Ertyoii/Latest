@@ -74,14 +74,7 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 	// MARK: - App Providing
 
 	/// The collection holding all apps that have been found.
-	private(set) var apps = Set<App>() {
-		didSet {
-			self.rebuildAppIndex()
-
-			// Schedule an update for observers
-			self.scheduleFilterUpdate()
-		}
-	}
+	private(set) var apps = Set<App>()
 
 	/// Apps indexed by their bundle URL identifier.
 	private var appsByIdentifier = [App.Bundle.Identifier: App]()
@@ -90,6 +83,12 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 		self.appsByIdentifier = apps.reduce(into: [App.Bundle.Identifier: App]()) { appsByIdentifier, app in
 			appsByIdentifier[app.identifier] = appsByIdentifier[app.identifier] ?? app
 		}
+	}
+
+	private func replaceApps(_ apps: Set<App>) {
+		self.apps = apps
+		self.rebuildAppIndex()
+		self.scheduleFilterUpdate()
 	}
 
 	/// A subset of apps that can be updated. Ignored apps are not part of this list.
@@ -118,13 +117,14 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 			let oldApps = self.apps
 			let oldAppsByIdentifier = self.appsByIdentifier
 
-			self.apps = Set(appBundles.map({ bundle in
+			let apps = Set(appBundles.map({ bundle in
 				if let app = oldAppsByIdentifier[bundle.identifier] {
 					return app.with(bundle: bundle)
 				}
 
 				return App(bundle: bundle, update: nil, isIgnored: self.isIdentifierIgnored(bundle.bundleIdentifier))
 			}))
+			self.replaceApps(apps)
 
 			return self.apps.subtracting(oldApps)
 		}
@@ -164,6 +164,8 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 		}
 
 		self.apps.insert(app)
+		self.appsByIdentifier[app.identifier] = app
+		self.scheduleFilterUpdate()
 	}
 
 	private func app(withIdentifier identifier: App.Bundle.Identifier) -> App? {

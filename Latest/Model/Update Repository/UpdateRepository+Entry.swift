@@ -55,8 +55,8 @@ extension UpdateRepository {
 		/// Whether this entry was matched through broad cask metadata and must be verified with its bundle identifier.
 		let requiresBundleIdentifierMatch: Bool
 
-		/// The raw version string of the app.
-		private let rawVersion: String
+		/// The current version of the app.
+		let version: Version
 
 		/// The upstream download URL of the app.
 		private let url: URL?
@@ -77,7 +77,8 @@ extension UpdateRepository {
 			let container = try decoder.container(keyedBy: CodingKeys.self)
 
 			// Trivial keys
-			rawVersion = try container.decode(String.self, forKey: .rawVersion)
+			let rawVersion = try container.decode(String.self, forKey: .rawVersion)
+			version = VersionParser.parse(combinedVersionNumber: rawVersion)
 			token = try container.decode(String.self, forKey: .token)
 			url = try container.decodeIfPresent(URL.self, forKey: .url)
 			homepage = try container.decodeIfPresent(URL.self, forKey: .homepage)
@@ -114,14 +115,6 @@ extension UpdateRepository {
 			} else {
 				minimumOSVersion = nil
 			}
-		}
-
-
-		// MARK: - Accessors
-
-		/// The current version of the app.
-		var version: Version {
-			return VersionParser.parse(combinedVersionNumber: rawVersion)
 		}
 
 		/// Whether the cask represents the default stable channel.
@@ -206,7 +199,7 @@ private extension UpdateRepository.Entry {
 			return nil
 		}
 
-		let title = names.sorted().first?.homebrewDisplayName ?? token
+		let title = names.min()?.homebrewDisplayName ?? token
 		let description = desc?.trimmingCharacters(in: .whitespacesAndNewlines)
 
 		var paragraphs = [

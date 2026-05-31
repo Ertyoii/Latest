@@ -23,12 +23,25 @@ struct Version : Hashable, Comparable {
 	/// The build number itself
 	let buildNumber : String?
 
+	private let versionNumberComponents: [Segment]?
+	private let buildNumberComponents: [Segment]?
+	private let hasParsedContent: Bool
+
+	init(versionNumber: String?, buildNumber: String?) {
+		self.versionNumber = versionNumber
+		self.buildNumber = buildNumber
+
+		let versionNumberComponents = versionNumber?.components()
+		let buildNumberComponents = buildNumber?.components()
+		self.versionNumberComponents = versionNumberComponents
+		self.buildNumberComponents = buildNumberComponents
+		self.hasParsedContent = Self.hasParsedContent(in: versionNumberComponents)
+			|| Self.hasParsedContent(in: buildNumberComponents)
+	}
+
 	/// Flag whether both version number and build number are unavailable
 	var isEmpty: Bool {
-		let versionNumberComponents = versionNumber?.components().compactMap({ $0.plainComponent }).joined()
-		let buildNumberComponents = buildNumber?.components().compactMap({ $0.plainComponent }).joined()
-
-		return (versionNumberComponents?.isEmpty ?? true && buildNumberComponents?.isEmpty ?? true)
+		!hasParsedContent
 	}
 
 
@@ -73,20 +86,20 @@ struct Version : Hashable, Comparable {
 			return .equal
 		}
 
-		var v1 : String?
-		var v2 : String?
+		var c1: [Segment]?
+		var c2: [Segment]?
 
 		// Only allow build number checks if build- and version number actually differ
 		let allowBuildNumberCheck = lhs.buildNumber != lhs.versionNumber
-		if allowBuildNumberCheck, let b1 = lhs.buildNumber, let b2 = rhs.buildNumber {
-			v1 = b1
-			v2 = b2
+		if allowBuildNumberCheck, lhs.buildNumber != nil, rhs.buildNumber != nil {
+			c1 = lhs.buildNumberComponents
+			c2 = rhs.buildNumberComponents
 		} else {
-			v1 = lhs.versionNumber
-			v2 = rhs.versionNumber
+			c1 = lhs.versionNumberComponents
+			c2 = rhs.versionNumberComponents
 		}
 
-		guard let c1 = v1?.components(), let c2 = v2?.components() else {
+		guard let c1, let c2 else {
 			return .undefined
 		}
 
@@ -172,6 +185,13 @@ struct Version : Hashable, Comparable {
 		}
 
 		return nil
+	}
+
+	private static func hasParsedContent(in segments: [Segment]?) -> Bool {
+		segments?.contains { segment in
+			guard case .component(let atoms) = segment else { return false }
+			return !atoms.isEmpty
+		} ?? false
 	}
 }
 
@@ -313,7 +333,7 @@ extension Version {
 		// The last component of the version number is actually the build number. (Can only be detected for equal build numbers. Avoids false positives)
 		// App: 1.2 (40)
 		// Remote: 1.2.40
-		if buildNumber == nil, var components = versionNumber?.components(), let lastRemoteComponent = components.last?.plainComponent, lastRemoteComponent == appVersion.buildNumber {
+		if buildNumber == nil, var components = versionNumberComponents, let lastRemoteComponent = components.last?.plainComponent, lastRemoteComponent == appVersion.buildNumber {
 			// Remove build number segment from version number and store it separately.
 			let buildNumber = components.removeLast()
 
@@ -332,7 +352,7 @@ extension Version {
 		}
 
 		//
-		if appVersion.buildNumber == appVersion.versionNumber, var components = versionNumber?.components(), components.last?.plainComponent != nil, components.count == 7 {
+		if appVersion.buildNumber == appVersion.versionNumber, var components = versionNumberComponents, components.last?.plainComponent != nil, components.count == 7 {
 			components.removeLast()
 			components.removeLast()
 

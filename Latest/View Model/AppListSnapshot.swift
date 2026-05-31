@@ -25,7 +25,10 @@ struct AppListSnapshot {
 	init(withApps apps: [App], filterQuery: String?) {
 		self.filterQuery = filterQuery
 		self.apps = apps
-		self.entries = Self.generateEntries(from: apps, filterQuery: filterQuery)
+		let entries = Self.generateEntries(from: apps, filterQuery: filterQuery)
+		self.entries = entries
+		self.entryIndexesByAppIdentifier = Self.entryIndexesByAppIdentifier(entries)
+		self.appIdentifiers = Set(apps.map(\.identifier))
 	}
 	
 	/// Returns a new snapshot containing an updated filter query.
@@ -40,6 +43,10 @@ struct AppListSnapshot {
 	
 	/// The user-facable, sorted and filtered list of apps and sections. Observers of the data store will be notified, when this list changes.
 	let entries: [Entry]
+
+	private let entryIndexesByAppIdentifier: [App.Bundle.Identifier: Int]
+
+	private let appIdentifiers: Set<App.Bundle.Identifier>
 	
 	/// Sorts and filters all available apps based on the given filter criteria.
 	private static func generateEntries(from apps: [App], filterQuery: String?) -> [Entry] {
@@ -83,14 +90,18 @@ struct AppListSnapshot {
 		}
 		
 		// Sort apps based on setting
-		let filteredApps = visibleApps.sorted(by: { (app1, app2) -> Bool in
-			switch sortOrder {
-			case .updateDate:
-				return app1.updateDate > app2.updateDate
-			case .name:
-				return app1.name.lowercased() < app2.name.lowercased()
+		let filteredApps: [App]
+		switch sortOrder {
+		case .updateDate:
+			filteredApps = visibleApps.sorted { app1, app2 in
+				app1.updateDate > app2.updateDate
 			}
-		})
+		case .name:
+			filteredApps = visibleApps
+				.map { (app: $0, name: $0.name.lowercased()) }
+				.sorted { $0.name < $1.name }
+				.map(\.app)
+		}
 		
 		var availableUpdates = [Entry]()
 		var installedUpdates = [Entry]()
@@ -151,11 +162,11 @@ struct AppListSnapshot {
 	}
 	
 	func firstIndex(of app: App) -> Int? {
-		self.entries.firstIndex { $0.isSimilar(to: .app(app)) }
+		entryIndexesByAppIdentifier[app.identifier]
 	}
 	
 	func contains(_ app: App) -> Bool {
-		return self.apps.contains { $0.identifier == app.identifier }
+		return appIdentifiers.contains(app.identifier)
 	}
 	
 	/// Returns whether there is a section at the given index
@@ -192,6 +203,13 @@ struct AppListSnapshot {
 		guard !sectionEntries.isEmpty else { return }
 		entries.append(.section(section))
 		entries.append(contentsOf: sectionEntries)
+	}
+
+	private static func entryIndexesByAppIdentifier(_ entries: [Entry]) -> [App.Bundle.Identifier: Int] {
+		entries.enumerated().reduce(into: [App.Bundle.Identifier: Int]()) { indexes, element in
+			guard case .app(let app) = element.element else { return }
+			indexes[app.identifier] = indexes[app.identifier] ?? element.offset
+		}
 	}
 
 }
