@@ -50,3 +50,50 @@ final class AppDataStoreTest: XCTestCase {
 	}
 
 }
+
+final class AppDirectoryTest: XCTestCase {
+
+	func testRefreshRecollectsBundleVersionFromDisk() throws {
+		let directoryURL = FileManager.default.temporaryDirectory
+			.appendingPathComponent(UUID().uuidString, isDirectory: true)
+		try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+		let appURL = directoryURL.appendingPathComponent("Refreshable.app", isDirectory: true)
+		try writeAppBundle(at: appURL, versionNumber: "1.0")
+
+		let initialCollection = expectation(description: "Initial collection")
+		let directory = AppDirectory(url: directoryURL) {
+			initialCollection.fulfill()
+		}
+		wait(for: [initialCollection], timeout: 2)
+
+		XCTAssertEqual(directory.bundles.first?.version.versionNumber, "1.0")
+
+		try writeAppBundle(at: appURL, versionNumber: "1.1")
+
+		let refreshedCollection = expectation(description: "Refreshed collection")
+		directory.refresh {
+			refreshedCollection.fulfill()
+		}
+		wait(for: [refreshedCollection], timeout: 2)
+
+		XCTAssertEqual(directory.bundles.first?.version.versionNumber, "1.1")
+	}
+
+	private func writeAppBundle(at url: URL, versionNumber: String) throws {
+		let contentsURL = url.appendingPathComponent("Contents", isDirectory: true)
+		try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
+
+		let information: [String: Any] = [
+			"CFBundleIdentifier": "com.example.refreshable",
+			"CFBundleName": "Refreshable",
+			"CFBundleShortVersionString": versionNumber,
+			"CFBundleVersion": "1",
+			"SUFeedURL": "https://example.com/appcast.xml"
+		]
+		let data = try PropertyListSerialization.data(fromPropertyList: information, format: .xml, options: 0)
+		try data.write(to: contentsURL.appendingPathComponent("Info.plist"), options: .atomic)
+	}
+
+}

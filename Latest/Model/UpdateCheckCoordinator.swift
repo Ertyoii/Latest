@@ -110,7 +110,12 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 			return
 		}
 
-		self.runUpdateCheck(on: self.library.bundles)
+		self.library.reload { [weak self] bundles in
+			guard let self else { return }
+			let bundles = Array(Set(bundles))
+			_ = self.dataStore.set(appBundles: Set(bundles))
+			self.runUpdateCheck(on: bundles)
+		}
 	}
 
 	/// Performs the update check on the given bundles.

@@ -15,6 +15,9 @@ class AppLibrary: @unchecked Sendable {
 	typealias UpdateHandler = ([App.Bundle]) -> Void
 	let updateHandler: UpdateHandler
 
+	/// The handler to be called when a full reload completed.
+	typealias ReloadHandler = @Sendable ([App.Bundle]) -> Void
+
 	/// A list of all application bundles that are available locally.
 	var bundles: [App.Bundle] {
 		directories.flatMap { $0.value.bundles}
@@ -40,6 +43,14 @@ class AppLibrary: @unchecked Sendable {
 	func startQuery() {
 		Task.detached(priority: .utility) {
 			self.setupDirectoryObservers()
+		}
+	}
+
+	/// Forces all observed directories to be read from disk again.
+	func reload(handler: @escaping ReloadHandler) {
+		Task.detached(priority: .utility) {
+			self.setupDirectoryObservers()
+			self.refreshDirectories(handler: handler)
 		}
 	}
 
@@ -75,6 +86,21 @@ class AppLibrary: @unchecked Sendable {
 
 	private func performUpdate() {
 		updateHandler(bundles)
+	}
+
+	private func refreshDirectories(handler: @escaping ReloadHandler) {
+		let dispatchGroup = DispatchGroup()
+
+		for directory in directories.values {
+			dispatchGroup.enter()
+			directory.refresh {
+				dispatchGroup.leave()
+			}
+		}
+
+		dispatchGroup.notify(queue: updateSchedulingQueue) {
+			handler(self.bundles)
+		}
 	}
 
 	private func scheduleUpdate() {

@@ -24,6 +24,7 @@ class AppDirectory: @unchecked Sendable {
 	private var collectedBundles = [App.Bundle]()
 	
 	typealias UpdateHandler = () -> Void
+	typealias RefreshCompletion = @Sendable () -> Void
 	
 	/// The handler to be called once the directory contents change.
 	let handler: UpdateHandler
@@ -40,7 +41,9 @@ class AppDirectory: @unchecked Sendable {
 		let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor,
 															   eventMask: .write)
 		
-		source.setEventHandler(handler: collectBundles)
+		source.setEventHandler { [weak self] in
+			self?.collectBundles()
+		}
 		source.setCancelHandler {
 			close(descriptor)
 		}
@@ -60,6 +63,11 @@ class AppDirectory: @unchecked Sendable {
 	deinit {
 		listener?.cancel()
 	}
+
+	/// Forces the directory contents to be read from disk.
+	func refresh(completion: RefreshCompletion? = nil) {
+		collectBundles(notifyHandler: false, completion: completion)
+	}
 	
 	/// Resumes tracking if it is not already running
 	private func resumeTracking() {
@@ -68,10 +76,13 @@ class AppDirectory: @unchecked Sendable {
 	}
 	
 	/// Triggers an update run
-	private func collectBundles() {
+	private func collectBundles(notifyHandler: Bool = true, completion: RefreshCompletion? = nil) {
 		collectionQueue.async {
 			self.collectedBundles = BundleCollector.collectBundles(at: self.url)
-			self.handler()
+			if notifyHandler {
+				self.handler()
+			}
+			completion?()
 		}
 	}
 	
