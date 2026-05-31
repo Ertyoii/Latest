@@ -113,12 +113,8 @@ class AppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation,
 	}
 	
 	static func canPerformUpdateCheck(forAppAt url: URL) -> Bool {
-		let fileManager = FileManager.default
-		
 		// Mac Apps contain a receipt, iOS apps are only available via the Mac App Store
-		guard let receiptPath = receiptPath(forAppAt: url), fileManager.fileExists(atPath: receiptPath) || isIOSAppBundle(at: url) else { return false }
-		
-		return true
+		return AppStoreReceipt.existingURL(forAppAt: url) != nil
 	}
 	
 	required init(with app: App.Bundle, repository: UpdateRepository?, completionBlock: @escaping UpdateCheckerCompletionBlock) {
@@ -180,14 +176,17 @@ class AppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation,
 	
 	/// Returns the app store receipt path for the app at the given URL, if available.
 	static func receiptPath(forAppAt url: URL) -> String? {
-		AppStoreReceipt.url(forAppAt: url)?.path
+		AppStoreReceipt.existingURL(forAppAt: url)?.path
 	}
 	
 	/// Returns whether the app at the given URL is an iOS app wrapped to run on macOS.
 	static func isIOSAppBundle(at url: URL) -> Bool {
 		// iOS apps are wrapped inside a macOS bundle
-		let path = receiptPath(forAppAt: url)
-		return path?.contains("WrappedBundle") ?? false
+		guard let receiptURL = AppStoreReceipt.existingURL(forAppAt: url) else {
+			return false
+		}
+
+		return AppStoreReceipt.isWrappedIOSReceipt(receiptURL, forAppAt: url)
 	}
 
 	/// Returns the App Store lookup entities to try, in priority order.
@@ -208,7 +207,7 @@ class AppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation,
 
 enum AppStoreReceipt {
 	static func url(forAppAt appURL: URL) -> URL? {
-		if let existingReceiptURL = existingReceiptURL(forAppAt: appURL) {
+		if let existingReceiptURL = existingURL(forAppAt: appURL) {
 			return existingReceiptURL
 		}
 
@@ -216,14 +215,31 @@ enum AppStoreReceipt {
 		return standardReceiptURL(forAppAt: appURL)
 	}
 
+	static func existingURL(forAppAt appURL: URL, fileManager: FileManager = .default) -> URL? {
+		guard appURL.pathExtension == "app" else { return nil }
+
+		let standardURL = standardReceiptURL(forAppAt: appURL)
+		if fileManager.fileExists(atPath: standardURL.path) {
+			return standardURL
+		}
+
+		return wrappedIOSReceiptURL(forAppAt: appURL, fileManager: fileManager)
+	}
+
 	static func standardReceiptURL(forAppAt appURL: URL) -> URL {
 		appURL.appendingPathComponent("Contents/_MASReceipt/receipt", isDirectory: false)
 	}
 
-	private static func existingReceiptURL(forAppAt appURL: URL) -> URL? {
-		let fileManager = FileManager.default
+	static func isWrappedIOSReceipt(_ receiptURL: URL, forAppAt appURL: URL) -> Bool {
+		let wrapperURL = appURL.appendingPathComponent("Contents/Wrapper", isDirectory: true).standardizedFileURL
+		let wrapperPath = wrapperURL.path.hasSuffix("/") ? wrapperURL.path : wrapperURL.path + "/"
+		return receiptURL.standardizedFileURL.path.hasPrefix(wrapperPath)
+	}
+
+	private static func wrappedIOSReceiptURL(forAppAt appURL: URL, fileManager: FileManager) -> URL? {
+		let wrapperURL = appURL.appendingPathComponent("Contents/Wrapper", isDirectory: true)
 		guard let enumerator = fileManager.enumerator(
-			at: appURL,
+			at: wrapperURL,
 			includingPropertiesForKeys: [.isRegularFileKey],
 			options: [.skipsHiddenFiles]
 		) else {

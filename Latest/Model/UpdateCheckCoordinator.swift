@@ -99,6 +99,10 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 		return operationQueue
 	}()
 
+	private let updateCheckSchedulingLock = NSLock()
+
+	private let updateCheckGeneration = UpdateCheckGenerationTracker()
+
 	/// Initiate the update check, if not already running.
 	@MainActor
 	func run() {
@@ -119,21 +123,33 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 	}
 
 	/// Performs the update check on the given bundles.
-	private func runUpdateCheck(on bundles: [App.Bundle]) {
+	private func runUpdateCheck(on bundles: [App.Bundle], cancelsExistingChecks: Bool = true) {
+		updateCheckSchedulingLock.lock()
+		defer { updateCheckSchedulingLock.unlock() }
+
+		let generation: Int
+		if cancelsExistingChecks {
+			generation = updateCheckGeneration.begin()
+			updateOperationQueue.cancelAllOperations()
+		} else {
+			generation = updateCheckGeneration.currentOrBegin()
+		}
+
 		let repository = UpdateRepository.newRepository()
 		let operations = bundles.compactMap { bundle in
-			return Self.operation(forChecking: bundle, repository: repository) { result in
-				self.didCheck(bundle, result)
+			return Self.operation(forChecking: bundle, repository: repository) { [weak self] result in
+				self?.didCheck(bundle, result, generation: generation)
 			}
 		}
 
-		self.performUpdateCheck(with: operations)
+		self.performUpdateCheck(with: operations, generation: generation)
 	}
 
 	/// Performs update checks for the given check operations.
-	private func performUpdateCheck(with operations: [UpdateCheckerOperation]) {
+	private func performUpdateCheck(with operations: [UpdateCheckerOperation], generation: Int) {
 		guard !operations.isEmpty else {
 			Task { @MainActor in
+				guard self.updateCheckGeneration.isCurrent(generation) else { return }
 				self.progressDelegate?.updateChecker(self, didStartCheckingApps: 0)
 				self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self)
 			}
@@ -142,6 +158,7 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 
 		// Inform delegate of update check
 		Task { @MainActor in
+			guard self.updateCheckGeneration.isCurrent(generation) else { return }
 			self.progressDelegate?.updateChecker(self, didStartCheckingApps: operations.count)
 		}
 
@@ -149,6 +166,7 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 		self.updateOperationQueue.addOperations(operations, waitUntilFinished: false)
 		self.updateOperationQueue.addBarrierBlock { [weak self] in
 			guard let self else { return }
+			guard self.updateCheckGeneration.isCurrent(generation) else { return }
 			Task { @MainActor in
 				self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self)
 			}
@@ -156,13 +174,18 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 	}
 
 	/// Callback to notify that an app has been updated.
-	private func didCheck(_ bundle: App.Bundle, _ update: Result<App.Update, Error>?) {
+	private func didCheck(_ bundle: App.Bundle, _ update: Result<App.Update, Error>?, generation: Int) {
+		guard updateCheckGeneration.isCurrent(generation) else {
+			return
+		}
+
 		let app = self.dataStore.set(update, for: bundle)
 
 		Task { @MainActor in
+			guard self.updateCheckGeneration.isCurrent(generation) else { return }
 			self.progressDelegate?.updateChecker(self, didCheckApp: app)
 		}
-    }
+	}
 
 	private func refreshUpdatedApp(from notification: Notification) {
 		guard let appIdentifier = notification.userInfo?[UpdateOperation.appIdentifierUserInfoKey] as? App.Bundle.Identifier else {
@@ -178,7 +201,38 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 			}
 
 			_ = self.dataStore.set(appBundle: bundle)
-			self.runUpdateCheck(on: [bundle])
+			self.runUpdateCheck(on: [bundle], cancelsExistingChecks: false)
+		}
+	}
+
+}
+
+final class UpdateCheckGenerationTracker: @unchecked Sendable {
+
+	private let lock = NSLock()
+
+	private var currentGeneration = 0
+
+	func begin() -> Int {
+		lock.withCriticalScope {
+			currentGeneration += 1
+			return currentGeneration
+		}
+	}
+
+	func currentOrBegin() -> Int {
+		lock.withCriticalScope {
+			if currentGeneration == 0 {
+				currentGeneration = 1
+			}
+
+			return currentGeneration
+		}
+	}
+
+	func isCurrent(_ generation: Int) -> Bool {
+		lock.withCriticalScope {
+			generation == currentGeneration
 		}
 	}
 

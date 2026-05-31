@@ -72,6 +72,40 @@ final class AppListSnapshotTest: XCTestCase {
 		XCTAssertEqual(snapshot.firstIndex(of: refreshed), snapshot.firstIndex(of: original))
 	}
 
+	func testTableViewDiffReloadsOnlyChangedRowsForMatchingIdentities() {
+		configureSettings()
+
+		let changedURL = URL(fileURLWithPath: "/Applications/Changed-\(UUID().uuidString).app", isDirectory: true)
+		let unchangedURL = URL(fileURLWithPath: "/Applications/Unchanged-\(UUID().uuidString).app", isDirectory: true)
+		let oldChanged = makeApp(name: "Changed", versionNumber: "1.0", appURL: changedURL)
+		let newChanged = makeApp(name: "Changed", versionNumber: "1.0", remoteVersionNumber: "2.0", appURL: changedURL)
+		let oldUnchanged = makeApp(name: "Unchanged", versionNumber: "1.0", appURL: unchangedURL)
+		let newUnchanged = makeApp(name: "Unchanged", versionNumber: "1.0", appURL: unchangedURL)
+
+		let diff = TableViewSnapshotDiff(
+			from: [.app(oldChanged), .app(oldUnchanged)],
+			to: [.app(newChanged), .app(newUnchanged)]
+		)
+
+		guard case .reload(let indexes) = diff.change else {
+			XCTFail("Expected one row reload")
+			return
+		}
+		XCTAssertEqual(indexes, IndexSet(integer: 0))
+	}
+
+	func testTableViewDiffSkipsReloadWhenMatchingRowsAreDisplayEquivalent() {
+		configureSettings()
+
+		let appURL = URL(fileURLWithPath: "/Applications/Equivalent-\(UUID().uuidString).app", isDirectory: true)
+		let oldApp = makeApp(name: "Equivalent", versionNumber: "1.0", appURL: appURL)
+		let newApp = makeApp(name: "Equivalent", versionNumber: "1.0", appURL: appURL)
+
+		let diff = TableViewSnapshotDiff(from: [.app(oldApp)], to: [.app(newApp)])
+
+		XCTAssertNil(diff.change)
+	}
+
 	private func configureSettings() {
 		AppListSettings.shared.sortOrder = .name
 		AppListSettings.shared.showInstalledUpdates = true

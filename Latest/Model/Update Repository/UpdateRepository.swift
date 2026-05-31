@@ -16,6 +16,8 @@ private let UpdateDateKey = "UpdateDateKey"
 /// Can be asked for update version information for a given application bundle.
 class UpdateRepository: @unchecked Sendable {
 
+	private static let reusableRepositories = UpdateRepositoryReuseCache()
+
 	/// Queue on which requests will be handled.
 	private var queue = DispatchQueue(label: "repositoryQueue")
 
@@ -25,7 +27,13 @@ class UpdateRepository: @unchecked Sendable {
 
 	let fetchCompletedGroup = DispatchGroup()
 
-	private init() {
+	fileprivate let createdAt = Date.timeIntervalSinceReferenceDate
+
+	private var finalizeHandler: (@Sendable (UpdateRepository, Bool) -> Void)?
+
+	fileprivate init(finalizeHandler: (@Sendable (UpdateRepository, Bool) -> Void)? = nil) {
+		self.finalizeHandler = finalizeHandler
+
 		fetchCompletedGroup.enter()
 		fetchCompletedGroup.notify(queue: .main) { [weak self] in
 			self?.finalize()
@@ -34,11 +42,7 @@ class UpdateRepository: @unchecked Sendable {
 
 	/// Returns a new repository with up to date update information.
 	static func newRepository() -> UpdateRepository {
-		let repository = UpdateRepository()
-		repository.load()
-		repository.fetchCompletedGroup.leave()
-
-		return repository
+		reusableRepositories.repository()
 	}
 
 
@@ -74,6 +78,8 @@ class UpdateRepository: @unchecked Sendable {
 	/// Matches app bundles against loaded repository entries.
 	private var entryMatcher = EntryMatcher(entries: [], unsupportedBundleIdentifiers: [])
 
+	private var loadedURLTypes = Set<RemoteURL>()
+
 	/// Sets the given entries and performs pending requests.
 	private func finalize() {
 		queue.async { [weak self] in
@@ -89,6 +95,11 @@ class UpdateRepository: @unchecked Sendable {
 
 			// Mark repository as loaded.
 			self.pendingRequests = nil
+
+			let isReusable = self.loadedURLTypes == Set(RemoteURL.allCases)
+			let finalizeHandler = self.finalizeHandler
+			self.finalizeHandler = nil
+			finalizeHandler?(self, isReusable)
 		}
 	}
 
@@ -105,7 +116,7 @@ class UpdateRepository: @unchecked Sendable {
 	// MARK: - Cache Handling
 
 	/// Loads the repository data.
-	private func load() {
+	fileprivate func load() {
 		RemoteURL.allCases.forEach { urlType in
 			self.fetchCompletedGroup.enter()
 
@@ -119,6 +130,8 @@ class UpdateRepository: @unchecked Sendable {
 					guard let data else {
 						return
 					}
+
+					self.loadedURLTypes.insert(urlType)
 
 					switch urlType {
 					case .repository:
@@ -208,6 +221,52 @@ class UpdateRepository: @unchecked Sendable {
 			rawValue + UpdateDateKey
 		}
 
+	}
+
+}
+
+private final class UpdateRepositoryReuseCache: @unchecked Sendable {
+
+	private static let reuseDuration: TimeInterval = 60 * 60
+
+	private let lock = NSLock()
+
+	private var reusableRepository: UpdateRepository?
+
+	private var repositoryCreatedAt: TimeInterval = 0
+
+	func repository() -> UpdateRepository {
+		if let repository = cachedRepository() {
+			return repository
+		}
+
+		let repository = UpdateRepository { [weak self] repository, isReusable in
+			self?.store(repository, isReusable: isReusable)
+		}
+		repository.load()
+		repository.fetchCompletedGroup.leave()
+
+		return repository
+	}
+
+	private func cachedRepository() -> UpdateRepository? {
+		lock.withCriticalScope {
+			guard let reusableRepository else { return nil }
+
+			let age = repositoryCreatedAt.distance(to: Date.timeIntervalSinceReferenceDate)
+			return age < Self.reuseDuration ? reusableRepository : nil
+		}
+	}
+
+	private func store(_ repository: UpdateRepository, isReusable: Bool) {
+		guard isReusable else { return }
+
+		lock.withCriticalScope {
+			guard repository.createdAt >= repositoryCreatedAt else { return }
+
+			self.reusableRepository = repository
+			self.repositoryCreatedAt = repository.createdAt
+		}
 	}
 
 }

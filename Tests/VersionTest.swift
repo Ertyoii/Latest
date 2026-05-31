@@ -92,16 +92,37 @@ class VersionTest: XCTestCase {
         self.older(v1, v2)
     }
 
-    func testEqualBundle() {
+	func testEqualBundle() {
 		let v1 = Version(versionNumber: "2.1.5", buildNumber: "215")
 		let v2 = Version(versionNumber: "2.1.5", buildNumber: "215")
-        self.equal(v1, v2)
-    }
+		self.equal(v1, v2)
+	}
 
-    func testNewerBundle() {
+	func testEqualBundlesWithDifferentVersionsDeduplicateByIdentifier() {
+		let appURL = URL(fileURLWithPath: "/Applications/Versioned-\(UUID().uuidString).app", isDirectory: true)
+		let oldBundle = App.Bundle(
+			version: Version(versionNumber: "1.0", buildNumber: nil),
+			name: "Versioned",
+			bundleIdentifier: "com.example.versioned",
+			fileURL: appURL,
+			source: .sparkle
+		)
+		let newBundle = App.Bundle(
+			version: Version(versionNumber: "1.1", buildNumber: nil),
+			name: "Versioned",
+			bundleIdentifier: "com.example.versioned",
+			fileURL: appURL,
+			source: .sparkle
+		)
+
+		XCTAssertEqual(oldBundle, newBundle)
+		XCTAssertEqual(Set([oldBundle, newBundle]).count, 1)
+	}
+
+	func testNewerBundle() {
 		var v1 = Version(versionNumber: "2.0.6", buildNumber: "217")
 		var v2 = Version(versionNumber: "2.1.5", buildNumber: "216")
-        self.newer(v1, v2)
+		self.newer(v1, v2)
 
 		v1 = Version(versionNumber: "2.1.6", buildNumber: "217a")
 		v2 = Version(versionNumber: "2.2.4", buildNumber: "216b")

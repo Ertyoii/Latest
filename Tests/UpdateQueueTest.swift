@@ -36,3 +36,35 @@ final class UpdateQueueTest: XCTestCase {
 	}
 
 }
+
+final class UpdateCheckGenerationTrackerTest: XCTestCase {
+
+	func testStartingNewGenerationInvalidatesOlderWork() {
+		let tracker = UpdateCheckGenerationTracker()
+
+		let firstGeneration = tracker.begin()
+		XCTAssertTrue(tracker.isCurrent(firstGeneration))
+
+		let secondGeneration = tracker.begin()
+		XCTAssertFalse(tracker.isCurrent(firstGeneration))
+		XCTAssertTrue(tracker.isCurrent(secondGeneration))
+	}
+
+	func testGenerationsIncreaseMonotonically() {
+		let tracker = UpdateCheckGenerationTracker()
+
+		XCTAssertEqual(tracker.begin(), 1)
+		XCTAssertEqual(tracker.begin(), 2)
+		XCTAssertEqual(tracker.begin(), 3)
+	}
+
+	func testCurrentOrBeginReusesExistingGeneration() {
+		let tracker = UpdateCheckGenerationTracker()
+
+		XCTAssertEqual(tracker.currentOrBegin(), 1)
+		XCTAssertEqual(tracker.currentOrBegin(), 1)
+		XCTAssertEqual(tracker.begin(), 2)
+		XCTAssertEqual(tracker.currentOrBegin(), 2)
+	}
+
+}

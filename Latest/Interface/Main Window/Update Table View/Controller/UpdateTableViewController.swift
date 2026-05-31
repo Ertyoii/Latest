@@ -359,7 +359,7 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 	
 }
 
-private struct TableViewSnapshotDiff {
+struct TableViewSnapshotDiff {
 
 	enum Change {
 		case reload(IndexSet)
@@ -372,7 +372,8 @@ private struct TableViewSnapshotDiff {
 
 	init(from oldEntries: [AppListSnapshot.Entry], to newEntries: [AppListSnapshot.Entry]) {
 		if oldEntries.count == newEntries.count, oldEntries.identityMatches(newEntries) {
-			self.change = oldEntries.isEmpty ? nil : .reload(IndexSet(oldEntries.indices))
+			let indexes = oldEntries.reloadIndexes(comparedTo: newEntries)
+			self.change = indexes.isEmpty ? nil : .reload(indexes)
 			return
 		}
 
@@ -403,4 +404,53 @@ private extension Array where Element == AppListSnapshot.Entry {
 		return zip(self, other).allSatisfy(==)
 	}
 
+	func reloadIndexes(comparedTo other: [Element]) -> IndexSet {
+		var indexes = IndexSet()
+		for index in indices where self[index].needsReload(comparedTo: other[index]) {
+			indexes.insert(index)
+		}
+		return indexes
+	}
+
+}
+
+private extension AppListSnapshot.Entry {
+
+	func needsReload(comparedTo other: AppListSnapshot.Entry) -> Bool {
+		switch (self, other) {
+		case (.section(let section), .section(let otherSection)):
+			return section != otherSection
+		case (.app(let app), .app(let otherApp)):
+			return AppRowDisplayState(app: app) != AppRowDisplayState(app: otherApp)
+		default:
+			return true
+		}
+	}
+
+}
+
+private struct AppRowDisplayState: Equatable {
+	let name: String
+	let localVersion: Version
+	let remoteVersion: Version?
+	let updateAvailable: Bool
+	let updateDate: Date
+	let source: App.Source
+	let isIgnored: Bool
+	let usesBuiltInUpdater: Bool
+	let externalUpdaterName: String?
+	let errorDescription: String?
+
+	init(app: App) {
+		self.name = app.name
+		self.localVersion = app.version
+		self.remoteVersion = app.remoteVersion
+		self.updateAvailable = app.updateAvailable
+		self.updateDate = app.updateDate
+		self.source = app.source
+		self.isIgnored = app.isIgnored
+		self.usesBuiltInUpdater = app.usesBuiltInUpdater
+		self.externalUpdaterName = app.externalUpdaterName
+		self.errorDescription = app.error.map { String(describing: $0) }
+	}
 }

@@ -29,23 +29,62 @@ class AppStoreCheckerOperationTest: XCTestCase {
 		)
 	}
 
+	func testCanPerformUpdateCheckRequiresExistingReceipt() throws {
+		let appURL = temporaryAppURL()
+		try FileManager.default.createDirectory(at: appURL, withIntermediateDirectories: true)
+
+		XCTAssertFalse(AppStoreUpdateCheckerOperation.canPerformUpdateCheck(forAppAt: appURL))
+	}
+
+	func testCanPerformUpdateCheckFindsStandardMacAppReceipt() throws {
+		let appURL = temporaryAppURL()
+		let receiptURL = AppStoreReceipt.standardReceiptURL(forAppAt: appURL)
+		try writeReceipt(at: receiptURL)
+
+		XCTAssertTrue(AppStoreUpdateCheckerOperation.canPerformUpdateCheck(forAppAt: appURL))
+		XCTAssertFalse(AppStoreUpdateCheckerOperation.isIOSAppBundle(at: appURL))
+	}
+
 	func testReceiptURLFindsExistingWrappedIOSReceipt() throws {
 		let appURL = temporaryAppURL()
 		let receiptURL = appURL.appendingPathComponent("Contents/Wrapper/WrappedBundle.app/_MASReceipt/receipt", isDirectory: false)
-		try FileManager.default.createDirectory(at: receiptURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-		try Data().write(to: receiptURL)
+		try writeReceipt(at: receiptURL)
 
 		XCTAssertEqual(
 			AppStoreReceipt.url(forAppAt: appURL)?.resolvingSymlinksInPath(),
 			receiptURL.resolvingSymlinksInPath()
 		)
+		XCTAssertTrue(AppStoreUpdateCheckerOperation.canPerformUpdateCheck(forAppAt: appURL))
 		XCTAssertTrue(AppStoreUpdateCheckerOperation.isIOSAppBundle(at: appURL))
 	}
 
+	func testStandardReceiptTakesPriorityOverWrappedReceipt() throws {
+		let appURL = temporaryAppURL()
+		let standardReceiptURL = AppStoreReceipt.standardReceiptURL(forAppAt: appURL)
+		let wrappedReceiptURL = appURL.appendingPathComponent("Contents/Wrapper/WrappedBundle.app/_MASReceipt/receipt", isDirectory: false)
+		try writeReceipt(at: standardReceiptURL)
+		try writeReceipt(at: wrappedReceiptURL)
+
+		XCTAssertEqual(
+			AppStoreReceipt.url(forAppAt: appURL)?.resolvingSymlinksInPath(),
+			standardReceiptURL.resolvingSymlinksInPath()
+		)
+		XCTAssertFalse(AppStoreUpdateCheckerOperation.isIOSAppBundle(at: appURL))
+	}
+
 	private func temporaryAppURL() -> URL {
-		FileManager.default.temporaryDirectory
+		let url = FileManager.default.temporaryDirectory
 			.appendingPathComponent(UUID().uuidString, isDirectory: true)
 			.appendingPathExtension("app")
+		addTeardownBlock {
+			try? FileManager.default.removeItem(at: url)
+		}
+		return url
+	}
+
+	private func writeReceipt(at url: URL) throws {
+		try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+		try Data().write(to: url)
 	}
 
 }

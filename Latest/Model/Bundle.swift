@@ -115,7 +115,6 @@ extension App.Bundle: Equatable {
 extension App.Bundle: Hashable {
 	func hash(into hasher: inout Hasher) {
 		hasher.combine(self.identifier)
-		hasher.combine(self.version)
 	}
 }
 
