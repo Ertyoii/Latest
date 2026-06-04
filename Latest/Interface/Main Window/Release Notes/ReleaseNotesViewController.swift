@@ -253,7 +253,7 @@ class ReleaseNotesViewController: NSViewController {
 
 			iconImageView.widthAnchor.constraint(equalToConstant: 64),
 			iconImageView.heightAnchor.constraint(equalTo: iconImageView.widthAnchor),
-			labelStack.centerYAnchor.constraint(equalTo: iconImageView.centerYAnchor),
+			titleRow.centerYAnchor.constraint(equalTo: iconImageView.centerYAnchor),
 
 			titleRow.heightAnchor.constraint(equalToConstant: 19),
 			nameField.leadingAnchor.constraint(equalTo: titleRow.leadingAnchor, constant: -2),
@@ -393,7 +393,9 @@ class ReleaseNotesViewController: NSViewController {
 		// Support state
 		self.supportStateButton.isHidden = !(AppListSettings.shared.includeUnsupportedApps || AppListSettings.shared.includeAppsWithLimitedSupport)
 		if !self.supportStateButton.isHidden {
-			self.supportStateButton.title = app.source.supportState.compactLabel
+			let supportStateTitle = app.source.supportState.compactLabel
+			self.supportStateButton.title = supportStateTitle
+			self.supportStateButton.attributedTitle = Self.makeSupportStateTitle(supportStateTitle)
 			self.supportStateButton.image = app.source.supportState.statusImage
 			self.supportStateButton.invalidateIntrinsicContentSize()
 		}
@@ -516,4 +518,13 @@ private extension ReleaseNotesViewController {
 		return field
 	}
 
+	static func makeSupportStateTitle(_ title: String) -> NSAttributedString {
+		NSAttributedString(
+			string: title,
+			attributes: [
+				.font: NSFont.boldSystemFont(ofSize: NSFont.smallSystemFontSize),
+				.foregroundColor: NSColor.controlAccentColor
+			]
+		)
+	}
 }
