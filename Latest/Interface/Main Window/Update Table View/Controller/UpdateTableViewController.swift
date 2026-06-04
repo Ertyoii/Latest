@@ -36,6 +36,14 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 	        
     /// The detail view controller that shows the release notes
     weak var releaseNotesViewController : ReleaseNotesViewController?
+
+	/// Called whenever the selected app changes. The SwiftUI migration bridge uses this
+	/// to keep command routing in sync while this controller owns the pixel-exact list UI.
+	var selectionDidChange: ((App?) -> Void)?
+
+	/// Called whenever the search field changes. The SwiftUI migration bridge mirrors this
+	/// into its window state without replacing the storyboard search/list layout.
+	var searchQueryDidChange: ((String) -> Void)?
     
     /// The empty state label centered in the list view indicating that no updates are available
     @IBOutlet weak var placeholderLabel: NSTextField!
@@ -86,6 +94,7 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 		self.topTableConstraint.constant = 0
 		self.tableView.enclosingScrollView?.contentInsets = .init(top: 78, left: 0, bottom: 0, right: 0)
 		self.tableView.enclosingScrollView?.scrollerInsets = .init(top: 0, left: 0, bottom: 10, right: 0)
+		self.configureLockedHorizontalScrolling()
     }
     
     override func viewWillAppear() {
@@ -100,10 +109,19 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 	}
 	
 	deinit {
+		if let clipViewBoundsObserver {
+			NotificationCenter.default.removeObserver(clipViewBoundsObserver)
+		}
+
 		let observerID = self.id
 		Task { @MainActor in
 			AppListSettings.shared.removeObserver(withID: observerID)
 		}
+	}
+
+	override func viewDidLayout() {
+		super.viewDidLayout()
+		self.lockHorizontalTableGeometry()
 	}
     
     
@@ -213,6 +231,8 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 	
 	/// Whether a table view update is currently ongoing.
 	private var isApplyingTableViewUpdate = false
+
+	nonisolated(unsafe) private var clipViewBoundsObserver: NSObjectProtocol?
 	
 	/// Schedules a table view update with the given snapshot.
 	func scheduleTableViewUpdate(with snapshot: AppListSnapshot, animated: Bool) {
@@ -262,7 +282,53 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 		}
 		
 		self.ensureSelection()
+		self.lockHorizontalTableGeometry()
 		self.isApplyingTableViewUpdate = false
+	}
+
+	private func configureLockedHorizontalScrolling() {
+		guard let scrollView = self.tableView.enclosingScrollView else { return }
+
+		scrollView.hasHorizontalScroller = false
+		scrollView.horizontalScrollElasticity = .none
+		scrollView.usesPredominantAxisScrolling = false
+		scrollView.contentView.postsBoundsChangedNotifications = true
+
+		self.clipViewBoundsObserver = NotificationCenter.default.addObserver(
+			forName: NSView.boundsDidChangeNotification,
+			object: scrollView.contentView,
+			queue: .main
+		) { [weak self] _ in
+			Task { @MainActor in
+				self?.lockHorizontalTableGeometry()
+			}
+		}
+
+		self.lockHorizontalTableGeometry()
+	}
+
+	private func lockHorizontalTableGeometry() {
+		guard let scrollView = self.tableView.enclosingScrollView else { return }
+
+		if self.tableView.frame.origin.x != 0 {
+			self.tableView.setFrameOrigin(NSPoint(x: 0, y: self.tableView.frame.origin.y))
+		}
+
+		let width = scrollView.contentSize.width
+		if width > 0 {
+			if abs(self.tableView.frame.width - width) > 0.5 {
+				self.tableView.setFrameSize(NSSize(width: width, height: self.tableView.frame.height))
+			}
+
+			if let column = self.tableView.tableColumns.first, abs(column.width - width) > 0.5 {
+				column.width = width
+			}
+		}
+
+		if scrollView.contentView.bounds.origin.x != 0 {
+			scrollView.contentView.scroll(to: NSPoint(x: 0, y: scrollView.contentView.bounds.origin.y))
+			scrollView.reflectScrolledClipView(scrollView.contentView)
+		}
 	}
     
     
@@ -282,6 +348,7 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
 		guard let index = index, index >= 0, let app = self.snapshot.app(at: index) else {
 			self.selectedApp = nil
             self.tableView.deselectAll(nil)
+			self.selectionDidChange?(nil)
 			
 			// Clear release notes
 			if let detailViewController = self.releaseNotesViewController {
@@ -299,6 +366,7 @@ class UpdateTableViewController: NSViewController, NSMenuItemValidation, NSTable
         self.tableView.scrollRowToVisible(index)
 			
 		self.selectedApp = app
+		self.selectionDidChange?(app)
 		self.releaseNotesViewController?.display(releaseNotesFor: app)
     }
     

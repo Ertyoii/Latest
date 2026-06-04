@@ -24,6 +24,7 @@ extension UpdateTableViewController {
 		if sender.stringValue.isEmpty {
 			searchQuery = nil
 		}
+		self.searchQueryDidChange?(sender.stringValue)
 		self.scheduleTableViewUpdate(with: self.snapshot.updated(with: searchQuery), animated: false)
 	}
 	

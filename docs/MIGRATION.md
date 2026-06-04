@@ -19,7 +19,7 @@ SwiftUI app lifecycle
           -> SwiftUI updates sidebar
           -> SwiftUI release notes detail pane
   -> SwiftUI commands/menus where practical
-  -> SwiftUI settings window eventually
+  -> SwiftUI settings window
   -> small AppKit bridges only where they preserve native macOS behavior
 ```
 
@@ -33,9 +33,75 @@ The overall plan is sound: a parallel SwiftUI implementation behind a flag is th
 
 1. The visible release notes pane is `NSTextView` + `NSAttributedString`, not a live `WKWebView`. WebKit exists in the loading/conversion path, so the first SwiftUI detail pane should bridge the current attributed text rendering rather than switch the visible body to `WKWebView`.
 2. `AppProviding.addObserver` currently requires an `NSObject` observer, and `UpdateCheckCoordinator.progressDelegate` is a single weak delegate. SwiftUI view models need an observation adapter or `NSObject` inheritance, and update-check progress should be extracted before both UIs can safely coexist.
-3. `Main.storyboard` contains more than the main window: app menu wiring, the main window, settings, localized storyboard strings, and the support-state popover. Removing the storyboard resource must wait until settings and popovers are migrated or moved out of `Main.storyboard`.
+3. `Main.storyboard` contained more than the main window: app menu wiring, the main window, settings scenes, localized storyboard strings, and release-note support UI. The active app no longer loads it: menu wiring, main-window creation, settings, release-note header/content, and support-state popover creation are programmatic. Old localized `Main.strings` files may still exist on disk as inert historical artifacts until a cleanup sweep removes or migrates any remaining useful strings.
 4. The feature-flag launch path must avoid starting the old controller and the new SwiftUI window at the same time. The old `MainWindowController.windowDidLoad()` currently starts an update check immediately.
 5. The project currently targets macOS 26 and Swift 6, so new SwiftUI-only state can use the Observation framework where it helps. Do not let that become a reason to rewrite existing model logic during the first pass.
+
+### Implementation update: main-window parity pass
+
+The first implemented SwiftUI path must preserve the original window geometry during parity verification. Creating a temporary screenshot-only frame such as `1004 x 495` makes the SwiftUI UI look wider than the original app and pollutes the `MainWindowSize` autosaved frame.
+
+As of the 2026-06-03 lifecycle pass, the SwiftUI-main launch path no longer depends on `NSMainStoryboardFile`. `Latest/main.swift` creates and installs `AppDelegate`, `AppDelegate` builds the main menu programmatically, and `MainWindowController.makeProgrammaticSwiftUIMainWindowController()` creates the main `NSWindow` at the approved default content size: `768 x 516` points. This keeps launch independent from storyboard auto-instantiation while preserving the original window metrics.
+
+Pixel parity currently depends on narrow AppKit bridges, but the active SwiftUI-main path no longer instantiates the main-window storyboard controllers. After the 2026-06-04 parity pass, the migration-owned `NSSplitViewController` hosts SwiftUI `NSHostingController` split children: `UpdatesSidebarView` for the sidebar and `ReleaseNotesDetailView` for the detail pane. The sidebar still uses an AppKit `NSTableView` bridge and the detail pane still uses the programmatic AppKit release-note controller/text/error/loading widgets, but those views are now created in code instead of loaded from `Main.storyboard`.
+
+```text
+programmatic NSWindow
+  -> MainWindowController
+      -> migration-owned NSSplitViewController
+          -> SwiftUI UpdatesSidebarView with locked NSTableView/AppKit row bridge
+          -> SwiftUI ReleaseNotesDetailView with programmatic ReleaseNotesViewController bridge
+          -> SwiftUI/AppCommands environment for toolbar/menu command routing
+```
+
+Do not switch back to a hand-laid, pure SwiftUI text/list approximation until pixel parity is proven against the storyboard-era UI. The screenshot harness must capture natural window size; it must not call `setFrame`, `setContentSize`, or otherwise resize the window before comparison.
+
+### Verification update: 2026-06-01 parity pass
+
+Current embedded SwiftUI verification results:
+
+1. Window geometry matched the storyboard path during the first parity pass at the then-current autosaved size: `860 x 300` points. That was a historical comparison frame only; the current user-approved target is `768 x 516` points.
+2. The width distortion was caused by the earlier separate-window path and an over-large detail minimum width. The active path now uses the storyboard-created `NSWindow`, restores the pre-swap frame, and keeps the detail minimum width low enough that AppKit does not expand the window.
+3. Whole-window screenshot comparison is visually near-identical at normal scale. Remaining amplified differences are concentrated in native text/icon antialiasing, the `NSSearchField` rasterization, and shadow/activation variance. The last measured thresholded diff was about `0.873%` of pixels over delta `8`, `0.4236%` over delta `32`, and `0.2997%` over delta `64`.
+4. Behavior checks passed in the live debug app:
+   - `Command-F` focuses the bridged `NSSearchField` as an `AXSearchField`.
+   - `Escape` resigns the search field focus back to the window.
+   - Typing an impossible search query filtered the sidebar from `41` rows to `0`, and clearing it restored `41` rows.
+   - `Command-W` closed the main window and the debug app exited.
+5. `./script/test.sh` passed with `79` tests executed, `2` skipped, and `0` failures.
+6. After verification, `UseSwiftUIMainWindow` must be cleared. If a local `MainWindowSize` default is written for manual QA, use the current default size (`768 x 516`) rather than the old screenshot-only comparison frame.
+
+### Verification update: 2026-06-02 default-size and release-notes pass
+
+Current embedded SwiftUI verification results:
+
+1. The main-window default is `768 x 516` points: 768 points wide by 516 points high. On a Retina display, screenshots of that window can appear around `1536 x 1032` image pixels before shadow/crop padding; compare Accessibility/window frame points for size verification, not screenshot bitmap dimensions.
+2. The storyboard `contentRect`, SwiftUI visual metrics, and migration notes all use the `768 x 516` default. The prior `850 x 300` target was tried and rejected during QA; do not reintroduce it.
+3. The SwiftUI sidebar table must not accept horizontal content movement. The bridged table uses a locked horizontal scroll view/clip view and keeps the document/table-column width aligned to the visible clip width. A horizontal CG scroll probe over the sidebar kept the `Cursor` row text at the same x-position before and after scrolling.
+4. Row selection and release-note detail were verified with a real CG mouse click on a settled update row. The detail pane changed from the empty state to `Cursor`, `Version: 3.5.38 -> 3.6.31`, and no new `Latest Dev` crash report appeared during a 60-second selected release-note watch.
+5. Plain AppleScript `click at` is not reliable for this row-selection QA because it can interact through Accessibility without delivering the same AppKit mouse-down path as a user click. Use a real click, CG mouse event, or manual QA for this specific flow.
+6. `./script/test.sh` passed with `79` tests executed, `2` skipped, and `0` failures after the default-size, horizontal-scroll, and release-note crash fixes.
+7. Settings remain intentionally storyboard/AppKit-owned during this pass. In the SwiftUI-main run, the Settings menu opened the `General` settings window, the `Locations` toolbar item switched to the `440 x 384` locations tab, and switching back restored the `General` `440 x 309` window.
+8. A second release-note selection crash was reproduced in `Latest Dev-2026-06-02-094545.ips`. Root cause: `UpdatesTableRepresentable.updateNSView` called `NSTableView.reloadData()` during a SwiftUI/AppKit layout pass, which triggered AppKit constraint invalidation recursion and an `EXC_BREAKPOINT` in `_postWindowNeedsUpdateConstraints`.
+9. The table bridge now coalesces SwiftUI updates and reloads the `NSTableView` only when a lightweight content signature changes. Selection-only updates refresh visible row state without rebuilding the whole table. Re-verification after this fix: row click rendered Cursor release notes, horizontal CG scroll did not move the sidebar content, the `Limited support` popover opened, the process stayed alive, and no crash report newer than `Latest Dev-2026-06-02-094545.ips` appeared.
+10. `./script/test.sh` passed again after the table coalescing fix with `79` tests executed, `2` skipped, and `0` failures. Result bundle: `build/Latest-Tests-20260602-100039.xcresult`.
+11. The default split position is `308 / 460` points: 308 points for the sidebar, 460 for release notes. App rows must let `NSTableView` provide the default source-list row view (`rowViewForRow` returns `nil` for app rows); only section headers return `UpdateGroupRowView`. A custom app row selection painter diverged from the storyboard and must not be restored.
+12. The SwiftUI sidebar must be fixed at `308` points in the embedded split controller. In this parity path, `NSSplitViewItem.minimumThickness` and `maximumThickness` are both `308`; do not let the divider drag the whole sidebar left/right during QA. The bridged `NSTableView` also clamps its document origin to `x = 0` during layout and scroll-wheel handling.
+13. The release-notes header must preserve the storyboard vertical geometry: app header content is anchored `15` points above the header bottom, leaving the larger top gap. A SwiftUI-only header with `.padding(.top, 15).padding(.bottom, 40)` reverses the storyboard geometry and makes the release-note page look wrong.
+14. For pixel-level parity, the current SwiftUI split hosts the programmatic `ReleaseNotesViewController` through `NSViewControllerRepresentable`. This deliberately keeps the original `NSVisualEffectView`, `UpdateButton`, support-state button cell, 64-point app icon, loading/error controllers, and `ReleaseNotesTextViewController` inset/scroll behavior while the main split, sidebar state, toolbar/menu commands, and selection shell are SwiftUI-owned.
+15. `MainWindowController` must be retained while the storyboard-created main window is alive. During SwiftUI flag launches, a process can otherwise remain alive and run update checks while tools report no accessible window. The active controller singleton is cleared in `windowWillClose`.
+16. Clean build verification after the sidebar/header/window-retention corrections: `xcodebuild -project Latest.xcodeproj -scheme Latest -configuration Debug -destination 'platform=macOS' -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build` succeeded on 2026-06-02. `git diff --check` succeeded, and no crash report newer than `Latest Dev-2026-06-02-094545.ips` appeared after relaunch.
+17. Local tooling caveat from the same run: shell `screencapture`, System Events windows, and Computer Use reported black captures or `cgWindowNotFound` for the debug bundle even while the app itself reported the main `NSWindow` as visible at frame `(530, 159, 768, 516)`. When this happens, trust app-side/window-frame diagnostics and manual visual QA over AX-only capture until the local Screen Recording/Accessibility state is reset.
+18. The release-note pane must not be loaded twice for one row selection. The SwiftUI pass originally triggered `ReleaseNotesViewModel.display(app:)` from both `MainWindowController` and `MainWindowView`; the parity bridge now lets the hosted legacy controller load the selected app exactly once per display key.
+19. Clean verification after the full release-note controller bridge and sidebar source-list style update: `xcodebuild -project Latest.xcodeproj -scheme Latest -configuration Debug -destination 'platform=macOS' -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build` succeeded on 2026-06-02. `./script/test.sh` also passed with `79` tests executed, `2` skipped, and `0` failures. Result bundle: `build/Latest-Tests-20260602-175809.xcresult`. No crash report newer than `Latest Dev-2026-06-02-094545.ips` appeared after launch attempts. Current shell/AX/CG tooling could not see any windows from the local session (`CGWindowList` returned zero total windows), so final visual QA still needs manual confirmation on the user-visible desktop.
+20. SwiftUI-mode menu actions for sort order, show installed updates, and show ignored updates now route through `AppCommands` instead of directly mutating `AppListSettings` from `MainWindowController`. At the 2026-06-02 checkpoint, the unused pure SwiftUI release-note replacement files were also removed from the app target so the hosted storyboard controller was the only compiled release-note loading/rendering path; the later 2026-06-04 pass replaced that hosted controller with a programmatic AppKit controller. Verification after this cleanup: `xcodebuild -project Latest.xcodeproj -scheme Latest -configuration Debug -destination 'platform=macOS' -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build` succeeded, and `./script/test.sh` passed with `79` tests executed, `2` skipped, and `0` failures. Result bundle: `build/Latest-Tests-20260602-180418.xcresult`.
+21. The hand-laid SwiftUI sidebar row/header approximation was not pixel-level. The 2026-06-03 intermediate parity split instantiated `UpdateTableViewControllerIdentifier` and `ReleaseNotesViewControllerIdentifier` directly from `Main.storyboard` while the row geometry was being measured, fixed the sidebar split item at `308` points, wired `UpdateTableViewController.selectionDidChange` into `UpdatesListViewModel.selectedApp`, wired `searchQueryDidChange` into the SwiftUI search state, and let the original list controller drive the original release-note controller. That historical bridge preserved the storyboard row prototypes, `contentInsets.top = 78`, search field constraints, source-list selection, release-note header constraints, `UpdateButton`, support-state button cell, and `NSTextView` insets while the migrated window path kept SwiftUI command/progress ownership. The later 2026-06-04 pass recreated those main-window scenes programmatically. Verification on 2026-06-03: `git diff --check` passed, `xcodebuild -project Latest.xcodeproj -scheme Latest -configuration Debug -destination 'platform=macOS' -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build` succeeded, `./script/test.sh` passed with `79` tests executed, `2` skipped, and `0` failures, result bundle `build/Latest-Tests-20260603-192038.xcresult`, fresh launch PID `62232` ran with `--swiftui-main-window`, and no `Latest Dev` crash report newer than `Latest Dev-2026-06-02-094545.ips` appeared.
+22. Launch-storyboard removal is now real, but it required an explicit AppKit entry point. After removing `NSMainStoryboardFile`, a first fresh launch stayed alive with zero windows because the old storyboard had also connected `AppDelegate` to `NSApp`. The fix is `Latest/main.swift`, which retains `AppDelegate`, assigns it to `NSApplication.shared.delegate`, and then enters `NSApplicationMain`; `AppDelegate` is no longer marked `@main`. At the 2026-06-03 checkpoint, the SwiftUI-main path created the main window through `MainWindowController.makeProgrammaticSwiftUIMainWindowController()`, installed a programmatic main menu, and temporarily hosted storyboard list/release-note controllers for pixel parity; the later 2026-06-04 pass replaced those hosted storyboard controllers with programmatic views. Verification on 2026-06-03: built app `Info.plist` returned `Entry, ":NSMainStoryboardFile", Does Not Exist`; `xcodebuild -project Latest.xcodeproj -scheme Latest -configuration Debug -destination 'platform=macOS' -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build` succeeded; `./script/test.sh` passed with `79` tests executed, `2` skipped, and `0` failures, result bundle `build/Latest-Tests-20260603-194539.xcresult`; fresh launch PID `80708` ran with `--swiftui-main-window`; Accessibility reported `1` standard window titled `Latest – 9 Updates Available` at frame position `(530, 405)` and size `776 x 516`; and screenshot capture showed the Latest window in front with the bridged storyboard sidebar and empty release-note state visible.
+23. Settings are now SwiftUI-owned instead of storyboard-owned. `AppDelegate.showSettings(_:)` creates `SettingsWindowController.makeController()`, which hosts `SettingsRootView` and uses a programmatic selectable `NSToolbar` for the `General` and `Locations` tabs. The SwiftUI settings model preserves the existing `AppListSettings`, `InstallHelper`, and `AppDirectoryStore` behavior. Verification on 2026-06-03: opening Preferences through `Cmd+,` produced a `General` window at `440 x 309`; switching the toolbar to `Locations` changed the title and resized to `440 x 384`; switching back restored `General` at `440 x 309`; `xcodebuild -project Latest.xcodeproj -scheme Latest -configuration Debug -derivedDataPath ./.derivedData CODE_SIGNING_ALLOWED=NO build` succeeded; and `./script/test.sh` passed with `79` tests executed, `2` skipped, and `0` failures. Result bundle: `build/Latest-Tests-20260603-201559.xcresult`.
+24. The release-note support-state popover is now programmatic instead of storyboard-segue-owned. `ReleaseNotesViewController` uses a programmatic header button with `SupportStatusButtonCell` for pixel parity, and the button creates a retained `NSPopover` with `SupportStatusInfoViewController.makeController(app:)`; the support-info destination scene and `presentSupportStateInfo` segue were removed from `Main.storyboard`. Verification on 2026-06-03: after a fresh SwiftUI-main launch, a real Quartz row click selected `1Password`, the release-note header exposed the `Limited` support button, a real Quartz click opened the migrated `Limited support` popover, and screenshot `/tmp/latest-support-popover-retained-20260603.png` showed the programmatic popover anchored to the support button.
+25. The active SwiftUI main split no longer loads either main-window storyboard child controller. `SwiftUIMainWindowController.makeSplitViewController(environment:)` creates `NSHostingController` children for `UpdatesSidebarView` and `ReleaseNotesDetailView`; the sidebar uses a SwiftUI-owned `NSTableView` bridge, and `ReleaseNotesViewController` recreates the old release-note header/content programmatically. The header keeps the storyboard material, 64-point app icon, title/support row, version/date labels, trailing `UpdateButton`, separator, loading/error controllers, and `NSTextView` release-note content. The support badge must stay transparent: `SupportStatusButtonCell` draws only the 16-point status image and the native inline-button attributed title, while the button itself is borderless so `Limited` does not get a pill/shadow background. The release-note label stack must be vertically centered against the 64-point icon, not pinned to a fixed top offset; this is required because the old storyboard stack recenters when the optional date row is detached. When all three text rows are visible this produces the storyboard's roughly `9`-point top offset; when only title/version are visible it moves the app name down to match the old centered header block. Its title row is a fixed 19-point AppKit row matching the storyboard frames: app name at `x = -2, y = 1, height = 16`, support button at `y = 0, height = 19`, and an 8-point gap after the title field. The external update label must be centered directly under the 59-point `UpdateButton`; it is placed in a fixed-width trailing action container and centered on the button instead of being constrained inside the container edges, because edge constraints pull `in ExpressVPN` left. The support-info popover is programmatic and uses the storyboard content metrics (`325 x 98` points for limited/no-support states, `300`-point info row width) with `loadViewIfNeeded()` before assigning `NSPopover.contentSize`.
+26. Settings parity was retuned after direct comparison with the old storyboard settings scenes. The SwiftUI settings window still uses an AppKit `NSWindowController` and selectable `NSToolbar`, but the content now matches the original fixed view sizes: `General` content is `440 x 219` points inside a `440 x 309` frame, and `Locations` content is `440 x 296` points inside a `440 x 384` frame. `GeneralSettingsView` uses native AppKit checkbox bridges at the storyboard grid positions, and the helper row uses an AppKit representable with the old storyboard frames: separator at `y = 8`, helper label at `x = -2, y = 19, width = 319, height = 30`, and Enable button at `x = 335, y = 19, width = 65, height = 30`. `LocationsSettingsView` uses a bordered `NSTableView` bridge plus the original plus/minus `NSSegmentedControl` shape instead of a generic SwiftUI form/list.
+27. Final 2026-06-04 verification for the no-storyboard SwiftUI/programmatic path: `xcodebuild -quiet -project Latest.xcodeproj -scheme Latest -configuration Debug -destination platform=macOS -derivedDataPath ./.derivedData CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build` succeeded; a fresh debug launch reported the stable window frame `776 x 516` through Accessibility, matching the `768 x 516` content target plus window accounting; Computer Use selected `ExpressVPN`, saw the release-note detail content, exposed `button Limited` with no pill background, showed full centered `text in ExpressVPN` directly under `button Update`, and opened the compact `Limited support` popover; Computer Use also verified the SwiftUI-owned `General` Settings pane with the AppKit helper row and the `Locations` pane with the native toolbar, compact content, table rows, and plus/minus control; follow-up Computer Use checks selected `Zed` and `ExpressVPN`, verified the app title/support row uses the measured storyboard offsets, keeps the native inline-button support-title font/color path, and recenters the title/version block against the app icon when the optional date row is hidden; `rg -n "NSStoryboard|instantiateInitialController|instantiateController\\(|NSMainStoryboardFile|Main\\.storyboard|Base\\.lproj/Main\\.storyboard" Latest Tests Latest.xcodeproj/project.pbxproj` returned no matches; `find ".derivedData/Build/Products/Debug/Latest Dev.app" -name 'Main.storyboard*' -print` returned no built storyboard resource; `git diff --check` passed; and `./script/test.sh` passed with `79` tests executed, `2` skipped, and `0` failures. Result bundle: `build/Latest-Tests-20260604-200730.xcresult`.
 
 ---
 
@@ -47,7 +113,7 @@ Do not do these during the first migration pass:
 2. Do not replace the update-checking logic.
 3. Do not change sorting/filtering semantics.
 4. Do not rewrite Sparkle/App Store/Homebrew update logic.
-5. Do not delete `Main.storyboard` before the SwiftUI main window, settings, support-state popover, and menu/localization replacements are visually and functionally proven.
+5. Do not remove legacy AppKit controllers or inert storyboard localization artifacts merely to claim purity. Remove them only after their behavior is covered by the SwiftUI/programmatic path or proven unused.
 6. Do not use default SwiftUI `List` styling if it prevents exact layout parity.
 7. Do not hardcode English strings; preserve localization.
 8. Do not remove AppKit completely just to claim the app is “pure SwiftUI.” Small AppKit bridges are acceptable when they protect native behavior.
@@ -58,21 +124,23 @@ Do not do these during the first migration pass:
 
 ### 3.1 App entry and storyboard
 
-Current app entry is:
+Current app entry is explicit AppKit bootstrap code:
 
 ```swift
-@main
-class AppDelegate: NSObject, NSApplicationDelegate
+// Latest/main.swift
+private let appDelegate = AppDelegate()
+NSApplication.shared.delegate = appDelegate
+_ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)
 ```
 
-`Latest/Resources/Info.plist` still declares:
+`Latest/Resources/Info.plist` no longer declares:
 
 ```xml
 <key>NSMainStoryboardFile</key>
 <string>Main</string>
 ```
 
-So the app is currently launched through the storyboard-backed window scene. A SwiftUI `@main App` cannot be added until the existing `@main` annotation is removed or converted.
+The no-storyboard launch path depends on `Latest/main.swift` retaining the app delegate and assigning it to `NSApplication.shared.delegate` before `NSApplicationMain`. Without that explicit hookup, the process can stay alive with zero windows because the old storyboard was the object that previously connected `AppDelegate` to `NSApp`.
 
 The current project settings also matter:
 
@@ -160,7 +228,7 @@ error/empty state
 
 Although the release notes controller imports `WebKit`, the visible release notes body is currently rendered by `ReleaseNotesTextViewController` as an `NSTextView` inside an `NSScrollView`. `ReleaseNotesProvider` returns `NSAttributedString` after converting HTML, Markdown, GitHub release data, changelog pages, or fallback web content.
 
-The SwiftUI version should initially preserve that `NSAttributedString`/`NSTextView` rendering path. Keep `WebContentLoader` and WebKit in the provider fallback path, but do not switch the visible detail pane to a live `WKWebView` unless pixel comparison proves it is closer.
+The SwiftUI parity version currently hosts a programmatic AppKit `ReleaseNotesViewController` instead of recreating this pane in pure SwiftUI. Keep that bridge until a pure SwiftUI/AppKit-hybrid replacement matches the original header, loading state, error/empty state, text insets, scroll offset, support popover, update button, and external-updater label in manual pixel QA.
 
 ### 3.7 State model
 
@@ -296,13 +364,23 @@ Known measurements from code:
 ```text
 app row height: 65
 section header height: 27
-list content top inset: 78
+storyboard list scroll top content inset: 78
+SwiftUI table scroll top content inset: 35, with the search/header overlay fixed above it
 scroll view bottom scroller inset: 10
 release notes text inset: 14
-main window storyboard content size: 1004 x 495
-main window minimum size: 350 x 300
+main window storyboard/default content size: 768 wide x 516 high
+rejected historical comparison/default sizes: 860 wide x 300 high, then 850 wide x 300 high
+main window minimum size: 350 wide x 300 high
+sidebar minimum width: 300
+sidebar ideal width / split position: 308
+SwiftUI parity sidebar min and max split thickness: 308
+detail minimum width: 460
 release notes header storyboard height: 119
+release notes header content bottom inset: 15
+release notes text initial scroll y after inset: -238
 ```
+
+The storyboard design canvas size was previously `1004 x 495`, which was not the launch window size. Do not force the window to `1004 x 495` for screenshots. Do not use the rejected `850 x 300` target either. The current default target is 768 points wide by 516 points high, and comparison captures should use the same natural/autosaved frame for both legacy and SwiftUI paths. On Retina displays, screenshot bitmap dimensions are larger than point dimensions.
 
 Everything else should be measured from screenshots or the existing storyboard.
 
@@ -339,14 +417,7 @@ Latest/
       UpdateRowSwipeActionsBridge.swift    # optional AppKit bridge if native row actions matter
 
     ReleaseNotes/
-      ReleaseNotesDetailView.swift
-      ReleaseNotesHeaderView.swift
-      ReleaseNotesContentView.swift
-      ReleaseNotesLoadingView.swift
-      ReleaseNotesErrorView.swift
-      AttributedTextViewRepresentable.swift
-      WebViewFallbackSupport.swift         # only if provider fallback needs UI-owned WebKit later
-      SupportStatePopoverView.swift
+      ReleaseNotesDetailView.swift         # SwiftUI bridge hosting programmatic AppKit ReleaseNotesViewController
 
     Settings/
       SettingsWindowView.swift
@@ -356,7 +427,6 @@ Latest/
     Shared/
       DesignTokens.swift
       VisualMetrics.swift
-      NativeVisualEffectView.swift
       NativeImageView.swift
       HighlightedText.swift
       PixelParityDebugOverlay.swift
@@ -380,18 +450,20 @@ import SwiftUI
 enum VisualMetrics {
     static let appRowHeight: CGFloat = 65
     static let sectionHeaderHeight: CGFloat = 27
-    static let listTopInset: CGFloat = 78
+    static let listTopInset: CGFloat = 36
     static let scrollBottomInset: CGFloat = 10
     static let releaseNotesTextInset: CGFloat = 14
 
-    // Measure these from the current app before finalizing.
-    static let sidebarMinWidth: CGFloat = 320
-    static let sidebarIdealWidth: CGFloat = 360
-    static let detailMinWidth: CGFloat = 480
+    static let mainWindowDefaultWidth: CGFloat = 768
+    static let mainWindowDefaultHeight: CGFloat = 516
+
+    static let sidebarMinWidth: CGFloat = 300
+    static let sidebarIdealWidth: CGFloat = 308
+    static let detailMinWidth: CGFloat = 460
     static let mainWindowMinWidth: CGFloat = 350
     static let mainWindowMinHeight: CGFloat = 300
 
-    static let appIconSize: CGFloat = 40
+    static let appIconSize: CGFloat = 50
     static let detailIconSize: CGFloat = 64
 
     static let rowHorizontalPadding: CGFloat = 12
@@ -533,32 +605,40 @@ final class UpdateCheckingService: UpdateCheckProgressReporting {
 
 There are two safe options.
 
-### Option A — safest initial path
+### Option A — current safest parity path
 
-Keep `AppDelegate @main` temporarily and create a SwiftUI-hosted replacement window behind a flag.
+Keep the explicit AppKit bootstrap in `Latest/main.swift`, install `AppDelegate` programmatically, and create the main `NSWindow` in code when `UseSwiftUIMainWindow` or `--swiftui-main-window` is enabled.
 
-Use this for early parity work because it avoids changing launch semantics too soon.
+Use this during parity work because it removes storyboard auto-launch while still preserving the old main-window metrics, autosaved frame name, toolbar/titlebar behavior, and split-view restoration rules in `MainWindowController`.
 
-The current storyboard main window starts an update check in `MainWindowController.windowDidLoad()`. In flag mode, gate that startup path so the old controller does not kick off scanning, claim `progressDelegate`, or flash a second window before the SwiftUI window is shown.
+The legacy storyboard main window starts an update check in `MainWindowController.windowDidLoad()`. In flag mode, route programmatic window creation directly into a SwiftUI setup path so the old table controller does not kick off scanning, claim `progressDelegate`, or leave old content visible behind the SwiftUI content.
 
 Example:
 
 ```swift
-final class SwiftUIMainWindowController: NSWindowController {
-    init(environment: AppEnvironment) {
-        let rootView = MainWindowView(environment: environment)
-        let hostingController = NSHostingController(rootView: rootView)
+final class MainWindowController: NSWindowController {
+    override func windowDidLoad() {
+        super.windowDidLoad()
 
-        let window = NSWindow(contentViewController: hostingController)
-        window.title = Bundle.main.localizedInfoDictionary?[kCFBundleNameKey as String] as? String ?? "Latest"
-        window.titlebarAppearsTransparent = true
-        window.toolbarStyle = .unified
+        if LaunchMode.useSwiftUIMainWindow {
+            configureSwiftUIMainWindow()
+            return
+        }
 
-        super.init(window: window)
+        configureLegacyStoryboardWindow()
     }
 
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+    private func configureSwiftUIMainWindow() {
+        let storyboardFrame = window?.frame
+        let environment = AppEnvironment.live()
+        contentViewController = SwiftUIMainWindowController.makeSplitViewController(environment: environment)
+
+        if let storyboardFrame {
+            window?.setFrame(storyboardFrame, display: false)
+        }
+
+        bindSwiftUIEnvironment(environment)
+        environment.start()
     }
 }
 ```
@@ -568,38 +648,35 @@ Feature flag:
 ```swift
 enum LaunchMode {
     static var useSwiftUIMainWindow: Bool {
-        UserDefaults.standard.bool(forKey: "UseSwiftUIMainWindow")
+        CommandLine.arguments.contains("--swiftui-main-window")
+            || UserDefaults.standard.bool(forKey: "UseSwiftUIMainWindow")
     }
 }
 ```
 
-Then retain the SwiftUI window controller from `AppDelegate`:
+`AppDelegate` should not create or retain another main-window controller in this path. It may activate the app after launch when the SwiftUI flag is enabled:
 
 ```swift
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var swiftUIWindowController: SwiftUIMainWindowController?
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         if LaunchMode.useSwiftUIMainWindow {
-            storyboardWindowController?.close()
-            swiftUIWindowController = SwiftUIMainWindowController(environment: .live)
-            swiftUIWindowController?.showWindow(nil)
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 }
 ```
 
-This is temporary. Remove it after parity.
+`SwiftUIMainWindowController` is factory-only in the current branch. It must not instantiate or show a second `NSWindow` during parity verification.
 
 ### Option B — final path
 
-Convert to SwiftUI lifecycle.
+Convert from the current explicit AppKit bootstrap to a full SwiftUI lifecycle.
 
 Steps:
 
-1. Remove `@main` from `AppDelegate`.
-2. Rename it to `LegacyAppDelegate` or keep `AppDelegate` without `@main`.
-3. Remove `NSMainStoryboardFile` from `Latest/Resources/Info.plist`.
+1. Keep `Latest/main.swift` and programmatic `AppDelegate` launch until the SwiftUI scenes, settings, commands, popovers, and localized string migration are proven.
+2. Rename `AppDelegate` to `LegacyAppDelegate` or keep `AppDelegate` without `@main`.
+3. Delete `Latest/main.swift` from the main app target only when the SwiftUI `@main App` replaces it.
 4. Add:
 
 ```swift
@@ -626,9 +703,9 @@ struct LatestApp: SwiftUI.App {
 }
 ```
 
-Because the existing `AppDelegate` only terminates the app when the last window closes, this conversion should be low-risk after the SwiftUI window is proven.
+Because the existing `AppDelegate` now also installs the main menu and explicitly presents the main window, this conversion should wait until equivalent SwiftUI commands, settings, and window-presentation behavior are proven.
 
-Removing `NSMainStoryboardFile` stops storyboard auto-launch. It does not mean the `Main.storyboard` resource can be deleted yet if settings or support-state popovers are still loaded from it.
+Removing `NSMainStoryboardFile` stops storyboard auto-launch. The current branch also removed `Main.storyboard` from the active programmatic path; keep the source/build no-storyboard checks in place until localized historical `Main.strings` entries and stale controller classes are cleaned up deliberately.
 
 ---
 
@@ -643,7 +720,7 @@ struct MainWindowView: View {
     var body: some View {
         MainSplitView(
             updatesViewModel: environment.updatesListViewModel,
-            releaseNotesViewModel: environment.releaseNotesViewModel
+            searchFocusController: environment.searchFocusController
         )
         .background(WindowAccessor { window in
             window.titlebarAppearsTransparent = true
@@ -669,24 +746,21 @@ Preferred first implementation:
 ```swift
 struct MainSplitView: View {
     @ObservedObject var updatesViewModel: UpdatesListViewModel
-    @ObservedObject var releaseNotesViewModel: ReleaseNotesViewModel
+    @ObservedObject var searchFocusController: SearchFocusController
 
     var body: some View {
         HSplitView {
-            UpdatesSidebarView(viewModel: updatesViewModel)
-                .frame(
-                    minWidth: VisualMetrics.sidebarMinWidth,
-                    idealWidth: VisualMetrics.sidebarIdealWidth
-                )
+            UpdatesSidebarView(viewModel: updatesViewModel, searchFocusController: searchFocusController)
+                .frame(width: VisualMetrics.sidebarIdealWidth)
 
-            ReleaseNotesDetailView(viewModel: releaseNotesViewModel)
+            ReleaseNotesDetailView(updatesViewModel: updatesViewModel)
                 .frame(minWidth: VisualMetrics.detailMinWidth)
         }
     }
 }
 ```
 
-If `HSplitView` cannot reproduce the old divider behavior, use an `NSSplitViewController` bridge with SwiftUI views embedded as `NSHostingController`s. Pixel parity beats architectural purity.
+The current parity implementation uses an `NSSplitViewController` bridge with SwiftUI views embedded as `NSHostingController`s so the sidebar item can be fixed at `308` points. Pixel parity beats architectural purity.
 
 Whatever implementation is chosen, preserve the old split autosave key `MainSplitView` so existing users keep their divider position.
 
@@ -946,7 +1020,11 @@ else -> UpdateAction
 
 ## 15. Release notes detail remake
 
-### 15.1 State model
+Current parity path: `SwiftUIMainWindowController` hosts `ReleaseNotesDetailView`, which wraps the programmatic AppKit `ReleaseNotesViewController`. That controller owns release-note loading, empty/error/loading state, header layout, update button, support-state button, and text insets. The support-state popover content is also programmatic. Do not wire a parallel SwiftUI release-note loader while that bridge is active.
+
+The sections below are deferred pure-replacement notes. Use them only after pixel QA proves the replacement matches the hosted programmatic AppKit controller.
+
+### 15.1 Deferred state model
 
 ```swift
 enum ReleaseNotesViewState {
@@ -1009,11 +1087,11 @@ final class ReleaseNotesViewModel: ObservableObject {
 }
 ```
 
-This keeps the old behavior where the loading indicator is delayed slightly to avoid flicker.
+This would keep the old behavior where the loading indicator is delayed slightly to avoid flicker. Do not enable it alongside the hosted programmatic controller, or row selection will fetch release notes twice.
 
 ### 15.3 Header
 
-The old header uses `NSVisualEffectView`. SwiftUI `Material` may be close, but not always pixel-identical. Start with a small AppKit bridge:
+The old header uses `NSVisualEffectView`. SwiftUI `Material` may be close, but not always pixel-identical. When replacing the hosted controller, start with a small AppKit bridge:
 
 ```swift
 struct NativeVisualEffectView: NSViewRepresentable {
@@ -1039,7 +1117,7 @@ struct NativeVisualEffectView: NSViewRepresentable {
 
 ### 15.4 Release notes body
 
-Start with an `NSTextView` wrapper because the old visible body is an attributed-text view. Preserve `ReleaseNotesTextViewController.format(_:)` behavior: strip custom colors/backgrounds/shadows, reset the base font, keep bold/italic/link attributes, and apply the same scroll/content insets.
+When replacing the hosted controller, start with an `NSTextView` wrapper because the old visible body is an attributed-text view. Preserve `ReleaseNotesTextViewController.format(_:)` behavior: strip custom colors/backgrounds/shadows, reset the base font, keep bold/italic/link attributes, and apply the same scroll/content insets.
 
 ```swift
 struct AttributedTextViewRepresentable: NSViewRepresentable {
@@ -1158,21 +1236,28 @@ This replaces scattered `@IBAction` methods.
 
 ## 17. Settings migration
 
-Do settings after the main window.
+Settings now use a SwiftUI-owned window after the 2026-06-03 lifecycle pass.
 
-Reason: current settings use an `NSTabViewController` and custom window resizing animation. Rewriting this before the main window adds risk without helping the core migration.
+The current implementation keeps an AppKit `NSWindowController`/`NSToolbar` shell because the original window uses toolbar-tab selection and precise per-tab frame sizes. The content itself is SwiftUI:
 
-However, settings currently live inside `Main.storyboard`. If settings are kept as AppKit during main-window cutover, either keep `Main.storyboard` as a resource and instantiate only the settings scene explicitly, or move settings into a separate storyboard/nib before deleting the main storyboard resource.
+```text
+SettingsWindowController
+  -> SettingsRootView
+      -> GeneralSettingsView
+      -> LocationsSettingsView
+```
+
+The storyboard settings scene is no longer instantiated from `AppDelegate`. Keep the old settings controllers only until the project cleanup phase removes stale storyboard scenes, localized `Main.strings` entries, and Xcode references.
 
 Recommended sequence:
 
 ```text
-Phase 1: keep existing settings controllers
-Phase 2: expose settings model/state cleanly
-Phase 3: rebuild General tab in SwiftUI
-Phase 4: rebuild Locations tab in SwiftUI
-Phase 5: recreate window resizing animation if still wanted
-Phase 6: remove SettingsTabViewController and related storyboard scenes
+Phase 1: keep existing settings controllers - done historically
+Phase 2: expose settings model/state cleanly - done through SettingsViewModel
+Phase 3: rebuild General tab in SwiftUI - done
+Phase 4: rebuild Locations tab in SwiftUI - done
+Phase 5: recreate storyboard frame sizing - done with explicit 440 x 219 / 440 x 296 content sizes and 440 x 309 / 440 x 384 window frames
+Phase 6: remove SettingsTabViewController and related storyboard scenes during final storyboard cleanup
 ```
 
 Settings parity requirements:
@@ -1181,9 +1266,11 @@ Settings parity requirements:
 same tab labels
 same window title behavior
 same content size per tab
-same animated resize behavior or deliberate approved replacement
+same frame size per tab
 same UserDefaults keys
 same localization keys
+native checkbox metrics in General
+bordered NSTableView and plus/minus NSSegmentedControl metrics in Locations
 ```
 
 ---
@@ -1392,18 +1479,20 @@ Only after cutover:
 
 ### 21.1 Remove launch storyboard linkage
 
-Remove from `Latest/Resources/Info.plist`:
+Done in the 2026-06-03 lifecycle pass: `Latest/Resources/Info.plist` no longer contains:
 
 ```xml
 <key>NSMainStoryboardFile</key>
 <string>Main</string>
 ```
 
+Keep this key absent. The replacement launch owner is `Latest/main.swift` plus `AppDelegate.showMainWindowIfNeeded()`.
+
 ### 21.2 Remove storyboard resource
 
 Remove `Main.storyboard in Resources` from the app target.
 
-Do this only after settings and the support-state popover no longer depend on `Main.storyboard`. Removing `NSMainStoryboardFile` for launch is safe earlier; removing the storyboard resource is not.
+Do this only after the main-window parity bridges and localized storyboard strings no longer depend on `Main.storyboard`. Removing `NSMainStoryboardFile` for launch is safe earlier; removing the storyboard resource is not.
 
 ### 21.3 Delete old main-window controllers after replacement
 
@@ -1427,7 +1516,7 @@ Latest/Interface/Main Window/Release Notes/Controller/ReleaseNotesTextViewContro
 
 Keep reusable non-UI logic if any is discovered during extraction.
 
-Delete these only after settings and popover equivalents exist or are moved:
+Delete these only after popover equivalents exist and stale settings scenes have been removed from storyboard/project resources:
 
 ```text
 Latest/Interface/Main Window/Release Notes/SupportState/SupportStatusInfoViewController.swift
@@ -1470,8 +1559,8 @@ Prefer using Xcode project operations or a project-generation tool if available.
 | App icons flicker | Existing cell avoids unnecessary image updates | Cache icons and avoid resetting image when app identity is unchanged |
 | Selection lost after updates | Snapshot changes frequently | Maintain selection by app identifier |
 | Localization regressions | Storyboard strings are localized in many languages | Move keys deliberately and audit missing keys |
-| Settings window resize behavior changes | Current settings has custom animated resizing | Keep settings AppKit until main window is done |
-| Removing `Main.storyboard` breaks settings/popovers | Settings and support-state popover currently live in the same storyboard | Keep the resource, port those scenes, or move them before deletion |
+| Settings window resize behavior changes | Current settings has custom animated resizing and toolbar-tab sizing | Use an AppKit window/toolbar shell with fixed SwiftUI content sizes |
+| Removing `Main.storyboard` breaks parity bridges/localization | Storyboard scenes are now replaced, but localized historical `Main.strings` may still contain strings worth auditing | Keep source/build no-storyboard checks in verification and migrate/delete localized strings deliberately |
 | Duplicate update checks in flag mode | The old main controller starts scanning in `windowDidLoad()` | Gate old startup when SwiftUI main window is enabled |
 | Progress reporting conflicts | `UpdateCheckCoordinator.progressDelegate` is a single weak delegate | Extract one progress service and have active UI observe it |
 | Observer API mismatch | `AppProviding.addObserver` requires `NSObject` | Use NSObject-backed view models/adapters and remove observers on close |
@@ -1522,21 +1611,20 @@ Build views in isolation:
 UpdateRowView
 UpdateSectionHeaderView
 UpdatesSidebarView
-ReleaseNotesHeaderView
-ReleaseNotesContentView
-ReleaseNotesDetailView
+ReleaseNotesDetailView hosting the programmatic AppKit ReleaseNotesViewController
 ```
 
 Use fixture data first. Do not connect to live update scanning yet.
 
 ### Phase 4 — Add SwiftUI main window behind flag
 
-Keep old storyboard launch path.
+Historical flag strategy: keep the old storyboard launch path while first adding SwiftUI behind a flag.
 
 Add either:
 
 ```text
 UserDefaults flag: UseSwiftUIMainWindow
+Launch argument: --swiftui-main-window
 ```
 
 or a compile flag:
@@ -1545,7 +1633,7 @@ or a compile flag:
 SWIFTUI_MAIN_WINDOW
 ```
 
-Launch SwiftUI window only when enabled.
+When enabled in that historical strategy, do not create a second main window. Let the storyboard create the original `NSWindow`, then replace `MainWindowController.contentViewController` with the SwiftUI-hosted split view. Preserve the pre-swap frame and split position so screenshot comparison starts from the original window geometry. The current no-storyboard path instead creates the `NSWindow` programmatically at the approved default size.
 
 ### Phase 5 — Connect live model
 
@@ -1566,15 +1654,18 @@ At this stage, SwiftUI UI should be functionally complete but not yet default.
 For each scenario:
 
 ```text
-capture old screenshot
-capture SwiftUI screenshot
+reset any screenshot-polluted MainWindowSize autosave if needed
+launch old storyboard path and wait for update scanning to settle
+capture old screenshot at natural window size
+launch SwiftUI flag path and wait for the same data state
+capture SwiftUI screenshot at the same natural window size
 compare geometry
 compare whole image
 adjust metrics/styles
 repeat
 ```
 
-Do this before deleting any old UI code.
+Do this before deleting any old UI code. The verification harness must not resize the window; a forced frame can create false positive or false negative parity results and can save the wrong frame into user defaults.
 
 ### Phase 7 — Switch default launch path
 
@@ -1592,25 +1683,24 @@ Run full QA.
 
 ### Phase 8 — Migrate or isolate remaining storyboard scenes
 
-Before deleting `Main.storyboard`, handle every non-main-window scene still living there:
+Before deleting `Main.storyboard`, handle every non-main-window scene that used to live there:
 
 ```text
 settings window
 general settings tab
 locations settings tab
-support-state popover
 menu/storyboard-owned localized strings
 ```
 
-Either port them to SwiftUI or move them to separate AppKit resources that are explicitly loaded.
+Settings, the support-state popover, the sidebar, and the release-note pane are already ported out of storyboard-owned presentation. The remaining cleanup work is auditing menu/storyboard-owned localized strings and deleting stale legacy controller classes only after the current programmatic path remains verified.
 
 ### Phase 9 — Delete legacy UI
 
 Delete storyboard and old controllers only after the SwiftUI launch path is proven.
 
-### Phase 10 — Settings follow-up
+### Phase 10 — Settings cleanup follow-up
 
-If settings were isolated but not yet ported during the main migration, port them after the main window is stable.
+Remove stale settings storyboard scenes and legacy settings controller classes after localization and storyboard-resource cleanup are ready.
 
 ---
 
@@ -1623,9 +1713,9 @@ The migration is done only when:
 [ ] No main window UI depends on IBOutlet/IBAction controller wiring.
 [ ] Main window is SwiftUI-first.
 [ ] Update list is SwiftUI-first or intentionally AppKit-bridged for parity.
-[ ] Release notes detail is SwiftUI-first with necessary attributed-text/AppKit bridge.
+[ ] Release notes detail is SwiftUI-owned or intentionally AppKit-bridged for parity.
 [ ] Menus and toolbar actions are routed through command objects/services.
-[ ] Settings and support-state popover no longer depend on deleted storyboard resources.
+[ ] Settings and support-state popover no longer depend on storyboard resources.
 [ ] Storyboard resources are removed from the app target.
 [ ] Localized storyboard strings are either migrated or deleted safely.
 [ ] Existing unit tests pass.
@@ -1652,6 +1742,8 @@ SwiftUI for structure and state:
 AppKit bridges where needed:
   NSWindow configuration
   NSToolbar if SwiftUI toolbar drifts
+  UpdateTableViewController during pixel-parity sidebar verification
+  ReleaseNotesViewController during pixel-parity release-note verification
   NSSearchField for ESC/focus parity
   NSVisualEffectView for exact header material
   NSTextView for attributed release notes display

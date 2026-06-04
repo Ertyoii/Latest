@@ -38,10 +38,12 @@ extension MainWindowController: NSToolbarDelegate {
 			item.view = progressIndicator
 		case .checkForUpdatesActionItem:
 			item.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
+			item.target = self
 			item.toolTip = NSLocalizedString("CheckForUpdatesToolbarItemToolTip", comment: "Tool tip of a toolbar button that checks for updates")
 			item.action = #selector(reload(_:))
 		case .updateAllActionItem:
-			item.image = NSImage(named: "custom.arrow.down.square.stack")
+			item.image = Self.updateAllToolbarImage()
+			item.target = self
 			item.toolTip = NSLocalizedString("UpdateAllToolbarItemToolTip", comment: "Tool tip of a toolbar button that performs updates for all apps with update available")
 			item.action = #selector(updateAll(_:))
 		default:
@@ -51,6 +53,18 @@ extension MainWindowController: NSToolbarDelegate {
 		return item
 	}
 	
+}
+
+private extension MainWindowController {
+	static func updateAllToolbarImage() -> NSImage? {
+		guard let image = NSImage(named: "custom.arrow.down.square.stack") else {
+			return nil
+		}
+
+		let sizeConfiguration = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular, scale: .medium)
+		let contrastConfiguration = NSImage.SymbolConfiguration(paletteColors: [.labelColor, .labelColor, .labelColor])
+		return image.withSymbolConfiguration(sizeConfiguration.applying(contrastConfiguration)) ?? image
+	}
 }
 
 private extension NSToolbarItem.Identifier {

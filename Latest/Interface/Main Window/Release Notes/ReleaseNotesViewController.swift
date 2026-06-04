@@ -109,6 +109,8 @@ class ReleaseNotesViewController: NSViewController {
 	@IBOutlet private weak var supportStateButton: NSButton!
 	
 	private let releaseNotesProvider = ReleaseNotesProvider()
+	private var supportStatePopover: NSPopover?
+	private var appInfoTopConstraint: NSLayoutConstraint?
     
 	/// The app currently presented
 	private(set) var app: App? {
@@ -122,12 +124,187 @@ class ReleaseNotesViewController: NSViewController {
     private var content: ReleaseNotesContent?
 
     // MARK: - View Lifecycle
+
+	override func loadView() {
+		let rootView = NSView(frame: NSRect(x: 0, y: 0, width: 452, height: 296))
+
+		let headerView = NSVisualEffectView()
+		headerView.wantsLayer = true
+		headerView.blendingMode = .withinWindow
+		headerView.material = .headerView
+		headerView.state = .followsWindowActiveState
+		headerView.translatesAutoresizingMaskIntoConstraints = false
+
+		let contentStack = NSStackView()
+		contentStack.orientation = .horizontal
+		contentStack.alignment = .centerY
+		contentStack.distribution = .fill
+		contentStack.spacing = 5
+		contentStack.detachesHiddenViews = true
+		contentStack.translatesAutoresizingMaskIntoConstraints = false
+
+		let iconImageView = NSImageView()
+		iconImageView.wantsLayer = true
+		iconImageView.imageScaling = .scaleProportionallyUpOrDown
+		iconImageView.setContentHuggingPriority(.required, for: .horizontal)
+		iconImageView.setContentHuggingPriority(.required, for: .vertical)
+		iconImageView.setContentCompressionResistancePriority(.required, for: .horizontal)
+		iconImageView.setContentCompressionResistancePriority(.required, for: .vertical)
+		iconImageView.translatesAutoresizingMaskIntoConstraints = false
+
+		let nameField = Self.makeLabel(font: .systemFont(ofSize: 13, weight: .semibold), color: .labelColor)
+		nameField.wantsLayer = true
+
+		let supportCell = SupportStatusButtonCell(textCell: "")
+			supportCell.bezelStyle = .inline
+			supportCell.imagePosition = .imageLeading
+			supportCell.alignment = .left
+			supportCell.isBordered = false
+			supportCell.isScrollable = true
+			supportCell.lineBreakMode = .byClipping
+			supportCell.imageScaling = .scaleProportionallyDown
+			supportCell.font = .boldSystemFont(ofSize: NSFont.smallSystemFontSize)
+
+		let supportButton = NSButton(title: "", target: nil, action: nil)
+			supportButton.cell = supportCell
+			supportButton.wantsLayer = true
+			supportButton.bezelStyle = .inline
+			supportButton.isBordered = false
+			supportButton.alignment = .left
+			supportButton.imagePosition = .imageLeading
+			supportButton.imageScaling = .scaleProportionallyDown
+		supportButton.font = .boldSystemFont(ofSize: NSFont.smallSystemFontSize)
+		supportButton.setContentHuggingPriority(.required, for: .horizontal)
+		supportButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+		supportButton.translatesAutoresizingMaskIntoConstraints = false
+
+		let titleRow = NSView()
+		titleRow.translatesAutoresizingMaskIntoConstraints = false
+		titleRow.addSubview(nameField)
+		titleRow.addSubview(supportButton)
+		titleRow.setContentHuggingPriority(.required, for: .vertical)
+		titleRow.setContentCompressionResistancePriority(.required, for: .vertical)
+
+		let versionField = Self.makeLabel(font: .systemFont(ofSize: NSFont.systemFontSize(for: .small)), color: .secondaryLabelColor)
+		versionField.wantsLayer = true
+
+		let dateField = Self.makeLabel(font: .systemFont(ofSize: NSFont.systemFontSize(for: .small)), color: .secondaryLabelColor)
+		dateField.wantsLayer = true
+
+		let labelStack = NSStackView(views: [titleRow, versionField, dateField])
+		labelStack.orientation = .vertical
+		labelStack.alignment = .leading
+		labelStack.spacing = 0
+		labelStack.detachesHiddenViews = true
+		labelStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
+		labelStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+		labelStack.translatesAutoresizingMaskIntoConstraints = false
+
+		let updateButton = UpdateButton(frame: .zero)
+		updateButton.cell = UpdateButtonCell()
+		updateButton.target = updateButton
+		updateButton.action = #selector(UpdateButton.performAction(_:))
+		updateButton.isBordered = false
+		updateButton.contentTintColor = UpdateButton.Style.tintColor
+		updateButton.showActionButton = true
+		updateButton.translatesAutoresizingMaskIntoConstraints = false
+
+		let externalUpdateLabel = Self.makeLabel(
+			font: .systemFont(ofSize: NSFont.systemFontSize(for: .mini)),
+			color: .labelColor
+		)
+		externalUpdateLabel.alignment = .center
+		externalUpdateLabel.maximumNumberOfLines = 1
+		externalUpdateLabel.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+		externalUpdateLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+		let actionContainer = NSView()
+		actionContainer.setContentHuggingPriority(.required, for: .horizontal)
+		actionContainer.setContentCompressionResistancePriority(.required, for: .horizontal)
+		actionContainer.setContentHuggingPriority(.required, for: .vertical)
+		actionContainer.translatesAutoresizingMaskIntoConstraints = false
+		actionContainer.addSubview(updateButton)
+		actionContainer.addSubview(externalUpdateLabel)
+
+		contentStack.addArrangedSubview(iconImageView)
+		contentStack.addArrangedSubview(labelStack)
+		contentStack.addArrangedSubview(actionContainer)
+
+		let separator = NSBox()
+		separator.boxType = .separator
+		separator.translatesAutoresizingMaskIntoConstraints = false
+
+		headerView.addSubview(contentStack)
+		headerView.addSubview(separator)
+		rootView.addSubview(headerView)
+
+		let externalUpdateLabelCenterConstraint = externalUpdateLabel.centerXAnchor.constraint(equalTo: updateButton.centerXAnchor)
+		externalUpdateLabelCenterConstraint.priority = .required
+
+		NSLayoutConstraint.activate([
+			headerView.topAnchor.constraint(equalTo: rootView.topAnchor),
+			headerView.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
+			headerView.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
+			headerView.widthAnchor.constraint(greaterThanOrEqualToConstant: 400),
+
+			contentStack.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 20),
+			contentStack.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -20),
+			contentStack.bottomAnchor.constraint(equalTo: headerView.bottomAnchor, constant: -15),
+
+			iconImageView.widthAnchor.constraint(equalToConstant: 64),
+			iconImageView.heightAnchor.constraint(equalTo: iconImageView.widthAnchor),
+			labelStack.centerYAnchor.constraint(equalTo: iconImageView.centerYAnchor),
+
+			titleRow.heightAnchor.constraint(equalToConstant: 19),
+			nameField.leadingAnchor.constraint(equalTo: titleRow.leadingAnchor, constant: -2),
+			nameField.topAnchor.constraint(equalTo: titleRow.topAnchor, constant: 1),
+			nameField.heightAnchor.constraint(equalToConstant: 16),
+			supportButton.leadingAnchor.constraint(equalTo: nameField.trailingAnchor, constant: 8),
+			supportButton.topAnchor.constraint(equalTo: titleRow.topAnchor),
+			supportButton.trailingAnchor.constraint(equalTo: titleRow.trailingAnchor),
+			supportButton.heightAnchor.constraint(equalToConstant: 19),
+
+			updateButton.widthAnchor.constraint(equalToConstant: 59),
+			updateButton.heightAnchor.constraint(equalToConstant: 24),
+			updateButton.topAnchor.constraint(equalTo: iconImageView.topAnchor, constant: 7),
+			updateButton.trailingAnchor.constraint(equalTo: actionContainer.trailingAnchor),
+			externalUpdateLabel.topAnchor.constraint(equalTo: updateButton.bottomAnchor, constant: 5),
+			externalUpdateLabelCenterConstraint,
+			externalUpdateLabel.bottomAnchor.constraint(equalTo: actionContainer.bottomAnchor),
+			actionContainer.widthAnchor.constraint(equalTo: updateButton.widthAnchor),
+			actionContainer.heightAnchor.constraint(equalToConstant: 40),
+
+			separator.leadingAnchor.constraint(equalTo: headerView.leadingAnchor),
+			separator.trailingAnchor.constraint(equalTo: headerView.trailingAnchor),
+			separator.bottomAnchor.constraint(equalTo: headerView.bottomAnchor)
+		])
+
+		self.appInfoBackgroundView = headerView
+		self.appInfoContentView = contentStack
+		self.updateButton = updateButton
+		self.externalUpdateLabel = externalUpdateLabel
+		self.appNameTextField = nameField
+		self.appDateTextField = dateField
+		self.appVersionTextField = versionField
+		self.appIconImageView = iconImageView
+		self.supportStateButton = supportButton
+		self.view = rootView
+	}
+
+	override func viewDidLoad() {
+		super.viewDidLoad()
+
+		supportStateButton.target = self
+		supportStateButton.action = #selector(showSupportStateInfo(_:))
+	}
     
     override func viewWillAppear() {
         super.viewWillAppear()
-        
-        let constraint = NSLayoutConstraint(item: self.appInfoContentView!, attribute: .top, relatedBy: .equal, toItem: self.view.window?.contentLayoutGuide, attribute: .top, multiplier: 1.0, constant: 0)
-        constraint.isActive = true
+
+		if appInfoTopConstraint == nil, let contentLayoutGuide = self.view.window?.contentLayoutGuide as? NSLayoutGuide {
+			appInfoTopConstraint = self.appInfoContentView.topAnchor.constraint(equalTo: contentLayoutGuide.topAnchor)
+			appInfoTopConstraint?.isActive = true
+		}
 
 		self.setEmptyState()
 	}
@@ -142,6 +319,19 @@ class ReleaseNotesViewController: NSViewController {
 	
 	@objc func cancelUpdate(_ sender: NSButton) {
 		self.app?.cancelUpdate()
+	}
+
+	@objc private func showSupportStateInfo(_ sender: NSButton) {
+		guard let app else { return }
+
+		let controller = SupportStatusInfoViewController.makeController(app: app)
+		let popover = NSPopover()
+		popover.behavior = .transient
+		popover.contentViewController = controller
+		controller.loadViewIfNeeded()
+		popover.contentSize = controller.preferredContentSize
+		popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+		supportStatePopover = popover
 	}
     
     
@@ -205,6 +395,7 @@ class ReleaseNotesViewController: NSViewController {
 		if !self.supportStateButton.isHidden {
 			self.supportStateButton.title = app.source.supportState.compactLabel
 			self.supportStateButton.image = app.source.supportState.statusImage
+			self.supportStateButton.invalidateIntrinsicContentSize()
 		}
 		
 		// Icon
@@ -307,21 +498,22 @@ class ReleaseNotesViewController: NSViewController {
     }
     
     /// Switches the content to error and displays the localized error
-    private func show(_ error: Error) {
+	private func show(_ error: Error) {
         self.loadContent(.error)
         self.content?.errorController?.show(error)
     }
 	
-	// MARK: - Navigation
-	
-	override func prepare(for segue: NSStoryboardSegue, sender: Any?) {
-		switch segue.identifier {
-		case "presentSupportStateInfo":
-			guard let controller = segue.destinationController as? SupportStatusInfoViewController else { return }
-			controller.app = self.app
-		default:
-			break
-		}
+}
+
+private extension ReleaseNotesViewController {
+	static func makeLabel(font: NSFont, color: NSColor) -> NSTextField {
+		let field = NSTextField(labelWithString: "")
+		field.focusRingType = .none
+		field.font = font
+		field.textColor = color
+		field.lineBreakMode = .byClipping
+		field.translatesAutoresizingMaskIntoConstraints = false
+		return field
 	}
-	    
+
 }
