@@ -111,8 +111,6 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 		static let rightInset: CGFloat = 32
 		static let iconSize: CGFloat = 50
 		static let iconTextSpacing: CGFloat = 8
-		static let textColumnTopInset: CGFloat = 8
-		static let textColumnHeight: CGFloat = 50
 		static let trailingWidth: CGFloat = 59
 		static let trailingHeight: CGFloat = 61
 		static let supportStateVerticalOffset: CGFloat = -30
@@ -204,6 +202,8 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 		textStack.alignment = .leading
 		textStack.spacing = 0
 		textStack.detachesHiddenViews = true
+		textStack.setContentHuggingPriority(.required, for: .vertical)
+		textStack.setContentCompressionResistancePriority(.required, for: .vertical)
 		textStack.translatesAutoresizingMaskIntoConstraints = false
 		addSubview(textStack)
 
@@ -256,8 +256,7 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 			iconView.heightAnchor.constraint(equalToConstant: Metrics.iconSize),
 
 			textStack.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: Metrics.iconTextSpacing),
-			textStack.topAnchor.constraint(equalTo: topAnchor, constant: Metrics.textColumnTopInset),
-			textStack.heightAnchor.constraint(equalToConstant: Metrics.textColumnHeight),
+			textStack.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
 			textStack.trailingAnchor.constraint(lessThanOrEqualTo: trailingStack.leadingAnchor, constant: -8),
 
 			trailingStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Metrics.rightInset),

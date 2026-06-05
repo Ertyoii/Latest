@@ -111,6 +111,7 @@ class ReleaseNotesViewController: NSViewController {
 	private let releaseNotesProvider = ReleaseNotesProvider()
 	private var supportStatePopover: NSPopover?
 	private var appInfoTopConstraint: NSLayoutConstraint?
+	private var appInfoLabelCenterYConstraint: NSLayoutConstraint?
     
 	/// The app currently presented
 	private(set) var app: App? {
@@ -197,7 +198,9 @@ class ReleaseNotesViewController: NSViewController {
 		labelStack.spacing = 0
 		labelStack.detachesHiddenViews = true
 		labelStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
+		labelStack.setContentHuggingPriority(.required, for: .vertical)
 		labelStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+		labelStack.setContentCompressionResistancePriority(.required, for: .vertical)
 		labelStack.translatesAutoresizingMaskIntoConstraints = false
 
 		let updateButton = UpdateButton(frame: .zero)
@@ -240,6 +243,7 @@ class ReleaseNotesViewController: NSViewController {
 
 		let externalUpdateLabelCenterConstraint = externalUpdateLabel.centerXAnchor.constraint(equalTo: updateButton.centerXAnchor)
 		externalUpdateLabelCenterConstraint.priority = .required
+		let labelCenterYConstraint = labelStack.centerYAnchor.constraint(equalTo: iconImageView.centerYAnchor)
 
 		NSLayoutConstraint.activate([
 			headerView.topAnchor.constraint(equalTo: rootView.topAnchor),
@@ -253,7 +257,7 @@ class ReleaseNotesViewController: NSViewController {
 
 			iconImageView.widthAnchor.constraint(equalToConstant: 64),
 			iconImageView.heightAnchor.constraint(equalTo: iconImageView.widthAnchor),
-			titleRow.centerYAnchor.constraint(equalTo: iconImageView.centerYAnchor),
+			labelCenterYConstraint,
 
 			titleRow.heightAnchor.constraint(equalToConstant: 19),
 			nameField.leadingAnchor.constraint(equalTo: titleRow.leadingAnchor, constant: -2),
@@ -288,6 +292,7 @@ class ReleaseNotesViewController: NSViewController {
 		self.appVersionTextField = versionField
 		self.appIconImageView = iconImageView
 		self.supportStateButton = supportButton
+		self.appInfoLabelCenterYConstraint = labelCenterYConstraint
 		self.view = rootView
 	}
 
@@ -407,11 +412,13 @@ class ReleaseNotesViewController: NSViewController {
 		
 		// Date
 		if let date = app.latestUpdateDate {
-            self.appDateTextField.stringValue = appDateFormatter.string(from: date)
-            self.appDateTextField.isHidden = false
-        } else {
-            self.appDateTextField.isHidden = true
-        }
+			self.appDateTextField.stringValue = appDateFormatter.string(from: date)
+			self.appDateTextField.isHidden = false
+			self.appInfoLabelCenterYConstraint?.constant = 0
+		} else {
+			self.appDateTextField.isHidden = true
+			self.appInfoLabelCenterYConstraint?.constant = 7
+		}
 		
 		// Update Action
 		if app.updateAvailable, let name = app.externalUpdaterName {
