@@ -7,29 +7,6 @@
 //
 
 import AppKit
-import SwiftUI
-
-struct UpdateSectionHeaderView: View {
-	let section: AppListSnapshot.Section
-
-	var body: some View {
-		LegacyUpdateSectionHeaderRepresentable(section: section)
-	}
-}
-
-private struct LegacyUpdateSectionHeaderRepresentable: NSViewRepresentable {
-	let section: AppListSnapshot.Section
-
-	func makeNSView(context: Context) -> LegacyUpdateSectionHeaderContentView {
-		let view = LegacyUpdateSectionHeaderContentView()
-		view.update(section: section)
-		return view
-	}
-
-	func updateNSView(_ view: LegacyUpdateSectionHeaderContentView, context: Context) {
-		view.update(section: section)
-	}
-}
 
 final class LegacyUpdateSectionHeaderContentView: NSView {
 	private static let numberFormatter = NumberFormatter()

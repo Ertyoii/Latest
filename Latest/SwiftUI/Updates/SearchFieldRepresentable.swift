@@ -9,6 +9,12 @@
 import AppKit
 import SwiftUI
 
+private final class UpdateSearchField: NSSearchField {
+	override func cancelOperation(_ sender: Any?) {
+		window?.makeFirstResponder(nil)
+	}
+}
+
 struct SearchFieldRepresentable: NSViewRepresentable {
 	@Binding var text: String
 	let focusController: SearchFocusController
