@@ -1,0 +1,18 @@
+{
+	"name": "xcode build server",
+	"version": "1.3.0",
+	"bspVersion": "2.2.0",
+	"languages": [
+		"c",
+		"cpp",
+		"objective-c",
+		"objective-cpp",
+		"swift"
+	],
+	"argv": [
+		"/opt/homebrew/bin/xcode-build-server"
+	],
+	"build_root": "/Users/ertyoii/Projects/Latest/build/DerivedData",
+	"scheme": "Latest",
+	"kind": "xcode"
+}

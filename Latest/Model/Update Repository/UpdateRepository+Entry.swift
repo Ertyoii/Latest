@@ -86,16 +86,13 @@ extension UpdateRepository {
 
 			// Artifacts: Contains application names and bundle identifiers.
 			let artifacts = try container.decode([FailableDecodable<Artifact>].self, forKey: .artifacts)
-				.reduce((names: [String](), identifiers: [String]())) { partialResult, artifactWrapper in
+				.reduce(into: (names: [String](), identifiers: [String]())) { result, artifactWrapper in
 					guard let artifact = artifactWrapper.base else {
-						return partialResult
+						return
 					}
 
-					var result = partialResult
 					result.names.append(contentsOf: artifact.names)
 					result.identifiers.append(contentsOf: artifact.identifiers)
-
-					return result
 				}
 			bundleIdentifiers = Set(artifacts.identifiers)
 			let artifactNames = Set(artifacts.names)

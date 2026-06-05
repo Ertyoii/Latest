@@ -89,6 +89,13 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 	/// The data store updated apps should be passed to
 	private let dataStore = AppDataStore()
 
+	/// List of available update checking operations.
+	fileprivate static let availableOperations: [UpdateCheckerOperation.Type] = [
+		AppStoreUpdateCheckerOperation.self,
+		SparkleUpdateCheckerOperation.self,
+		HomebrewCheckerOperation.self
+	]
+
 	/// The queue to run update checks on.
 	private let updateOperationQueue: OperationQueue = {
 		let operationQueue = OperationQueue()
@@ -241,15 +248,6 @@ final class UpdateCheckGenerationTracker: @unchecked Sendable {
 // MARK: - Update Checking Operations
 
 extension UpdateCheckCoordinator {
-
-	/// List of available update checking operations.
-	private static var availableOperations: [UpdateCheckerOperation.Type] {
-		return [
-			AppStoreUpdateCheckerOperation.self,
-			SparkleUpdateCheckerOperation.self,
-			HomebrewCheckerOperation.self
-		]
-	}
 
 	/// Returns the update source for the app at the given url.
 	static func source(forAppAt url: URL) -> App.Source? {

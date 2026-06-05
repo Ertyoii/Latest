@@ -57,71 +57,49 @@ struct AppListSnapshot {
 		let includeAppsWithLimitedSupport = settings.includeAppsWithLimitedSupport
 		let sortOrder = settings.sortOrder
 
-		// Mutable copy
-		var visibleApps = apps
-		
-		visibleApps = visibleApps.filter { app in
+		var availableUpdates = [App]()
+		var installedUpdates = [App]()
+		var ignoredUpdates = [App]()
+
+		for app in apps {
 			// Apply filter query
 			if let filterQuery = filterQuery, !app.name.localizedCaseInsensitiveContains(filterQuery) {
-				return false
+				continue
 			}
 
 			// Filter installed updates
 			if !showInstalledUpdates && !(app.updateAvailable || app.isIgnored) {
-				return false
+				continue
 			}
-						
+
 			// Filter ignored apps
 			if !showIgnoredUpdates && app.isIgnored {
-				return false
+				continue
 			}
 
 			// Filter unsupported apps
 			if !includeUnsupportedApps && !app.supported {
-				return false
+				continue
 			}
-			
+
 			// Filter apps not using the builtin updater
 			if !includeAppsWithLimitedSupport && app.updateAvailable && !app.usesBuiltInUpdater {
-				return false
+				continue
 			}
-			
-			return true
-		}
-		
-		// Sort apps based on setting
-		let filteredApps: [App]
-		switch sortOrder {
-		case .updateDate:
-			filteredApps = visibleApps.sorted { app1, app2 in
-				app1.updateDate > app2.updateDate
-			}
-		case .name:
-			filteredApps = visibleApps
-				.map { (app: $0, name: $0.name.lowercased()) }
-				.sorted { $0.name < $1.name }
-				.map(\.app)
-		}
-		
-		var availableUpdates = [Entry]()
-		var installedUpdates = [Entry]()
-		var ignoredUpdates = [Entry]()
 
-		filteredApps.forEach { app in
-			let entry = Entry.app(app)
 			if app.isIgnored {
-				ignoredUpdates.append(entry)
+				ignoredUpdates.append(app)
 			} else if app.updateAvailable {
-				availableUpdates.append(entry)
+				availableUpdates.append(app)
 			} else {
-				installedUpdates.append(entry)
+				installedUpdates.append(app)
 			}
 		}
-		installedUpdates.sort { entry1, entry2 in
-			guard case .app(let app1) = entry1, case .app(let app2) = entry2 else {
-				return false
-			}
 
+		// Sort visible sections based on setting. Installed apps keep their existing recency-first order.
+		Self.sort(&availableUpdates, by: sortOrder)
+		Self.sort(&ignoredUpdates, by: sortOrder)
+		installedUpdates.sort { app1, app2 in
 			if app1.bundle.modificationDate == app2.bundle.modificationDate {
 				return app1.name.lowercased() < app2.name.lowercased()
 			}
@@ -130,7 +108,7 @@ struct AppListSnapshot {
 		}
 
 		var entries = [Entry]()
-		entries.reserveCapacity(filteredApps.count + 3)
+		entries.reserveCapacity(availableUpdates.count + installedUpdates.count + ignoredUpdates.count + 3)
 		Self.appendSection(
 			availableUpdates,
 			section: Self.updatableAppsSection(withCount: availableUpdates.count),
@@ -147,6 +125,20 @@ struct AppListSnapshot {
 			to: &entries
 		)
 		return entries
+	}
+
+	private static func sort(_ apps: inout [App], by sortOrder: AppListSettings.SortOptions) {
+		switch sortOrder {
+		case .updateDate:
+			apps.sort { app1, app2 in
+				app1.updateDate > app2.updateDate
+			}
+		case .name:
+			apps = apps
+				.map { (app: $0, name: $0.name.lowercased()) }
+				.sorted { $0.name < $1.name }
+				.map(\.app)
+		}
 	}
 	
 
@@ -199,10 +191,10 @@ struct AppListSnapshot {
 		return Section(title: title, shortTitle: shortTitle, numberOfApps: numberOfApps)
 	}
 
-	private static func appendSection(_ sectionEntries: [Entry], section: Section, to entries: inout [Entry]) {
-		guard !sectionEntries.isEmpty else { return }
+	private static func appendSection(_ apps: [App], section: Section, to entries: inout [Entry]) {
+		guard !apps.isEmpty else { return }
 		entries.append(.section(section))
-		entries.append(contentsOf: sectionEntries)
+		entries.append(contentsOf: apps.map(Entry.app))
 	}
 
 	private static func entryIndexesByAppIdentifier(_ entries: [Entry]) -> [App.Bundle.Identifier: Int] {

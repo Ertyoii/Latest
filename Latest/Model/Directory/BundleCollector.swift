@@ -56,8 +56,7 @@ enum BundleCollector {
 	// MARK: - Utilities
 
 	private static func isExcludedSubfolder(_ url: URL) -> Bool {
-		let pathComponents = Set(url.pathComponents)
-		return excludedSubfolders.contains(where: pathComponents.contains)
+		return url.pathComponents.contains { excludedSubfolders.contains($0) }
 	}
 
 	/// Returns a bundle representation for the app at the given url, without Spotlight Metadata.

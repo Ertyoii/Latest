@@ -441,6 +441,12 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertThrowsError(try ReleaseNotesMarkup.attributedString(from: gibberish, baseURL: nil, relevantVersion: "5.80.6").get())
 	}
 
+	func testReleaseNotesMarkupKeepsShortControlTextBelowMojibakeThreshold() {
+		let shortControlText = String(repeating: "\u{1}", count: 20)
+
+		XCTAssertFalse(ReleaseNotesMarkup.looksLikeBinaryOrMojibakeText(shortControlText))
+	}
+
 	func testReleaseNotesMarkupSeparatesHTMLChangelogHeadings() throws {
 		let html = """
 		<a href="/changelog/3-6">3.6 May 29, 2026</a> · <a href="/changelog">Changelog</a><h1>Auto-review Run Mode</h1>
@@ -709,6 +715,38 @@ final class BundleCollectorTest: XCTestCase {
 		let updatedBundle = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
 		XCTAssertEqual(updatedBundle.version.versionNumber, "1.2.5")
 		XCTAssertEqual(updatedBundle.version.buildNumber, "125")
+	}
+
+	func testCollectBundlesSkipsAppsInsideExcludedSubfolders() throws {
+		let directory = try makeTemporaryDirectory()
+		let excludedDirectory = directory.appendingPathComponent("Setapp", isDirectory: true)
+
+		_ = try makeAppBundle(
+			named: "Excluded App",
+			in: excludedDirectory,
+			info: [
+				"CFBundleName": "Excluded App",
+				"CFBundleExecutable": "Excluded App",
+				"CFBundleIdentifier": "com.example.excluded-app",
+				"CFBundleShortVersionString": "1.0",
+				"CFBundleVersion": "100"
+			]
+		)
+		_ = try makeAppBundle(
+			named: "Visible App",
+			in: directory,
+			info: [
+				"CFBundleName": "Visible App",
+				"CFBundleExecutable": "Visible App",
+				"CFBundleIdentifier": "com.example.visible-app",
+				"CFBundleShortVersionString": "1.0",
+				"CFBundleVersion": "100"
+			]
+		)
+
+		let bundles = BundleCollector.collectBundles(at: directory)
+
+		XCTAssertEqual(Set(bundles.map(\.name)), ["Visible App"])
 	}
 
 	private func makeTemporaryDirectory() throws -> URL {

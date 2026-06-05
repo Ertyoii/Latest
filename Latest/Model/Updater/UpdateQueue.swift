@@ -20,6 +20,10 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 	
 	/// The shared instance of the queue.
 	static let shared = UpdateQueue()
+
+	private let operationIndexLock = NSLock()
+
+	private var operationsByIdentifier = [App.Bundle.Identifier: UpdateOperation]()
 	
 	
 	// MARK: - Public Methods
@@ -51,12 +55,22 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 		}
 		
 		// Abort if the app is already in the queue
-		if !self.contains(operation.appIdentifier) {
-			super.addOperation(op)
-			
-			operation.progressHandler = { identifier in
-				self.notifyObservers(for: identifier)
-			}
+		guard index(operation) else {
+			return
+		}
+
+		let previousCompletionBlock = operation.completionBlock
+		operation.completionBlock = { [weak self, weak operation] in
+			previousCompletionBlock?()
+
+			guard let operation else { return }
+			self?.removeIndexedOperation(operation)
+		}
+
+		super.addOperation(op)
+
+		operation.progressHandler = { [weak self] identifier in
+			self?.notifyObservers(for: identifier)
 		}
 	}
 	
@@ -107,11 +121,39 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 	
 	/// Returns the operation for the given app.
 	private func operation(for identifier: App.Bundle.Identifier) -> UpdateOperation? {
-		guard let updateOperations = self.operations as? [UpdateOperation] else {
-			fatalError("Unknown operations in update queue")
+		operationIndexLock.withCriticalScope {
+			guard let operation = operationsByIdentifier[identifier] else {
+				return nil
+			}
+
+			if operation.isFinished {
+				operationsByIdentifier[identifier] = nil
+				return nil
+			}
+
+			return operation
 		}
-				
-		return updateOperations.first(where: { $0.appIdentifier == identifier })
 	}
-		
+
+	private func index(_ operation: UpdateOperation) -> Bool {
+		operationIndexLock.withCriticalScope {
+			if let existingOperation = operationsByIdentifier[operation.appIdentifier], !existingOperation.isFinished {
+				return false
+			}
+
+			operationsByIdentifier[operation.appIdentifier] = operation
+			return true
+		}
+	}
+
+	private func removeIndexedOperation(_ operation: UpdateOperation) {
+		operationIndexLock.withCriticalScope {
+			guard operationsByIdentifier[operation.appIdentifier] === operation else {
+				return
+			}
+
+			operationsByIdentifier[operation.appIdentifier] = nil
+		}
+	}
+
 }

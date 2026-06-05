@@ -336,6 +336,12 @@ class ReleaseNotesProvider {
 
 }
 
+private enum ReleaseNotesProviderConstants {
+	static let downloadExtensions: Set<String> = [
+		"7z", "bz2", "dmg", "exe", "gz", "msi", "pkg", "rar", "tbz", "tgz", "xip", "xz", "zip"
+	]
+}
+
 private enum FetchHTMLError: Error {
 	case unusableText
 }
@@ -379,11 +385,7 @@ private extension ReleaseNotesProvider {
 	}
 
 	nonisolated static func isLikelyDownloadURL(_ url: URL) -> Bool {
-		let downloadExtensions: Set<String> = [
-			"7z", "bz2", "dmg", "exe", "gz", "msi", "pkg", "rar", "tbz", "tgz", "xip", "xz", "zip"
-		]
-
-		return downloadExtensions.contains(url.pathExtension.lowercased())
+		return ReleaseNotesProviderConstants.downloadExtensions.contains(url.pathExtension.lowercased())
 	}
 
 	nonisolated static func deduplicating(title: String?, in body: String) -> String {
@@ -487,6 +489,27 @@ private extension App.Update.ReleaseNotes {
 }
 
 enum ReleaseNotesMarkup {
+
+	private static let genericReleaseNoteWords: Set<String> = [
+		"changelog", "changes", "details", "history", "latest", "link", "links",
+		"more", "note", "notes", "public", "recent", "release", "releases",
+		"version", "versions", "view", "whats", "what"
+	]
+	private static let releaseSentenceBodyVerbs: Set<String> = [
+		"adds", "allows", "applies", "brings", "changes", "fixes",
+		"improves", "introduces", "lets", "makes", "resolves", "updates"
+	]
+	private static let repeatedHeadingBodyVerbs: Set<String> = [
+		"adds", "allows", "applies", "are", "brings", "can", "changes",
+		"fixes", "has", "have", "improves", "introduces", "is", "lets",
+		"makes", "now", "updates", "uses", "was", "were", "will"
+	]
+	private static let versionNavigationWords: Set<String> = [
+		"versions", "version", "channel", "stable", "preview", "releases"
+	]
+	private static let webPageChromeReleaseTerms = [
+		"release", "changelog", "change log", "fixed", "bug", "improved", "added", "security", "resolved"
+	]
 
 	static func attributedString(from markup: String, baseURL: URL?, relevantVersion: String? = nil) -> ReleaseNotesProvider.ReleaseNotes {
 		let trimmedMarkup = markup.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -695,12 +718,7 @@ enum ReleaseNotesMarkup {
 
 		let lowercasedInformationText = informationText.lowercased()
 		let words = lowercasedInformationText.matches(of: /[a-z][a-z0-9+-]{1,}/).map { String(lowercasedInformationText[$0.range]) }
-		let genericWords: Set<String> = [
-			"changelog", "changes", "details", "history", "latest", "link", "links",
-			"more", "note", "notes", "public", "recent", "release", "releases",
-			"version", "versions", "view", "whats", "what"
-		]
-		let meaningfulWords = words.filter { !genericWords.contains($0) }
+		let meaningfulWords = words.filter { !Self.genericReleaseNoteWords.contains($0) }
 
 		return meaningfulWords.count >= 2 || meaningfulWords.joined().count >= 14
 	}
@@ -756,30 +774,46 @@ enum ReleaseNotesMarkup {
 	}
 
 	static func looksLikeBinaryOrMojibakeText(_ text: String) -> Bool {
-		let scalars = text.unicodeScalars.filter { !$0.properties.isWhitespace }
-		guard scalars.count > 40 else { return false }
+		var scalarCount = 0
+		var containsControlCharacter = false
+		var cjkCount = 0
+		var latin1SupplementCount = 0
+		var nonASCIIPrintableCount = 0
 
-		if scalars.contains(where: { scalar in
-			(scalar.value < 32 || scalar.value == 127) && scalar.value != 10 && scalar.value != 9 && scalar.value != 13
-		}) {
+		for scalar in text.unicodeScalars where !scalar.properties.isWhitespace {
+			scalarCount += 1
+
+			let scalarValue = Int(scalar.value)
+			if (scalar.value < 32 || scalar.value == 127) && scalar.value != 10 && scalar.value != 9 && scalar.value != 13 {
+				containsControlCharacter = true
+			}
+			if (0x4E00...0x9FFF).contains(scalarValue) ||
+				(0x3040...0x30FF).contains(scalarValue) ||
+				(0xAC00...0xD7AF).contains(scalarValue) {
+				cjkCount += 1
+			}
+			if (0x00A0...0x00FF).contains(scalarValue) {
+				latin1SupplementCount += 1
+			}
+			if scalar.value > 127 {
+				nonASCIIPrintableCount += 1
+			}
+		}
+
+		guard scalarCount > 40 else { return false }
+
+		if containsControlCharacter {
 			return true
 		}
 
-		let cjkCount = scalars.filter { scalar in
-			(0x4E00...0x9FFF).contains(Int(scalar.value)) ||
-			(0x3040...0x30FF).contains(Int(scalar.value)) ||
-			(0xAC00...0xD7AF).contains(Int(scalar.value))
-		}.count
-		let cjkRatio = Double(cjkCount) / Double(scalars.count)
+		let cjkRatio = Double(cjkCount) / Double(scalarCount)
 		if cjkRatio > 0.2 {
 			return false
 		}
 
-		let latin1SupplementCount = scalars.filter { (0x00A0...0x00FF).contains(Int($0.value)) }.count
-		let nonASCIIPrintableCount = scalars.filter { $0.value > 127 }.count
 		let asciiWordCount = text.matches(of: /[A-Za-z][A-Za-z0-9+-]{2,}/).count
-		let latin1Ratio = Double(latin1SupplementCount) / Double(scalars.count)
-		let nonASCIIRatio = Double(nonASCIIPrintableCount) / Double(scalars.count)
+		let latin1Ratio = Double(latin1SupplementCount) / Double(scalarCount)
+		let nonASCIIRatio = Double(nonASCIIPrintableCount) / Double(scalarCount)
 
 		return (latin1Ratio > 0.22 && asciiWordCount < 8) || (nonASCIIRatio > 0.55 && asciiWordCount < 4)
 	}
@@ -796,8 +830,7 @@ enum ReleaseNotesMarkup {
 		}
 
 		let lowercased = text.lowercased()
-		let releaseTerms = ["release", "changelog", "change log", "fixed", "bug", "improved", "added", "security", "resolved"]
-		let hasReleaseTerms = releaseTerms.contains { lowercased.contains($0) }
+		let hasReleaseTerms = Self.webPageChromeReleaseTerms.contains { lowercased.contains($0) }
 		if lines.count >= 30 && !hasReleaseTerms {
 			return true
 		}
@@ -857,11 +890,7 @@ enum ReleaseNotesMarkup {
 
 	private static func looksLikeReleaseSentence(_ text: String) -> Bool {
 		guard let firstWord = text.split(separator: " ").first else { return false }
-		let bodyVerbs: Set<String> = [
-			"adds", "allows", "applies", "brings", "changes", "fixes",
-			"improves", "introduces", "lets", "makes", "resolves", "updates"
-		]
-		return bodyVerbs.contains(Self.normalizedToken(firstWord))
+		return Self.releaseSentenceBodyVerbs.contains(Self.normalizedToken(firstWord))
 	}
 
 	private static func capitalizingFirstLetter(_ text: String) -> String {
@@ -905,12 +934,7 @@ enum ReleaseNotesMarkup {
 	private static func looksLikeBodyStart(_ tokens: ArraySlice<Substring>) -> Bool {
 		guard tokens.count >= 2 else { return false }
 
-		let bodyVerbs: Set<String> = [
-			"adds", "allows", "applies", "are", "brings", "can", "changes",
-			"fixes", "has", "have", "improves", "introduces", "is", "lets",
-			"makes", "now", "updates", "uses", "was", "were", "will"
-		]
-		return bodyVerbs.contains(Self.normalizedToken(tokens[tokens.index(after: tokens.startIndex)]))
+		return Self.repeatedHeadingBodyVerbs.contains(Self.normalizedToken(tokens[tokens.index(after: tokens.startIndex)]))
 	}
 
 	private static func attributedString(fromMarkdown markdown: String) -> NSAttributedString {
@@ -1082,8 +1106,7 @@ enum ReleaseNotesMarkup {
 		guard matches.count >= 4 else { return false }
 
 		let words = line.matches(of: /[A-Za-z]{3,}/).map { String(line[$0.range]) }
-		let navigationWords = Set(["versions", "version", "channel", "stable", "preview", "releases"])
-		let meaningfulWords = words.filter { !navigationWords.contains($0.lowercased()) }
+		let meaningfulWords = words.filter { !Self.versionNavigationWords.contains($0.lowercased()) }
 
 		return meaningfulWords.count <= 2
 	}
