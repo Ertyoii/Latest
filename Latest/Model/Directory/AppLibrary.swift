@@ -20,7 +20,9 @@ class AppLibrary: @unchecked Sendable {
 
 	/// A list of all application bundles that are available locally.
 	var bundles: [App.Bundle] {
-		directories.flatMap { $0.value.bundles}
+		stateQueue.sync {
+			currentBundles()
+		}
 	}
 
 	private var directories = [URL: AppDirectory]()
@@ -30,7 +32,7 @@ class AppLibrary: @unchecked Sendable {
 		self.updateHandler = handler
 	}
 
-	private let updateSchedulingQueue = DispatchQueue(label: "AppLibraryUpdateSchedulingQueue")
+	private let stateQueue = DispatchQueue(label: "AppLibraryStateQueue")
 
 	private var scheduledUpdateWorkItem: DispatchWorkItem?
 
@@ -41,14 +43,16 @@ class AppLibrary: @unchecked Sendable {
 
 	/// Starts the update checking process
 	func startQuery() {
-		Task.detached(priority: .utility) {
+		stateQueue.async { [weak self] in
+			guard let self else { return }
 			self.setupDirectoryObservers()
 		}
 	}
 
 	/// Forces all observed directories to be read from disk again.
 	func reload(handler: @escaping ReloadHandler) {
-		Task.detached(priority: .utility) {
+		stateQueue.async { [weak self] in
+			guard let self else { return }
 			self.setupDirectoryObservers()
 			self.refreshDirectories(handler: handler)
 		}
@@ -56,20 +60,23 @@ class AppLibrary: @unchecked Sendable {
 
 	private func setupDirectoryObservers() {
 		// Use a dispatch group for the initial setup to get contents for all directories before gathering apps
-		var dispatchGroup: DispatchGroup? = self.directories.isEmpty ? DispatchGroup() : nil
+		let isInitialSetup = self.directories.isEmpty
+		let dispatchGroup = isInitialSetup ? DispatchGroup() : nil
 
 		// Setup directories
 		directories = Dictionary(uniqueKeysWithValues: directoryStore.URLs.compactMap { url in
 			// Skip unreachable directories
 			guard directoryStore.isReachable(url) else { return nil }
 
-			dispatchGroup?.enter()
+			if isInitialSetup {
+				dispatchGroup?.enter()
+			}
 
 			// Reuse existing directory observations if possible
 			return (url, directories[url] ?? AppDirectory(url: url) {
-				if let dispatchGroup {
+				if isInitialSetup {
 					// Initial mode, notify dispatch group
-					dispatchGroup.leave()
+					dispatchGroup?.leave()
 				} else {
 					// Schedule update and coalesce bursts of file-system events.
 					self.scheduleUpdate()
@@ -77,15 +84,14 @@ class AppLibrary: @unchecked Sendable {
 			})
 		})
 
-		dispatchGroup?.notify(queue: updateSchedulingQueue) {
+		dispatchGroup?.notify(queue: stateQueue) {
 			// Call update immediately. Using the scheduler delays the update.
 			self.performUpdate()
-			dispatchGroup = nil
 		}
 	}
 
 	private func performUpdate() {
-		updateHandler(bundles)
+		updateHandler(currentBundles())
 	}
 
 	private func refreshDirectories(handler: @escaping ReloadHandler) {
@@ -98,24 +104,31 @@ class AppLibrary: @unchecked Sendable {
 			}
 		}
 
-		dispatchGroup.notify(queue: updateSchedulingQueue) {
-			handler(self.bundles)
+		dispatchGroup.notify(queue: stateQueue) {
+			handler(self.currentBundles())
 		}
 	}
 
 	private func scheduleUpdate() {
-		updateSchedulingQueue.async { [weak self] in
+		stateQueue.async { [weak self] in
 			guard let self else { return }
-
-			self.scheduledUpdateWorkItem?.cancel()
-
-			let workItem = DispatchWorkItem { [weak self] in
-				self?.performUpdate()
-			}
-			self.scheduledUpdateWorkItem = workItem
-
-			self.updateSchedulingQueue.asyncAfter(deadline: .now() + Self.updateCoalescingInterval, execute: workItem)
+			self.scheduleUpdateOnStateQueue()
 		}
+	}
+
+	private func scheduleUpdateOnStateQueue() {
+		self.scheduledUpdateWorkItem?.cancel()
+
+		let workItem = DispatchWorkItem { [weak self] in
+			self?.performUpdate()
+		}
+		self.scheduledUpdateWorkItem = workItem
+
+		self.stateQueue.asyncAfter(deadline: .now() + Self.updateCoalescingInterval, execute: workItem)
+	}
+
+	private func currentBundles() -> [App.Bundle] {
+		directories.flatMap { $0.value.bundles }
 	}
 
 

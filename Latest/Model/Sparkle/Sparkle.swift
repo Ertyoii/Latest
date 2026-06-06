@@ -16,11 +16,19 @@ struct Sparke {
 			return nil
 		}
 
+		return feedURL(from: information, bundleIdentifier: identifier, bundleURL: bundle.bundleURL)
+	}
+
+	/// Returns the Sparkle feed URL from already-loaded bundle metadata.
+	static func feedURL(from information: [String: Any], bundleIdentifier: String, bundleURL: URL) -> URL? {
 		if let urlString = information["SUFeedURL"] as? String, let feedURL = URL(string: urlString.unquoted)  {
 			return feedURL
 		} else { // Maybe the app is built using DevMate
 			// Check for the DevMate framework
-			let frameworksURL = URL(fileURLWithPath: bundle.bundlePath, isDirectory: true).appendingPathComponent("Contents").appendingPathComponent("Frameworks")
+			let frameworksURL = bundleURL.appendingPathComponent("Contents").appendingPathComponent("Frameworks")
+			guard FileManager.default.fileExists(atPath: frameworksURL.path) else {
+				return nil
+			}
 			
 			let frameworks = try? FileManager.default.contentsOfDirectory(atPath: frameworksURL.path)
 			if !(frameworks?.contains(where: { $0.contains("DevMateKit") }) ?? false) {
@@ -32,7 +40,7 @@ struct Sparke {
 				return nil
 			}
 			
-			feedURL.appendPathComponent(identifier)
+			feedURL.appendPathComponent(bundleIdentifier)
 			feedURL.appendPathExtension("xml")
 			
 			return feedURL

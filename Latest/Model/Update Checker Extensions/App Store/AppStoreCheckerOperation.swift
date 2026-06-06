@@ -238,6 +238,10 @@ enum AppStoreReceipt {
 
 	private static func wrappedIOSReceiptURL(forAppAt appURL: URL, fileManager: FileManager) -> URL? {
 		let wrapperURL = appURL.appendingPathComponent("Contents/Wrapper", isDirectory: true)
+		guard fileManager.fileExists(atPath: wrapperURL.path) else {
+			return nil
+		}
+
 		guard let enumerator = fileManager.enumerator(
 			at: wrapperURL,
 			includingPropertiesForKeys: [.isRegularFileKey],

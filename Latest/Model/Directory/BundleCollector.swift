@@ -25,6 +25,8 @@ enum BundleCollector {
 
 	/// Returns a list of application bundles at the given URL.
 	static func collectBundles(at url: URL) -> [App.Bundle] {
+		guard !isInExcludedSubfolder(url) else { return [] }
+
 		let enumerator = FileManager.default.enumerator(
 			at: url,
 			includingPropertiesForKeys: [.isApplicationKey, .isPackageKey, .contentModificationDateKey],
@@ -56,22 +58,23 @@ enum BundleCollector {
 	// MARK: - Utilities
 
 	private static func isExcludedSubfolder(_ url: URL) -> Bool {
+		return excludedSubfolders.contains(url.lastPathComponent)
+	}
+
+	private static func isInExcludedSubfolder(_ url: URL) -> Bool {
 		return url.pathComponents.contains { excludedSubfolders.contains($0) }
 	}
 
 	/// Returns a bundle representation for the app at the given url, without Spotlight Metadata.
 	static private func bundle(forAppAt url: URL) -> App.Bundle? {
-		guard let appBundle = Bundle(url: url),
-			  let identifier = appBundle.bundleIdentifier,
-			  let infoDictionary = appBundle.uncachedInfoDictionary,
+		guard let infoDictionary = Bundle.infoDictionary(forAppAt: url),
+			  let identifier = infoDictionary.bundleIdentifier,
 			  let appName = infoDictionary.bundleName else {
 			return nil
 		}
 
 		// Find update source
-		guard let source = UpdateCheckCoordinator.source(forAppAt: url) else {
-			return nil
-		}
+		let source = source(forAppAt: url, information: infoDictionary, bundleIdentifier: identifier)
 
 		// Skip bundles which are explicitly excluded
 		guard !excludedBundleIdentifiers.contains(where: { identifier.contains($0) }) else {
@@ -91,19 +94,25 @@ enum BundleCollector {
 		return App.Bundle(version: version, name: appName, bundleIdentifier: identifier, fileURL: url, source: source)
 	}
 
+	private static func source(forAppAt url: URL, information: [String: Any], bundleIdentifier: String) -> App.Source {
+		if AppStoreUpdateCheckerOperation.canPerformUpdateCheck(forAppAt: url) {
+			return .appStore
+		}
+
+		if Sparke.feedURL(from: information, bundleIdentifier: bundleIdentifier, bundleURL: url) != nil {
+			return .sparkle
+		}
+
+		return .none
+	}
+
 }
 
 fileprivate extension Bundle {
 
 	/// Returns the bundle info dictionary which is guaranteed to be current.
-	var uncachedInfoDictionary: [String: Any]? {
-		let bundleRef = CFBundleCreate(.none, self.bundleURL as CFURL)
-
-		// (NS)Bundle has a cache for (all?) properties, presumably to reduce disk access. Therefore, after updating an app, the old bundle version may be
-		// returned. Flushing the cache (private method) resolves this.
-		_CFBundleFlushBundleCaches(bundleRef)
-
-		let infoPlistURL = self.bundleURL.appendingPathComponent("Contents/Info.plist", isDirectory: false)
+	static func infoDictionary(forAppAt url: URL) -> [String: Any]? {
+		let infoPlistURL = url.appendingPathComponent("Contents/Info.plist", isDirectory: false)
 		guard let data = try? Data(contentsOf: infoPlistURL) else {
 			return nil
 		}
@@ -114,6 +123,11 @@ fileprivate extension Bundle {
 }
 
 fileprivate extension Dictionary where Key == String, Value == Any {
+
+	/// Returns the bundle identifier when working without Spotlight.
+	var bundleIdentifier: String? {
+		return self["CFBundleIdentifier"] as? String
+	}
 
 	/// Returns the bundle name when working without Spotlight.
 	var bundleName: String? {

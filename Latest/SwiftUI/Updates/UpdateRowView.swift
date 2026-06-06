@@ -194,7 +194,6 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 	private func updateIcon(for app: App) {
 		guard representedIdentifier != app.identifier else { return }
 		representedIdentifier = app.identifier
-		iconView.image = NSWorkspace.shared.icon(forFile: app.fileURL.path)
 		IconCache.shared.icon(for: app) { [weak self] image in
 			guard self?.representedIdentifier == app.identifier else { return }
 			self?.iconView.image = image

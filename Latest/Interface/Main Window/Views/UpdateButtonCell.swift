@@ -29,7 +29,7 @@ class UpdateButtonCell: NSButtonCell {
 	/// The type of button that should be drawn.
 	var contentType: ContentType = .button {
 		didSet {
-			self.displayLink?.stop()
+			self.displayLink?.invalidate()
 			
 			// Start a display link that continuously updates the activity indicator
 			if self.contentType == .indeterminate {
@@ -65,6 +65,7 @@ class UpdateButtonCell: NSButtonCell {
 	}
 	
 	private func startDisplayLink(withDuration duration: Double?) {
+		displayLink?.invalidate()
 		displayLink = DisplayLink(duration: duration, callback: { [weak self] frame in
 			self?.view.needsDisplay = true
 		})

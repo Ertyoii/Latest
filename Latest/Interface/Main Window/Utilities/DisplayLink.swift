@@ -56,8 +56,7 @@ class DisplayLink: NSObject, @unchecked Sendable {
 	}
 
 	deinit {
-		self.displayLink?.invalidate()
-		self.fallbackTimer?.invalidate()
+		self.invalidate()
 	}
 
 
@@ -112,6 +111,14 @@ class DisplayLink: NSObject, @unchecked Sendable {
 	/// Stops the display link.
 	func stop() {
 		displayLink?.isPaused = true
+		fallbackTimer?.invalidate()
+		fallbackTimer = nil
+	}
+
+	/// Invalidates the display link permanently.
+	func invalidate() {
+		displayLink?.invalidate()
+		displayLink = nil
 		fallbackTimer?.invalidate()
 		fallbackTimer = nil
 	}
