@@ -52,12 +52,20 @@ class AppDirectory: @unchecked Sendable {
 	}()
 	
 	/// Initializes the class and resumes the listener automatically
-	init(url: URL, updateHandler: @escaping UpdateHandler) {
+	init(
+		url: URL,
+		notifyOnInitialCollection: Bool = true,
+		initialCollectionCompletion: RefreshCompletion? = nil,
+		updateHandler: @escaping UpdateHandler
+	) {
 		self.url = url
 		self.handler = updateHandler
 		self.collectionQueue = DispatchQueue(label: "AppDirectoryCollectionQueue.\(url.path)")
 		
-		resumeTracking()
+		resumeTracking(
+			notifyHandler: notifyOnInitialCollection,
+			completion: initialCollectionCompletion
+		)
 	}
 	
 	deinit {
@@ -70,9 +78,9 @@ class AppDirectory: @unchecked Sendable {
 	}
 	
 	/// Resumes tracking if it is not already running
-	private func resumeTracking() {
+	private func resumeTracking(notifyHandler: Bool, completion: RefreshCompletion?) {
 		listener?.activate()
-		collectBundles()
+		collectBundles(notifyHandler: notifyHandler, completion: completion)
 	}
 	
 	/// Triggers an update run

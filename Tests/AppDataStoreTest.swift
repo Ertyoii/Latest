@@ -81,6 +81,33 @@ final class AppDirectoryTest: XCTestCase {
 		XCTAssertEqual(directory.bundles.first?.version.versionNumber, "1.1")
 	}
 
+	func testInitialCollectionCanCompleteWithoutCallingUpdateHandler() throws {
+		let directoryURL = FileManager.default.temporaryDirectory
+			.appendingPathComponent(UUID().uuidString, isDirectory: true)
+		try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+		try writeAppBundle(at: directoryURL.appendingPathComponent("Initial.app", isDirectory: true), versionNumber: "1.0")
+
+		let initialCollection = expectation(description: "Initial collection")
+		let updateHandler = expectation(description: "Update handler")
+		updateHandler.isInverted = true
+
+		let directory = AppDirectory(
+			url: directoryURL,
+			notifyOnInitialCollection: false,
+			initialCollectionCompletion: {
+				initialCollection.fulfill()
+			}
+		) {
+			updateHandler.fulfill()
+		}
+
+		wait(for: [initialCollection, updateHandler], timeout: 1)
+
+		XCTAssertEqual(directory.bundles.first?.version.versionNumber, "1.0")
+	}
+
 	private func writeAppBundle(at url: URL, versionNumber: String) throws {
 		let contentsURL = url.appendingPathComponent("Contents", isDirectory: true)
 		try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)

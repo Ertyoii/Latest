@@ -64,25 +64,38 @@ class AppLibrary: @unchecked Sendable {
 		let dispatchGroup = isInitialSetup ? DispatchGroup() : nil
 
 		// Setup directories
-		directories = Dictionary(uniqueKeysWithValues: directoryStore.URLs.compactMap { url in
+		let observedDirectories: [(URL, AppDirectory)] = directoryStore.URLs.compactMap { url in
 			// Skip unreachable directories
 			guard directoryStore.isReachable(url) else { return nil }
 
-			if isInitialSetup {
-				dispatchGroup?.enter()
+			// Reuse existing directory observations if possible
+			if let directory = directories[url] {
+				return (url, directory)
 			}
 
-			// Reuse existing directory observations if possible
-			return (url, directories[url] ?? AppDirectory(url: url) {
-				if isInitialSetup {
-					// Initial mode, notify dispatch group
-					dispatchGroup?.leave()
-				} else {
-					// Schedule update and coalesce bursts of file-system events.
-					self.scheduleUpdate()
-				}
-			})
-		})
+			let directory: AppDirectory
+			let updateHandler: AppDirectory.UpdateHandler = { [weak self] in
+				// Schedule update and coalesce bursts of file-system events.
+				self?.scheduleUpdate()
+			}
+
+			if isInitialSetup {
+				dispatchGroup?.enter()
+				directory = AppDirectory(
+					url: url,
+					notifyOnInitialCollection: false,
+					initialCollectionCompletion: {
+						dispatchGroup?.leave()
+					},
+					updateHandler: updateHandler
+				)
+			} else {
+				directory = AppDirectory(url: url, updateHandler: updateHandler)
+			}
+
+			return (url, directory)
+		}
+		directories = Dictionary(uniqueKeysWithValues: observedDirectories)
 
 		dispatchGroup?.notify(queue: stateQueue) {
 			// Call update immediately. Using the scheduler delays the update.
