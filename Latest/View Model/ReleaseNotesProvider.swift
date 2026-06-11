@@ -7,6 +7,12 @@
 //
 
 import AppKit
+import OSLog
+
+private let releaseNotesLogger = Logger(
+	subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+	category: "ReleaseNotes"
+)
 
 /// Handles release notes conversion and loading.
 ///
@@ -145,10 +151,16 @@ class ReleaseNotesProvider {
 				return
 			} catch FetchHTMLError.unusableText {
 				guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
+				releaseNotesLogger.info(
+					"Rejected non-text release notes response from \(url.host ?? "unknown", privacy: .public)"
+				)
 				completion(.failure(LatestError.releaseNotesUnavailable))
 				return
 			} catch {
 				guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
+				releaseNotesLogger.info(
+					"Falling back to WebKit release notes loader for \(url.host ?? "unknown", privacy: .public)"
+				)
 				self.webReleaseNotes(from: url, relevantVersion: relevantVersion, requestID: requestID, with: completion)
 			}
 		}
@@ -175,6 +187,9 @@ class ReleaseNotesProvider {
 			let body = Self.deduplicating(title: release.name, in: release.body.trimmingCharacters(in: .whitespacesAndNewlines))
 			guard ReleaseNotesMarkup.isUsefulReleaseNotesText(body, relevantVersion: relevantVersion) else {
 				if let fallbackHTML {
+					releaseNotesLogger.info(
+						"Using fallback release notes HTML after GitHub release body was not useful for \(url.host ?? "unknown", privacy: .public)"
+					)
 					return ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil, relevantVersion: relevantVersion)
 				}
 				return .failure(LatestError.releaseNotesUnavailable)
@@ -189,11 +204,17 @@ class ReleaseNotesProvider {
 
 			let result = ReleaseNotesMarkup.attributedString(from: markdown, baseURL: nil, relevantVersion: relevantVersion)
 			if case .failure = result, let fallbackHTML {
+				releaseNotesLogger.info(
+					"Using fallback release notes HTML after GitHub markdown conversion failed for \(url.host ?? "unknown", privacy: .public)"
+				)
 				return ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil, relevantVersion: relevantVersion)
 			}
 			return result
 		} catch {
 			if let fallbackHTML {
+				releaseNotesLogger.info(
+					"Using fallback release notes HTML after GitHub release fetch failed for \(url.host ?? "unknown", privacy: .public)"
+				)
 				return ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil, relevantVersion: relevantVersion)
 			}
 			return .failure(error)
@@ -213,10 +234,12 @@ class ReleaseNotesProvider {
 			guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
 
 			if let fallbackHTML {
+				releaseNotesLogger.info("Using fallback release notes HTML after direct changelog fetch failed")
 				completion(ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil, relevantVersion: versionPrefix))
 				return
 			}
 
+			releaseNotesLogger.info("Falling back to WebKit changelog loader after direct changelog fetch failed")
 			self.webChangelogReleaseNotes(from: urls, versionPrefix: versionPrefix, allowsLatestFallback: allowsLatestFallback, requestID: requestID, with: completion)
 		}
 	}

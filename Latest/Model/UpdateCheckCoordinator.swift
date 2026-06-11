@@ -7,6 +7,12 @@
 //
 
 import Foundation
+import OSLog
+
+private let updateCheckLogger = Logger(
+	subsystem: Foundation.Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+	category: "UpdateCheck"
+)
 
 /**
  Protocol that defines some methods on reporting the progress of the update checking process.
@@ -148,6 +154,9 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 				self?.didCheck(bundle, result, generation: generation)
 			}
 		}
+		updateCheckLogger.info(
+			"Scheduled update check generation \(generation, privacy: .public) for \(bundles.count, privacy: .public) bundles and \(operations.count, privacy: .public) operations"
+		)
 
 		self.performUpdateCheck(with: operations, generation: generation)
 	}
@@ -157,6 +166,7 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 		guard !operations.isEmpty else {
 			Task { @MainActor in
 				guard self.updateCheckGeneration.isCurrent(generation) else { return }
+				updateCheckLogger.info("Finished update check generation \(generation, privacy: .public) with no operations")
 				self.progressDelegate?.updateChecker(self, didStartCheckingApps: 0)
 				self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self)
 			}
@@ -174,6 +184,7 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 		self.updateOperationQueue.addBarrierBlock { [weak self] in
 			guard let self else { return }
 			guard self.updateCheckGeneration.isCurrent(generation) else { return }
+			updateCheckLogger.info("Finished update check generation \(generation, privacy: .public)")
 			Task { @MainActor in
 				self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self)
 			}

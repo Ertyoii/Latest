@@ -7,9 +7,15 @@
 //
 
 import AppKit
+import OSLog
 
 /// User defaults key for storing the last cache update date.
 private let UpdateDateKey = "UpdateDateKey"
+
+private let updateRepositoryLogger = Logger(
+	subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+	category: "Repository"
+)
 
 /// A storage that fetches update information from an online source.
 ///
@@ -97,6 +103,9 @@ class UpdateRepository: @unchecked Sendable {
 			self.pendingRequests = nil
 
 			let isReusable = self.loadedURLTypes == Set(RemoteURL.allCases)
+			updateRepositoryLogger.info(
+				"Finalized update repository. loadedURLTypes=\(self.loadedURLTypes.count, privacy: .public) reusable=\(isReusable, privacy: .public)"
+			)
 			let finalizeHandler = self.finalizeHandler
 			self.finalizeHandler = nil
 			finalizeHandler?(self, isReusable)
@@ -117,6 +126,7 @@ class UpdateRepository: @unchecked Sendable {
 
 	/// Loads the repository data.
 	fileprivate func load() {
+		updateRepositoryLogger.info("Loading update repository sources")
 		RemoteURL.allCases.forEach { urlType in
 			self.fetchCompletedGroup.enter()
 
@@ -128,10 +138,12 @@ class UpdateRepository: @unchecked Sendable {
 						self.fetchCompletedGroup.leave()
 					}
 					guard let data else {
+						updateRepositoryLogger.info("Repository source \(urlType.rawValue, privacy: .public) returned no data")
 						return
 					}
 
 					self.loadedURLTypes.insert(urlType)
+					updateRepositoryLogger.info("Loaded repository source \(urlType.rawValue, privacy: .public)")
 
 					switch urlType {
 					case .repository:

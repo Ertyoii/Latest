@@ -7,6 +7,12 @@
 //
 
 import Foundation
+import OSLog
+
+private let appLibraryLogger = Logger(
+	subsystem: Foundation.Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+	category: "AppDiscovery"
+)
 
 /// Observes the local collection of apps and notifies its owner of changes.
 class AppLibrary: @unchecked Sendable {
@@ -62,6 +68,7 @@ class AppLibrary: @unchecked Sendable {
 		// Use a dispatch group for the initial setup to get contents for all directories before gathering apps
 		let isInitialSetup = self.directories.isEmpty
 		let dispatchGroup = isInitialSetup ? DispatchGroup() : nil
+		appLibraryLogger.info("Preparing app directory observers. initial=\(isInitialSetup, privacy: .public)")
 
 		// Setup directories
 		let observedDirectories: [(URL, AppDirectory)] = directoryStore.URLs.compactMap { url in
@@ -96,6 +103,7 @@ class AppLibrary: @unchecked Sendable {
 			return (url, directory)
 		}
 		directories = Dictionary(uniqueKeysWithValues: observedDirectories)
+		appLibraryLogger.info("Observing \(self.directories.count, privacy: .public) app directories")
 
 		dispatchGroup?.notify(queue: stateQueue) {
 			// Call update immediately. Using the scheduler delays the update.
@@ -104,11 +112,14 @@ class AppLibrary: @unchecked Sendable {
 	}
 
 	private func performUpdate() {
-		updateHandler(currentBundles())
+		let bundles = currentBundles()
+		appLibraryLogger.info("Publishing \(bundles.count, privacy: .public) discovered apps")
+		updateHandler(bundles)
 	}
 
 	private func refreshDirectories(handler: @escaping ReloadHandler) {
 		let dispatchGroup = DispatchGroup()
+		appLibraryLogger.info("Refreshing \(self.directories.count, privacy: .public) app directories")
 
 		for directory in directories.values {
 			dispatchGroup.enter()

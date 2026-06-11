@@ -7,6 +7,12 @@
 //
 
 import Cocoa
+import OSLog
+
+private let appDirectoryLogger = Logger(
+	subsystem: Foundation.Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+	category: "AppDiscovery"
+)
 
 /// The folder listener listens for changes in the given directory and then runs the update checker on changes
 class AppDirectory: @unchecked Sendable {
@@ -86,7 +92,13 @@ class AppDirectory: @unchecked Sendable {
 	/// Triggers an update run
 	private func collectBundles(notifyHandler: Bool = true, completion: RefreshCompletion? = nil) {
 		collectionQueue.async {
-			self.collectedBundles = BundleCollector.collectBundles(at: self.url)
+			let start = DispatchTime.now().uptimeNanoseconds
+			let bundles = BundleCollector.collectBundles(at: self.url)
+			let duration = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
+			self.collectedBundles = bundles
+			appDirectoryLogger.info(
+				"Collected \(bundles.count, privacy: .public) apps from \(self.url.lastPathComponent, privacy: .private) in \(duration, privacy: .public) ms"
+			)
 			if notifyHandler {
 				self.handler()
 			}

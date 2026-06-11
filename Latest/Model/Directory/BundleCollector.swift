@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Darwin
 import UniformTypeIdentifiers
 
 /// Gathers apps at a given URL.
@@ -23,14 +24,20 @@ enum BundleCollector {
 
 	private static let appExtension = UTType.applicationBundle.preferredFilenameExtension
 
+	private static let packageExtensionsToSkip = Set([
+		"app", "appex", "bundle", "framework", "kext", "mdimporter", "plugin", "prefpane", "qlgenerator", "xpc"
+	])
+
+	private static let metadataCache = BundleMetadataCache()
+
 	/// Returns a list of application bundles at the given URL.
 	static func collectBundles(at url: URL) -> [App.Bundle] {
 		guard !isInExcludedSubfolder(url) else { return [] }
 
 		let enumerator = FileManager.default.enumerator(
 			at: url,
-			includingPropertiesForKeys: [.isApplicationKey, .isPackageKey, .contentModificationDateKey],
-			options: [.skipsHiddenFiles, .skipsPackageDescendants]
+			includingPropertiesForKeys: nil,
+			options: [.skipsHiddenFiles]
 		)
 
 		var bundles = [App.Bundle]()
@@ -40,8 +47,17 @@ enum BundleCollector {
 				continue
 			}
 
-			if bundleURL.pathExtension == appExtension, let bundle = bundle(forAppAt: bundleURL) {
-				bundles.append(bundle)
+			let pathExtension = bundleURL.pathExtension.lowercased()
+			if pathExtension == appExtension {
+				if let bundle = cachedBundle(forAppAt: bundleURL) {
+					bundles.append(bundle)
+				}
+				enumerator?.skipDescendants()
+				continue
+			}
+
+			if packageExtensionsToSkip.contains(pathExtension) {
+				enumerator?.skipDescendants()
 			}
 		}
 
@@ -51,7 +67,7 @@ enum BundleCollector {
 	/// Returns a single application bundle at the given URL.
 	static func collectBundle(at url: URL) -> App.Bundle? {
 		guard url.pathExtension == appExtension else { return nil }
-		return bundle(forAppAt: url)
+		return cachedBundle(forAppAt: url)
 	}
 
 
@@ -65,6 +81,17 @@ enum BundleCollector {
 		return url.pathComponents.contains { excludedSubfolders.contains($0) }
 	}
 
+	private static func cachedBundle(forAppAt url: URL) -> App.Bundle? {
+		guard let signature = BundleFileSignature(appURL: url) else {
+			metadataCache.removeBundle(forAppAt: url)
+			return nil
+		}
+
+		return metadataCache.bundle(forAppAt: url, signature: signature) {
+			bundle(forAppAt: url)
+		}
+	}
+
 	/// Returns a bundle representation for the app at the given url, without Spotlight Metadata.
 	static private func bundle(forAppAt url: URL) -> App.Bundle? {
 		guard let infoDictionary = Bundle.infoDictionary(forAppAt: url),
@@ -73,13 +100,13 @@ enum BundleCollector {
 			return nil
 		}
 
-		// Find update source
-		let source = source(forAppAt: url, information: infoDictionary, bundleIdentifier: identifier)
-
 		// Skip bundles which are explicitly excluded
-		guard !excludedBundleIdentifiers.contains(where: { identifier.contains($0) }) else {
+		guard !isExcludedBundleIdentifier(identifier) else {
 			return nil
 		}
+
+		// Find update source
+		let source = source(forAppAt: url, information: infoDictionary, bundleIdentifier: identifier)
 
 		// Build version. Skip bundle if no version is provided.
 		let version = Version(
@@ -94,6 +121,10 @@ enum BundleCollector {
 		return App.Bundle(version: version, name: appName, bundleIdentifier: identifier, fileURL: url, source: source)
 	}
 
+	private static func isExcludedBundleIdentifier(_ identifier: String) -> Bool {
+		excludedBundleIdentifiers.contains { identifier.contains($0) }
+	}
+
 	private static func source(forAppAt url: URL, information: [String: Any], bundleIdentifier: String) -> App.Source {
 		if AppStoreUpdateCheckerOperation.canPerformUpdateCheck(forAppAt: url) {
 			return .appStore
@@ -106,6 +137,96 @@ enum BundleCollector {
 		return .none
 	}
 
+}
+
+private final class BundleMetadataCache: @unchecked Sendable {
+	private struct Entry {
+		let signature: BundleFileSignature
+		let bundle: App.Bundle
+	}
+
+	private let lock = NSLock()
+	private var entries = [URL: Entry]()
+
+	func bundle(forAppAt url: URL, signature: BundleFileSignature, loader: () -> App.Bundle?) -> App.Bundle? {
+		let key = url.standardizedFileURL
+
+		if let cachedBundle = lock.withCriticalScope(block: { entries[key] }) {
+			if cachedBundle.signature == signature {
+				return cachedBundle.bundle
+			}
+		}
+
+		guard let bundle = loader() else {
+			removeBundle(forAppAt: url)
+			return nil
+		}
+
+		lock.withCriticalScope {
+			entries[key] = Entry(signature: signature, bundle: bundle)
+		}
+		return bundle
+	}
+
+	func removeBundle(forAppAt url: URL) {
+		let key = url.standardizedFileURL
+		lock.withCriticalScope {
+			_ = entries.removeValue(forKey: key)
+		}
+	}
+}
+
+private struct BundleFileSignature: Equatable {
+	let app: FileSystemItemSignature?
+	let contents: FileSystemItemSignature?
+	let infoPlist: FileSystemItemSignature
+	let pkgInfo: FileSystemItemSignature?
+	let executableDirectory: FileSystemItemSignature?
+	let resources: FileSystemItemSignature?
+	let standardReceipt: FileSystemItemSignature?
+	let wrapper: FileSystemItemSignature?
+	let frameworks: FileSystemItemSignature?
+	let codeSignature: FileSystemItemSignature?
+
+	init?(appURL: URL) {
+		let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
+		let infoPlistURL = contentsURL.appendingPathComponent("Info.plist", isDirectory: false)
+		guard let infoPlist = FileSystemItemSignature(url: infoPlistURL) else {
+			return nil
+		}
+
+		let standardReceiptURL = contentsURL.appendingPathComponent("_MASReceipt/receipt", isDirectory: false)
+
+		self.app = FileSystemItemSignature(url: appURL)
+		self.contents = FileSystemItemSignature(url: contentsURL)
+		self.infoPlist = infoPlist
+		self.pkgInfo = FileSystemItemSignature(url: contentsURL.appendingPathComponent("PkgInfo", isDirectory: false))
+		self.executableDirectory = FileSystemItemSignature(url: contentsURL.appendingPathComponent("MacOS", isDirectory: true))
+		self.resources = FileSystemItemSignature(url: contentsURL.appendingPathComponent("Resources", isDirectory: true))
+		self.standardReceipt = FileSystemItemSignature(url: standardReceiptURL)
+		self.wrapper = FileSystemItemSignature(url: contentsURL.appendingPathComponent("Wrapper", isDirectory: true))
+		self.frameworks = FileSystemItemSignature(url: contentsURL.appendingPathComponent("Frameworks", isDirectory: true))
+		self.codeSignature = FileSystemItemSignature(url: contentsURL.appendingPathComponent("_CodeSignature/CodeResources", isDirectory: false))
+	}
+}
+
+private struct FileSystemItemSignature: Equatable {
+	let modificationSeconds: Int
+	let modificationNanoseconds: Int
+	let size: Int64
+
+	init?(url: URL) {
+		var fileInfo = stat()
+		let result = url.withUnsafeFileSystemRepresentation { path -> Int32 in
+			guard let path else { return -1 }
+			return stat(path, &fileInfo)
+		}
+		guard result == 0 else { return nil }
+
+		self.modificationSeconds = Int(fileInfo.st_mtimespec.tv_sec)
+		self.modificationNanoseconds = Int(fileInfo.st_mtimespec.tv_nsec)
+		self.size = fileInfo.st_size
+	}
 }
 
 fileprivate extension Bundle {

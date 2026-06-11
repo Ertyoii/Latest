@@ -7,6 +7,7 @@
 //
 
 import Cocoa
+import Darwin
 
 extension App {
 	
@@ -59,9 +60,20 @@ extension App {
 				fileURL.appendingPathComponent("Contents/_CodeSignature/CodeResources", isDirectory: false)
 			]
 
-			return candidateURLs.compactMap { url in
-				try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-			}.max() ?? Date.distantPast
+			return candidateURLs.compactMap(modificationDate).max() ?? Date.distantPast
+		}
+
+		private static func modificationDate(for url: URL) -> Date? {
+			var fileInfo = stat()
+			let result = url.withUnsafeFileSystemRepresentation { path -> Int32 in
+				guard let path else { return -1 }
+				return stat(path, &fileInfo)
+			}
+			guard result == 0 else { return nil }
+
+			return Date(
+				timeIntervalSince1970: TimeInterval(fileInfo.st_mtimespec.tv_sec) + TimeInterval(fileInfo.st_mtimespec.tv_nsec) / 1_000_000_000
+			)
 		}
 
 

@@ -784,6 +784,52 @@ final class BundleCollectorTest: XCTestCase {
 		XCTAssertEqual(updatedBundle.version.buildNumber, "125")
 	}
 
+	func testCollectingUnchangedBundleReusesCachedMetadata() throws {
+		let directory = try makeTemporaryDirectory()
+		let appURL = try makeAppBundle(
+			named: "Cached In Place",
+			in: directory,
+			info: [
+				"CFBundleName": "Cached In Place",
+				"CFBundleExecutable": "Cached In Place",
+				"CFBundleIdentifier": "com.example.cached-in-place",
+				"CFBundleShortVersionString": "1.2.3",
+				"CFBundleVersion": "123"
+			]
+		)
+
+		let firstBundle = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
+		let secondBundle = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
+
+		XCTAssertTrue(firstBundle === secondBundle)
+	}
+
+	func testCollectingBundleWithUpdatedModificationDateRefreshesCachedMetadata() throws {
+		let directory = try makeTemporaryDirectory()
+		let appURL = try makeAppBundle(
+			named: "Updated Metadata",
+			in: directory,
+			info: [
+				"CFBundleName": "Updated Metadata",
+				"CFBundleExecutable": "Updated Metadata",
+				"CFBundleIdentifier": "com.example.updated-metadata",
+				"CFBundleShortVersionString": "1.2.3",
+				"CFBundleVersion": "123"
+			]
+		)
+
+		let firstBundle = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
+		let resourcesURL = appURL.appendingPathComponent("Contents/Resources", isDirectory: true)
+		let newerTimestamp = Date(timeIntervalSince1970: floor(firstBundle.modificationDate.timeIntervalSince1970) + 60)
+		try FileManager.default.createDirectory(at: resourcesURL, withIntermediateDirectories: true)
+		try setModificationDate(newerTimestamp, for: resourcesURL)
+
+		let updatedBundle = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
+
+		XCTAssertFalse(firstBundle === updatedBundle)
+		XCTAssertEqual(updatedBundle.modificationDate.timeIntervalSince1970, newerTimestamp.timeIntervalSince1970, accuracy: 0.001)
+	}
+
 	func testCollectBundlesSkipsAppsInsideExcludedSubfolders() throws {
 		let directory = try makeTemporaryDirectory()
 		let excludedDirectory = directory.appendingPathComponent("Setapp", isDirectory: true)
