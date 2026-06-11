@@ -460,6 +460,28 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertFalse(string.string.contains("Shared Canvases"))
 	}
 
+	func testReleaseNotesMarkupUsesCursorVersionHeadingBeforeBodyMention() throws {
+		let changelog = """
+		Changelog
+		Jun 10, 2026
+		Bugbot is now over 3x faster
+		Available in Cursor 3.7+ and on cursor.com/agents.
+		3.7 Jun 5, 2026
+		Design Mode Improvements
+		With Design Mode in the Cursor browser, you can click, draw, or describe changes by voice.
+		3.6 May 29, 2026
+		Auto-review Run Mode
+		Auto-review is a new run mode that allows Cursor to work for longer.
+		"""
+
+		let text = try XCTUnwrap(ReleaseNotesMarkup.relevantText(from: changelog, version: "3.7", allowFirstSectionFallback: true))
+
+		XCTAssertTrue(text.hasPrefix("3.7 Jun 5, 2026"))
+		XCTAssertTrue(text.contains("Design Mode Improvements"))
+		XCTAssertFalse(text.contains("Available in Cursor 3.7+"))
+		XCTAssertFalse(text.contains("Auto-review Run Mode"))
+	}
+
 	func testReleaseNotesMarkupExtractsFirstReleaseNotesURLFromStubText() throws {
 		let text = "1.12.7 https://obsidian.md/changelog/2026-03-23-desktop-v1.12.7/"
 		let url = try XCTUnwrap(ReleaseNotesMarkup.firstReleaseNotesURL(in: text, baseURL: nil))
@@ -502,6 +524,51 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertFalse(text.contains("1.4.3 • 1.4.2"))
 		XCTAssertTrue(text.contains("Fixed an issue where using GPT models"))
 		XCTAssertFalse(text.contains("empty model dropdown"))
+	}
+
+	func testReleaseNotesMarkupSkipsZedVersionSidebarList() throws {
+		let html = """
+		<nav>
+			<h2>Versions</h2>
+			<a href="/releases/stable/1.6.3">1.6.3</a>
+			<a href="/releases/stable/1.5.5">1.5.5</a>
+			<a href="/releases/stable/1.5.4">1.5.4</a>
+			<h2>Versions</h2>
+			<a href="/releases/stable/1.6.3">1.6.3</a>
+			<a href="/releases/stable/1.5.5">1.5.5</a>
+			<a href="/releases/stable/1.5.4">1.5.4</a>
+		</nav>
+		<main>
+			<h2>June 2026</h2>
+			<p>* * *</p>
+			<h2>1.6.3</h2>
+			<p>Jun 10, 2026</p>
+			<p>macOS</p>
+			<p>Loading…</p>
+			<p>Windows</p>
+			<p>Loading...</p>
+			<p>Linux</p>
+			<p>This week's release includes the ability to open a Git diff for a single file.</p>
+			<h3>Features</h3>
+			<ul>
+				<li>Agent: Added a way to share skills via links.</li>
+			</ul>
+			<h2>1.5.5</h2>
+			<p>Jun 09, 2026</p>
+			<ul>
+				<li>Older release note.</li>
+			</ul>
+		</main>
+		"""
+
+		let text = try XCTUnwrap(ReleaseNotesMarkup.relevantChangelogText(fromHTML: html, version: "1.6.3", pageURL: URL(string: "https://zed.dev/releases/stable/1.6.3")!, allowFirstSectionFallback: false))
+
+		XCTAssertTrue(text.hasPrefix("1.6.3"))
+		XCTAssertTrue(text.contains("This week's release includes"))
+		XCTAssertTrue(text.contains("Agent: Added a way to share skills"))
+		XCTAssertFalse(text.contains("Versions"))
+		XCTAssertFalse(text.contains("Loading"))
+		XCTAssertFalse(text.contains("Older release note"))
 	}
 
 	func testReleaseNotesMarkupExtractsZedReleasePayloadBeforeVersionNavigation() throws {

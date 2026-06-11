@@ -314,7 +314,7 @@ class ReleaseNotesProvider {
 		try await Self.validateURLCanContainHTML(url)
 
 		var request = URLRequest(url: url)
-		request.cachePolicy = .returnCacheDataElseLoad
+		request.cachePolicy = .reloadIgnoringLocalCacheData
 		request.timeoutInterval = 4
 		request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
 
@@ -355,7 +355,7 @@ private extension ReleaseNotesProvider {
 
 		var request = URLRequest(url: url)
 		request.httpMethod = "HEAD"
-		request.cachePolicy = .returnCacheDataElseLoad
+		request.cachePolicy = .reloadIgnoringLocalCacheData
 		request.timeoutInterval = 4
 		request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
 
@@ -507,6 +507,9 @@ enum ReleaseNotesMarkup {
 	private static let versionNavigationWords: Set<String> = [
 		"versions", "version", "channel", "stable", "preview", "releases"
 	]
+	private static let zedReleaseChromeLines: Set<String> = [
+		"linux", "loading...", "loading…", "macos", "windows"
+	]
 	private static let webPageChromeReleaseTerms = [
 		"release", "changelog", "change log", "fixed", "bug", "improved", "added", "security", "resolved"
 	]
@@ -586,29 +589,34 @@ enum ReleaseNotesMarkup {
 
 		let escapedVersion = NSRegularExpression.escapedPattern(for: version)
 		let pattern = #"\\\"release\\\":\{\\\"version\\\":\\\""# + escapedVersion + #"\\\",\\\"description\\\":\\\"((?:\\\\.|[^\\\"])*)\\\""#
-		guard let regex = try? NSRegularExpression(pattern: pattern) else {
+		if let regex = try? NSRegularExpression(pattern: pattern) {
+			let htmlRange = NSRange(html.startIndex..<html.endIndex, in: html)
+			if let match = regex.firstMatch(in: html, range: htmlRange),
+			   let descriptionRange = Range(match.range(at: 1), in: html) {
+				let escapedDescription = String(html[descriptionRange])
+				let jsonString = "\"\(escapedDescription)\""
+				if let data = jsonString.data(using: .utf8),
+				   let decodedDescription = try? JSONDecoder().decode(String.self, from: data) {
+					let description = decodedDescription
+						.replacingOccurrences(of: "\\r", with: "\r")
+						.replacingOccurrences(of: "\\n", with: "\n")
+						.trimmingCharacters(in: .whitespacesAndNewlines)
+
+					if !description.isEmpty {
+						return description
+					}
+				}
+			}
+		}
+
+		guard let text = Self.plainText(fromHTML: html),
+			  let releaseText = Self.relevantText(from: text, version: version, allowFirstSectionFallback: false),
+			  let cleanedText = Self.cleanedZedReleaseText(releaseText),
+			  Self.isUsefulReleaseNotesText(cleanedText, relevantVersion: version) else {
 			return nil
 		}
 
-		let htmlRange = NSRange(html.startIndex..<html.endIndex, in: html)
-		guard let match = regex.firstMatch(in: html, range: htmlRange),
-			  let descriptionRange = Range(match.range(at: 1), in: html) else {
-			return nil
-		}
-
-		let escapedDescription = String(html[descriptionRange])
-		let jsonString = "\"\(escapedDescription)\""
-		guard let data = jsonString.data(using: .utf8),
-			  let decodedDescription = try? JSONDecoder().decode(String.self, from: data) else {
-			return nil
-		}
-
-		let description = decodedDescription
-			.replacingOccurrences(of: "\\r", with: "\r")
-			.replacingOccurrences(of: "\\n", with: "\n")
-			.trimmingCharacters(in: .whitespacesAndNewlines)
-
-		return description.isEmpty ? nil : description
+		return cleanedText
 	}
 
 	static func relevantChangelogText(fromHTML html: String, version: String?, pageURL: URL, allowFirstSectionFallback: Bool) -> String? {
@@ -735,13 +743,22 @@ enum ReleaseNotesMarkup {
 		var startIndex: Int?
 
 		if !versionCandidates.isEmpty {
-			startIndex = lines.firstIndex { line in
-				guard !Self.looksLikeVersionNavigation(line) else { return false }
+			func matchingVersionIndex(requiresBoundary: Bool) -> Int? {
+				for (index, line) in lines.enumerated() {
+					guard !Self.looksLikeVersionNavigation(line, at: index, in: lines),
+						  !requiresBoundary || Self.looksLikeVersionBoundary(line) else { continue }
 
-				return versionCandidates.contains { version in
-					line.range(of: #"(^|[^\d])v?\#(NSRegularExpression.escapedPattern(for: version))([^\d]|\z)"#, options: [.regularExpression, .caseInsensitive]) != nil
+					if versionCandidates.contains(where: { version in
+						line.range(of: #"(^|[^\d])v?\#(NSRegularExpression.escapedPattern(for: version))([^\d]|\z)"#, options: [.regularExpression, .caseInsensitive]) != nil
+					}) {
+						return index
+					}
 				}
+
+				return nil
 			}
+
+			startIndex = matchingVersionIndex(requiresBoundary: true) ?? matchingVersionIndex(requiresBoundary: false)
 		}
 
 		if startIndex == nil, allowFirstSectionFallback {
@@ -1014,6 +1031,21 @@ enum ReleaseNotesMarkup {
 		return result
 	}
 
+	private static func cleanedZedReleaseText(_ text: String) -> String? {
+		let lines = text.components(separatedBy: .newlines).compactMap { line -> String? in
+			let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+			guard !trimmedLine.isEmpty,
+				  !Self.zedReleaseChromeLines.contains(trimmedLine.lowercased()) else {
+				return nil
+			}
+
+			return trimmedLine
+		}
+
+		let cleanedText = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+		return cleanedText.isEmpty ? nil : cleanedText
+	}
+
 	private static func firstHrefURL(in html: String, baseURL: URL?) -> URL? {
 		let pattern = #"(?is)<a\b[^>]*\bhref\s*=\s*["']([^"']+)["']"#
 		guard let regex = try? NSRegularExpression(pattern: pattern) else {
@@ -1101,7 +1133,25 @@ enum ReleaseNotesMarkup {
 		line.range(of: #"^(?![-*•])\D{1,60}v?\d+(\.\d+){1,}(\s|$|-)"#, options: [.regularExpression, .caseInsensitive]) != nil
 	}
 
-	private static func looksLikeVersionNavigation(_ line: String) -> Bool {
+	private static func looksLikeVersionNavigation(_ line: String, at index: Int, in lines: [String]) -> Bool {
+		if Self.looksLikeDenseVersionNavigation(line) {
+			return true
+		}
+
+		guard Self.isBareVersionLine(line) else { return false }
+
+		if index > lines.startIndex, Self.isBareVersionLine(lines[index - 1]) {
+			return true
+		}
+
+		if lines.indices.contains(index + 1), Self.isBareVersionLine(lines[index + 1]) {
+			return true
+		}
+
+		return index > lines.startIndex && Self.versionNavigationWords.contains(lines[index - 1].lowercased())
+	}
+
+	private static func looksLikeDenseVersionNavigation(_ line: String) -> Bool {
 		let matches = line.matches(of: /\bv?\d+(?:\.\d+){1,}\b/)
 		guard matches.count >= 4 else { return false }
 
@@ -1109,6 +1159,10 @@ enum ReleaseNotesMarkup {
 		let meaningfulWords = words.filter { !Self.versionNavigationWords.contains($0.lowercased()) }
 
 		return meaningfulWords.count <= 2
+	}
+
+	private static func isBareVersionLine(_ line: String) -> Bool {
+		line.range(of: #"^v?\d+(\.\d+){1,}$"#, options: [.regularExpression, .caseInsensitive]) != nil
 	}
 
 }
