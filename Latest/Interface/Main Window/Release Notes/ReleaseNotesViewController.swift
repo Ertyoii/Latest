@@ -258,9 +258,11 @@ class ReleaseNotesViewController: NSViewController {
 			iconImageView.widthAnchor.constraint(equalToConstant: 64),
 			iconImageView.heightAnchor.constraint(equalTo: iconImageView.widthAnchor),
 			labelCenterYConstraint,
+			labelStack.topAnchor.constraint(greaterThanOrEqualTo: iconImageView.topAnchor, constant: 2),
+			labelStack.bottomAnchor.constraint(lessThanOrEqualTo: iconImageView.bottomAnchor, constant: -2),
 
 			titleRow.heightAnchor.constraint(equalToConstant: 19),
-			nameField.leadingAnchor.constraint(equalTo: titleRow.leadingAnchor, constant: -2),
+			nameField.leadingAnchor.constraint(equalTo: titleRow.leadingAnchor),
 			nameField.topAnchor.constraint(equalTo: titleRow.topAnchor, constant: 1),
 			nameField.heightAnchor.constraint(equalToConstant: 16),
 			supportButton.leadingAnchor.constraint(equalTo: nameField.trailingAnchor, constant: 8),
