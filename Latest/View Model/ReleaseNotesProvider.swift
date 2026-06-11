@@ -625,7 +625,14 @@ enum ReleaseNotesMarkup {
 						.replacingOccurrences(of: "\\n", with: "\n")
 						.trimmingCharacters(in: .whitespacesAndNewlines)
 
-					if !description.isEmpty {
+					if Self.isReactServerReference(description),
+					   let referencedDescription = Self.reactServerText(for: description, in: html),
+					   let cleanedText = Self.cleanedZedReleaseText(referencedDescription),
+					   Self.isUsefulReleaseNotesText(cleanedText, relevantVersion: version) {
+						return cleanedText
+					}
+
+					if !description.isEmpty, !Self.isReactServerReference(description) {
 						return description
 					}
 				}
@@ -794,10 +801,25 @@ enum ReleaseNotesMarkup {
 		let exactVersion = version?.trimmingCharacters(in: .whitespacesAndNewlines)
 		let startLine = lines[startIndex]
 		let shouldEndAtVersionBoundary = Self.looksLikeVersionBoundary(startLine)
-		let endIndex = lines[(startIndex + 1)...].firstIndex { line in
-			let isBoundary = shouldEndAtVersionBoundary ? Self.looksLikeVersionBoundary(line) : Self.looksLikeReleaseBoundary(line)
-			return isBoundary && !(exactVersion.map { line.localizedCaseInsensitiveContains($0) } ?? false)
-		} ?? lines.endIndex
+		let startsWithBareVersionLine = Self.isBareVersionLine(startLine)
+		var endIndex = lines.endIndex
+		for index in (startIndex + 1)..<lines.endIndex {
+			let line = lines[index]
+			let isImmediateDateAfterBareVersion = startsWithBareVersionLine &&
+				index == startIndex + 1 &&
+				Self.looksLikeDateReleaseBoundary(line)
+			let isBoundary = if shouldEndAtVersionBoundary {
+				Self.looksLikeVersionBoundary(line) ||
+				(Self.looksLikeDateReleaseBoundary(line) && !isImmediateDateAfterBareVersion)
+			} else {
+				Self.looksLikeReleaseBoundary(line)
+			}
+
+			if isBoundary && !(exactVersion.map { line.localizedCaseInsensitiveContains($0) } ?? false) {
+				endIndex = index
+				break
+			}
+		}
 
 		let selectedLines = lines[startIndex..<endIndex]
 		guard !selectedLines.isEmpty else { return nil }
@@ -1069,6 +1091,37 @@ enum ReleaseNotesMarkup {
 		return cleanedText.isEmpty ? nil : cleanedText
 	}
 
+	private static func isReactServerReference(_ text: String) -> Bool {
+		text.range(of: #"^\$[0-9A-Za-z]+$"#, options: .regularExpression) != nil
+	}
+
+	private static func reactServerText(for reference: String, in html: String) -> String? {
+		let identifier = String(reference.dropFirst())
+		guard !identifier.isEmpty else { return nil }
+
+		let markerPattern = NSRegularExpression.escapedPattern(for: identifier) + #":T[0-9A-Fa-f]+,"#
+		guard let markerRange = html.range(of: markerPattern, options: .regularExpression) else {
+			return nil
+		}
+
+		let remainingHTML = String(html[markerRange.upperBound...])
+		let textPattern = #"(?s)self\.__next_f\.push\(\[1,"((?:\\.|[^"\\])*)"\]\)</script>"#
+		guard let regex = try? NSRegularExpression(pattern: textPattern),
+			  let match = regex.firstMatch(in: remainingHTML, range: NSRange(remainingHTML.startIndex..<remainingHTML.endIndex, in: remainingHTML)),
+			  let textRange = Range(match.range(at: 1), in: remainingHTML) else {
+			return nil
+		}
+
+		let escapedText = String(remainingHTML[textRange])
+		let jsonString = "\"\(escapedText)\""
+		guard let data = jsonString.data(using: .utf8),
+			  let decodedText = try? JSONDecoder().decode(String.self, from: data) else {
+			return nil
+		}
+
+		return decodedText.trimmingCharacters(in: .whitespacesAndNewlines)
+	}
+
 	private static func firstHrefURL(in html: String, baseURL: URL?) -> URL? {
 		let pattern = #"(?is)<a\b[^>]*\bhref\s*=\s*["']([^"']+)["']"#
 		guard let regex = try? NSRegularExpression(pattern: pattern) else {
@@ -1147,6 +1200,10 @@ enum ReleaseNotesMarkup {
 
 	private static func looksLikeReleaseBoundary(_ line: String) -> Bool {
 		Self.looksLikeVersionBoundary(line) ||
+		Self.looksLikeDateReleaseBoundary(line)
+	}
+
+	private static func looksLikeDateReleaseBoundary(_ line: String) -> Bool {
 		line.range(of: #"^[A-Z][a-z]+ \d{1,2}, \d{4}"#, options: .regularExpression) != nil
 	}
 
@@ -1162,6 +1219,10 @@ enum ReleaseNotesMarkup {
 		}
 
 		guard Self.isBareVersionLine(line) else { return false }
+
+		if lines.indices.contains(index + 1), Self.looksLikeDateReleaseBoundary(lines[index + 1]) {
+			return false
+		}
 
 		if index > lines.startIndex, Self.isBareVersionLine(lines[index - 1]) {
 			return true

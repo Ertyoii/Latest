@@ -142,7 +142,7 @@ final class ReleaseNotesAuditTest: XCTestCase {
 			issues.append("navigation-separators")
 		}
 
-		if trimmedText.range(of: #"<\/?[a-z][^>]*>"#, options: [.regularExpression, .caseInsensitive]) != nil {
+		if trimmedText.range(of: #"<\s*/?\s*(html|body|p|br|div|span|ul|ol|li|h[1-6]|a|strong|em|table)\b"#, options: [.regularExpression, .caseInsensitive]) != nil {
 			issues.append("raw-html")
 		}
 

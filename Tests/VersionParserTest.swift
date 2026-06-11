@@ -482,6 +482,26 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertFalse(text.contains("Auto-review Run Mode"))
 	}
 
+	func testReleaseNotesMarkupStopsCursorSectionAtNextDatedEntry() throws {
+		let changelog = """
+		3.7 Jun 5, 2026 · Changelog
+		Design Mode Improvements
+		With Design Mode in the Cursor browser, you can click, draw, or describe changes by voice.
+		Jun 4, 2026 · Changelog
+		Custom agent modes
+		Custom agent modes let you define reusable instruction sets.
+		Jun 3, 2026 · Changelog
+		Background agents
+		"""
+
+		let text = try XCTUnwrap(ReleaseNotesMarkup.relevantText(from: changelog, version: "3.7", allowFirstSectionFallback: true))
+
+		XCTAssertTrue(text.hasPrefix("3.7 Jun 5, 2026"))
+		XCTAssertTrue(text.contains("Design Mode Improvements"))
+		XCTAssertFalse(text.contains("Custom agent modes"))
+		XCTAssertFalse(text.contains("Background agents"))
+	}
+
 	func testReleaseNotesMarkupExtractsFirstReleaseNotesURLFromStubText() throws {
 		let text = "1.12.7 https://obsidian.md/changelog/2026-03-23-desktop-v1.12.7/"
 		let url = try XCTUnwrap(ReleaseNotesMarkup.firstReleaseNotesURL(in: text, baseURL: nil))
@@ -586,6 +606,26 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertFalse(text.contains(#"\n"#))
 		XCTAssertFalse(text.contains("1.4.3"))
 		XCTAssertFalse(text.contains("Versions"))
+	}
+
+	func testReleaseNotesMarkupIgnoresZedReactServerDescriptionReference() throws {
+		let html = """
+		<script>self.__next_f.push([1,"[[\\"$\\",\\"$L105\\",\\"Zed-aarch64.dmg\\",{\\"release\\":{\\"version\\":\\"1.6.3\\",\\"description\\":\\"$106\\",\\"assets\\":[\\"Zed-aarch64.dmg\\"],\\"published_at\\":\\"2026-06-10T18:33:08.000Z\\",\\"channelType\\":\\"stable\\",\\"isLatest\\":true},\\"asset\\":\\"Zed-aarch64.dmg\\"}]]"])</script>
+		<main>
+			<p>Version : 1.6.3</p>
+			<p>Platform : macOS</p>
+			<p>Trusted by world-class developers and industry leading teams</p>
+		</main>
+		<script>self.__next_f.push([1,"106:T4b60,"])</script>
+		<script>self.__next_f.push([1,"This week's release includes the ability to open a Git diff for a single file.\\r\\n\\r\\n## Features\\r\\n\\r\\n- Agent: Added a way to share skills via links.\\r\\n"])</script>
+		"""
+
+		let text = try XCTUnwrap(ReleaseNotesMarkup.zedReleaseText(fromHTML: html, version: "1.6.3", pageURL: URL(string: "https://zed.dev/releases/stable/1.6.3")!))
+
+		XCTAssertTrue(text.hasPrefix("This week's release"))
+		XCTAssertTrue(text.contains("Agent: Added a way to share skills"))
+		XCTAssertFalse(text.contains("$106"))
+		XCTAssertFalse(text.contains("Version : 1.6.3"))
 	}
 
 	func testReleaseNotesMarkupExtractsRelevantSectionFromHTMLWithoutRendering() throws {
