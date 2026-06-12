@@ -19,25 +19,13 @@ class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
 	fileprivate var cancellationCallback: (() -> Void)?
 	
 	/// Schedules an progress update notification.
-	private let progressScheduler: DispatchSourceUserDataAdd
+	private let progressSchedulerQueue = DispatchQueue(label: "com.max-langer.Latest.sparkle-update-progress")
+
+	private var isProgressNotificationScheduled = false
 	
 	/// Initializes the operation with the given Sparkle app and handler
 	override init(bundleIdentifier: String, appIdentifier: App.Bundle.Identifier) {
-		self.progressScheduler = DispatchSource.makeUserDataAddSource(queue: .global())
 		super.init(bundleIdentifier: bundleIdentifier, appIdentifier: appIdentifier)
-
-		// Delay notifying observers to only let that notification occur in a certain interval
-		self.progressScheduler.setEventHandler() { [weak self] in
-			guard let self = self else { return }
-			
-			// Notify the progress state
-			self.progressState = .downloading(loadedSize: Int64(self.receivedLength), totalSize: Int64(self.expectedContentLength))
-
-			// Delay the next call for 1 second
-			Thread.sleep(forTimeInterval: 1)
-		}
-		
-		self.progressScheduler.activate()
 	}
 	
 	
@@ -47,7 +35,7 @@ class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
 		super.execute()
 		
 		// Gather app and app bundle
-		guard let bundle = Bundle(identifier: self.bundleIdentifier) else {
+		guard let bundle = Bundle(path: self.appIdentifier.path) else {
 			self.finish(with: LatestError.updateInfoUnavailable)
 			return
 		}
@@ -167,9 +155,18 @@ extension SparkleUpdateOperation: SPUUserDriver {
 		
 		self.scheduleProgressHandler()
 	}
-	
+
 	private func scheduleProgressHandler() {
-		self.progressScheduler.add(data: 1)
+		progressSchedulerQueue.async { [weak self] in
+			guard let self, !self.isProgressNotificationScheduled else { return }
+			self.isProgressNotificationScheduled = true
+			self.progressSchedulerQueue.asyncAfter(deadline: .now() + .milliseconds(200)) { [weak self] in
+				guard let self else { return }
+				self.isProgressNotificationScheduled = false
+				guard !self.isCancelled, !self.isFinished else { return }
+				self.progressState = .downloading(loadedSize: Int64(self.receivedLength), totalSize: Int64(self.expectedContentLength))
+			}
+		}
 	}
 
 	

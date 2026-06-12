@@ -14,6 +14,8 @@ private let releaseNotesLogger = Logger(
 	category: "ReleaseNotes"
 )
 
+private let releaseNotesHTMLCache = ReleaseNotesHTMLCache()
+
 /// Handles release notes conversion and loading.
 ///
 /// The object provides release notes in a uniform representation and caches remote contents for faster access.
@@ -288,7 +290,13 @@ class ReleaseNotesProvider {
 
 	private nonisolated static func fetchChangelogContent(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool) async -> ChangelogContent? {
 		await withTaskGroup(of: ChangelogContent?.self) { group in
-			for url in urls {
+			let maximumConcurrentFetches = 2
+			var remainingURLs = ArraySlice(urls)
+			var activeFetches = 0
+
+			func addNextFetch() {
+				guard let url = remainingURLs.popFirst() else { return }
+				activeFetches += 1
 				group.addTask {
 					guard !Task.isCancelled,
 						  let html = try? await Self.fetchHTML(from: url) else {
@@ -299,11 +307,18 @@ class ReleaseNotesProvider {
 				}
 			}
 
-			for await content in group {
+			while activeFetches < maximumConcurrentFetches, !remainingURLs.isEmpty {
+				addNextFetch()
+			}
+
+			while activeFetches > 0 {
+				guard let content = await group.next() else { break }
+				activeFetches -= 1
 				if let content {
 					group.cancelAll()
 					return content
 				}
+				addNextFetch()
 			}
 
 			return nil
@@ -334,11 +349,19 @@ class ReleaseNotesProvider {
 	}
 
 	private nonisolated static func fetchHTML(from url: URL) async throws -> String {
-		try await Self.validateURLCanContainHTML(url)
+		if isLikelyDownloadURL(url) {
+			throw FetchHTMLError.unusableText
+		}
 
+		return try await releaseNotesHTMLCache.html(for: url) {
+			try await Self.fetchFreshHTML(from: url)
+		}
+	}
+
+	private nonisolated static func fetchFreshHTML(from url: URL) async throws -> String {
 		var request = URLRequest(url: url)
-		request.cachePolicy = .reloadIgnoringLocalCacheData
-		request.timeoutInterval = 4
+		request.cachePolicy = .useProtocolCachePolicy
+		request.timeoutInterval = 6
 		request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
 
 		let (data, response) = try await URLSession.shared.data(for: request)
@@ -359,6 +382,68 @@ class ReleaseNotesProvider {
 
 }
 
+private actor ReleaseNotesHTMLCache {
+
+	private struct Entry {
+		let value: Value
+		let expiresAt: Date
+	}
+
+	private enum Value {
+		case success(String)
+		case failure(FetchHTMLError)
+
+		func get() throws -> String {
+			switch self {
+			case .success(let html):
+				return html
+			case .failure(let error):
+				throw error
+			}
+		}
+	}
+
+	private var entries = [URL: Entry]()
+	private var inFlightTasks = [URL: Task<String, Error>]()
+	private let successfulResponseLifetime: TimeInterval = 30 * 60
+	private let failedResponseLifetime: TimeInterval = 5 * 60
+
+	func html(for url: URL, loader: @escaping @Sendable () async throws -> String) async throws -> String {
+		let now = Date()
+		if let entry = entries[url] {
+			if entry.expiresAt > now {
+				return try entry.value.get()
+			}
+			entries[url] = nil
+		}
+
+		if let task = inFlightTasks[url] {
+			return try await task.value
+		}
+
+		let task = Task {
+			try await loader()
+		}
+		inFlightTasks[url] = task
+
+		do {
+			let html = try await task.value
+			entries[url] = Entry(value: .success(html), expiresAt: Date().addingTimeInterval(successfulResponseLifetime))
+			inFlightTasks[url] = nil
+			return html
+		} catch FetchHTMLError.unusableText {
+			entries[url] = Entry(value: .failure(.unusableText), expiresAt: Date().addingTimeInterval(failedResponseLifetime))
+			inFlightTasks[url] = nil
+			throw FetchHTMLError.unusableText
+		} catch {
+			entries[url] = Entry(value: .failure(.fetchFailed), expiresAt: Date().addingTimeInterval(failedResponseLifetime))
+			inFlightTasks[url] = nil
+			throw error
+		}
+	}
+
+}
+
 private enum ReleaseNotesProviderConstants {
 	static let downloadExtensions: Set<String> = [
 		"7z", "bz2", "dmg", "exe", "gz", "msi", "pkg", "rar", "tbz", "tgz", "xip", "xz", "zip"
@@ -367,45 +452,10 @@ private enum ReleaseNotesProviderConstants {
 
 private enum FetchHTMLError: Error {
 	case unusableText
+	case fetchFailed
 }
 
 private extension ReleaseNotesProvider {
-
-	nonisolated static func validateURLCanContainHTML(_ url: URL) async throws {
-		if isLikelyDownloadURL(url) {
-			throw FetchHTMLError.unusableText
-		}
-
-		var request = URLRequest(url: url)
-		request.httpMethod = "HEAD"
-		request.cachePolicy = .reloadIgnoringLocalCacheData
-		request.timeoutInterval = 4
-		request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
-
-		do {
-			let (_, response) = try await URLSession.shared.data(for: request)
-
-			if let response = response as? HTTPURLResponse {
-				if response.statusCode == 405 || response.statusCode == 501 {
-					return
-				}
-
-				guard (200..<400).contains(response.statusCode) else {
-					throw FetchHTMLError.unusableText
-				}
-			}
-
-			guard responseCanContainText(response) else {
-				throw FetchHTMLError.unusableText
-			}
-		} catch FetchHTMLError.unusableText {
-			throw FetchHTMLError.unusableText
-		} catch {
-			// Some changelog hosts reject HEAD while serving valid HTML to GET.
-			// In that case the body fetch below remains the source of truth.
-			return
-		}
-	}
 
 	nonisolated static func isLikelyDownloadURL(_ url: URL) -> Bool {
 		return ReleaseNotesProviderConstants.downloadExtensions.contains(url.pathExtension.lowercased())

@@ -73,6 +73,9 @@ extension UpdateRepository {
 		/// The minimum os version required for the update.
 		let minimumOSVersion: OperatingSystemVersion?
 
+		/// Release notes derived from upstream metadata where possible.
+		let releaseNotes: App.Update.ReleaseNotes?
+
 		init(from decoder: Decoder) throws {
 			let container = try decoder.container(keyedBy: CodingKeys.self)
 
@@ -112,25 +115,35 @@ extension UpdateRepository {
 			} else {
 				minimumOSVersion = nil
 			}
+
+			let fallbackReleaseNotesHTML = Self.fallbackReleaseNotesHTML(
+				version: version,
+				names: names,
+				token: token,
+				desc: desc,
+				homepage: homepage
+			)
+			if let githubReleaseURL = Self.githubReleaseURL(from: url) {
+				releaseNotes = .githubRelease(apiURL: githubReleaseURL, fallbackHTML: fallbackReleaseNotesHTML)
+			} else {
+				let zedReleaseURL = Self.zedReleaseURL(token: token, versionNumber: version.versionNumber)
+				let changelogURLs = Self.changelogURLs(token: token, homepage: homepage, zedReleaseURL: zedReleaseURL)
+				if !changelogURLs.isEmpty {
+					releaseNotes = .changelog(
+						urls: changelogURLs,
+						versionPrefix: Self.changelogVersionPrefix(token: token, version: version, zedReleaseURL: zedReleaseURL),
+						allowsLatestFallback: Self.allowsLatestChangelogFallback(token: token, homepage: homepage),
+						fallbackHTML: fallbackReleaseNotesHTML
+					)
+				} else {
+					releaseNotes = fallbackReleaseNotesHTML.map { .html(string: $0) }
+				}
+			}
 		}
 
 		/// Whether the cask represents the default stable channel.
 		var isStableRelease: Bool {
 			return !token.contains("@")
-		}
-
-		/// Release notes derived from upstream metadata where possible.
-		var releaseNotes: App.Update.ReleaseNotes? {
-			if let githubReleaseURL {
-				return .githubRelease(apiURL: githubReleaseURL, fallbackHTML: fallbackReleaseNotesHTML)
-			}
-
-			let changelogURLs = self.changelogURLs
-			if !changelogURLs.isEmpty {
-				return .changelog(urls: changelogURLs, versionPrefix: changelogVersionPrefix, allowsLatestFallback: allowsLatestChangelogFallback, fallbackHTML: fallbackReleaseNotesHTML)
-			}
-
-			return fallbackReleaseNotesHTML.map { .html(string: $0) }
 		}
 
 	}
@@ -139,7 +152,7 @@ extension UpdateRepository {
 
 private extension UpdateRepository.Entry {
 
-	var githubReleaseURL: URL? {
+	static func githubReleaseURL(from url: URL?) -> URL? {
 		guard let url, url.host?.caseInsensitiveCompare("github.com") == .orderedSame else { return nil }
 
 		let components = url.pathComponents
@@ -152,7 +165,7 @@ private extension UpdateRepository.Entry {
 		return URL(string: "https://api.github.com/repos/\(owner)/\(repository)/releases/tags/\(tag)")
 	}
 
-	var changelogURLs: [URL] {
+	static func changelogURLs(token: String, homepage: URL?, zedReleaseURL: URL?) -> [URL] {
 		if token == "cursor" || homepage?.host?.contains("cursor.com") == true {
 			return URL(string: "https://cursor.com/changelog").map { [$0] } ?? []
 		}
@@ -163,17 +176,17 @@ private extension UpdateRepository.Entry {
 
 		guard let homepage else { return [] }
 
-		let releasePaths = ["changelog", "release-notes", "releases", "whats-new"]
+		let releasePaths = ["changelog", "release-notes", "releases", "whats-new", "updates", "docs/changelog"]
 		return releasePaths.compactMap { path in
 			URL(string: path, relativeTo: homepage)?.absoluteURL
 		}
 	}
 
-	var allowsLatestChangelogFallback: Bool {
+	static func allowsLatestChangelogFallback(token: String, homepage: URL?) -> Bool {
 		token == "cursor" || homepage?.host?.contains("cursor.com") == true
 	}
 
-	var changelogVersionPrefix: String? {
+	static func changelogVersionPrefix(token: String, version: Version, zedReleaseURL: URL?) -> String? {
 		if zedReleaseURL != nil {
 			return version.versionNumber
 		}
@@ -181,9 +194,9 @@ private extension UpdateRepository.Entry {
 		return version.versionNumber?.majorMinorVersionPrefix
 	}
 
-	var zedReleaseURL: URL? {
+	static func zedReleaseURL(token: String, versionNumber: String?) -> URL? {
 		guard token == "zed" || token == "zed@preview",
-			  let versionNumber = version.versionNumber else {
+			  let versionNumber else {
 			return nil
 		}
 
@@ -191,7 +204,7 @@ private extension UpdateRepository.Entry {
 		return URL(string: "https://zed.dev/releases/\(channel)/\(versionNumber)")
 	}
 
-	var fallbackReleaseNotesHTML: String? {
+	static func fallbackReleaseNotesHTML(version: Version, names: Set<String>, token: String, desc: String?, homepage: URL?) -> String? {
 		guard let versionNumber = version.versionNumber ?? version.buildNumber else {
 			return nil
 		}

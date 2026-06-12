@@ -149,7 +149,8 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 		}
 
 		let repository = UpdateRepository.newRepository()
-		let operations = bundles.compactMap { bundle in
+		let prioritizedBundles = Self.prioritizedBundlesForUpdateCheck(bundles)
+		let operations = prioritizedBundles.compactMap { bundle in
 			return Self.operation(forChecking: bundle, repository: repository) { [weak self] result in
 				self?.didCheck(bundle, result, generation: generation)
 			}
@@ -268,6 +269,28 @@ extension UpdateCheckCoordinator {
 	/// Returns the update check operation for the given app bundle.
 	static func operation(forChecking bundle: App.Bundle, repository: UpdateRepository?, completion: @escaping UpdateCheckerOperation.UpdateCheckerCompletionBlock) -> UpdateCheckerOperation? {
 		return self.availableOperations.first { $0.sourceType == bundle.source }?.init(with: bundle, repository: repository, completionBlock: completion)
+	}
+
+	private static func prioritizedBundlesForUpdateCheck(_ bundles: [App.Bundle]) -> [App.Bundle] {
+		bundles.enumerated()
+			.sorted { left, right in
+				let leftPriority = updateCheckPriority(for: left.element.source)
+				let rightPriority = updateCheckPriority(for: right.element.source)
+				if leftPriority == rightPriority {
+					return left.offset < right.offset
+				}
+				return leftPriority < rightPriority
+			}
+			.map(\.element)
+	}
+
+	private static func updateCheckPriority(for source: App.Source) -> Int {
+		switch source {
+		case .sparkle, .appStore:
+			return 0
+		case .homebrew, .none:
+			return 1
+		}
 	}
 
 }

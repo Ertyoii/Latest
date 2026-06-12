@@ -109,6 +109,7 @@ private struct UpdatesTableRepresentable: NSViewRepresentable {
 		private var entries: [AppListSnapshot.Entry] = []
 		private var filterQuery: String?
 		private var selectedIdentifier: App.Bundle.Identifier?
+		private var selectedRowIndex: Int?
 		private var contentState: TableContentState?
 		private var pendingUpdate: TableUpdate?
 		private var isUpdateScheduled = false
@@ -149,6 +150,7 @@ private struct UpdatesTableRepresentable: NSViewRepresentable {
 			entries = update.snapshot.entries
 			filterQuery = update.snapshot.filterQuery
 			selectedIdentifier = update.selectedIdentifier
+			selectedRowIndex = update.selectedRowIndex
 			contentState = update.contentState
 
 			if needsReload {
@@ -361,12 +363,11 @@ private struct UpdatesTableRepresentable: NSViewRepresentable {
 				tableView.deselectAll(nil)
 				return
 			}
-			guard let index = entries.firstIndex(where: { entry in
-				if case .app(let app) = entry {
-					return app.identifier == selectedIdentifier
-				}
-				return false
-			}) else {
+			guard let index = selectedRowIndex,
+				  index >= 0,
+				  index < entries.count,
+				  case .app(let selectedApp) = entries[index],
+				  selectedApp.identifier == selectedIdentifier else {
 				tableView.deselectAll(nil)
 				return
 			}
@@ -463,11 +464,13 @@ private struct UpdatesTableRepresentable: NSViewRepresentable {
 		@MainActor private struct TableUpdate {
 			let snapshot: AppListSnapshot
 			let selectedIdentifier: App.Bundle.Identifier?
+			let selectedRowIndex: Int?
 			let contentState: TableContentState
 
 			init(viewModel: UpdatesListViewModel) {
 				self.snapshot = viewModel.snapshot
 				self.selectedIdentifier = viewModel.selectedApp?.identifier
+				self.selectedRowIndex = viewModel.selectedApp.flatMap { viewModel.snapshot.firstIndex(of: $0) }
 				self.contentState = TableContentState(snapshot: viewModel.snapshot)
 			}
 		}

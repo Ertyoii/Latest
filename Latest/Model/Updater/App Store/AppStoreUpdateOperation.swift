@@ -170,7 +170,7 @@ extension AppStoreUpdateOperation: CKDownloadQueueObserver {
 		}
 		
 		// No manual installation possible, abort with error
-		guard let installerPackageURL, let receiptData = download.metadata.receiptData, let bundle = Bundle(identifier: bundleIdentifier) else {
+		guard let installerPackageURL, let receiptData = download.metadata.receiptData, let bundle = Bundle(path: appIdentifier.path) else {
 			self.finish(with: status.error)
 			return
 		}

@@ -35,6 +35,7 @@ private actor AppStoreLookupCache {
 	static let shared = AppStoreLookupCache()
 
 	private var values = [AppStoreLookupCacheKey: AppStoreLookupCacheValue]()
+	private var inFlightTasks = [AppStoreLookupCacheKey: Task<AppStoreEntry, Error>]()
 
 	func value(for key: AppStoreLookupCacheKey) -> AppStoreLookupCacheValue? {
 		values[key]
@@ -42,6 +43,37 @@ private actor AppStoreLookupCache {
 
 	func set(_ value: AppStoreLookupCacheValue, for key: AppStoreLookupCacheKey) {
 		values[key] = value
+	}
+
+	func entry(for key: AppStoreLookupCacheKey, loader: @escaping @Sendable () async throws -> AppStoreEntry) async throws -> AppStoreEntry {
+		if let value = values[key] {
+			return try value.result.get()
+		}
+
+		if let task = inFlightTasks[key] {
+			return try await task.value
+		}
+
+		let task = Task {
+			try await loader()
+		}
+		inFlightTasks[key] = task
+
+		do {
+			let entry = try await task.value
+			values[key] = .entry(entry)
+			inFlightTasks[key] = nil
+			return entry
+		} catch let error as LatestError {
+			if case .updateInfoUnavailable = error {
+				values[key] = .unavailable
+			}
+			inFlightTasks[key] = nil
+			throw error
+		} catch {
+			inFlightTasks[key] = nil
+			throw error
+		}
 	}
 }
 
@@ -72,9 +104,6 @@ private final class AppStoreLookupClient: @unchecked Sendable {
 	private func lookup(bundleIdentifier: String, entityType: String) async throws -> AppStoreEntry {
 		let countryCode = Locale.current.region?.identifier ?? "US"
 		let cacheKey = AppStoreLookupCacheKey(bundleIdentifier: bundleIdentifier, countryCode: countryCode, entityType: entityType)
-		if let cachedValue = await cache.value(for: cacheKey) {
-			return try cachedValue.result.get()
-		}
 
 		guard let endpoint else {
 			throw malformedURLError
@@ -91,15 +120,14 @@ private final class AppStoreLookupClient: @unchecked Sendable {
 			throw malformedURLError
 		}
 
-		let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 30)
-		let (data, _) = try await session.data(for: request)
-		guard let entry = try JSONDecoder().decode(EntryList.self, from: data).results.first else {
-			await cache.set(.unavailable, for: cacheKey)
-			throw LatestError.updateInfoUnavailable
+		return try await cache.entry(for: cacheKey) {
+			let request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 20)
+			let (data, _) = try await self.session.data(for: request)
+			guard let entry = try JSONDecoder().decode(EntryList.self, from: data).results.first else {
+				throw LatestError.updateInfoUnavailable
+			}
+			return entry
 		}
-
-		await cache.set(.entry(entry), for: cacheKey)
-		return entry
 	}
 }
 
