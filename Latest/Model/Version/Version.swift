@@ -25,6 +25,8 @@ struct Version : Hashable, Comparable {
 
 	private let versionNumberComponents: [Segment]?
 	private let buildNumberComponents: [Segment]?
+	private let versionNumberSingleNumber: Int?
+	private let buildNumberSingleNumber: Int?
 	private let hasParsedContent: Bool
 
 	init(versionNumber: String?, buildNumber: String?) {
@@ -35,6 +37,8 @@ struct Version : Hashable, Comparable {
 		let buildNumberComponents = buildNumber?.components()
 		self.versionNumberComponents = versionNumberComponents
 		self.buildNumberComponents = buildNumberComponents
+		self.versionNumberSingleNumber = Self.singleNumber(in: versionNumberComponents)
+		self.buildNumberSingleNumber = Self.singleNumber(in: buildNumberComponents)
 		self.hasParsedContent = Self.hasParsedContent(in: versionNumberComponents)
 			|| Self.hasParsedContent(in: buildNumberComponents)
 	}
@@ -88,19 +92,35 @@ struct Version : Hashable, Comparable {
 
 		var c1: [Segment]?
 		var c2: [Segment]?
+		var singleNumber1: Int?
+		var singleNumber2: Int?
 
 		// Only allow build number checks if build- and version number actually differ
 		let allowBuildNumberCheck = lhs.buildNumber != lhs.versionNumber
 		if allowBuildNumberCheck, lhs.buildNumber != nil, rhs.buildNumber != nil {
 			c1 = lhs.buildNumberComponents
 			c2 = rhs.buildNumberComponents
+			singleNumber1 = lhs.buildNumberSingleNumber
+			singleNumber2 = rhs.buildNumberSingleNumber
 		} else {
 			c1 = lhs.versionNumberComponents
 			c2 = rhs.versionNumberComponents
+			singleNumber1 = lhs.versionNumberSingleNumber
+			singleNumber2 = rhs.versionNumberSingleNumber
 		}
 
 		guard let c1, let c2 else {
 			return .undefined
+		}
+
+		if let singleNumber1, let singleNumber2 {
+			if singleNumber1 > singleNumber2 {
+				return .newer
+			} else if singleNumber2 > singleNumber1 {
+				return .older
+			}
+
+			return .equal
 		}
 
 		let count1 = c1.count
@@ -192,6 +212,18 @@ struct Version : Hashable, Comparable {
 			guard case .component(let atoms) = segment else { return false }
 			return !atoms.isEmpty
 		} ?? false
+	}
+
+	private static func singleNumber(in segments: [Segment]?) -> Int? {
+		guard let segments, segments.count == 1,
+			  case .component(let atoms) = segments[0],
+			  atoms.count == 1,
+			  case .number(let value) = atoms[0]
+		else {
+			return nil
+		}
+
+		return value
 	}
 }
 

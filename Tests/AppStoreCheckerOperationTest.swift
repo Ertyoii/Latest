@@ -19,6 +19,28 @@ class AppStoreCheckerOperationTest: XCTestCase {
 		XCTAssertEqual(AppStoreUpdateCheckerOperation.lookupEntityTypes(isIOSAppBundle: true), ["macSoftware"])
 	}
 
+	func testLookupBundleIdentifiersPreferExactIdentifierBeforeAliases() throws {
+		XCTAssertEqual(
+			AppStoreUpdateCheckerOperation.lookupBundleIdentifiers(for: "com.example.App"),
+			["com.example.App"]
+		)
+	}
+
+	func testLookupBundleIdentifiersIncludeLegacyIWorkAliases() throws {
+		XCTAssertEqual(
+			AppStoreUpdateCheckerOperation.lookupBundleIdentifiers(for: "com.apple.iWork.Keynote"),
+			["com.apple.iWork.Keynote", "com.apple.Keynote"]
+		)
+		XCTAssertEqual(
+			AppStoreUpdateCheckerOperation.lookupBundleIdentifiers(for: "com.apple.iWork.Numbers"),
+			["com.apple.iWork.Numbers", "com.apple.Numbers"]
+		)
+		XCTAssertEqual(
+			AppStoreUpdateCheckerOperation.lookupBundleIdentifiers(for: "com.apple.iWork.Pages"),
+			["com.apple.iWork.Pages", "com.apple.Pages"]
+		)
+	}
+
 	func testReceiptURLFallsBackToStandardMacAppReceiptLocation() throws {
 		let appURL = temporaryAppURL()
 		try FileManager.default.createDirectory(at: appURL, withIntermediateDirectories: true)

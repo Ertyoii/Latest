@@ -89,12 +89,18 @@ private final class AppStoreLookupClient: @unchecked Sendable {
 	}
 
 	func lookup(bundleIdentifier: String, entityTypes: [String]) async throws -> AppStoreEntry {
+		try await lookup(bundleIdentifiers: [bundleIdentifier], entityTypes: entityTypes)
+	}
+
+	func lookup(bundleIdentifiers: [String], entityTypes: [String]) async throws -> AppStoreEntry {
 		var lastError: Error = LatestError.updateInfoUnavailable
-		for entityType in entityTypes {
-			do {
-				return try await lookup(bundleIdentifier: bundleIdentifier, entityType: entityType)
-			} catch {
-				lastError = error
+		for bundleIdentifier in bundleIdentifiers {
+			for entityType in entityTypes {
+				do {
+					return try await lookup(bundleIdentifier: bundleIdentifier, entityType: entityType)
+				} catch {
+					lastError = error
+				}
 			}
 		}
 
@@ -230,6 +236,16 @@ class AppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation,
 
 		return ["desktopSoftware", "macSoftware"]
 	}
+
+	static func lookupBundleIdentifiers(for bundleIdentifier: String) -> [String] {
+		[bundleIdentifier] + (appStoreBundleIdentifierAliases[bundleIdentifier] ?? [])
+	}
+
+	private static let appStoreBundleIdentifierAliases: [String: [String]] = [
+		"com.apple.iWork.Keynote": ["com.apple.Keynote"],
+		"com.apple.iWork.Numbers": ["com.apple.Numbers"],
+		"com.apple.iWork.Pages": ["com.apple.Pages"]
+	]
 	
 }
 
@@ -330,7 +346,7 @@ extension AppStoreUpdateCheckerOperation {
 	private func fetchAppInfo() async throws -> AppStoreEntry {
 		// For native Mac apps, prefer `desktopSoftware` because `macSoftware` can return broader Catalyst or iOS metadata. Wrapped iOS apps skip the desktop request above.
 		try await AppStoreLookupClient.shared.lookup(
-			bundleIdentifier: app.bundleIdentifier,
+			bundleIdentifiers: Self.lookupBundleIdentifiers(for: app.bundleIdentifier),
 			entityTypes: Self.lookupEntityTypes(forAppAt: app.fileURL)
 		)
 	}

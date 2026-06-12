@@ -1476,7 +1476,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 999283;
+				CURRENT_PROJECT_VERSION = 999284;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1492,7 +1492,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.35;
+				MARKETING_VERSION = 0.36;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1515,7 +1515,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 999283;
+				CURRENT_PROJECT_VERSION = 999284;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1531,7 +1531,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.35;
+				MARKETING_VERSION = 0.36;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
