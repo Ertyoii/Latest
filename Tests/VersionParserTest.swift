@@ -111,6 +111,57 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertTrue(fallbackHTML?.contains("eqMac 1.8.15") == true)
 	}
 
+	func testHomebrewCaskEntryUsesKnownReleaseNotesCatalogBeforeHomepageGuesses() throws {
+		let json = """
+		{
+			"token": "1password",
+			"version": "8.12.22",
+			"name": ["1Password"],
+			"desc": "Password manager",
+			"homepage": "https://1password.com/",
+			"url": "https://downloads.1password.com/mac/1Password.zip",
+			"artifacts": [
+				{
+					"app": ["1Password.app"]
+				}
+			],
+			"depends_on": {
+				"macos": {}
+			}
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML) = entry.releaseNotes else {
+			return XCTFail("Expected catalog changelog release notes")
+		}
+
+		XCTAssertEqual(urls, [URL(string: "https://releases.1password.com/mac/stable/")!])
+		XCTAssertEqual(versionPrefix, "8.12.22")
+		XCTAssertFalse(allowsLatestFallback)
+		XCTAssertTrue(fallbackHTML?.contains("1Password 8.12.22") == true)
+	}
+
+	func testReleaseNotesSourceCatalogAddsSparkleFallbackForBetterDisplay() throws {
+		let bundle = App.Bundle(
+			version: Version(versionNumber: "4.3.3", buildNumber: "50020"),
+			name: "BetterDisplay",
+			bundleIdentifier: "com.github.waydabber.BetterDisplay",
+			fileURL: URL(fileURLWithPath: "/Applications/BetterDisplay.app", isDirectory: true),
+			source: .sparkle
+		)
+
+		guard case .githubRelease(let apiURL, let fallbackHTML) = ReleaseNotesSourceCatalog.releaseNotes(
+			for: bundle,
+			remoteVersion: Version(versionNumber: "4.3.4", buildNumber: "50021")
+		) else {
+			return XCTFail("Expected catalog GitHub release notes")
+		}
+
+		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v4.3.4")
+		XCTAssertTrue(fallbackHTML?.contains("BetterDisplay 4.3.4") == true)
+	}
+
 	func testHomebrewCaskEntryUsesCursorChangelogSource() throws {
 		let json = """
 		{
@@ -682,7 +733,7 @@ final class VersionParserTest: XCTestCase {
 		await fulfillment(of: [expectation], timeout: 1)
 
 		guard let error = capturedError as? LatestError,
-			  case .releaseNotesUnavailable = error else {
+		      case .releaseNotesUnavailable = error else {
 			return XCTFail("Expected downloadable release note URLs to be rejected before the web loader.")
 		}
 	}
@@ -776,14 +827,14 @@ final class BundleCollectorTest: XCTestCase {
 				"CFBundleVersion": "1"
 			]
 		)
-			let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
-			let infoPlistURL = contentsURL.appendingPathComponent("Info.plist", isDirectory: false)
-			let archiveTimestamp = Date(timeIntervalSince1970: 315504000)
-			let contentsTimestamp = Date(timeIntervalSince1970: 1_778_179_586)
+		let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
+		let infoPlistURL = contentsURL.appendingPathComponent("Info.plist", isDirectory: false)
+		let archiveTimestamp = Date(timeIntervalSince1970: 315504000)
+		let contentsTimestamp = Date(timeIntervalSince1970: 1_778_179_586)
 
-			try setModificationDate(archiveTimestamp, for: appURL)
-			try setModificationDate(contentsTimestamp, for: contentsURL)
-			try setModificationDate(contentsTimestamp, for: infoPlistURL)
+		try setModificationDate(archiveTimestamp, for: appURL)
+		try setModificationDate(contentsTimestamp, for: contentsURL)
+		try setModificationDate(contentsTimestamp, for: infoPlistURL)
 
 		let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
 

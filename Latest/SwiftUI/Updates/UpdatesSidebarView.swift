@@ -146,15 +146,20 @@ private struct UpdatesTableRepresentable: NSViewRepresentable {
 
 		private func apply(_ update: TableUpdate, viewModel: UpdatesListViewModel) {
 			self.viewModel = viewModel
-			let needsReload = contentState != update.contentState
+			let previousEntries = entries
+			let previousContentState = contentState
+			let needsContentUpdate = previousContentState != update.contentState
+			let tableChange = needsContentUpdate ? TableViewSnapshotDiff(from: previousEntries, to: update.snapshot.entries).change : nil
 			entries = update.snapshot.entries
 			filterQuery = update.snapshot.filterQuery
 			selectedIdentifier = update.selectedIdentifier
 			selectedRowIndex = update.selectedRowIndex
 			contentState = update.contentState
 
-			if needsReload {
+			if previousContentState == nil {
 				tableView?.reloadData()
+			} else if needsContentUpdate {
+				apply(tableChange)
 			} else {
 				refreshVisibleRows()
 			}
@@ -364,10 +369,10 @@ private struct UpdatesTableRepresentable: NSViewRepresentable {
 				return
 			}
 			guard let index = selectedRowIndex,
-				  index >= 0,
-				  index < entries.count,
-				  case .app(let selectedApp) = entries[index],
-				  selectedApp.identifier == selectedIdentifier else {
+			      index >= 0,
+			      index < entries.count,
+			      case .app(let selectedApp) = entries[index],
+			      selectedApp.identifier == selectedIdentifier else {
 				tableView.deselectAll(nil)
 				return
 			}
@@ -391,6 +396,27 @@ private struct UpdatesTableRepresentable: NSViewRepresentable {
 					filterQuery: filterQuery,
 					dateFormatter: Self.dateFormatter
 				)
+			}
+		}
+
+		private func apply(_ change: TableViewSnapshotDiff.Change?) {
+			guard let tableView else { return }
+
+			switch change {
+			case .none:
+				refreshVisibleRows()
+			case .reload(let indexes):
+				guard let columnIndex = tableView.tableColumns.indices.first else {
+					tableView.reloadData()
+					return
+				}
+				tableView.reloadData(forRowIndexes: indexes, columnIndexes: IndexSet(integer: columnIndex))
+			case .append(let indexes):
+				tableView.insertRows(at: indexes, withAnimation: [])
+			case .remove(let indexes):
+				tableView.removeRows(at: indexes, withAnimation: [])
+			case .reloadAll:
+				tableView.reloadData()
 			}
 		}
 

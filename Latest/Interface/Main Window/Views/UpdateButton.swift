@@ -58,14 +58,24 @@ class UpdateButton: NSButton {
 	/// The app for which update progress should be displayed.
 	var app: App? {
 		willSet {
-			// Remove observer from existing app
-			if let app = self.app {
+			guard app?.identifier != newValue?.identifier else { return }
+
+			if let app {
 				UpdateQueue.shared.removeObserver(self, for: app.identifier)
 			}
 		}
 		
 		didSet {
-			if let app = self.app {
+			guard app?.identifier != oldValue?.identifier else {
+				if let app {
+					updateInterface(with: UpdateQueue.shared.state(for: app.identifier))
+				} else {
+					isHidden = true
+				}
+				return
+			}
+
+			if let app {
 				UpdateQueue.shared.addObserver(self, to: app.identifier) { [weak self] progress in
 					self?.updateInterface(with: progress)
 				}
@@ -89,6 +99,12 @@ class UpdateButton: NSButton {
 
 	/// Temporary reference to the last occurred error.
 	private var error: Error?
+
+	private static let byteFormatter: ByteCountFormatter = {
+		let formatter = ByteCountFormatter()
+		formatter.countStyle = .file
+		return formatter
+	}()
 	
 	
 	// MARK: - Initialization
@@ -152,11 +168,8 @@ class UpdateButton: NSButton {
 			// Downloading goes to 75% of the progress
 			self.contentCell.updateProgress = (Double(loadedSize) / Double(totalSize)) * 0.75
 			
-			let byteFormatter = ByteCountFormatter()
-			byteFormatter.countStyle = .file
-			
 			let formatString = NSLocalizedString("DownloadingUpdateStatus", comment: "Update progress state of downloading an update. The first %@ stands for the already downloaded bytes, the second one for the total amount of bytes. One expected output would be 'Downloading 3 MB of 21 MB'")
-			self.toolTip = String.localizedStringWithFormat(formatString, byteFormatter.string(fromByteCount: loadedSize), byteFormatter.string(fromByteCount: totalSize))
+			self.toolTip = String.localizedStringWithFormat(formatString, Self.byteFormatter.string(fromByteCount: loadedSize), Self.byteFormatter.string(fromByteCount: totalSize))
 		
 		case .extracting(let progress):
 			self.updateInterfaceVisibility(with: .progress)
@@ -278,7 +291,7 @@ private extension UpdateButton {
 
 // MARK: - Animator Proxy
 extension UpdateButton {
-	 override func animation(forKey key: NSAnimatablePropertyKey) -> Any? {
+	override func animation(forKey key: NSAnimatablePropertyKey) -> Any? {
 		switch key {
 		case "backgroundColor":
 			return CABasicAnimation()

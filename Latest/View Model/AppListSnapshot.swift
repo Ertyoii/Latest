@@ -99,13 +99,16 @@ struct AppListSnapshot {
 		// Sort visible sections based on setting. Installed apps keep their existing recency-first order.
 		Self.sort(&availableUpdates, by: sortOrder)
 		Self.sort(&ignoredUpdates, by: sortOrder)
-		installedUpdates.sort { app1, app2 in
-			if app1.bundle.modificationDate == app2.bundle.modificationDate {
-				return app1.name.lowercased() < app2.name.lowercased()
-			}
+		installedUpdates = installedUpdates
+			.map { (app: $0, modificationDate: $0.bundle.modificationDate, name: $0.name.lowercased()) }
+			.sorted { lhs, rhs in
+				if lhs.modificationDate == rhs.modificationDate {
+					return lhs.name < rhs.name
+				}
 
-			return app1.bundle.modificationDate > app2.bundle.modificationDate
-		}
+				return lhs.modificationDate > rhs.modificationDate
+			}
+			.map(\.app)
 
 		var entries = [Entry]()
 		entries.reserveCapacity(availableUpdates.count + installedUpdates.count + ignoredUpdates.count + 3)

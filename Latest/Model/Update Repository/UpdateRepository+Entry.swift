@@ -125,6 +125,12 @@ extension UpdateRepository {
 			)
 			if let githubReleaseURL = Self.githubReleaseURL(from: url) {
 				releaseNotes = .githubRelease(apiURL: githubReleaseURL, fallbackHTML: fallbackReleaseNotesHTML)
+			} else if let catalogReleaseNotes = ReleaseNotesSourceCatalog.releaseNotes(
+				forHomebrewToken: token,
+				version: version,
+				fallbackHTML: fallbackReleaseNotesHTML
+			) {
+				releaseNotes = catalogReleaseNotes
 			} else {
 				let zedReleaseURL = Self.zedReleaseURL(token: token, versionNumber: version.versionNumber)
 				let changelogURLs = Self.changelogURLs(token: token, homepage: homepage, zedReleaseURL: zedReleaseURL)
@@ -146,6 +152,141 @@ extension UpdateRepository {
 			return !token.contains("@")
 		}
 
+	}
+
+}
+
+enum ReleaseNotesSourceCatalog {
+
+	static func releaseNotes(forHomebrewToken token: String, version: Version, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
+		releaseNotes(forKey: normalizedKey(token), version: version, fallbackHTML: fallbackHTML)
+	}
+
+	static func releaseNotes(for bundle: App.Bundle, remoteVersion: Version) -> App.Update.ReleaseNotes? {
+		let fallbackHTML = fallbackReleaseNotesHTML(appName: bundle.name, version: remoteVersion)
+
+		if let releaseNotes = releaseNotes(
+			forKey: normalizedKey(bundle.bundleIdentifier),
+			version: remoteVersion,
+			fallbackHTML: fallbackHTML
+		) {
+			return releaseNotes
+		}
+
+		return releaseNotes(
+			forKey: normalizedKey(bundle.name),
+			version: remoteVersion,
+			fallbackHTML: fallbackHTML
+		)
+	}
+
+	private static func releaseNotes(forKey key: String, version: Version, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
+		switch key {
+		case "1password", "com1password1password":
+			return changelog(
+				url: "https://releases.1password.com/mac/stable/",
+				versionPrefix: version.versionNumber,
+				fallbackHTML: fallbackHTML
+			)
+		case "betterdisplay", "comgithubwaydabberbetterdisplay":
+			return githubRelease(
+				owner: "waydabber",
+				repository: "BetterDisplay",
+				tag: prefixedVersionTag(version, prefix: "v"),
+				fallbackHTML: fallbackHTML
+			)
+		case "docker", "comdockerdocker":
+			return changelog(
+				url: "https://docs.docker.com/desktop/release-notes/",
+				versionPrefix: version.versionNumber,
+				fallbackHTML: fallbackHTML
+			)
+		case "firefox", "orgmozillafirefox":
+			return versionedURL(
+				version: version,
+				transform: { "https://www.firefox.com/en-US/firefox/\($0)/releasenotes/" },
+				fallbackHTML: fallbackHTML
+			)
+		case "ghostty", "commitchellhghostty":
+			return versionedURL(
+				version: version,
+				transform: { "https://ghostty.org/docs/install/release-notes/\($0.replacingOccurrences(of: ".", with: "-"))" },
+				fallbackHTML: fallbackHTML
+			)
+		case "notion", "notionid":
+			return changelog(
+				url: "https://www.notion.com/releases",
+				versionPrefix: version.versionNumber?.majorMinorVersionPrefix,
+				allowsLatestFallback: true,
+				fallbackHTML: fallbackHTML
+			)
+		case "obsidian", "mdobsidian":
+			return changelog(
+				url: "https://obsidian.md/changelog/",
+				versionPrefix: version.versionNumber,
+				fallbackHTML: fallbackHTML
+			)
+		case "visualstudiocode", "commicrosoftvscode":
+			return visualStudioCodeReleaseNotes(version: version, fallbackHTML: fallbackHTML)
+		case "zoom", "zoomus", "uszoomxos":
+			return changelog(
+				url: "https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0061222",
+				versionPrefix: version.versionNumber,
+				fallbackHTML: fallbackHTML
+			)
+		default:
+			return nil
+		}
+	}
+
+	private static func visualStudioCodeReleaseNotes(version: Version, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
+		guard let versionPrefix = version.versionNumber?.majorMinorVersionPrefix else { return nil }
+		let pathVersion = versionPrefix.replacingOccurrences(of: ".", with: "_")
+		return changelog(
+			url: "https://code.visualstudio.com/updates/v\(pathVersion)",
+			versionPrefix: versionPrefix,
+			fallbackHTML: fallbackHTML
+		)
+	}
+
+	private static func versionedURL(version: Version, transform: (String) -> String, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
+		guard let versionNumber = version.versionNumber else { return nil }
+		return changelog(url: transform(versionNumber), versionPrefix: versionNumber, fallbackHTML: fallbackHTML)
+	}
+
+	private static func githubRelease(owner: String, repository: String, tag: String?, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
+		guard let tag,
+		      let apiURL = URL(string: "https://api.github.com/repos/\(owner)/\(repository)/releases/tags/\(tag)") else {
+			return nil
+		}
+
+		return .githubRelease(apiURL: apiURL, fallbackHTML: fallbackHTML)
+	}
+
+	private static func changelog(url: String, versionPrefix: String?, allowsLatestFallback: Bool = false, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
+		guard let url = URL(string: url) else { return nil }
+		return .changelog(
+			urls: [url],
+			versionPrefix: versionPrefix,
+			allowsLatestFallback: allowsLatestFallback,
+			fallbackHTML: fallbackHTML
+		)
+	}
+
+	private static func prefixedVersionTag(_ version: Version, prefix: String) -> String? {
+		guard let versionNumber = version.versionNumber else { return nil }
+		return "\(prefix)\(versionNumber)"
+	}
+
+	private static func fallbackReleaseNotesHTML(appName: String, version: Version) -> String? {
+		guard let versionNumber = version.versionNumber ?? version.buildNumber else { return nil }
+		return "<p><strong>\(appName.htmlEscaped) \(versionNumber.htmlEscaped)</strong> is available.</p>"
+	}
+
+	private static func normalizedKey(_ value: String) -> String {
+		value.lowercased().filter { character in
+			character.isLetter || character.isNumber
+		}
 	}
 
 }
@@ -196,7 +337,7 @@ private extension UpdateRepository.Entry {
 
 	static func zedReleaseURL(token: String, versionNumber: String?) -> URL? {
 		guard token == "zed" || token == "zed@preview",
-			  let versionNumber else {
+		      let versionNumber else {
 			return nil
 		}
 
@@ -290,8 +431,8 @@ fileprivate extension UpdateRepository.Entry {
 			let container = try decoder.container(keyedBy: CodingKeys.self)
 
 			var names = [String]()
-				var identifiers = [String]()
-				var identifierPaths = [String]()
+			var identifiers = [String]()
+			var identifierPaths = [String]()
 
 			// App names.
 			if let appNames = try? Self.decodeAppNames(container) {
@@ -299,19 +440,19 @@ fileprivate extension UpdateRepository.Entry {
 			}
 
 			// Extract everything else.
-				identifierPaths.append(contentsOf: (try? Self.decodeZap(container)) ?? [])
-				if let uninstall = try? Self.decodeUninstall(container) {
-					names.append(contentsOf: uninstall.names)
-					identifiers.append(contentsOf: uninstall.identifiers)
-				}
+			identifierPaths.append(contentsOf: (try? Self.decodeZap(container)) ?? [])
+			if let uninstall = try? Self.decodeUninstall(container) {
+				names.append(contentsOf: uninstall.names)
+				identifiers.append(contentsOf: uninstall.identifiers)
+			}
 
-				self.names = Set(names)
-				self.identifiers = Set(identifiers + identifierPaths.flatMap { path in
-					let string = path as NSString
-					guard !string.pathExtension.isEmpty else { return [String]() }
-					let identifier = string.lastPathComponent
-					return [identifier, (identifier as NSString).deletingPathExtension]
-				})
+			self.names = Set(names)
+			self.identifiers = Set(identifiers + identifierPaths.flatMap { path in
+				let string = path as NSString
+				guard !string.pathExtension.isEmpty else { return [String]() }
+				let identifier = string.lastPathComponent
+				return [identifier, (identifier as NSString).deletingPathExtension]
+			})
 
 		}
 

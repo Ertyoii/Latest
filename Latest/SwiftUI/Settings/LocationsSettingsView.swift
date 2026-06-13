@@ -290,9 +290,7 @@ private final class DirectoryLocationCellView: NSTableCellView {
 		appCountLabel.isHidden = true
 		activityIndicator.startAnimation(nil)
 		appCountTask = Task {
-			let count = await Task.detached(priority: .utility) {
-				BundleCollector.collectBundles(at: url).count
-			}.value
+			let count = await DirectoryAppCountCache.shared.count(for: url)
 
 			guard !Task.isCancelled, self.url == url else { return }
 			self.appCountLabel.stringValue = NumberFormatter.localizedString(from: NSNumber(value: count), number: .none)
@@ -304,4 +302,39 @@ private final class DirectoryLocationCellView: NSTableCellView {
 
 private extension NSUserInterfaceItemIdentifier {
 	static let directoryCell = NSUserInterfaceItemIdentifier("directoryCellView")
+}
+
+private actor DirectoryAppCountCache {
+	static let shared = DirectoryAppCountCache()
+
+	private struct Entry {
+		let count: Int
+		let expiresAt: Date
+	}
+
+	private var entries = [URL: Entry]()
+	private var inFlightTasks = [URL: Task<Int, Never>]()
+	private let lifetime: TimeInterval = 60
+
+	func count(for url: URL) async -> Int {
+		let key = url.standardizedFileURL
+		let now = Date()
+		if let entry = entries[key], entry.expiresAt > now {
+			return entry.count
+		}
+
+		if let task = inFlightTasks[key] {
+			return await task.value
+		}
+
+		let task = Task.detached(priority: .utility) {
+			BundleCollector.collectBundles(at: key).count
+		}
+		inFlightTasks[key] = task
+
+		let count = await task.value
+		entries[key] = Entry(count: count, expiresAt: Date().addingTimeInterval(lifetime))
+		inFlightTasks[key] = nil
+		return count
+	}
 }

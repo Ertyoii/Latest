@@ -104,7 +104,11 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 		} else if let url = releaseNotesURL {
 			releaseNotes = .url(url: url)
 		}
-		
+
+		if releaseNotes == nil {
+			releaseNotes = ReleaseNotesSourceCatalog.releaseNotes(for: app, remoteVersion: version)
+		}
+
 		// Build update
 		self.update = App.Update(app: self.app, remoteVersion: version, minimumOSVersion: minimumOSVersion, source: .sparkle, date: appcastItem.date, releaseNotes: releaseNotes, updateAction: .builtIn(block: { app in
 			UpdateQueue.shared.addOperation(SparkleUpdateOperation(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier))

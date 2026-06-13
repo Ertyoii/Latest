@@ -184,7 +184,7 @@ class ReleaseNotesProvider {
 
 	private func githubReleaseNotes(from url: URL, relevantVersion: String?, fallbackHTML: String?) async -> ReleaseNotes {
 		do {
-			let (data, _) = try await URLSession.shared.data(from: url)
+			let data = try await Self.fetchGitHubReleaseData(from: url)
 			let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
 			let body = Self.deduplicating(title: release.name, in: release.body.trimmingCharacters(in: .whitespacesAndNewlines))
 			guard ReleaseNotesMarkup.isUsefulReleaseNotesText(body, relevantVersion: relevantVersion) else {
@@ -378,6 +378,22 @@ class ReleaseNotesProvider {
 		}
 
 		return html
+	}
+
+	private nonisolated static func fetchGitHubReleaseData(from url: URL) async throws -> Data {
+		var request = URLRequest(url: url)
+		request.cachePolicy = .useProtocolCachePolicy
+		request.timeoutInterval = 6
+		request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+		request.setValue("Latest", forHTTPHeaderField: "User-Agent")
+
+		let (data, response) = try await URLSession.shared.data(for: request)
+		if let response = response as? HTTPURLResponse,
+		   !(200..<300).contains(response.statusCode) {
+			throw FetchHTMLError.unusableText
+		}
+
+		return data
 	}
 
 }

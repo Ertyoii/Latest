@@ -17,16 +17,19 @@ class WebContentLoader: NSObject {
 	/// The update handler may be called multiple times, if contents change. The caller is responsible for determining whether updates are still relevant.
 	func load(from url: URL, contentUpdateHandler: @escaping @MainActor (Result<String, Error>) -> Void) {
 		pendingContentUpdateTask?.cancel()
+		loadTimeoutTask?.cancel()
 		let loadID = UUID()
 		currentLoadID = loadID
 		currentUpdateHandler = contentUpdateHandler
 		webView.stopLoading()
 		currentNavigation = webView.load(URLRequest(url: url))
+		scheduleLoadTimeout(for: loadID)
 	}
 
 	/// Cancels any active load and suppresses delayed content updates.
 	func cancel() {
 		pendingContentUpdateTask?.cancel()
+		loadTimeoutTask?.cancel()
 		currentLoadID = UUID()
 		currentNavigation = nil
 		currentUpdateHandler = nil
@@ -44,11 +47,14 @@ class WebContentLoader: NSObject {
 
 		// Setup observation script
 		let source = """
-			let observer = new MutationObserver(function(mutations) {
-			window.webkit.messageHandlers.updateHandler.postMessage("contentsUpdated");
+			if (window.__latestMutationObserver) {
+				window.__latestMutationObserver.disconnect();
+			}
+			window.__latestMutationObserver = new MutationObserver(function(mutations) {
+				window.webkit.messageHandlers.updateHandler.postMessage("contentsUpdated");
 			});
 
-			observer.observe(document, { childList: true, subtree: true	});
+			window.__latestMutationObserver.observe(document.documentElement || document, { childList: true, subtree: true });
 		"""
 
 		let script = WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
@@ -77,6 +83,9 @@ class WebContentLoader: NSObject {
 	/// Delayed content extraction work used to collapse mutation bursts.
 	private var pendingContentUpdateTask: Task<Void, Never>?
 
+	/// Timeout work for dynamic pages that never finish or never settle.
+	private var loadTimeoutTask: Task<Void, Never>?
+
 
 	// MARK: - Utilities
 
@@ -91,6 +100,17 @@ class WebContentLoader: NSObject {
 		}
 	}
 
+	private func scheduleLoadTimeout(for loadID: UUID) {
+		loadTimeoutTask = Task { @MainActor in
+			try? await Task.sleep(nanoseconds: 8_000_000_000)
+			guard !Task.isCancelled, loadID == self.currentLoadID else { return }
+
+			let handler = self.currentUpdateHandler
+			self.cancel()
+			handler?(.failure(WebContentLoaderError.timedOut))
+		}
+	}
+
 	/// Forwards the current page contents to the caller of the load method.
 	private func notifyContentUpdate(for loadID: UUID) {
 		guard loadID == currentLoadID else { return }
@@ -100,8 +120,10 @@ class WebContentLoader: NSObject {
 				guard loadID == self.currentLoadID else { return }
 
 				if let html = html as? String, !html.isEmpty {
+					self.loadTimeoutTask?.cancel()
 					self.currentUpdateHandler?(.success(html))
 				} else if let error = error {
+					self.loadTimeoutTask?.cancel()
 					self.currentUpdateHandler?(.failure(error))
 				}
 			}
@@ -117,6 +139,18 @@ extension WebContentLoader: WKNavigationDelegate {
 		scheduleContentUpdate()
 	}
 
+	func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+		guard navigation == currentNavigation else { return }
+		loadTimeoutTask?.cancel()
+		currentUpdateHandler?(.failure(error))
+	}
+
+	func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+		guard navigation == currentNavigation else { return }
+		loadTimeoutTask?.cancel()
+		currentUpdateHandler?(.failure(error))
+	}
+
 }
 
 extension WebContentLoader: WKScriptMessageHandler {
@@ -126,4 +160,8 @@ extension WebContentLoader: WKScriptMessageHandler {
 		scheduleContentUpdate()
 	}
 
+}
+
+private enum WebContentLoaderError: Error {
+	case timedOut
 }
