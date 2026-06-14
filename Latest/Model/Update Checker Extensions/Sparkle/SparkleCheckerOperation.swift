@@ -99,10 +99,18 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 			if ReleaseNotesMarkup.isUsefulReleaseNotesText(description, relevantVersion: version.versionNumber) {
 				releaseNotes = .html(string: description)
 			} else if let url = releaseNotesURL ?? ReleaseNotesMarkup.firstReleaseNotesURL(in: description, baseURL: self.url) {
-				releaseNotes = .url(url: url)
+				releaseNotes = ReleaseNotesSourceCatalog.releaseNotes(
+					forSparkleReleaseNotesURL: url,
+					bundle: app,
+					remoteVersion: version
+				) ?? .url(url: url)
 			}
 		} else if let url = releaseNotesURL {
-			releaseNotes = .url(url: url)
+			releaseNotes = ReleaseNotesSourceCatalog.releaseNotes(
+				forSparkleReleaseNotesURL: url,
+				bundle: app,
+				remoteVersion: version
+			) ?? .url(url: url)
 		}
 
 		if releaseNotes == nil {

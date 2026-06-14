@@ -46,7 +46,7 @@ final class ReleaseNotesAuditTest: XCTestCase {
 				case .failure(let error):
 					rows.append(AuditRow(bundle: bundle, status: "rejected", detail: String(describing: error), excerpt: nil))
 				case .success(let text):
-					let issues = Self.issues(in: text)
+					let issues = Self.issues(in: text, for: bundle)
 					if issues.isEmpty {
 						rows.append(AuditRow(bundle: bundle, status: "accepted", detail: "source=\(app.source.rawValue)", excerpt: text))
 					} else {
@@ -117,7 +117,7 @@ final class ReleaseNotesAuditTest: XCTestCase {
 		}
 	}
 
-	private static func issues(in text: String) -> [String] {
+	private static func issues(in text: String, for bundle: App.Bundle) -> [String] {
 		let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
 		var issues = [String]()
 
@@ -127,6 +127,10 @@ final class ReleaseNotesAuditTest: XCTestCase {
 
 		if ReleaseNotesMarkup.looksLikeBinaryOrMojibakeText(trimmedText) {
 			issues.append("mojibake")
+		}
+
+		if trimmedText.range(of: #"[A-Za-z]{3,}"#, options: .regularExpression) == nil {
+			issues.append("no-readable-text")
 		}
 
 		let lines = trimmedText.components(separatedBy: .newlines).map {
@@ -150,7 +154,66 @@ final class ReleaseNotesAuditTest: XCTestCase {
 			issues.append("excessive-length")
 		}
 
+		if Self.requiresSpecificReleaseNotes(bundle),
+		   trimmedText.range(of: #"\bis available(?: from Homebrew)?\."#, options: [.regularExpression, .caseInsensitive]) != nil {
+			issues.append("generic-known-source")
+		}
+
+		if Self.normalizedBundleKey(bundle) == "obsidian",
+		   trimmedText.range(of: #"Includes all new features and bug fixes up to Obsidian Desktop|(?m)^\s*•?\s*iOS:"#, options: [.regularExpression, .caseInsensitive]) != nil {
+			issues.append("obsidian-mobile-release-notes")
+		}
+
+		if Self.normalizedBundleKey(bundle) == "zed" {
+			if trimmedText.range(of: #"Version\s*:|Trusted by world-class developers|Creator of Elixir|(?m)^\s*Loading[.…]?\s*$"#, options: [.regularExpression, .caseInsensitive]) != nil {
+				issues.append("zed-page-chrome")
+			}
+			if trimmedText.range(of: #"This week's release includes|(?m)^\s*Features\s*$"#, options: [.regularExpression, .caseInsensitive]) == nil {
+				issues.append("zed-release-body-missing")
+			}
+		}
+
+		if Self.normalizedBundleKey(bundle) == "zoomus" {
+			if trimmedText.range(of: #"(?s)Windows\s+macOS\s+Linux\s+Android|Type Feature title Description Platforms|Full versions"#, options: [.regularExpression, .caseInsensitive]) != nil {
+				issues.append("zoom-version-matrix")
+			}
+			if trimmedText.range(of: #"Show or hide icon labels|New, enhanced, and changed features|Resolved issues"#, options: [.regularExpression, .caseInsensitive]) == nil {
+				issues.append("zoom-release-body-missing")
+			}
+		}
+
 		return issues
+	}
+
+	private static func requiresSpecificReleaseNotes(_ bundle: App.Bundle) -> Bool {
+		let key = Self.normalizedBundleKey(bundle)
+		return [
+			"1password",
+			"appcleaner",
+			"betterdisplay",
+			"bruno",
+			"chrome",
+			"codexbar",
+			"cursor",
+			"docker",
+			"eqmac",
+			"ghostty",
+			"iina",
+			"latestdev",
+			"obsidian",
+			"pdfexpert",
+			"rectangle",
+			"surge",
+			"telegram",
+			"zed",
+			"zoomus"
+		].contains(key)
+	}
+
+	private static func normalizedBundleKey(_ bundle: App.Bundle) -> String {
+		bundle.name.lowercased().filter { character in
+			character.isLetter || character.isNumber
+		}
 	}
 
 	private static func report(for rows: [AuditRow], directories: [URL]) -> String {

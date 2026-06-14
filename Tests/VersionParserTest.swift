@@ -146,7 +146,7 @@ final class VersionParserTest: XCTestCase {
 		let bundle = App.Bundle(
 			version: Version(versionNumber: "4.3.3", buildNumber: "50020"),
 			name: "BetterDisplay",
-			bundleIdentifier: "com.github.waydabber.BetterDisplay",
+			bundleIdentifier: "pro.betterdisplay.BetterDisplay",
 			fileURL: URL(fileURLWithPath: "/Applications/BetterDisplay.app", isDirectory: true),
 			source: .sparkle
 		)
@@ -160,6 +160,203 @@ final class VersionParserTest: XCTestCase {
 
 		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v4.3.4")
 		XCTAssertTrue(fallbackHTML?.contains("BetterDisplay 4.3.4") == true)
+	}
+
+	func testReleaseNotesSourceCatalogNormalizesBetterDisplaySparkleReleaseNotesLink() throws {
+		let bundle = App.Bundle(
+			version: Version(versionNumber: "4.3.3", buildNumber: "50020"),
+			name: "BetterDisplay",
+			bundleIdentifier: "pro.betterdisplay.BetterDisplay",
+			fileURL: URL(fileURLWithPath: "/Applications/BetterDisplay.app", isDirectory: true),
+			source: .sparkle
+		)
+
+		guard case .githubRelease(let apiURL, let fallbackHTML) = ReleaseNotesSourceCatalog.releaseNotes(
+			forSparkleReleaseNotesURL: URL(string: "https://waydabber.github.io/BetterDisplay/changelog.html?tag=v4.3.4")!,
+			bundle: bundle,
+			remoteVersion: Version(versionNumber: "4.3.4", buildNumber: "50021")
+		) else {
+			return XCTFail("Expected BetterDisplay appcast link to resolve to the GitHub release API")
+		}
+
+		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v4.3.4")
+		XCTAssertTrue(fallbackHTML?.contains("BetterDisplay 4.3.4") == true)
+	}
+
+	func testReleaseNotesSourceCatalogUsesTelegramDesktopGitHubRelease() throws {
+		let json = """
+		{
+			"token": "telegram-desktop",
+			"version": "6.9.2",
+			"name": ["Telegram"],
+			"homepage": "https://desktop.telegram.org/",
+			"url": "https://updates.tdesktop.com/tmac/tsetup.6.9.2.dmg",
+			"artifacts": [
+				{
+					"app": ["Telegram.app"]
+				}
+			],
+			"depends_on": {
+				"macos": {}
+			}
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		guard case .githubRelease(let apiURL, let fallbackHTML) = entry.releaseNotes else {
+			return XCTFail("Expected Telegram Desktop GitHub release notes")
+		}
+
+		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/telegramdesktop/tdesktop/releases/tags/v6.9.2")
+		XCTAssertTrue(fallbackHTML?.contains("Telegram 6.9.2") == true)
+	}
+
+	func testReleaseNotesSourceCatalogUsesDockerDesktopMarkdownSource() throws {
+		let json = """
+		{
+			"token": "docker-desktop",
+			"version": "4.77.0,228796",
+			"name": ["Docker"],
+			"homepage": "https://www.docker.com/products/docker-desktop/",
+			"url": "https://desktop.docker.com/mac/main/arm64/228796/Docker.dmg",
+			"artifacts": [
+				{
+					"app": ["Docker.app"]
+				}
+			],
+			"depends_on": {
+				"macos": {}
+			}
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML) = entry.releaseNotes else {
+			return XCTFail("Expected Docker Desktop changelog release notes")
+		}
+
+		XCTAssertEqual(urls, [URL(string: "https://docs.docker.com/desktop/release-notes.md")!])
+		XCTAssertEqual(versionPrefix, "4.77.0")
+		XCTAssertFalse(allowsLatestFallback)
+		XCTAssertTrue(fallbackHTML?.contains("Docker 4.77.0") == true)
+	}
+
+	func testReleaseNotesSourceCatalogUsesChromeReleaseBlog() throws {
+		let json = """
+		{
+			"token": "google-chrome",
+			"version": "149.0.7827.115",
+			"name": ["Google Chrome"],
+			"homepage": "https://www.google.com/chrome/",
+			"url": "https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg",
+			"artifacts": [
+				{
+					"app": ["Google Chrome.app"]
+				}
+			],
+			"depends_on": {
+				"macos": {}
+			}
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML) = entry.releaseNotes else {
+			return XCTFail("Expected Chrome release blog notes")
+		}
+
+		XCTAssertEqual(urls, [URL(string: "https://chromereleases.googleblog.com/")!])
+		XCTAssertEqual(versionPrefix, "149.0.7827.115")
+		XCTAssertFalse(allowsLatestFallback)
+		XCTAssertTrue(fallbackHTML?.contains("Google Chrome 149.0.7827.115") == true)
+	}
+
+	func testReleaseNotesSourceCatalogDoesNotUseNotionProductReleases() {
+		let releaseNotes = ReleaseNotesSourceCatalog.releaseNotes(
+			forHomebrewToken: "notion",
+			version: Version(versionNumber: "7.21.0", buildNumber: nil),
+			fallbackHTML: "<p>Notion 7.21.0 is available.</p>"
+		)
+
+		XCTAssertNil(releaseNotes)
+	}
+
+	func testReleaseNotesSourceCatalogUsesBrunoGitHubReleaseForBundle() throws {
+		let bundle = App.Bundle(
+			version: Version(versionNumber: "3.4.1", buildNumber: nil),
+			name: "Bruno",
+			bundleIdentifier: "com.usebruno.app",
+			fileURL: URL(fileURLWithPath: "/Applications/Bruno.app", isDirectory: true),
+			source: .sparkle
+		)
+
+		guard case .githubRelease(let apiURL, let fallbackHTML) = ReleaseNotesSourceCatalog.releaseNotes(
+			for: bundle,
+			remoteVersion: Version(versionNumber: "3.4.2", buildNumber: nil)
+		) else {
+			return XCTFail("Expected Bruno GitHub release notes")
+		}
+
+		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/usebruno/bruno/releases/tags/v3.4.2")
+		XCTAssertTrue(fallbackHTML?.contains("Bruno 3.4.2") == true)
+	}
+
+	func testReleaseNotesSourceCatalogUsesGhosttySourceMarkdown() throws {
+		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, _) = ReleaseNotesSourceCatalog.releaseNotes(
+			forHomebrewToken: "ghostty",
+			version: Version(versionNumber: "1.3.1", buildNumber: nil),
+			fallbackHTML: nil
+		) else {
+			return XCTFail("Expected Ghostty changelog release notes")
+		}
+
+		XCTAssertEqual(urls, [URL(string: "https://raw.githubusercontent.com/ghostty-org/website/main/docs/install/release-notes/1-3-1.mdx")!])
+		XCTAssertEqual(versionPrefix, "1.3.1")
+		XCTAssertFalse(allowsLatestFallback)
+	}
+
+	func testReleaseNotesSourceCatalogUsesObsidianChangelog() throws {
+		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML) = ReleaseNotesSourceCatalog.releaseNotes(
+			forHomebrewToken: "obsidian",
+			version: Version(versionNumber: "1.12.7", buildNumber: nil),
+			fallbackHTML: "<p>Obsidian 1.12.7 is available.</p>"
+		) else {
+			return XCTFail("Expected Obsidian changelog release notes")
+		}
+
+		XCTAssertEqual(urls, [URL(string: "https://obsidian.md/changelog/")!])
+		XCTAssertEqual(versionPrefix, "1.12.7")
+		XCTAssertFalse(allowsLatestFallback)
+		XCTAssertTrue(fallbackHTML?.contains("Obsidian 1.12.7") == true)
+	}
+
+	func testHomebrewCaskEntryUsesObsidianCatalogBeforeGitHubDownloadURL() throws {
+		let json = """
+		{
+			"token": "obsidian",
+			"version": "1.12.7",
+			"name": ["Obsidian"],
+			"desc": "Knowledge base",
+			"homepage": "https://obsidian.md/",
+			"url": "https://github.com/obsidianmd/obsidian-releases/releases/download/v1.12.7/Obsidian-1.12.7.dmg",
+			"artifacts": [
+				{
+					"app": ["Obsidian.app"]
+				}
+			],
+			"depends_on": {
+				"macos": {}
+			}
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		guard case .changelog(let urls, let versionPrefix, _, _) = entry.releaseNotes else {
+			return XCTFail("Expected catalog changelog release notes")
+		}
+
+		XCTAssertEqual(urls, [URL(string: "https://obsidian.md/changelog/")!])
+		XCTAssertEqual(versionPrefix, "1.12.7")
 	}
 
 	func testHomebrewCaskEntryUsesCursorChangelogSource() throws {
@@ -383,6 +580,50 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertFalse(string.string.contains("•        •"))
 	}
 
+	func testMarkdownReleaseNotesStripFrontMatterAndInlineMarkup() throws {
+		let markdown = """
+		---
+		title: Ghostty 1.3.1
+		description: |-
+		  Release notes for Ghostty 1.3.1, released on March 13, 2026.
+		---
+		Ghostty 1.3.1 includes changes from
+		**15 contributors** over **100 commits**. This is a patch release
+		focused on fixing regressions introduced in 1.3.0, especially on macOS.
+		**Highlights
+		macOS Mouse Selection Bugs Fixed**
+		PRs: GH-11276
+		"""
+
+		let string = try ReleaseNotesMarkup.attributedString(from: markdown, baseURL: nil, relevantVersion: "1.3.1").get()
+
+		XCTAssertTrue(string.string.contains("Ghostty 1.3.1 includes changes"))
+		XCTAssertTrue(string.string.contains("15 contributors over 100 commits"))
+		XCTAssertTrue(string.string.contains("macOS Mouse Selection Bugs Fixed"))
+		XCTAssertFalse(string.string.contains("title:"))
+		XCTAssertFalse(string.string.contains("description:"))
+		XCTAssertFalse(string.string.contains("**"))
+		XCTAssertFalse(string.string.contains("---"))
+
+		let compactMarkdown = "--- title: Ghostty 1.3.1 description: |- Release notes for Ghostty 1.3.1, released on March 13, 2026. --- Ghostty 1.3.1 includes changes from **15 contributors** over **100 commits**. This is a patch release focused on fixing regressions introduced in 1.3.0."
+		let compactString = try ReleaseNotesMarkup.attributedString(from: compactMarkdown, baseURL: nil, relevantVersion: "1.3.1").get()
+		XCTAssertTrue(compactString.string.hasPrefix("Ghostty 1.3.1 includes changes"))
+		XCTAssertFalse(compactString.string.contains("title:"))
+		XCTAssertFalse(compactString.string.contains("---"))
+
+		let missingOpeningDelimiterMarkdown = """
+		title: Ghostty 1.3.1
+		description: |-
+		Release notes for Ghostty 1.3.1, released on March 13, 2026.
+		---
+		Ghostty 1.3.1 includes changes from
+		**15 contributors** over **100 commits**.
+		"""
+		let missingOpeningString = try ReleaseNotesMarkup.attributedString(from: missingOpeningDelimiterMarkdown, baseURL: nil, relevantVersion: "1.3.1").get()
+		XCTAssertTrue(missingOpeningString.string.hasPrefix("Ghostty 1.3.1 includes changes"))
+		XCTAssertFalse(missingOpeningString.string.contains("description:"))
+	}
+
 	func testReleaseNotesMarkupKeepsOnlyRelevantVersionSection() throws {
 		let changelog = """
 		eqMac Changelog
@@ -558,6 +799,398 @@ final class VersionParserTest: XCTestCase {
 		let url = try XCTUnwrap(ReleaseNotesMarkup.firstReleaseNotesURL(in: text, baseURL: nil))
 
 		XCTAssertEqual(url.absoluteString, "https://obsidian.md/changelog/2026-03-23-desktop-v1.12.7/")
+	}
+
+	func testReleaseNotesMarkupExtractsChromeDesktopReleaseFromBlog() throws {
+		let html = """
+		<h2>Chrome for Android Update</h2>
+		<p>Thursday, June 11, 2026</p>
+		<p>Chrome 149 (149.0.7827.114) for Android is available.</p>
+		<h2>Stable Channel Update for Desktop</h2>
+		<p>Thursday, June 11, 2026</p>
+		<p>The Stable channel has been updated to 149.0.7827.114/.115 for Windows and Mac and 149.0.7827.114 for Linux, which will roll out over the coming days/weeks.</p>
+		<p>Security Fixes and Rewards</p>
+		<p>This update includes 28 security fixes.</p>
+		<p>Critical CVE-2026-12007: Use after free in Core.</p>
+		<p>Google Chrome</p>
+		<h2>Extended Stable Updates for Desktop</h2>
+		<p>The Extended Stable channel has been updated to 148.0.7778.265 for Windows and Mac.</p>
+		"""
+
+		let text = try XCTUnwrap(ReleaseNotesMarkup.relevantChangelogText(
+			fromHTML: html,
+			version: "149.0.7827.115",
+			pageURL: URL(string: "https://chromereleases.googleblog.com/")!,
+			allowFirstSectionFallback: false
+		))
+
+		XCTAssertTrue(text.contains("Stable channel has been updated"))
+		XCTAssertTrue(text.contains("28 security fixes"))
+		XCTAssertFalse(text.contains("Android is available"))
+		XCTAssertFalse(text.contains("Extended Stable channel"))
+	}
+
+	func testReleaseNotesMarkupExtractsChromeDesktopReleaseFromBloggerTemplate() throws {
+		let html = """
+		<div class='post'>
+		<h2 class='title'>Chrome for Android Update</h2>
+		<div class='post-content'>
+		<script type='text/template'>
+		<p>Chrome 149 (149.0.7827.114) for Android is available.</p>
+		<div>Android releases contain the same security fixes as their corresponding <a href="https://chromereleases.googleblog.com/2026/06/stable-channel-update-for-desktop.html">Desktop releases</a> (Windows &amp; Mac: 149.0.7827.114/115, Linux: 149.0.7872.114) unless otherwise noted.</div>
+		</script>
+		</div>
+		</div>
+		<div class='post'>
+		<h2 class='title'>Stable Channel Update for Desktop</h2>
+		<div class='post-content'>
+		<script type='text/template'>
+		<p>The Stable channel has been updated to 149.0.7827.114/.115 for Windows and Mac and 149.0.7827.114 for Linux, which will roll out over the coming days/weeks.</p>
+		<p>Security Fixes and Rewards</p>
+		<p>This update includes 28 security fixes.</p>
+		<p>Critical CVE-2026-12007: Use after free in Core.</p>
+		</script>
+		</div>
+		</div>
+		"""
+
+		let text = try XCTUnwrap(ReleaseNotesMarkup.relevantChangelogText(
+			fromHTML: html,
+			version: "149.0.7827.115",
+			pageURL: URL(string: "https://chromereleases.googleblog.com/")!,
+			allowFirstSectionFallback: false
+		))
+
+		XCTAssertTrue(text.contains("Stable Channel Update for Desktop"))
+		XCTAssertTrue(text.contains("28 security fixes"))
+		XCTAssertFalse(text.contains("Android releases contain"))
+	}
+
+	func testReleaseNotesMarkupExtractsZedReleaseWithoutNavigationChrome() throws {
+		let html = """
+		<article>
+		<p>Versions</p>
+		<p>1.6.3</p>
+		<p>1.5.5</p>
+		<p>Version : 1.6.3</p>
+		<p>Platform : macOS</p>
+		<p>Trusted by world-class developers and industry leading teams</p>
+		<h1>1.6.3</h1>
+		<p>Jun 10, 2026</p>
+		<p>macOS</p>
+		<p>Loading...</p>
+		<p>Windows</p>
+		<p>Loading...</p>
+		<p>Linux</p>
+		<p>Loading...</p>
+		<p>This week's release includes the ability to open a Git diff for a single file in its own dedicated tab from the Git panel.</p>
+		<h2>Features</h2>
+		<h3>AI</h3>
+		<ul><li>Agent: Added a way to share skills via links.</li></ul>
+		</article>
+		"""
+
+		let text = try XCTUnwrap(ReleaseNotesMarkup.relevantChangelogText(
+			fromHTML: html,
+			version: "1.6.3",
+			pageURL: URL(string: "https://zed.dev/releases/stable/1.6.3")!,
+			allowFirstSectionFallback: false
+		))
+
+		XCTAssertTrue(text.hasPrefix("1.6.3"))
+		XCTAssertTrue(text.contains("This week's release includes"))
+		XCTAssertTrue(text.contains("Agent: Added a way to share skills via links."))
+		XCTAssertFalse(text.contains("Trusted by world-class developers"))
+		XCTAssertFalse(text.contains("Version :"))
+		XCTAssertFalse(text.contains("Loading"))
+	}
+
+	func testReleaseNotesMarkupExtractsZoomReleaseSectionWithoutVersionMatrix() throws {
+		let html = """
+		<article>
+		<h1>Release notes for the Zoom Workplace app</h1>
+		<h2>Released</h2>
+		<h3>May 18, 2026</h3>
+		<p>Note: This release was originally scheduled for May 11, but was delayed by one week.</p>
+		<h4>Full versions</h4>
+		<p>Windows</p><p>macOS</p><p>Linux</p><p>Android*</p>
+		<p>7.0.5 (38856)</p><p>7.0.5 (81138)</p><p>7.0.5 (3034)</p><p>7.0.5 (40164)</p>
+		<p>*The mobile releases require additional approval from their respective app stores.</p>
+		<h4>New, enhanced, and changed features</h4>
+		<p>Type Feature title Description Platforms</p>
+		<p>General features</p>
+		<p>New or enhanced feature Show or hide icon labels in the navigation bar Users can hide text labels on navigation bar app icons.</p>
+		<p>Windows</p><p>macOS</p><p>Linux</p>
+		<p>New or enhanced feature Support automatic sign-in when joining a meeting from a web browser Users who are signed into the Zoom web portal can be signed into the app during join flow.</p>
+		<p>Windows</p><p>macOS</p><p>Linux</p>
+		<h3>April 29, 2026</h3>
+		<p>Older release details.</p>
+		</article>
+		"""
+
+		let text = try XCTUnwrap(ReleaseNotesMarkup.relevantChangelogText(
+			fromHTML: html,
+			version: "7.0.5",
+			pageURL: URL(string: "https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0061222")!,
+			allowFirstSectionFallback: false
+		))
+
+		XCTAssertTrue(text.hasPrefix("Zoom 7.0.5"))
+		XCTAssertTrue(text.contains("May 18, 2026"))
+		XCTAssertTrue(text.contains("Show or hide icon labels"))
+		XCTAssertTrue(text.contains("Support automatic sign-in"))
+		XCTAssertFalse(text.contains("Full versions"))
+		XCTAssertFalse(text.contains("7.0.5 (38856)"))
+		XCTAssertFalse(text.contains("Type Feature title Description Platforms"))
+		XCTAssertFalse(text.contains("Older release details"))
+	}
+
+	func testReleaseNotesMarkupExtractsZoomReleaseSectionFromStructuredArticleBody() throws {
+		let articleBody = """
+		<p>Zoom provides up-to-date release notes for the Zoom Workplace app.</p>
+		<h2>Released</h2>
+		<h3>May 18, 2026</h3>
+		<p><strong>Note</strong>: This release was originally scheduled for May 11, but was delayed by one week.</p>
+		<h4>Full versions</h4>
+		<article>
+		<table><thead><tr><th>Windows</th><th>macOS</th><th>Linux</th><th>Android*</th></tr></thead>
+		<tbody><tr><td>7.0.5 (38856)</td><td>7.0.5 (81138)</td><td>7.0.5 (3034)</td><td>7.0.5 (40164)</td></tr></tbody></table>
+		</article>
+		<p>*The mobile releases require additional approval from their respective app stores.</p>
+		<h4>New, enhanced, and changed features</h4>
+		<table><thead><tr><th>Type</th><th>Feature title</th><th>Description</th><th>Platforms</th></tr></thead>
+		<tbody><tr><td>New or enhanced feature</td><td>Show or hide icon labels in the navigation bar</td><td>Users can hide text labels on navigation bar app icons in the Zoom Workplace desktop app.</td><td>Windows <br />macOS <br />Linux</td></tr></tbody></table>
+		<h4>Resolved issues</h4>
+		<table><tbody><tr><td>Minor bug fixes</td><td>Windows <br />macOS <br />Linux</td></tr></tbody></table>
+		<h3>April 29, 2026</h3>
+		<p>Older release details.</p>
+		"""
+		let jsonData = try JSONSerialization.data(withJSONObject: [
+			"@context": "https://schema.org",
+			"@type": "TechArticle",
+			"articleBody": articleBody
+		])
+		let json = try XCTUnwrap(String(data: jsonData, encoding: .utf8))
+		let html = """
+		<html>
+		<head><script type="application/ld+json">\(json)</script></head>
+		<body>
+		<p>Windows</p><p>macOS</p><p>Linux</p><p>Android*</p>
+		<p>7.0.5 (38856)</p><p>7.0.5 (81138)</p><p>7.0.5 (3034)</p><p>7.0.5 (40164)</p>
+		</body>
+		</html>
+		"""
+
+		let text = try XCTUnwrap(ReleaseNotesMarkup.relevantChangelogText(
+			fromHTML: html,
+			version: "7.0.5",
+			pageURL: URL(string: "https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0061222")!,
+			allowFirstSectionFallback: false
+		))
+
+		XCTAssertTrue(text.hasPrefix("Zoom 7.0.5"))
+		XCTAssertTrue(text.contains("May 18, 2026"))
+		XCTAssertTrue(text.contains("Show or hide icon labels"))
+		XCTAssertTrue(text.contains("Minor bug fixes"))
+		XCTAssertFalse(text.contains("7.0.5 (38856)"))
+		XCTAssertFalse(text.contains("Older release details"))
+
+		let renderedText = try ReleaseNotesMarkup.attributedString(
+			from: text,
+			baseURL: URL(string: "https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0061222")!,
+			relevantVersion: "7.0.5"
+		).get().string
+		XCTAssertTrue(renderedText.contains("Show or hide icon labels"))
+		XCTAssertTrue(renderedText.contains("Minor bug fixes"))
+	}
+
+	func testReleaseNotesProviderBuildsGitHubWebURLFromAPIURL() throws {
+		let apiURL = URL(string: "https://api.github.com/repos/usebruno/bruno/releases/tags/v3.4.2")!
+		let webURL = try XCTUnwrap(ReleaseNotesProvider.githubReleaseWebURL(fromAPIURL: apiURL))
+
+		XCTAssertEqual(webURL.absoluteString, "https://github.com/usebruno/bruno/releases/tag/v3.4.2")
+	}
+
+	func testReleaseNotesProviderExtractsGitHubReleaseBodyHTML() throws {
+		let html = """
+		<main>
+			<div data-test-selector="body-content" class="markdown-body tmp-my-3">
+				<ul>
+					<li>Fix possible crash in OpenGL init.</li>
+					<li>Fix display of rich messages without text.</li>
+				</ul>
+				<div><p>Nested note stays in the release body.</p></div>
+			</div>
+			<div class="Box-footer">Assets 11</div>
+		</main>
+		"""
+
+		let body = try XCTUnwrap(ReleaseNotesProvider.githubReleaseBodyHTML(fromHTML: html))
+		let string = try ReleaseNotesMarkup.attributedString(
+			from: body,
+			baseURL: URL(string: "https://github.com/telegramdesktop/tdesktop/releases/tag/v6.9.2")!,
+			relevantVersion: "6.9.2"
+		).get()
+
+		XCTAssertTrue(string.string.contains("Fix possible crash in OpenGL init."))
+		XCTAssertTrue(string.string.contains("Nested note stays in the release body."))
+		XCTAssertFalse(string.string.contains("Assets 11"))
+	}
+
+	func testReleaseNotesProviderExtractsLinkedNotesFromGitHubReleaseBody() throws {
+		let html = """
+		<div data-test-selector="body-content" class="markdown-body tmp-my-3">
+			<p><a href="https://obsidian.md/changelog/2026-03-23-desktop-v1.12.7/">https://obsidian.md/changelog/2026-03-23-desktop-v1.12.7/</a></p>
+		</div>
+		"""
+
+		let body = try XCTUnwrap(ReleaseNotesProvider.githubReleaseBodyHTML(fromHTML: html))
+		let url = try XCTUnwrap(ReleaseNotesMarkup.firstReleaseNotesURL(in: body, baseURL: URL(string: "https://github.com/obsidianmd/obsidian-releases/releases/tag/v1.12.7")!))
+
+		XCTAssertEqual(url.absoluteString, "https://obsidian.md/changelog/2026-03-23-desktop-v1.12.7/")
+		XCTAssertThrowsError(try ReleaseNotesMarkup.attributedString(from: body, baseURL: nil, relevantVersion: "1.12.7").get())
+	}
+
+	func testReleaseNotesMarkupExtractsVersionedArticleFrom1PasswordPage() throws {
+		let html = """
+		<section class="c-updates">
+			<article class="c-updates__release">
+				<header>
+					<time>June 2 2026</time>
+					<h6>1Password for Mac 8.12.22</h6>
+				</header>
+				<div class="c-updates__content">
+					<ul>
+						<li>We&rsquo;ve improved the scrolling experience to better match typical macOS scrolling behavior.</li>
+					</ul>
+				</div>
+			</article>
+			<article class="c-updates__release">
+				<header>
+					<time>May 20 2026</time>
+					<h6>1Password for Mac 8.12.21</h6>
+				</header>
+				<div class="c-updates__content">
+					<ul><li>Older release notes should not be included.</li></ul>
+				</div>
+			</article>
+		</section>
+		"""
+
+		let article = try XCTUnwrap(ReleaseNotesMarkup.releaseContentHTML(
+			fromHTML: html,
+			version: "8.12.22",
+			pageURL: URL(string: "https://releases.1password.com/mac/stable/")!
+		))
+		let string = try ReleaseNotesMarkup.attributedString(
+			from: article,
+			baseURL: URL(string: "https://releases.1password.com/mac/stable/")!,
+			relevantVersion: "8.12.22"
+		).get()
+
+		XCTAssertTrue(string.string.contains("1Password for Mac 8.12.22"))
+		XCTAssertTrue(string.string.contains("improved the scrolling experience"))
+		XCTAssertFalse(string.string.contains("Older release notes"))
+	}
+
+	func testReleaseNotesMarkupPrefersObsidianDesktopChangelogLink() throws {
+		let html = """
+		<a href="/changelog/2026-03-23-mobile-v1.12.7/">1.12.7 Mobile</a>
+		<p>Includes all new features and bug fixes up to <a href="/changelog/2026-03-23-desktop-v1.12.7/">Obsidian Desktop v1.12.7</a>.</p>
+		<a href="/changelog/2026-03-23-desktop-v1.12.7/">1.12.7 Desktop</a>
+		"""
+
+		let url = try XCTUnwrap(ReleaseNotesMarkup.linkedChangelogURL(
+			fromHTML: html,
+			version: "1.12.7",
+			pageURL: URL(string: "https://obsidian.md/changelog/")!
+		))
+
+		XCTAssertEqual(url.absoluteString, "https://obsidian.md/changelog/2026-03-23-desktop-v1.12.7/")
+	}
+
+	func testReleaseNotesMarkupPrefersObsidianDesktopArticle() throws {
+		let html = """
+		<article>
+			<h2>1.12.7 Mobile</h2>
+			<p>Includes all new features and bug fixes up to Obsidian Desktop v1.12.7.</p>
+		</article>
+		<article>
+			<h2>1.12.7 Desktop</h2>
+			<h3>Improvements</h3>
+			<p>The Obsidian Installer is now bundled with a new binary file for using the CLI.</p>
+		</article>
+		"""
+
+		let article = try XCTUnwrap(ReleaseNotesMarkup.releaseContentHTML(
+			fromHTML: html,
+			version: "1.12.7",
+			pageURL: URL(string: "https://obsidian.md/changelog/")!
+		))
+		let string = try ReleaseNotesMarkup.attributedString(
+			from: article,
+			baseURL: URL(string: "https://obsidian.md/changelog/")!,
+			relevantVersion: "1.12.7"
+		).get()
+
+		XCTAssertTrue(string.string.contains("1.12.7 Desktop"))
+		XCTAssertTrue(string.string.contains("Obsidian Installer"))
+		XCTAssertFalse(string.string.contains("1.12.7 Mobile"))
+	}
+
+	func testReleaseNotesMarkupPrefersObsidianDesktopPlainTextSection() throws {
+		let text = """
+		Changelog
+		June 9, 2026
+		1.13.1 Mobile
+		Includes all new features and bug fixes up to Obsidian Desktop v1.13.1.
+		Improvements
+		- Settings pages now have enough padding to scroll fully into view.
+		June 9, 2026
+		1.13.1 Desktop
+		Improvements
+		- Sliders now show a permanent label with the current value.
+		No longer broken
+		- Fixed choppy horizontal scrolling when sidebar tabs overflow.
+		May 28, 2026
+		1.13.0 Desktop
+		Older notes should not be included.
+		"""
+
+		let relevantText = try XCTUnwrap(ReleaseNotesMarkup.relevantChangelogText(
+			fromHTML: text,
+			version: "1.13.1",
+			pageURL: URL(string: "https://obsidian.md/changelog/")!,
+			allowFirstSectionFallback: false
+		))
+
+		XCTAssertTrue(relevantText.contains("1.13.1 Desktop"))
+		XCTAssertTrue(relevantText.contains("Sliders now show"))
+		XCTAssertFalse(relevantText.contains("1.13.1 Mobile"))
+		XCTAssertFalse(relevantText.contains("Older notes"))
+	}
+
+	func testReleaseNotesMarkupDoesNotUseObsidianIndexTypesetAsRelease() throws {
+		let html = """
+		<div class="typeset">
+			<h2>1.13.1 Mobile</h2>
+			<p>Includes all new features and bug fixes up to Obsidian Desktop v1.13.1.</p>
+			<h2>1.13.1 Desktop</h2>
+			<p>Sliders now show a permanent label with the current value.</p>
+		</div>
+		"""
+
+		XCTAssertNil(ReleaseNotesMarkup.releaseContentHTML(
+			fromHTML: html,
+			version: "1.13.1",
+			pageURL: URL(string: "https://obsidian.md/changelog/")!
+		))
+
+		XCTAssertNotNil(ReleaseNotesMarkup.releaseContentHTML(
+			fromHTML: html,
+			version: "1.13.1",
+			pageURL: URL(string: "https://obsidian.md/changelog/2026-06-09-desktop-v1.13.1/")!
+		))
 	}
 
 	func testReleaseNotesMarkupExtractsFirstSectionFromVersionlessChangelog() throws {

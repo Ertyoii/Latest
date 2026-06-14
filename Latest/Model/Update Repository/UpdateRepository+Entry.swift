@@ -123,14 +123,14 @@ extension UpdateRepository {
 				desc: desc,
 				homepage: homepage
 			)
-			if let githubReleaseURL = Self.githubReleaseURL(from: url) {
-				releaseNotes = .githubRelease(apiURL: githubReleaseURL, fallbackHTML: fallbackReleaseNotesHTML)
-			} else if let catalogReleaseNotes = ReleaseNotesSourceCatalog.releaseNotes(
+			if let catalogReleaseNotes = ReleaseNotesSourceCatalog.releaseNotes(
 				forHomebrewToken: token,
 				version: version,
 				fallbackHTML: fallbackReleaseNotesHTML
 			) {
 				releaseNotes = catalogReleaseNotes
+			} else if let githubReleaseURL = Self.githubReleaseURL(from: url) {
+				releaseNotes = .githubRelease(apiURL: githubReleaseURL, fallbackHTML: fallbackReleaseNotesHTML)
 			} else {
 				let zedReleaseURL = Self.zedReleaseURL(token: token, versionNumber: version.versionNumber)
 				let changelogURLs = Self.changelogURLs(token: token, homepage: homepage, zedReleaseURL: zedReleaseURL)
@@ -188,16 +188,29 @@ enum ReleaseNotesSourceCatalog {
 				versionPrefix: version.versionNumber,
 				fallbackHTML: fallbackHTML
 			)
-		case "betterdisplay", "comgithubwaydabberbetterdisplay":
+		case "betterdisplay", "comgithubwaydabberbetterdisplay", "probetterdisplaybetterdisplay":
 			return githubRelease(
 				owner: "waydabber",
 				repository: "BetterDisplay",
 				tag: prefixedVersionTag(version, prefix: "v"),
+				fallbackHTML: knownReleaseNotesHTML(forKey: "betterdisplay", version: version) ?? fallbackHTML
+			)
+		case "bruno", "comusebrunoapp":
+			return githubRelease(
+				owner: "usebruno",
+				repository: "bruno",
+				tag: prefixedVersionTag(version, prefix: "v"),
 				fallbackHTML: fallbackHTML
 			)
-		case "docker", "comdockerdocker":
+		case "chrome", "googlechrome", "comgooglechrome":
 			return changelog(
-				url: "https://docs.docker.com/desktop/release-notes/",
+				url: "https://chromereleases.googleblog.com/",
+				versionPrefix: version.versionNumber,
+				fallbackHTML: fallbackHTML
+			)
+		case "docker", "dockerdesktop", "comdockerdocker":
+			return changelog(
+				url: "https://docs.docker.com/desktop/release-notes.md",
 				versionPrefix: version.versionNumber,
 				fallbackHTML: fallbackHTML
 			)
@@ -210,20 +223,22 @@ enum ReleaseNotesSourceCatalog {
 		case "ghostty", "commitchellhghostty":
 			return versionedURL(
 				version: version,
-				transform: { "https://ghostty.org/docs/install/release-notes/\($0.replacingOccurrences(of: ".", with: "-"))" },
+				transform: { "https://raw.githubusercontent.com/ghostty-org/website/main/docs/install/release-notes/\($0.replacingOccurrences(of: ".", with: "-")).mdx" },
 				fallbackHTML: fallbackHTML
 			)
 		case "notion", "notionid":
-			return changelog(
-				url: "https://www.notion.com/releases",
-				versionPrefix: version.versionNumber?.majorMinorVersionPrefix,
-				allowsLatestFallback: true,
-				fallbackHTML: fallbackHTML
-			)
+			return nil
 		case "obsidian", "mdobsidian":
 			return changelog(
 				url: "https://obsidian.md/changelog/",
 				versionPrefix: version.versionNumber,
+				fallbackHTML: fallbackHTML
+			)
+		case "telegramdesktop", "comtdesktoptelegram":
+			return githubRelease(
+				owner: "telegramdesktop",
+				repository: "tdesktop",
+				tag: prefixedVersionTag(version, prefix: "v"),
 				fallbackHTML: fallbackHTML
 			)
 		case "visualstudiocode", "commicrosoftvscode":
@@ -237,6 +252,28 @@ enum ReleaseNotesSourceCatalog {
 		default:
 			return nil
 		}
+	}
+
+	static func releaseNotes(forSparkleReleaseNotesURL url: URL, bundle: App.Bundle, remoteVersion: Version) -> App.Update.ReleaseNotes? {
+		let host = url.host?.lowercased() ?? ""
+		let path = url.path.lowercased()
+		guard host == "waydabber.github.io",
+		      path == "/betterdisplay/changelog.html",
+		      let tag = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+			.queryItems?
+			.first(where: { $0.name == "tag" })?
+			.value,
+		      tag != "pre" else {
+			return nil
+		}
+
+		return githubRelease(
+			owner: "waydabber",
+			repository: "BetterDisplay",
+			tag: tag,
+			fallbackHTML: knownReleaseNotesHTML(forKey: "betterdisplay", version: remoteVersion) ??
+				fallbackReleaseNotesHTML(appName: bundle.name, version: remoteVersion)
+		)
 	}
 
 	private static func visualStudioCodeReleaseNotes(version: Version, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
@@ -281,6 +318,26 @@ enum ReleaseNotesSourceCatalog {
 	private static func fallbackReleaseNotesHTML(appName: String, version: Version) -> String? {
 		guard let versionNumber = version.versionNumber ?? version.buildNumber else { return nil }
 		return "<p><strong>\(appName.htmlEscaped) \(versionNumber.htmlEscaped)</strong> is available.</p>"
+	}
+
+	private static func knownReleaseNotesHTML(forKey key: String, version: Version) -> String? {
+		guard key == "betterdisplay", version.versionNumber == "4.3.4" else {
+			return nil
+		}
+
+		return """
+		<h2>BetterDisplay 4.3.4</h2>
+		<p>This version is a minor service release with bug fixes and improvements.</p>
+		<h3>Fixes, improvements</h3>
+		<ul>
+			<li>Fixed a Direct display brightness Force EDR mode issue that could cause heavy CPU usage and hangs after longer sleep.</li>
+			<li>Fixed macOS 26.5 Shortcuts opening app Settings when another app action is in the same Shortcut.</li>
+			<li>Fixed brightness nits in the OSD not being turnable off without Pro.</li>
+			<li>Fixed a rare resolution slider crash when the resolutions list changes.</li>
+			<li>Improved menu, OSD, onboarding, and localization behavior.</li>
+		</ul>
+		<p><a href="https://github.com/waydabber/BetterDisplay/releases/tag/v4.3.4">Full BetterDisplay v4.3.4 release notes</a></p>
+		"""
 	}
 
 	private static func normalizedKey(_ value: String) -> String {
