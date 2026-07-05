@@ -163,7 +163,7 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 
 			textStack.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: Metrics.iconTextSpacing),
 			textStack.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
-			textStack.trailingAnchor.constraint(lessThanOrEqualTo: trailingStack.leadingAnchor, constant: -8),
+			textStack.trailingAnchor.constraint(lessThanOrEqualTo: trailingStack.leadingAnchor),
 
 			trailingStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Metrics.rightInset),
 			trailingStack.centerYAnchor.constraint(equalTo: centerYAnchor),

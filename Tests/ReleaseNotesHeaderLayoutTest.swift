@@ -61,6 +61,58 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 		_ = window
 	}
 
+	@MainActor
+	func testSidebarShowsLongInstalledVersionWithoutTruncationAtIdealWidth() {
+		let date = Date()
+		let app = makeApp(name: "Codex", version: "26.623.101652", date: date)
+		let row = LegacyUpdateRowContentView(frame: NSRect(
+			x: 0,
+			y: 0,
+			width: VisualMetrics.sidebarIdealWidth,
+			height: VisualMetrics.appRowHeight
+		))
+		let formatter = DateFormatter()
+		formatter.dateStyle = .short
+		row.update(
+			app: app,
+			isSelected: false,
+			drawsSelectionBackground: false,
+			filterQuery: nil,
+			dateFormatter: formatter
+		)
+		row.layoutSubtreeIfNeeded()
+
+		let expectedVersion = app.localizedVersionInformation?.current
+		guard let versionField = row.descendantTextFields().first(where: { $0.stringValue == expectedVersion }) else {
+			XCTFail("Expected the installed version field in the update row.")
+			return
+		}
+
+		XCTAssertGreaterThanOrEqual(
+			versionField.frame.width + 0.5,
+			versionField.intrinsicContentSize.width,
+			"The installed version should use the available row width instead of truncating."
+		)
+
+		let expectedDate = formatter.string(from: date)
+		guard let dateField = row.descendantTextFields().first(where: { $0.stringValue == expectedDate }) else {
+			XCTFail("Expected the update date field in the update row.")
+			return
+		}
+
+		guard let trailingStack = dateField.superview else {
+			XCTFail("Expected the date field inside the trailing stack.")
+			return
+		}
+		let trailingFrame = trailingStack.convert(trailingStack.bounds, to: row)
+		XCTAssertEqual(
+			trailingFrame.maxX,
+			row.bounds.maxX - 32,
+			accuracy: 0.5,
+			"The date and status column should retain its original right padding."
+		)
+	}
+
 	private func makeApp(name: String, version: String, date: Date) -> App {
 		let bundle = App.Bundle(
 			version: Version(versionNumber: version, buildNumber: nil),
