@@ -7,52 +7,17 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 CATALOG_PATH="${1:-}"
-if [[ -z "$CATALOG_PATH" || ! -f "$CATALOG_PATH" ]]; then
-	echo "usage: $0 /path/to/homebrew-cask.json" >&2
+if [[ "$CATALOG_PATH" == "-" ]]; then
+	CATALOG_PATH=/dev/stdin
+elif [[ -z "$CATALOG_PATH" || ! -f "$CATALOG_PATH" ]]; then
+	echo "usage: $0 /path/to/homebrew-cask.json|-" >&2
 	echo "The input must be the public Homebrew cask API response; this script never scans installed apps." >&2
 	exit 2
 fi
 
-CATALOG_TOKENS='[
-  "1password",
-  "betterdisplay",
-  "bruno",
-  "docker-desktop",
-  "firefox",
-  "ghostty",
-  "google-chrome",
-  "obsidian",
-  "telegram-desktop",
-  "visual-studio-code",
-  "zoom",
-  "cursor",
-  "zed",
-  "zed@preview",
-  "aqua-app",
-  "clion",
-  "datagrip",
-  "dataspell",
-  "goland",
-  "intellij-idea",
-  "intellij-idea-ce",
-  "mps",
-  "phpstorm",
-  "pycharm",
-  "pycharm-ce",
-  "pycharm-edu",
-  "rider",
-  "rubymine",
-  "rustrover",
-  "webstorm",
-  "writerside",
-  "airfoil",
-  "audio-hijack",
-  "farrago",
-  "fission",
-  "loopback",
-  "piezo",
-  "soundsource"
-]'
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SOURCE_CATALOG="$ROOT_DIR/Latest/Resources/ReleaseNotesSources.json"
+CATALOG_TOKENS="$(jq '[.[].homebrewTokens[]?] | unique' "$SOURCE_CATALOG")"
 
 jq --argjson catalogTokens "$CATALOG_TOKENS" '
   [ .[] | select(any(.artifacts[]?; type == "object" and has("app"))) ] as $apps |

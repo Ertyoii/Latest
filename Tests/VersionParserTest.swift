@@ -49,7 +49,7 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertEqual(VersionParser.parse(combinedVersionNumber: ""), Version(versionNumber: nil, buildNumber: nil))
 	}
 
-	func testHomebrewCaskEntryUsesHomepageChangelogCandidatesWithoutMetadataAsNotes() throws {
+	func testHomebrewCaskEntryUsesImmediateFallbackWithoutGuessingHomepagePaths() throws {
 		let json = """
 		{
 			"token": "example-app",
@@ -71,16 +71,14 @@ final class VersionParserTest: XCTestCase {
 		"""
 		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
 
-		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML) = entry.releaseNotes else {
-			return XCTFail("Expected changelog release notes")
+		guard case .html(let fallbackHTML) = entry.releaseNotes else {
+			return XCTFail("Expected immediate fallback release notes")
 		}
 
-		XCTAssertEqual(versionPrefix, "2.4")
-		XCTAssertFalse(allowsLatestFallback)
-		XCTAssertTrue(fallbackHTML?.contains("Example App 2.4.1") == true)
-		XCTAssertTrue(fallbackHTML?.contains("Notes, tasks &amp; reminders") == true)
-		XCTAssertEqual(urls.first?.absoluteString, "https://example.com/changelog")
-		XCTAssertFalse(urls.map(\.absoluteString).contains("Notes, tasks & reminders"))
+		XCTAssertTrue(fallbackHTML.contains("Example App 2.4.1"))
+		XCTAssertTrue(fallbackHTML.contains("Notes, tasks &amp; reminders"))
+		XCTAssertTrue(fallbackHTML.contains("https://example.com/"))
+		XCTAssertFalse(fallbackHTML.contains("https://example.com/changelog"))
 	}
 
 	func testHomebrewCaskEntryDerivesGitHubReleaseNotesFromDownloadURL() throws {
@@ -412,6 +410,45 @@ final class VersionParserTest: XCTestCase {
 
 		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/example-org/desktop-client/releases/latest")
 		XCTAssertTrue(fallbackHTML?.contains("Uncatalogued Electron App 2.0") == true)
+	}
+
+	func testReleaseNotesSourceCatalogCoversPopularNonGitHubApps() throws {
+		let version = Version(versionNumber: "4.46.96", buildNumber: nil)
+		let expectedURLs = [
+			"microsoft-edge": "https://learn.microsoft.com/en-us/deployedge/microsoft-edge-relnote-stable-channel",
+			"raycast": "https://www.raycast.com/changelog",
+			"slack": "https://slack.com/release-notes/mac",
+			"warp": "https://docs.warp.dev/changelog"
+		]
+
+		for (token, expectedURL) in expectedURLs {
+			guard case .changelog(let urls, let versionPrefix, _, _) = ReleaseNotesSourceCatalog.releaseNotes(
+				forHomebrewToken: token,
+				version: version,
+				fallbackHTML: nil
+			) else {
+				return XCTFail("Expected catalog changelog for \(token)")
+			}
+			XCTAssertEqual(urls.map(\.absoluteString), [expectedURL])
+			XCTAssertEqual(versionPrefix, "4.46.96")
+		}
+	}
+
+	func testEveryCatalogHomebrewTokenProducesAConcreteRoute() {
+		let version = Version(versionNumber: "2026.1.4", buildNumber: "261.26222.59")
+		let tokens = ReleaseNotesSourceCatalog.catalogHomebrewTokens
+
+		XCTAssertGreaterThanOrEqual(tokens.count, 55)
+		for token in tokens {
+			XCTAssertNotNil(
+				ReleaseNotesSourceCatalog.releaseNotes(
+					forHomebrewToken: token,
+					version: version,
+					fallbackHTML: nil
+				),
+				"Missing release-note route for \(token)"
+			)
+		}
 	}
 
 	func testReleaseNotesSourceCatalogUsesGhosttySourceMarkdown() throws {
@@ -1504,13 +1541,13 @@ final class VersionParserTest: XCTestCase {
 	}
 
 	@MainActor
-	func testReleaseNotesProviderInvalidatesCacheWhenReleaseNoteSourceChanges() throws {
+	func testReleaseNotesProviderInvalidatesCacheWhenReleaseNoteSourceChanges() async throws {
 		let provider = ReleaseNotesProvider()
 		let oldApp = makeReleaseNotesApp(html: "<p>Old release notes with bug fixes.</p>")
 		let refreshedApp = makeReleaseNotesApp(html: "<p>Fresh release notes with improvements.</p>")
 
-		let oldNotes = try releaseNotes(for: oldApp, provider: provider)
-		let refreshedNotes = try releaseNotes(for: refreshedApp, provider: provider)
+		let oldNotes = try await releaseNotes(for: oldApp, provider: provider)
+		let refreshedNotes = try await releaseNotes(for: refreshedApp, provider: provider)
 
 		XCTAssertTrue(oldNotes.string.contains("Old release notes"))
 		XCTAssertTrue(refreshedNotes.string.contains("Fresh release notes"))
@@ -1540,11 +1577,14 @@ final class VersionParserTest: XCTestCase {
 	}
 
 	@MainActor
-	private func releaseNotes(for app: App, provider: ReleaseNotesProvider) throws -> NSAttributedString {
+	private func releaseNotes(for app: App, provider: ReleaseNotesProvider) async throws -> NSAttributedString {
 		var result: ReleaseNotesProvider.ReleaseNotes?
+		let expectation = expectation(description: "release notes completion")
 		provider.releaseNotes(for: app) { notes in
 			result = notes
+			expectation.fulfill()
 		}
+		await fulfillment(of: [expectation], timeout: 1)
 
 		return try XCTUnwrap(result).get()
 	}

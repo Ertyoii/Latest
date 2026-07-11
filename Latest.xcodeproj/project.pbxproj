@@ -12,7 +12,6 @@
 		501EA98A1EB1BD8B00D05821 /* Localizable.stringsdict in Resources */ = {isa = PBXBuildFile; fileRef = 501EA98C1EB1BD8B00D05821 /* Localizable.stringsdict */; };
 		501EF8ED2B9A665A00F0D759 /* BundleCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501EF8EC2B9A665A00F0D759 /* BundleCollector.swift */; };
 		501EF8EF2B9A77B400F0D759 /* AppDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501EF8EE2B9A77B400F0D759 /* AppDirectory.swift */; };
-		50290E751E53EB6A00133E3D /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50290E741E53EB6A00133E3D /* AppDelegate.swift */; };
 		50290E791E53EB6A00133E3D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 50290E781E53EB6A00133E3D /* Assets.xcassets */; };
 		502929EF2120621B00F00D1C /* ReleaseNotesTextViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 502929EE2120621B00F00D1C /* ReleaseNotesTextViewController.swift */; };
 		502929F22120623100F00D1C /* ReleaseNotesErrorViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 502929F02120623100F00D1C /* ReleaseNotesErrorViewController.swift */; };
@@ -38,7 +37,6 @@
 		506A77172D6099FE00A69579 /* SupportStatusInfoViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506A77162D6099F400A69579 /* SupportStatusInfoViewController.swift */; };
 		506A8F6722EC14CC00C755AF /* LatestError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506A8F6622EC14CC00C755AF /* LatestError.swift */; };
 		506DF77621248F6200D792FC /* AppDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506DF77521248F6200D792FC /* AppDataStore.swift */; };
-		506DF7782125580400D792FC /* UpdateTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506DF7772125580400D792FC /* UpdateTableView.swift */; };
 		5073753F278998A300F371D8 /* AppLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5073753E278998A300F371D8 /* AppLibrary.swift */; };
 		507375572789AB0300F371D8 /* AppListSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507375562789AB0300F371D8 /* AppListSnapshot.swift */; };
 		50737559278B0A7400F371D8 /* AppListSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50737558278B0A7400F371D8 /* AppListSettings.swift */; };
@@ -62,15 +60,12 @@
 		509512221FF36301003D2D7F /* Bundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5095121F1FF36301003D2D7F /* Bundle.swift */; };
 		509512281FF3631D003D2D7F /* UpdateCheckCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 509512251FF3631D003D2D7F /* UpdateCheckCoordinator.swift */; };
 		509512331FF36380003D2D7F /* ReleaseNotesViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 509512311FF36380003D2D7F /* ReleaseNotesViewController.swift */; };
-		509512361FF36388003D2D7F /* MainWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 509512351FF36388003D2D7F /* MainWindowController.swift */; };
 		509735502798D17E00FFE809 /* Observable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5097354F2798D17E00FFE809 /* Observable.swift */; };
 		509B30EE28DBB17D00DDAA2E /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 509B30ED28DBB17D00DDAA2E /* Sparkle */; };
 		509C4ABC2AD1FFCC00E9C2E1 /* FailableDecodable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 509C4ABB2AD1FFCC00E9C2E1 /* FailableDecodable.swift */; };
 		50A86BBD27EA6BF4007A5F80 /* Credits.rtf in Resources */ = {isa = PBXBuildFile; fileRef = 50A86BBC27EA6BF4007A5F80 /* Credits.rtf */; };
 		50A8D2B327D2B063004DBA05 /* ReleaseNotesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50A8D2B227D2B063004DBA05 /* ReleaseNotesProvider.swift */; };
-		50ABFD252E9AF75B006CE4BC /* MainWindowController+Toolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50ABFD242E9AF74D006CE4BC /* MainWindowController+Toolbar.swift */; };
 		50B016982C38986300590339 /* AppDirectoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B016972C38986300590339 /* AppDirectoryStore.swift */; };
-		50B5A50421246E2500E96AEC /* UpdateGroupRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B5A50321246E2500E96AEC /* UpdateGroupRowView.swift */; };
 		50BBF3FF2B21120200AB4D26 /* UpdateRepository+Entry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BBF3FE2B21120200AB4D26 /* UpdateRepository+Entry.swift */; };
 		50BC19E328230D41005945E8 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 502217992804BB330043366B /* InfoPlist.strings */; };
 		50BEF14C2AC2CB110052C417 /* WebContentLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BEF14B2AC2CB110052C417 /* WebContentLoader.swift */; };
@@ -91,21 +86,19 @@
 		51A001022FC3000000000001 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000022FC3000000000001 /* AppEnvironment.swift */; };
 		51A001032FC3000000000001 /* AppCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000032FC3000000000001 /* AppCommands.swift */; };
 		51A001042FC3000000000001 /* UpdateCheckingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000042FC3000000000001 /* UpdateCheckingService.swift */; };
-		51A001052FC3000000000001 /* SwiftUIMainWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000052FC3000000000001 /* SwiftUIMainWindowController.swift */; };
 		51A001062FC3000000000001 /* VisualMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000062FC3000000000001 /* VisualMetrics.swift */; };
-		51A001082FC3000000000001 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000082FC3000000000001 /* WindowAccessor.swift */; };
 		51A001092FC3000000000001 /* UpdatesListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000092FC3000000000001 /* UpdatesListViewModel.swift */; };
 		51A0010A2FC3000000000001 /* SearchFocusController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A0000A2FC3000000000001 /* SearchFocusController.swift */; };
-		51A0010B2FC3000000000001 /* SearchFieldRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A0000B2FC3000000000001 /* SearchFieldRepresentable.swift */; };
 		51A0010F2FC3000000000001 /* UpdateSectionHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */; };
 		51A001102FC3000000000001 /* UpdateRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000102FC3000000000001 /* UpdateRowView.swift */; };
 		51A001112FC3000000000001 /* UpdatesSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000112FC3000000000001 /* UpdatesSidebarView.swift */; };
 		51A001142FC3000000000001 /* ReleaseNotesDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000142FC3000000000001 /* ReleaseNotesDetailView.swift */; };
 		51A020052FC4000000000001 /* SettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A020002FC4000000000001 /* SettingsViewModel.swift */; };
-		51A020062FC4000000000001 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A020012FC4000000000001 /* SettingsWindowController.swift */; };
+		51C100012FC6000000000001 /* LatestApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C100002FC6000000000001 /* LatestApplication.swift */; };
 		51A020072FC4000000000001 /* SettingsRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A020022FC4000000000001 /* SettingsRootView.swift */; };
 		51A020082FC4000000000001 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A020032FC4000000000001 /* GeneralSettingsView.swift */; };
 		51A020092FC4000000000001 /* LocationsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A020042FC4000000000001 /* LocationsSettingsView.swift */; };
+		51B000012FC5000000000001 /* ReleaseNotesSources.json in Resources */ = {isa = PBXBuildFile; fileRef = 51B000002FC5000000000001 /* ReleaseNotesSources.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -372,16 +365,17 @@
 		51A000082FC3000000000001 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 		51A000092FC3000000000001 /* UpdatesListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatesListViewModel.swift; sourceTree = "<group>"; };
 		51A0000A2FC3000000000001 /* SearchFocusController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchFocusController.swift; sourceTree = "<group>"; };
-		51A0000B2FC3000000000001 /* SearchFieldRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchFieldRepresentable.swift; sourceTree = "<group>"; };
 		51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateSectionHeaderView.swift; sourceTree = "<group>"; };
 		51A000102FC3000000000001 /* UpdateRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateRowView.swift; sourceTree = "<group>"; };
 		51A000112FC3000000000001 /* UpdatesSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatesSidebarView.swift; sourceTree = "<group>"; };
 		51A000142FC3000000000001 /* ReleaseNotesDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesDetailView.swift; sourceTree = "<group>"; };
 		51A020002FC4000000000001 /* SettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModel.swift; sourceTree = "<group>"; };
 		51A020012FC4000000000001 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
+		51C100002FC6000000000001 /* LatestApplication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatestApplication.swift; sourceTree = "<group>"; };
 		51A020022FC4000000000001 /* SettingsRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsRootView.swift; sourceTree = "<group>"; };
 		51A020032FC4000000000001 /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
 		51A020042FC4000000000001 /* LocationsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationsSettingsView.swift; sourceTree = "<group>"; };
+		51B000002FC5000000000001 /* ReleaseNotesSources.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ReleaseNotesSources.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -477,6 +471,7 @@
 			children = (
 				51A000032FC3000000000001 /* AppCommands.swift */,
 				51A000022FC3000000000001 /* AppEnvironment.swift */,
+				51C100002FC6000000000001 /* LatestApplication.swift */,
 				51A000052FC3000000000001 /* SwiftUIMainWindowController.swift */,
 				51A000042FC3000000000001 /* UpdateCheckingService.swift */,
 			);
@@ -495,7 +490,6 @@
 		51A010042FC3000000000001 /* Updates */ = {
 			isa = PBXGroup;
 			children = (
-				51A0000B2FC3000000000001 /* SearchFieldRepresentable.swift */,
 				51A0000A2FC3000000000001 /* SearchFocusController.swift */,
 				51A000102FC3000000000001 /* UpdateRowView.swift */,
 				51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */,
@@ -708,6 +702,7 @@
 				50C8C85B208A0EE9004FF5D5 /* dsa_pub.pem */,
 				50A86BBC27EA6BF4007A5F80 /* Credits.rtf */,
 				50FEB8802B1D2402006FB75D /* ExcludedAppIdentifiers.plist */,
+				51B000002FC5000000000001 /* ReleaseNotesSources.json */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -1044,6 +1039,7 @@
 				50290E791E53EB6A00133E3D /* Assets.xcassets in Resources */,
 				50C8C85C208A0EE9004FF5D5 /* dsa_pub.pem in Resources */,
 				50FEB8812B1D2402006FB75D /* ExcludedAppIdentifiers.plist in Resources */,
+				51B000012FC5000000000001 /* ReleaseNotesSources.json in Resources */,
 				501EA9821EB1BA4400D05821 /* Localizable.strings in Resources */,
 				508605292E78B077009235D2 /* App.icon in Resources */,
 				50A86BBD27EA6BF4007A5F80 /* Credits.rtf in Resources */,
@@ -1095,29 +1091,24 @@
 				51A001022FC3000000000001 /* AppEnvironment.swift in Sources */,
 				51A001032FC3000000000001 /* AppCommands.swift in Sources */,
 				51A001042FC3000000000001 /* UpdateCheckingService.swift in Sources */,
-				51A001052FC3000000000001 /* SwiftUIMainWindowController.swift in Sources */,
 				51A001062FC3000000000001 /* VisualMetrics.swift in Sources */,
-				51A001082FC3000000000001 /* WindowAccessor.swift in Sources */,
+				51C100012FC6000000000001 /* LatestApplication.swift in Sources */,
 				51A001092FC3000000000001 /* UpdatesListViewModel.swift in Sources */,
 				51A0010A2FC3000000000001 /* SearchFocusController.swift in Sources */,
-				51A0010B2FC3000000000001 /* SearchFieldRepresentable.swift in Sources */,
 				51A0010F2FC3000000000001 /* UpdateSectionHeaderView.swift in Sources */,
 				51A001102FC3000000000001 /* UpdateRowView.swift in Sources */,
 				51A001112FC3000000000001 /* UpdatesSidebarView.swift in Sources */,
 				51A001142FC3000000000001 /* ReleaseNotesDetailView.swift in Sources */,
 				51A020052FC4000000000001 /* SettingsViewModel.swift in Sources */,
-				51A020062FC4000000000001 /* SettingsWindowController.swift in Sources */,
 				51A020072FC4000000000001 /* SettingsRootView.swift in Sources */,
 				51A020082FC4000000000001 /* GeneralSettingsView.swift in Sources */,
 				51A020092FC4000000000001 /* LocationsSettingsView.swift in Sources */,
 				501AA0012FC4000000000001 /* main.swift in Sources */,
 				509512141FF362A1003D2D7F /* Version.swift in Sources */,
 				50737559278B0A7400F371D8 /* AppListSettings.swift in Sources */,
-				509512361FF36388003D2D7F /* MainWindowController.swift in Sources */,
 				508323E4257824AA000BBA13 /* UpdateButton.swift in Sources */,
 				50BEF14C2AC2CB110052C417 /* WebContentLoader.swift in Sources */,
 				50BEF14E2AC972B40052C417 /* UpdateRepository.swift in Sources */,
-				50B5A50421246E2500E96AEC /* UpdateGroupRowView.swift in Sources */,
 				5058E9C327863FC80028F564 /* App.swift in Sources */,
 				509512221FF36301003D2D7F /* Bundle.swift in Sources */,
 				508323E3257824AA000BBA13 /* DisplayLink.swift in Sources */,
@@ -1127,7 +1118,6 @@
 				5040D45C28DBB753009BF379 /* HomebrewCheckerOperation.swift in Sources */,
 				50C9F10C234641E000FD1802 /* SparkleCheckerOperation.swift in Sources */,
 				50E4EB072B17DACB00A70A7D /* VersionParser.swift in Sources */,
-				50290E751E53EB6A00133E3D /* AppDelegate.swift in Sources */,
 				5039DE8D22CAA2790088B39B /* AppStoreUpdateOperation.swift in Sources */,
 				507375572789AB0300F371D8 /* AppListSnapshot.swift in Sources */,
 				5073755B278B0A7400F371D8 /* TableViewSnapshotDiff.swift in Sources */,
@@ -1150,11 +1140,9 @@
 				502929F22120623100F00D1C /* ReleaseNotesErrorViewController.swift in Sources */,
 				5083BD322F2EA93F00D087C7 /* AppStoreUpdateSettings.swift in Sources */,
 				506DF77621248F6200D792FC /* AppDataStore.swift in Sources */,
-				50ABFD252E9AF75B006CE4BC /* MainWindowController+Toolbar.swift in Sources */,
 				506A77172D6099FE00A69579 /* SupportStatusInfoViewController.swift in Sources */,
 				50BBF3FF2B21120200AB4D26 /* UpdateRepository+Entry.swift in Sources */,
 				5039DE8522CA396F0088B39B /* UpdateQueue.swift in Sources */,
-				506DF7782125580400D792FC /* UpdateTableView.swift in Sources */,
 				505062262F0DBEE000998F84 /* UpdateInstallerProtocol.swift in Sources */,
 				50366E5227DFD14100D4E247 /* Source.swift in Sources */,
 				50B016982C38986300590339 /* AppDirectoryStore.swift in Sources */,
@@ -1492,7 +1480,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.40;
+				MARKETING_VERSION = 0.41;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1531,7 +1519,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.40;
+				MARKETING_VERSION = 0.41;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

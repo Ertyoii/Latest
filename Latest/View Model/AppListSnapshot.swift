@@ -32,10 +32,13 @@ struct AppListSnapshot {
 		self.apps = apps
 		let preparedSections = Self.prepareSections(from: apps)
 		self.preparedSections = preparedSections
-		let entries = Self.generateEntries(from: preparedSections, filterQuery: filterQuery)
+		let sections = Self.generateSections(from: preparedSections, filterQuery: filterQuery)
+		self.sections = sections
+		let entries = Self.generateEntries(from: sections)
 		self.entries = entries
 		self.entryIndexesByAppIdentifier = Self.entryIndexesByAppIdentifier(entries)
 		self.appIdentifiers = Set(apps.map(\.identifier))
+		self.appsByIdentifier = Dictionary(apps.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
 	}
 
 	private init(
@@ -47,10 +50,13 @@ struct AppListSnapshot {
 		self.filterQuery = filterQuery
 		self.apps = apps
 		self.preparedSections = preparedSections
-		let entries = Self.generateEntries(from: preparedSections, filterQuery: filterQuery)
+		let sections = Self.generateSections(from: preparedSections, filterQuery: filterQuery)
+		self.sections = sections
+		let entries = Self.generateEntries(from: sections)
 		self.entries = entries
 		self.entryIndexesByAppIdentifier = Self.entryIndexesByAppIdentifier(entries)
 		self.appIdentifiers = appIdentifiers
+		self.appsByIdentifier = Dictionary(apps.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
 	}
 	
 	/// Returns a new snapshot containing an updated filter query.
@@ -76,9 +82,14 @@ struct AppListSnapshot {
 	/// The user-facable, sorted and filtered list of apps and sections. Observers of the data store will be notified, when this list changes.
 	let entries: [Entry]
 
+	/// Native section groups used by SwiftUI lists without reparsing flattened entries.
+	let sections: [SectionContent]
+
 	private let entryIndexesByAppIdentifier: [App.Bundle.Identifier: Int]
 
 	private let appIdentifiers: Set<App.Bundle.Identifier>
+
+	private let appsByIdentifier: [App.Bundle.Identifier: App]
 
 	private let preparedSections: PreparedSections
 	
@@ -146,28 +157,26 @@ struct AppListSnapshot {
 		)
 	}
 
-	private static func generateEntries(from preparedSections: PreparedSections, filterQuery: String?) -> [Entry] {
+	private static func generateSections(from preparedSections: PreparedSections, filterQuery: String?) -> [SectionContent] {
 		let availableUpdates = Self.filtered(preparedSections.availableUpdates, with: filterQuery)
 		let installedUpdates = Self.filtered(preparedSections.installedUpdates, with: filterQuery)
 		let ignoredUpdates = Self.filtered(preparedSections.ignoredUpdates, with: filterQuery)
 
+		return [
+			SectionContent(section: Self.updatableAppsSection(withCount: availableUpdates.count), apps: availableUpdates),
+			SectionContent(section: Self.updatedAppsSection(withCount: installedUpdates.count), apps: installedUpdates),
+			SectionContent(section: Self.ignoredAppsSection(withCount: ignoredUpdates.count), apps: ignoredUpdates)
+		].filter { !$0.apps.isEmpty }
+	}
+
+	private static func generateEntries(from sections: [SectionContent]) -> [Entry] {
+		let capacity = sections.reduce(sections.count) { $0 + $1.apps.count }
 		var entries = [Entry]()
-		entries.reserveCapacity(availableUpdates.count + installedUpdates.count + ignoredUpdates.count + 3)
-		Self.appendSection(
-			availableUpdates,
-			section: Self.updatableAppsSection(withCount: availableUpdates.count),
-			to: &entries
-		)
-		Self.appendSection(
-			installedUpdates,
-			section: Self.updatedAppsSection(withCount: installedUpdates.count),
-			to: &entries
-		)
-		Self.appendSection(
-			ignoredUpdates,
-			section: Self.ignoredAppsSection(withCount: ignoredUpdates.count),
-			to: &entries
-		)
+		entries.reserveCapacity(capacity)
+		for section in sections {
+			entries.append(.section(section.section))
+			entries.append(contentsOf: section.apps.map(Entry.app))
+		}
 		return entries
 	}
 
@@ -209,6 +218,11 @@ struct AppListSnapshot {
 	func contains(_ app: App) -> Bool {
 		return appIdentifiers.contains(app.identifier)
 	}
+
+	func app(withIdentifier identifier: App.Bundle.Identifier?) -> App? {
+		guard let identifier else { return nil }
+		return appsByIdentifier[identifier]
+	}
 	
 	/// Returns whether there is a section at the given index
 	func isSectionHeader(at index: Int) -> Bool {
@@ -240,12 +254,6 @@ struct AppListSnapshot {
 		return Section(title: title, shortTitle: shortTitle, numberOfApps: numberOfApps)
 	}
 
-	private static func appendSection(_ apps: [App], section: Section, to entries: inout [Entry]) {
-		guard !apps.isEmpty else { return }
-		entries.append(.section(section))
-		entries.append(contentsOf: apps.map(Entry.app))
-	}
-
 	private static func entryIndexesByAppIdentifier(_ entries: [Entry]) -> [App.Bundle.Identifier: Int] {
 		entries.enumerated().reduce(into: [App.Bundle.Identifier: Int]()) { indexes, element in
 			guard case .app(let app) = element.element else { return }
@@ -256,6 +264,12 @@ struct AppListSnapshot {
 }
 
 extension AppListSnapshot {
+	struct SectionContent: Identifiable {
+		let section: Section
+		let apps: [App]
+
+		var id: String { section.title }
+	}
 	
 	/// Defines one entry in the filtered update.
 	enum Entry: Equatable, Hashable {

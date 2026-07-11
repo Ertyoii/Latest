@@ -13,6 +13,17 @@ extension UpdateRepository {
 
 	/// Represents one application within the repository.
 	struct Entry: Decodable {
+		struct CompactRecord: Codable, Sendable {
+			let token: String
+			let rawVersion: String
+			let urlString: String?
+			let homepageString: String?
+			let description: String?
+			let names: [String]
+			let bundleIdentifiers: [String]
+			let requiresBundleIdentifierMatch: Bool
+			let minimumOSVersion: [Int]?
+		}
 
 
 		// MARK:  - Structure
@@ -133,17 +144,6 @@ extension UpdateRepository {
 					return .githubRelease(apiURL: githubReleaseURL, fallbackHTML: fallbackReleaseNotesHTML)
 				}
 
-				let zedReleaseURL = Entry.zedReleaseURL(token: token, versionNumber: version.versionNumber)
-				let changelogURLs = Entry.changelogURLs(token: token, homepage: homepage, zedReleaseURL: zedReleaseURL)
-				if !changelogURLs.isEmpty {
-					return .changelog(
-						urls: changelogURLs,
-						versionPrefix: Entry.changelogVersionPrefix(token: token, version: version, zedReleaseURL: zedReleaseURL),
-						allowsLatestFallback: Entry.allowsLatestChangelogFallback(token: token, homepage: homepage),
-						fallbackHTML: fallbackReleaseNotesHTML
-					)
-				}
-
 				return fallbackReleaseNotesHTML.map { .html(string: $0) }
 			}
 		}
@@ -185,6 +185,47 @@ extension UpdateRepository {
 		}
 
 		private let metadata: LazyMetadata
+
+		init(compactRecord: CompactRecord) {
+			token = compactRecord.token
+			names = Set(compactRecord.names)
+			bundleIdentifiers = Set(compactRecord.bundleIdentifiers)
+			requiresBundleIdentifierMatch = compactRecord.requiresBundleIdentifierMatch
+			if let components = compactRecord.minimumOSVersion, let major = components.first {
+				minimumOSVersion = OperatingSystemVersion(
+					majorVersion: major,
+					minorVersion: components.count > 1 ? components[1] : 0,
+					patchVersion: components.count > 2 ? components[2] : 0
+				)
+			} else {
+				minimumOSVersion = nil
+			}
+			metadata = LazyMetadata(
+				rawVersion: compactRecord.rawVersion,
+				urlString: compactRecord.urlString,
+				homepageString: compactRecord.homepageString,
+				desc: compactRecord.description,
+				names: names,
+				token: token
+			)
+		}
+
+		var compactRecord: CompactRecord {
+			let minimumOSVersion = minimumOSVersion.map {
+				[$0.majorVersion, $0.minorVersion, $0.patchVersion]
+			}
+			return CompactRecord(
+				token: token,
+				rawVersion: metadata.rawVersion,
+				urlString: metadata.urlString,
+				homepageString: metadata.homepageString,
+				description: metadata.desc,
+				names: names.sorted(),
+				bundleIdentifiers: bundleIdentifiers.sorted(),
+				requiresBundleIdentifierMatch: requiresBundleIdentifierMatch,
+				minimumOSVersion: minimumOSVersion
+			)
+		}
 
 		init(from decoder: Decoder) throws {
 			let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -260,6 +301,46 @@ extension UpdateRepository {
 }
 
 enum ReleaseNotesSourceCatalog {
+	private struct Definition: Decodable, Sendable {
+		enum Kind: String, Decodable, Sendable {
+			case changelog
+			case github
+			case none
+		}
+
+		enum VersionPrefix: String, Decodable, Sendable {
+			case exact
+			case majorMinor
+			case none
+		}
+
+		let keys: [String]
+		let homebrewTokens: [String]
+		let kind: Kind
+		let urlTemplate: String?
+		let versionPrefix: VersionPrefix?
+		let knownFallbackKey: String?
+		let allowsLatestFallback: Bool?
+	}
+
+	private static let definitions: [Definition] = {
+		guard let url = Bundle.main.url(forResource: "ReleaseNotesSources", withExtension: "json"),
+		      let data = try? Data(contentsOf: url),
+		      let definitions = try? JSONDecoder().decode([Definition].self, from: data) else {
+			return []
+		}
+		return definitions
+	}()
+
+	private static let definitionsByKey: [String: Definition] = definitions.reduce(into: [:]) { result, definition in
+		for key in definition.keys + definition.homebrewTokens {
+			result[normalizedKey(key)] = definition
+		}
+	}
+
+	static var catalogHomebrewTokens: [String] {
+		definitions.flatMap(\.homebrewTokens)
+	}
 
 	static func releaseNotes(forHomebrewToken token: String, version: Version, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
 		releaseNotes(forKey: normalizedKey(token), version: version, fallbackHTML: fallbackHTML)
@@ -295,119 +376,56 @@ enum ReleaseNotesSourceCatalog {
 	}
 
 	private static func releaseNotes(forKey key: String, version: Version, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
-		switch key {
-		case "1password", "com1password1password":
-			return changelog(
-				url: "https://releases.1password.com/mac/stable/",
-				versionPrefix: version.versionNumber,
-				fallbackHTML: fallbackHTML
-			)
-		case "betterdisplay", "comgithubwaydabberbetterdisplay", "probetterdisplaybetterdisplay":
-			return githubRelease(
-				owner: "waydabber",
-				repository: "BetterDisplay",
-				tag: prefixedVersionTag(version, prefix: "v"),
-				fallbackHTML: knownReleaseNotesHTML(forKey: "betterdisplay", version: version) ?? fallbackHTML
-			)
-		case "bruno", "comusebrunoapp":
-			return githubRelease(
-				owner: "usebruno",
-				repository: "bruno",
-				tag: prefixedVersionTag(version, prefix: "v"),
-				fallbackHTML: fallbackHTML
-			)
-		case "chrome", "googlechrome", "comgooglechrome":
-			return changelog(
-				url: "https://chromereleases.googleblog.com/",
-				versionPrefix: version.versionNumber,
-				fallbackHTML: fallbackHTML
-			)
-		case "docker", "dockerdesktop", "comdockerdocker":
-			return changelog(
-				url: "https://docs.docker.com/desktop/release-notes.md",
-				versionPrefix: version.versionNumber,
-				fallbackHTML: fallbackHTML
-			)
-		case "firefox", "orgmozillafirefox":
-			return versionedURL(
-				version: version,
-				transform: { "https://www.firefox.com/en-US/firefox/\($0)/releasenotes/" },
-				fallbackHTML: fallbackHTML
-			)
-		case "ghostty", "commitchellhghostty":
-			return versionedURL(
-				version: version,
-				transform: { "https://raw.githubusercontent.com/ghostty-org/website/main/docs/install/release-notes/\($0.replacingOccurrences(of: ".", with: "-")).mdx" },
-				fallbackHTML: fallbackHTML
-			)
-		case "aquaapp":
-			return jetBrainsWhatsNew(productPath: "aqua", version: version, fallbackHTML: fallbackHTML)
-		case "clion":
-			return jetBrainsWhatsNew(productPath: "clion", version: version, fallbackHTML: fallbackHTML)
-		case "datagrip":
-			return jetBrainsWhatsNew(productPath: "datagrip", version: version, fallbackHTML: fallbackHTML)
-		case "dataspell":
-			return jetBrainsWhatsNew(productPath: "dataspell", version: version, fallbackHTML: fallbackHTML)
-		case "goland":
-			return jetBrainsWhatsNew(productPath: "go", version: version, fallbackHTML: fallbackHTML)
-		case "intellijidea", "intellijideace":
-			return jetBrainsWhatsNew(productPath: "idea", version: version, fallbackHTML: fallbackHTML)
-		case "mps":
-			return jetBrainsWhatsNew(productPath: "mps", version: version, fallbackHTML: fallbackHTML)
-		case "phpstorm":
-			return jetBrainsWhatsNew(productPath: "phpstorm", version: version, fallbackHTML: fallbackHTML)
-		case "pycharm", "pycharmce", "pycharmedu":
-			return jetBrainsWhatsNew(productPath: "pycharm", version: version, fallbackHTML: fallbackHTML)
-		case "rider":
-			return jetBrainsWhatsNew(productPath: "rider", version: version, fallbackHTML: fallbackHTML)
-		case "rubymine":
-			return jetBrainsWhatsNew(productPath: "ruby", version: version, fallbackHTML: fallbackHTML)
-		case "rustrover":
-			return jetBrainsWhatsNew(productPath: "rust", version: version, fallbackHTML: fallbackHTML)
-		case "webstorm":
-			return jetBrainsWhatsNew(productPath: "webstorm", version: version, fallbackHTML: fallbackHTML)
-		case "writerside":
-			return jetBrainsWhatsNew(productPath: "writerside", version: version, fallbackHTML: fallbackHTML)
-		case "notion", "notionid":
-			return nil
-		case "obsidian", "mdobsidian":
-			return changelog(
-				url: "https://obsidian.md/changelog/",
-				versionPrefix: version.versionNumber,
-				fallbackHTML: fallbackHTML
-			)
-		case "telegramdesktop", "comtdesktoptelegram":
-			return githubRelease(
-				owner: "telegramdesktop",
-				repository: "tdesktop",
-				tag: prefixedVersionTag(version, prefix: "v"),
-				fallbackHTML: fallbackHTML
-			)
-		case "airfoil":
-			return rogueAmoebaReleaseNotes(product: "Airfoil", version: version, fallbackHTML: fallbackHTML)
-		case "audiohijack":
-			return rogueAmoebaReleaseNotes(product: "Audio Hijack", version: version, fallbackHTML: fallbackHTML)
-		case "farrago":
-			return rogueAmoebaReleaseNotes(product: "Farrago", version: version, fallbackHTML: fallbackHTML)
-		case "fission":
-			return rogueAmoebaReleaseNotes(product: "Fission", version: version, fallbackHTML: fallbackHTML)
-		case "loopback":
-			return rogueAmoebaReleaseNotes(product: "Loopback", version: version, fallbackHTML: fallbackHTML)
-		case "piezo":
-			return rogueAmoebaReleaseNotes(product: "Piezo", version: version, fallbackHTML: fallbackHTML)
-		case "soundsource":
-			return rogueAmoebaReleaseNotes(product: "SoundSource", version: version, fallbackHTML: fallbackHTML)
-		case "visualstudiocode", "commicrosoftvscode":
-			return visualStudioCodeReleaseNotes(version: version, fallbackHTML: fallbackHTML)
-		case "zoom", "zoomus", "uszoomxos":
-			return changelog(
-				url: "https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0061222",
-				versionPrefix: version.versionNumber,
-				fallbackHTML: fallbackHTML
-			)
-		default:
+		guard let definition = definitionsByKey[key] else { return nil }
+		guard definition.kind != .none else { return nil }
+		guard let template = definition.urlTemplate,
+		      let url = expandedURL(template, version: version) else {
 			return nil
 		}
+
+		let versionPrefix: String? = switch definition.versionPrefix ?? .none {
+		case .exact:
+			version.versionNumber
+		case .majorMinor:
+			version.versionNumber?.majorMinorVersionPrefix
+		case .none:
+			nil
+		}
+		let resolvedFallbackHTML = definition.knownFallbackKey.flatMap {
+			knownReleaseNotesHTML(forKey: $0, version: version)
+		} ?? fallbackHTML
+
+		switch definition.kind {
+		case .changelog:
+			return .changelog(
+				urls: [url],
+				versionPrefix: versionPrefix,
+				allowsLatestFallback: definition.allowsLatestFallback ?? false,
+				fallbackHTML: resolvedFallbackHTML
+			)
+		case .github:
+			return .githubRelease(apiURL: url, fallbackHTML: resolvedFallbackHTML)
+		case .none:
+			return nil
+		}
+	}
+
+	private static func expandedURL(_ template: String, version: Version) -> URL? {
+		let versionNumber = version.versionNumber
+		let majorMinor = versionNumber?.majorMinorVersionPrefix
+		var value = template
+		let replacements: [(placeholder: String, replacement: String?)] = [
+			("{version}", versionNumber),
+			("{version-dashes}", versionNumber?.replacingOccurrences(of: ".", with: "-")),
+			("{major-minor}", majorMinor),
+			("{major-minor-dashes}", majorMinor?.replacingOccurrences(of: ".", with: "-")),
+			("{major-minor-underscores}", majorMinor?.replacingOccurrences(of: ".", with: "_"))
+		]
+		for replacement in replacements where value.contains(replacement.placeholder) {
+			guard let replacementValue = replacement.replacement else { return nil }
+			value = value.replacingOccurrences(of: replacement.placeholder, with: replacementValue)
+		}
+		return URL(string: value)
 	}
 
 	static func releaseNotes(forSparkleReleaseNotesURL url: URL, bundle: App.Bundle, remoteVersion: Version) -> App.Update.ReleaseNotes? {
@@ -432,46 +450,6 @@ enum ReleaseNotesSourceCatalog {
 		)
 	}
 
-	private static func visualStudioCodeReleaseNotes(version: Version, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
-		guard let versionPrefix = version.versionNumber?.majorMinorVersionPrefix else { return nil }
-		let pathVersion = versionPrefix.replacingOccurrences(of: ".", with: "_")
-		return changelog(
-			url: "https://code.visualstudio.com/updates/v\(pathVersion)",
-			versionPrefix: versionPrefix,
-			fallbackHTML: fallbackHTML
-		)
-	}
-
-	private static func jetBrainsWhatsNew(productPath: String, version: Version, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
-		guard let versionPrefix = version.versionNumber?.majorMinorVersionPrefix else { return nil }
-		let pathVersion = versionPrefix.replacingOccurrences(of: ".", with: "-")
-		return changelog(
-			url: "https://www.jetbrains.com/\(productPath)/whatsnew/\(pathVersion)/",
-			versionPrefix: versionPrefix,
-			fallbackHTML: fallbackHTML
-		)
-	}
-
-	private static func rogueAmoebaReleaseNotes(product: String, version: Version, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
-		guard let versionPrefix = version.versionNumber,
-		      var components = URLComponents(string: "https://rogueamoeba.com/support/releasenotes/") else {
-			return nil
-		}
-		components.queryItems = [URLQueryItem(name: "product", value: product)]
-		guard let url = components.url else { return nil }
-		return .changelog(
-			urls: [url],
-			versionPrefix: versionPrefix,
-			allowsLatestFallback: false,
-			fallbackHTML: fallbackHTML
-		)
-	}
-
-	private static func versionedURL(version: Version, transform: (String) -> String, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
-		guard let versionNumber = version.versionNumber else { return nil }
-		return changelog(url: transform(versionNumber), versionPrefix: versionNumber, fallbackHTML: fallbackHTML)
-	}
-
 	private static func githubRelease(owner: String, repository: String, tag: String?, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
 		guard let tag,
 		      let apiURL = URL(string: "https://api.github.com/repos/\(owner)/\(repository)/releases/tags/\(tag)") else {
@@ -489,11 +467,6 @@ enum ReleaseNotesSourceCatalog {
 			allowsLatestFallback: allowsLatestFallback,
 			fallbackHTML: fallbackHTML
 		)
-	}
-
-	private static func prefixedVersionTag(_ version: Version, prefix: String) -> String? {
-		guard let versionNumber = version.versionNumber else { return nil }
-		return "\(prefix)\(versionNumber)"
 	}
 
 	private static func fallbackReleaseNotesHTML(appName: String, version: Version) -> String? {
@@ -613,45 +586,6 @@ private extension UpdateRepository.Entry {
 		let repository = components[1].replacingOccurrences(of: ".git", with: "")
 		guard !owner.isEmpty, !repository.isEmpty else { return nil }
 		return URL(string: "https://api.github.com/repos/\(owner)/\(repository)/releases/latest")
-	}
-
-	static func changelogURLs(token: String, homepage: URL?, zedReleaseURL: URL?) -> [URL] {
-		if token == "cursor" || homepage?.host?.contains("cursor.com") == true {
-			return URL(string: "https://cursor.com/changelog").map { [$0] } ?? []
-		}
-
-		if let zedReleaseURL {
-			return [zedReleaseURL]
-		}
-
-		guard let homepage else { return [] }
-
-		let releasePaths = ["changelog", "release-notes", "releases", "whats-new", "updates", "docs/changelog"]
-		return releasePaths.compactMap { path in
-			URL(string: path, relativeTo: homepage)?.absoluteURL
-		}
-	}
-
-	static func allowsLatestChangelogFallback(token: String, homepage: URL?) -> Bool {
-		token == "cursor" || homepage?.host?.contains("cursor.com") == true
-	}
-
-	static func changelogVersionPrefix(token: String, version: Version, zedReleaseURL: URL?) -> String? {
-		if zedReleaseURL != nil {
-			return version.versionNumber
-		}
-
-		return version.versionNumber?.majorMinorVersionPrefix
-	}
-
-	static func zedReleaseURL(token: String, versionNumber: String?) -> URL? {
-		guard token == "zed" || token == "zed@preview",
-		      let versionNumber else {
-			return nil
-		}
-
-		let channel = token == "zed@preview" ? "preview" : "stable"
-		return URL(string: "https://zed.dev/releases/\(channel)/\(versionNumber)")
 	}
 
 	static func fallbackReleaseNotesHTML(version: Version, names: Set<String>, token: String, desc: String?, homepage: URL?) -> String? {

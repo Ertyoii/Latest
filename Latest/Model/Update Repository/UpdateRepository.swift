@@ -171,12 +171,31 @@ class UpdateRepository: @unchecked Sendable {
 		}
 
 		do {
-			let entries = try JSONDecoder().decode([Entry].self, from: repositoryData)
-			let appEntries = entries.filter { !$0.names.isEmpty }
+			let compactCache = UpdateRepositoryCompactIndexCache(
+				cacheURL: RemoteURL.repository.compactIndexCacheURL
+			)
+			let sourceEntryCount: Int
+			let appEntries: [Entry]
+			let usedCompactIndex: Bool
+			if let compactIndex = compactCache.load(matching: repositoryData) {
+				sourceEntryCount = compactIndex.sourceEntryCount
+				appEntries = compactIndex.entries
+				usedCompactIndex = true
+			} else {
+				let entries = try JSONDecoder().decode([Entry].self, from: repositoryData)
+				sourceEntryCount = entries.count
+				appEntries = entries.filter { !$0.names.isEmpty }
+				compactCache.store(UpdateRepositoryCompactIndex(
+					sourceData: repositoryData,
+					sourceEntryCount: sourceEntryCount,
+					entries: appEntries
+				))
+				usedCompactIndex = false
+			}
 			entryMatcher.update(entries: appEntries)
 			let duration = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
 			updateRepositoryLogger.info(
-				"Decoded \(entries.count, privacy: .public) casks and indexed \(appEntries.count, privacy: .public) app entries in \(duration, privacy: .public) ms"
+				"Loaded \(sourceEntryCount, privacy: .public) casks and indexed \(appEntries.count, privacy: .public) app entries in \(duration, privacy: .public) ms compact=\(usedCompactIndex, privacy: .public)"
 			)
 		} catch {
 			entryMatcher.update(entries: [])
@@ -229,6 +248,14 @@ class UpdateRepository: @unchecked Sendable {
 			return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
 				.appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.max-langer.Latest")
 				.appendingPathComponent(name).appendingPathExtension(pathExtension)
+		}
+
+		var compactIndexCacheURL: URL? {
+			guard self == .repository else { return nil }
+			return cacheURL?
+				.deletingLastPathComponent()
+				.appendingPathComponent("RepositoryCompactIndex", isDirectory: false)
+				.appendingPathExtension("plist")
 		}
 
 		/// Possible fallback data within the binary if the remote content could not be fetched.

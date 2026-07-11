@@ -11,6 +11,22 @@ import XCTest
 @testable import Latest
 
 final class AppDataStoreTest: XCTestCase {
+	@MainActor
+	func testUpdateStreamYieldsInitialAndCoalescedState() async {
+		let store = AppDataStore()
+		var iterator = store.updates().makeAsyncIterator()
+
+		let initialApps = await iterator.next()
+		XCTAssertEqual(initialApps?.count, 0)
+
+		let appURL = URL(fileURLWithPath: "/Applications/Stream-\(UUID().uuidString).app", isDirectory: true)
+		let bundle = makeBundle(versionNumber: "1.0", at: appURL)
+		_ = store.set(appBundle: bundle)
+
+		let updatedApps = await iterator.next()
+
+		XCTAssertEqual(updatedApps?.map(\.identifier), [bundle.identifier])
+	}
 
 	func testSingleBundleRefreshPreservesUpdateState() {
 		let store = AppDataStore()
@@ -71,6 +87,7 @@ final class AppDataStoreTest: XCTestCase {
 	}
 
 }
+
 
 final class AppDirectoryTest: XCTestCase {
 

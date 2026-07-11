@@ -12,6 +12,31 @@ import XCTest
 
 @MainActor
 final class ComplexityBenchmarkTest: XCTestCase {
+	func testCompactRepositoryIndexRoundTripAndInvalidation() throws {
+		let sourceData = try makeRepositoryData(count: 30, appArtifactCount: 18)
+		let decodedEntries = try JSONDecoder().decode([UpdateRepository.Entry].self, from: sourceData)
+		let appEntries = decodedEntries.filter { !$0.names.isEmpty }
+		let index = UpdateRepositoryCompactIndex(
+			sourceData: sourceData,
+			sourceEntryCount: decodedEntries.count,
+			entries: appEntries
+		)
+
+		let encoder = PropertyListEncoder()
+		encoder.outputFormat = .binary
+		let data = try encoder.encode(index)
+		let restored = try PropertyListDecoder().decode(UpdateRepositoryCompactIndex.self, from: data)
+
+		XCTAssertTrue(restored.matches(sourceData))
+		XCTAssertEqual(restored.sourceEntryCount, decodedEntries.count)
+		XCTAssertEqual(restored.entries.map(\.token), appEntries.map(\.token))
+		XCTAssertEqual(restored.entries.map(\.names), appEntries.map(\.names))
+		XCTAssertEqual(restored.entries.map(\.bundleIdentifiers), appEntries.map(\.bundleIdentifiers))
+
+		var changedSourceData = sourceData
+		changedSourceData.append(0)
+		XCTAssertFalse(restored.matches(changedSourceData))
+	}
 
 	func testComplexityBenchmarks() throws {
 		guard FileManager.default.fileExists(atPath: Self.benchmarkFlagURL.path) else {
@@ -28,6 +53,15 @@ final class ComplexityBenchmarkTest: XCTestCase {
 		let versionPairs = makeVersionPairs(count: 80_000)
 		let releaseNotesMarkup = makeReleaseNotesMarkup(sectionCount: 300)
 		let repositoryCatalogData = try makeRepositoryData(count: 7_737, appArtifactCount: 4_168)
+		let decodedRepositoryEntries = try JSONDecoder().decode([UpdateRepository.Entry].self, from: repositoryCatalogData)
+		let compactRepositoryIndex = UpdateRepositoryCompactIndex(
+			sourceData: repositoryCatalogData,
+			sourceEntryCount: decodedRepositoryEntries.count,
+			entries: decodedRepositoryEntries.filter { !$0.names.isEmpty }
+		)
+		let compactIndexEncoder = PropertyListEncoder()
+		compactIndexEncoder.outputFormat = .binary
+		let compactRepositoryData = try compactIndexEncoder.encode(compactRepositoryIndex)
 		let repositoryEntries = try makeRepositoryEntries(count: 3_000)
 		let repositoryCandidateGroups = makeRepositoryCandidateGroups(from: repositoryEntries)
 		let bundleCollectionRoot = try makeBundleCollectionRoot(appCount: 250, fillerDirectoryCount: 250)
@@ -95,6 +129,15 @@ final class ComplexityBenchmarkTest: XCTestCase {
 
 		try benchmark("update_repository_catalog_decode", iterations: 5) {
 			let entries = try JSONDecoder().decode([UpdateRepository.Entry].self, from: repositoryCatalogData)
+			return entries.reduce(into: 0) { checksum, entry in
+				checksum &+= entry.names.count
+				checksum &+= entry.bundleIdentifiers.count
+			}
+		}
+
+		try benchmark("update_repository_compact_index_decode", iterations: 7) {
+			let index = try PropertyListDecoder().decode(UpdateRepositoryCompactIndex.self, from: compactRepositoryData)
+			let entries = index.entries
 			return entries.reduce(into: 0) { checksum, entry in
 				checksum &+= entry.names.count
 				checksum &+= entry.bundleIdentifiers.count

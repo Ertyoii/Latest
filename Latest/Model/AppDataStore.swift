@@ -17,14 +17,8 @@ protocol AppProviding {
 	/// Returns the number of apps with updates available.
 	func countOfAvailableUpdates(where condition: (App) -> Bool) -> Int
 
-	/// The handler for notifying observers about changes to the update state.
-	typealias ObserverHandler = @MainActor (_ newValue: [App]) -> Void
-
-	/// Adds the observer if it is not already registered.
-	func addObserver(_ observer: NSObject, handler: @escaping ObserverHandler)
-
-	/// Removes the observer.
-	func removeObserver(_ observer: NSObject)
+	/// A bounded stream that immediately yields the current collection and then future changes.
+	@MainActor func updates() -> AsyncStream<[App]>
 
 	/// Sets the ignored state for the given app.
 	func setIgnoredState(_ ignored: Bool, for app: App)
@@ -203,37 +197,20 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 	}
 
 
-	// MARK: - Observer Handling
+	// MARK: - State Updates
 
-	/// A mapping of observers associated with apps.
-	@MainActor private let observers = MainActorObserverRegistry<[App]>()
+	@MainActor private let updateStreams = MainActorAsyncStreamRegistry<[App]>()
 
-	/// Adds the observer if it is not already registered.
-	func addObserver(_ observer: NSObject, handler: @escaping ObserverHandler) {
-		let observerIdentifier = ObjectIdentifier(observer)
-		Task { @MainActor in
-			self.observers.add(observerIdentifier, handler: handler)
-
-			// Call handler immediately to propagate initial state.
-			let apps = self.updateQueue.sync {
-				Array(self.apps)
-			}
-			handler(apps)
-		}
-	}
-
-	/// Removes the observer.
-	func removeObserver(_ observer: NSObject) {
-		let observerIdentifier = ObjectIdentifier(observer)
-		Task { @MainActor in
-			self.observers.remove(observerIdentifier)
-		}
+	@MainActor
+	func updates() -> AsyncStream<[App]> {
+		let apps = updateQueue.sync { Array(self.apps) }
+		return updateStreams.stream(initialValue: apps)
 	}
 
 	/// Notifies observers about state changes.
 	private func notifyObservers(_ apps: [App]) {
 		Task { @MainActor in
-			self.observers.notify(with: apps)
+			self.updateStreams.yield(apps)
 		}
 	}
 

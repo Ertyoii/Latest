@@ -17,7 +17,7 @@ private let IncludeAppsWithLimitedSupportKey = "IncludeAppsWithLimitedSupportKey
 
 /// Observable front end to app list preferences.
 @MainActor
-final class AppListSettings: Observable {
+final class AppListSettings {
 	
 	/// Sorting options available to the app list.
 	enum SortOptions: Int, CaseIterable {
@@ -38,7 +38,7 @@ final class AppListSettings: Observable {
 		}
 	}
 	
-	var observers = [UUID : ObservationHandler]()
+	private let updateStreams = MainActorAsyncStreamRegistry<Void>()
 
 	private init() {
 		UserDefaults.standard.register(defaults: [
@@ -50,8 +50,8 @@ final class AppListSettings: Observable {
 	
 	static let shared = AppListSettings()
 
-	func removeObserver(withID id: UUID) {
-		observers.removeValue(forKey: id)
+	func updates() -> AsyncStream<Void> {
+		updateStreams.stream(initialValue: ())
 	}
 	
 	/// The order the app list should be shown in.
@@ -114,7 +114,7 @@ final class AppListSettings: Observable {
 	
 	private func set(_ value: Any, forKey key: String) {
 		UserDefaults.standard.set(value, forKey: key)
-		self.notify()
+		updateStreams.yield(())
 	}
 	
 }

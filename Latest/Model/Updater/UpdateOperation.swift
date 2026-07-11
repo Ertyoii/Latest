@@ -16,7 +16,7 @@ extension Notification.Name {
 class UpdateOperation: StatefulOperation, @unchecked Sendable {
 
 	/// Encapsulates different states that may be active during the update process.
-	enum ProgressState {
+	enum ProgressState: @unchecked Sendable {
 		/// No update is occurring at the moment.
 		case none
 

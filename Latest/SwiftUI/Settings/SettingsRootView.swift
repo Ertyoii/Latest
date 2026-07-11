@@ -9,20 +9,26 @@
 import SwiftUI
 
 struct SettingsRootView: View {
-	@ObservedObject var viewModel: SettingsViewModel
+	@StateObject private var viewModel: SettingsViewModel
+
+	init(viewModel: SettingsViewModel = SettingsViewModel()) {
+		_viewModel = StateObject(wrappedValue: viewModel)
+	}
 
 	var body: some View {
-		Group {
-			switch viewModel.selectedTab {
-			case .general:
-				GeneralSettingsView(viewModel: viewModel)
-			case .locations:
-				LocationsSettingsView(viewModel: viewModel)
-			}
+		TabView(selection: $viewModel.selectedTab) {
+			GeneralSettingsView(viewModel: viewModel)
+				.tabItem {
+					Label(SettingsViewModel.Tab.general.title, systemImage: SettingsViewModel.Tab.general.systemImageName)
+				}
+				.tag(SettingsViewModel.Tab.general)
+
+			LocationsSettingsView(viewModel: viewModel)
+				.tabItem {
+					Label(SettingsViewModel.Tab.locations.title, systemImage: SettingsViewModel.Tab.locations.systemImageName)
+				}
+				.tag(SettingsViewModel.Tab.locations)
 		}
-		.frame(
-			width: viewModel.selectedTab.contentSize.width,
-			height: viewModel.selectedTab.contentSize.height
-		)
+		.frame(width: 440, height: 300)
 	}
 }

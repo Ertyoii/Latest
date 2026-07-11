@@ -118,18 +118,21 @@ class AppLibrary: @unchecked Sendable {
 	}
 
 	private func refreshDirectories(handler: @escaping ReloadHandler) {
-		let dispatchGroup = DispatchGroup()
-		appLibraryLogger.info("Refreshing \(self.directories.count, privacy: .public) app directories")
+		let directories = Array(self.directories.values)
+		appLibraryLogger.info("Refreshing \(directories.count, privacy: .public) app directories")
 
-		for directory in directories.values {
-			dispatchGroup.enter()
-			directory.refresh {
-				dispatchGroup.leave()
+		Task { [weak self] in
+			await withTaskGroup(of: Void.self) { group in
+				for directory in directories {
+					group.addTask {
+						await directory.refreshBundles()
+					}
+				}
 			}
-		}
 
-		dispatchGroup.notify(queue: stateQueue) {
-			handler(self.currentBundles())
+			guard let self else { return }
+			let bundles = self.stateQueue.sync { self.currentBundles() }
+			handler(bundles)
 		}
 	}
 

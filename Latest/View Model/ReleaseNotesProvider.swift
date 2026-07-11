@@ -99,14 +99,33 @@ class ReleaseNotesProvider {
 	}
 
 	private func loadReleaseNotes(for app: App, with completion: @escaping Completion) {
+		let requestID = currentRequestID
 		if let releaseNotes = app.releaseNotes {
 			switch releaseNotes {
 			case .html(let html):
-				completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: nil, relevantVersion: app.remoteVersion?.versionNumber))
+				currentReleaseNotesTask = Task { [weak self] in
+					guard let self else { return }
+					let releaseNotes = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
+						from: html,
+						baseURL: nil,
+						relevantVersion: app.remoteVersion?.versionNumber
+					)
+					guard !Task.isCancelled, self.isCurrentRequest(requestID, for: app) else { return }
+					completion(releaseNotes)
+				}
 			case .url(let url):
-				self.releaseNotes(from: url, relevantVersion: app.remoteVersion?.versionNumber, requestID: currentRequestID, with: completion)
+				self.releaseNotes(from: url, relevantVersion: app.remoteVersion?.versionNumber, requestID: requestID, with: completion)
 			case .encoded(let data):
-				completion(ReleaseNotesMarkup.attributedString(from: data, baseURL: nil, relevantVersion: app.remoteVersion?.versionNumber))
+				currentReleaseNotesTask = Task { [weak self] in
+					guard let self else { return }
+					let releaseNotes = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
+						from: data,
+						baseURL: nil,
+						relevantVersion: app.remoteVersion?.versionNumber
+					)
+					guard !Task.isCancelled, self.isCurrentRequest(requestID, for: app) else { return }
+					completion(releaseNotes)
+				}
 			case .githubRelease(let apiURL, let fallbackHTML):
 				currentReleaseNotesTask = Task { [weak self] in
 					guard let self else { return }
@@ -115,7 +134,7 @@ class ReleaseNotesProvider {
 					completion(releaseNotes)
 				}
 			case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML):
-				self.changelogReleaseNotes(from: urls, versionPrefix: versionPrefix ?? app.remoteVersion?.versionNumber, allowsLatestFallback: allowsLatestFallback, fallbackHTML: fallbackHTML, requestID: currentRequestID, with: completion)
+				self.changelogReleaseNotes(from: urls, versionPrefix: versionPrefix ?? app.remoteVersion?.versionNumber, allowsLatestFallback: allowsLatestFallback, fallbackHTML: fallbackHTML, requestID: requestID, with: completion)
 			}
 		} else if let error = app.error {
 			completion(.failure(error))
@@ -1072,6 +1091,34 @@ enum ReleaseNotesMarkup {
 		}
 
 		return .success(string)
+	}
+
+	@MainActor
+	static func attributedStringByPreparingOffMain(
+		from data: Data,
+		baseURL: URL?,
+		relevantVersion: String?
+	) async -> ReleaseNotesProvider.ReleaseNotes {
+		let markup = await Task.detached(priority: .userInitiated) {
+			guard let markup = String(data: data, encoding: .utf8),
+			      !looksLikeBinaryOrMojibakeText(markup) else {
+				return Optional<String>.none
+			}
+			return markup
+		}.value
+
+		if let markup {
+			return await attributedStringByPreparingOffMain(
+				from: markup,
+				baseURL: baseURL,
+				relevantVersion: relevantVersion
+			)
+		}
+
+		guard !Task.isCancelled else {
+			return .failure(CancellationError())
+		}
+		return attributedString(from: data, baseURL: baseURL, relevantVersion: relevantVersion)
 	}
 
 	static func zedReleaseText(fromHTML html: String, version: String?, pageURL: URL) -> String? {

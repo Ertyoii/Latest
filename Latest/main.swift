@@ -6,8 +6,6 @@
 //  Copyright © 2026 Max Langer. All rights reserved.
 //
 
-import Cocoa
+import SwiftUI
 
-private let appDelegate = AppDelegate()
-NSApplication.shared.delegate = appDelegate
-_ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)
+LatestApplication.main()

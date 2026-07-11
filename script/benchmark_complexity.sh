@@ -39,3 +39,59 @@ grep "BENCHMARK" "$LOG_FILE" > "$REPORT_FILE"
 echo
 echo "Complexity benchmark summary:"
 cat "$REPORT_FILE"
+
+awk '
+BEGIN {
+	budgets["app_data_store_update_batch"] = 40
+	budgets["app_list_snapshot_build_and_lookup"] = 12
+	budgets["app_list_search_refilter"] = 160
+	budgets["app_list_search_full_rebuild"] = 360
+	budgets["version_comparison_repeated_parse"] = 75
+	budgets["release_notes_markup_parse_and_render"] = 160
+	budgets["update_repository_catalog_decode"] = 550
+	budgets["update_repository_compact_index_decode"] = 180
+	budgets["update_repository_entry_metadata_and_matching"] = 280
+	budgets["update_repository_lazy_metadata_and_matching"] = 15
+	budgets["bundle_collection_path_filtering"] = 170
+}
+
+$1 == "BENCHMARK" {
+	delete values
+	for (fieldIndex = 2; fieldIndex <= NF; fieldIndex++) {
+		split($fieldIndex, pair, "=")
+		values[pair[1]] = pair[2]
+	}
+	name = values["name"]
+	p95[name] = values["p95_ms"] + 0
+	seen[name] = 1
+}
+
+END {
+	failed = 0
+	for (name in budgets) {
+		if (!seen[name]) {
+			printf "PERFORMANCE GATE FAIL missing=%s\n", name > "/dev/stderr"
+			failed = 1
+		} else if (p95[name] > budgets[name]) {
+			printf "PERFORMANCE GATE FAIL name=%s p95_ms=%.3f budget_ms=%.3f\n", name, p95[name], budgets[name] > "/dev/stderr"
+			failed = 1
+		} else {
+			printf "PERFORMANCE GATE PASS name=%s p95_ms=%.3f budget_ms=%.3f\n", name, p95[name], budgets[name]
+		}
+	}
+
+	if (seen["app_list_search_refilter"] && seen["app_list_search_full_rebuild"] &&
+		p95["app_list_search_refilter"] > p95["app_list_search_full_rebuild"] * 0.70) {
+		printf "PERFORMANCE GATE FAIL search refilter no longer preserves a 30%% improvement\n" > "/dev/stderr"
+		failed = 1
+	}
+
+	if (seen["update_repository_compact_index_decode"] && seen["update_repository_catalog_decode"] &&
+		p95["update_repository_compact_index_decode"] > p95["update_repository_catalog_decode"] * 0.60) {
+		printf "PERFORMANCE GATE FAIL compact repository decode is not at least 40%% faster\n" > "/dev/stderr"
+		failed = 1
+	}
+
+	exit failed
+}
+' "$REPORT_FILE"

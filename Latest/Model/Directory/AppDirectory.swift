@@ -97,6 +97,15 @@ class AppDirectory: @unchecked Sendable {
 	func refresh(completion: RefreshCompletion? = nil) {
 		collectBundles(notifyHandler: false, completion: completion)
 	}
+
+	/// Refreshes the directory with structured concurrency while preserving request coalescing.
+	func refreshBundles() async {
+		await withCheckedContinuation { continuation in
+			refresh {
+				continuation.resume()
+			}
+		}
+	}
 	
 	/// Resumes tracking if it is not already running
 	private func resumeTracking(notifyHandler: Bool, completion: RefreshCompletion?) {

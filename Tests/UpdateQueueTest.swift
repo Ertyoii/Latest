@@ -79,6 +79,19 @@ final class UpdateQueueTest: XCTestCase {
 		UpdateQueue.shared.removeObserver(observer, for: identifier)
 	}
 
+	func testStateStreamImmediatelyYieldsCurrentState() async {
+		let identifier = URL(fileURLWithPath: "/Applications/Stream-\(UUID().uuidString).app")
+		var iterator = UpdateQueue.shared.states(for: identifier).makeAsyncIterator()
+
+		guard let state = await iterator.next() else {
+			return XCTFail("Expected an initial queue state")
+		}
+		if case .none = state {
+			return
+		}
+		XCTFail("Expected .none state, got \(state)")
+	}
+
 }
 
 private final class TestUpdateOperation: UpdateOperation, @unchecked Sendable {

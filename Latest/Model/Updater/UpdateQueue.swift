@@ -82,6 +82,29 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 
 	/// A mapping of observers associated with apps.
 	@MainActor private var observers = [App.Bundle.Identifier: MainActorObserverRegistry<UpdateOperation.ProgressState>]()
+
+	/// Bounded structured-concurrency feeds used by SwiftUI rows.
+	@MainActor private var stateContinuations = [
+		App.Bundle.Identifier: [UUID: AsyncStream<UpdateOperation.ProgressState>.Continuation]
+	]()
+
+	@MainActor
+	func states(for identifier: App.Bundle.Identifier) -> AsyncStream<UpdateOperation.ProgressState> {
+		let streamIdentifier = UUID()
+		let initialState = state(for: identifier)
+		let (stream, continuation) = AsyncStream.makeStream(
+			of: UpdateOperation.ProgressState.self,
+			bufferingPolicy: .bufferingNewest(1)
+		)
+		stateContinuations[identifier, default: [:]][streamIdentifier] = continuation
+		continuation.yield(initialState)
+		continuation.onTermination = { [weak self] _ in
+			Task { @MainActor [weak self] in
+				self?.removeStateContinuation(streamIdentifier, for: identifier)
+			}
+		}
+		return stream
+	}
 	
 	/// Adds the observer if it is not already registered.
 	@MainActor
@@ -113,6 +136,19 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 		
 		Task { @MainActor in
 			self.observers[identifier]?.notify(with: state)
+			if let continuations = self.stateContinuations[identifier] {
+				for continuation in continuations.values {
+					continuation.yield(state)
+				}
+			}
+		}
+	}
+
+	@MainActor
+	private func removeStateContinuation(_ streamIdentifier: UUID, for identifier: App.Bundle.Identifier) {
+		stateContinuations[identifier]?.removeValue(forKey: streamIdentifier)
+		if stateContinuations[identifier]?.isEmpty == true {
+			stateContinuations.removeValue(forKey: identifier)
 		}
 	}
 	

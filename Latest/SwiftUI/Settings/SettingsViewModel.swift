@@ -6,12 +6,12 @@
 //  Copyright © 2026 Max Langer. All rights reserved.
 //
 
-import AppKit
 import Combine
+import Foundation
 
 @MainActor
 final class SettingsViewModel: ObservableObject {
-	enum Tab: CaseIterable {
+	enum Tab: CaseIterable, Hashable {
 		case general
 		case locations
 
@@ -33,23 +33,6 @@ final class SettingsViewModel: ObservableObject {
 			}
 		}
 
-		var contentSize: NSSize {
-			switch self {
-			case .general:
-				return NSSize(width: 440, height: 219)
-			case .locations:
-				return NSSize(width: 440, height: 296)
-			}
-		}
-
-		var windowFrameSize: NSSize {
-			switch self {
-			case .general:
-				return NSSize(width: 440, height: 309)
-			case .locations:
-				return NSSize(width: 440, height: 384)
-			}
-		}
 	}
 
 	@Published var selectedTab: Tab = .general
@@ -74,6 +57,7 @@ final class SettingsViewModel: ObservableObject {
 			AppListSettings.shared.includeAppsWithLimitedSupport = newValue
 			objectWillChange.send()
 		}
+
 	}
 
 	var includeUnsupportedApps: Bool {
@@ -106,21 +90,9 @@ final class SettingsViewModel: ObservableObject {
 		return directoryStore.canRemove(url)
 	}
 
-	func addDirectory(attachedTo window: NSWindow?) {
-		let panel = NSOpenPanel()
-		panel.canChooseFiles = false
-		panel.canChooseDirectories = true
-
-		let completion: (NSApplication.ModalResponse) -> Void = { [weak self, weak panel] response in
-			guard response == .OK, let panel else { return }
-			panel.urls.forEach { self?.directoryStore.add($0) }
-		}
-
-		if let window {
-			panel.beginSheetModal(for: window, completionHandler: completion)
-		} else {
-			panel.begin(completionHandler: completion)
-		}
+	func addDirectories(_ urls: [URL]) {
+		urls.forEach(directoryStore.add)
+		reloadDirectories()
 	}
 
 	func removeSelectedDirectory() {

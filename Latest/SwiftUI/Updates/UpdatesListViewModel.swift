@@ -10,10 +10,8 @@ import AppKit
 import Combine
 
 @MainActor
-final class UpdatesListViewModel: NSObject, ObservableObject, Observer {
+final class UpdatesListViewModel: ObservableObject {
 	private static let badgeNumberFormatter = NumberFormatter()
-
-	nonisolated let id = UUID()
 
 	@Published private(set) var snapshot: AppListSnapshot
 	private(set) var snapshotRevision = 0
@@ -21,35 +19,37 @@ final class UpdatesListViewModel: NSObject, ObservableObject, Observer {
 	@Published var searchQuery = ""
 	@Published private(set) var statusText = ""
 
-	private var isObserving = false
+	private var observationTasks = [Task<Void, Never>]()
 
-	override init() {
+	init() {
 		self.snapshot = AppListSnapshot(withApps: [], filterQuery: nil)
-		super.init()
 		updateTitleAndBadge()
 	}
 
 	func startObserving() {
-		guard !isObserving else { return }
-		isObserving = true
+		guard observationTasks.isEmpty else { return }
 
-		AppListSettings.shared.add(self) { [weak self] in
-			self?.refreshSnapshot()
-		}
-
-		UpdateCheckCoordinator.shared.appProvider.addObserver(self) { [weak self] apps in
-			guard let self else { return }
-			self.replaceSnapshot(with: AppListSnapshot(withApps: apps, filterQuery: self.normalizedSearchQuery))
-			self.maintainSelectionAfterSnapshotChange()
-			self.updateTitleAndBadge()
-		}
+		observationTasks = [
+			Task { [weak self] in
+				for await _ in AppListSettings.shared.updates() {
+					guard !Task.isCancelled, let self else { break }
+					self.refreshSnapshot()
+				}
+			},
+			Task { [weak self] in
+				for await apps in UpdateCheckCoordinator.shared.appProvider.updates() {
+					guard !Task.isCancelled, let self else { break }
+					self.replaceSnapshot(with: AppListSnapshot(withApps: apps, filterQuery: self.normalizedSearchQuery))
+					self.maintainSelectionAfterSnapshotChange()
+					self.updateTitleAndBadge()
+				}
+			}
+		]
 	}
 
 	func stopObserving() {
-		guard isObserving else { return }
-		isObserving = false
-		AppListSettings.shared.removeObserver(withID: id)
-		UpdateCheckCoordinator.shared.appProvider.removeObserver(self)
+		observationTasks.forEach { $0.cancel() }
+		observationTasks.removeAll()
 	}
 
 	func setSearchQuery(_ query: String) {

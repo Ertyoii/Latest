@@ -8,44 +8,32 @@
 
 import Foundation
 
-/// A uniquely identifiable observer.
-protocol Observer: Identifiable where ID == UUID {}
-
-/// A main-actor observable object.
+/// Produces bounded async state feeds and automatically removes terminated consumers.
 @MainActor
-protocol Observable: AnyObject {
-	
-	/// The handler called when an observation is notified.
-	typealias ObservationHandler = @MainActor () -> Void
-	
-	/// The list of observers.
-	var observers: [UUID: ObservationHandler] { get set }
+final class MainActorAsyncStreamRegistry<Value: Sendable> {
+	private var continuations = [UUID: AsyncStream<Value>.Continuation]()
 
-	/// Adds the observer with the given handler to the list of observers.
-	func add(_ observer: any Observer, handler: @escaping ObservationHandler)
-	
-	/// Removes the given observer from the list.
-	func remove(_ observer: any Observer)
-	
-	/// Notifies the observers of an observation.
-	func notify()
-		
-}
+	func stream(initialValue: Value) -> AsyncStream<Value> {
+		let identifier = UUID()
+		let (stream, continuation) = AsyncStream.makeStream(
+			of: Value.self,
+			bufferingPolicy: .bufferingNewest(1)
+		)
+		continuations[identifier] = continuation
+		continuation.yield(initialValue)
+		continuation.onTermination = { [weak self] _ in
+			Task { @MainActor [weak self] in
+				self?.continuations.removeValue(forKey: identifier)
+			}
+		}
+		return stream
+	}
 
-extension Observable {
-	
-	func add(_ observer: any Observer, handler: @escaping ObservationHandler) {
-		observers[observer.id] = handler
+	func yield(_ value: Value) {
+		for continuation in continuations.values {
+			continuation.yield(value)
+		}
 	}
-	
-	func remove(_ observer: any Observer) {
-		observers.removeValue(forKey: observer.id)
-	}
-	
-	func notify() {
-		observers.forEach({ $1() })
-	}
-	
 }
 
 /// Stores object-bound observers and guarantees notification on the main actor.
