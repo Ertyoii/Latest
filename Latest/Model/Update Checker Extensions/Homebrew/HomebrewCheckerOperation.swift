@@ -54,6 +54,11 @@ class HomebrewCheckerOperation: StatefulOperation, UpdateCheckerOperation, @unch
 		repository.updateInfo(for: bundle) { bundle, version, minimumOSVersion, releaseNotes in
 			defer { self.finish() }
 			guard let version else { return }
+			let releaseNotes = ReleaseNotesSourceCatalog.releaseNotes(
+				for: bundle,
+				remoteVersion: version,
+				allowNameFallback: false
+			) ?? releaseNotes
 			self.update = App.Update(app: bundle, remoteVersion: version, minimumOSVersion: minimumOSVersion, source: .homebrew, date: nil, releaseNotes: releaseNotes, updateAction: .external(label: bundle.name, block: { app in
 				app.open()
 			}))

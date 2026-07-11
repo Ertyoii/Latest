@@ -6,8 +6,9 @@
 //  Copyright © 2023 Max Langer. All rights reserved.
 //
 
-import AppKit
+import Foundation
 import OSLog
+import Synchronization
 
 /// User defaults key for storing the last cache update date.
 private let UpdateDateKey = "UpdateDateKey"
@@ -15,6 +16,10 @@ private let UpdateDateKey = "UpdateDateKey"
 private let updateRepositoryLogger = Logger(
 	subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
 	category: "Repository"
+)
+private let updateRepositorySignposter = OSSignposter(
+	subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+	category: "RepositoryPerformance"
 )
 
 /// A storage that fetches update information from an online source.
@@ -158,12 +163,24 @@ class UpdateRepository: @unchecked Sendable {
 
 	/// Parses the given repository data and finishes loading.
 	private func parse(_ repositoryData: Data) {
+		let signpostID = updateRepositorySignposter.makeSignpostID()
+		let interval = updateRepositorySignposter.beginInterval("Decode Repository Catalog", id: signpostID)
+		let start = DispatchTime.now().uptimeNanoseconds
+		defer {
+			updateRepositorySignposter.endInterval("Decode Repository Catalog", interval)
+		}
+
 		do {
 			let entries = try JSONDecoder().decode([Entry].self, from: repositoryData)
-
-			entryMatcher.update(entries: entries.filter { !$0.names.isEmpty })
+			let appEntries = entries.filter { !$0.names.isEmpty }
+			entryMatcher.update(entries: appEntries)
+			let duration = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
+			updateRepositoryLogger.info(
+				"Decoded \(entries.count, privacy: .public) casks and indexed \(appEntries.count, privacy: .public) app entries in \(duration, privacy: .public) ms"
+			)
 		} catch {
 			entryMatcher.update(entries: [])
+			updateRepositoryLogger.error("Failed to decode repository catalog: \(error.localizedDescription, privacy: .public)")
 		}
 	}
 
@@ -237,15 +254,15 @@ class UpdateRepository: @unchecked Sendable {
 
 }
 
-private final class UpdateRepositoryReuseCache: @unchecked Sendable {
+private final class UpdateRepositoryReuseCache: Sendable {
+	private struct State: Sendable {
+		var reusableRepository: UpdateRepository?
+		var repositoryCreatedAt: TimeInterval = 0
+	}
 
 	private static let reuseDuration: TimeInterval = 60 * 60
 
-	private let lock = NSLock()
-
-	private var reusableRepository: UpdateRepository?
-
-	private var repositoryCreatedAt: TimeInterval = 0
+	private let state = Mutex(State())
 
 	func repository() -> UpdateRepository {
 		if let repository = cachedRepository() {
@@ -262,10 +279,10 @@ private final class UpdateRepositoryReuseCache: @unchecked Sendable {
 	}
 
 	private func cachedRepository() -> UpdateRepository? {
-		lock.withCriticalScope {
-			guard let reusableRepository else { return nil }
+		state.withLock { state in
+			guard let reusableRepository = state.reusableRepository else { return nil }
 
-			let age = repositoryCreatedAt.distance(to: Date.timeIntervalSinceReferenceDate)
+			let age = state.repositoryCreatedAt.distance(to: Date.timeIntervalSinceReferenceDate)
 			return age < Self.reuseDuration ? reusableRepository : nil
 		}
 	}
@@ -273,11 +290,11 @@ private final class UpdateRepositoryReuseCache: @unchecked Sendable {
 	private func store(_ repository: UpdateRepository, isReusable: Bool) {
 		guard isReusable else { return }
 
-		lock.withCriticalScope {
-			guard repository.createdAt >= repositoryCreatedAt else { return }
+		state.withLock { state in
+			guard repository.createdAt >= state.repositoryCreatedAt else { return }
 
-			self.reusableRepository = repository
-			self.repositoryCreatedAt = repository.createdAt
+			state.reusableRepository = repository
+			state.repositoryCreatedAt = repository.createdAt
 		}
 	}
 
@@ -382,7 +399,12 @@ private struct EntryMatcher {
 
 }
 
-private final class RemoteDataSource: @unchecked Sendable {
+private final class RemoteDataSource: Sendable {
+	private let session: URLSession
+
+	init(session: URLSession = .shared) {
+		self.session = session
+	}
 
 	func load(_ urlType: UpdateRepository.RemoteURL, completion: @escaping @Sendable (Data?) -> Void) {
 		let cache = UpdateRepositoryCache(cacheURL: urlType.cacheURL, userDefaultsKey: urlType.userDefaultsKey)
@@ -396,7 +418,7 @@ private final class RemoteDataSource: @unchecked Sendable {
 			return
 		}
 
-		let task = URLSession(configuration: .default).dataTask(with: url) { data, _, _ in
+		let task = session.dataTask(with: url) { data, _, _ in
 			guard let data = data ?? urlType.fallbackData else {
 				completion(nil)
 				return

@@ -34,50 +34,110 @@ private enum AppStoreLookupCacheValue {
 private actor AppStoreLookupCache {
 	static let shared = AppStoreLookupCache()
 
-	private var values = [AppStoreLookupCacheKey: AppStoreLookupCacheValue]()
-	private var inFlightTasks = [AppStoreLookupCacheKey: Task<AppStoreEntry, Error>]()
-
-	func value(for key: AppStoreLookupCacheKey) -> AppStoreLookupCacheValue? {
-		values[key]
+	private struct Entry {
+		let value: AppStoreLookupCacheValue
+		let expiresAt: Date
+		var lastAccessedAt: Date
 	}
 
-	func set(_ value: AppStoreLookupCacheValue, for key: AppStoreLookupCacheKey) {
-		values[key] = value
+	private struct InFlightLookup {
+		let id: UUID
+		let task: Task<AppStoreEntry, Error>
+	}
+
+	private var values = [AppStoreLookupCacheKey: Entry]()
+	private var inFlightTasks = [AppStoreLookupCacheKey: InFlightLookup]()
+	private var generation = 0
+	private let successfulLookupLifetime: TimeInterval = 15 * 60
+	private let unavailableLookupLifetime: TimeInterval = 2 * 60
+	private let maximumEntryCount = 512
+
+	func removeAll() {
+		generation &+= 1
+		values.removeAll(keepingCapacity: true)
+		inFlightTasks.values.forEach { $0.task.cancel() }
+		inFlightTasks.removeAll(keepingCapacity: true)
 	}
 
 	func entry(for key: AppStoreLookupCacheKey, loader: @escaping @Sendable () async throws -> AppStoreEntry) async throws -> AppStoreEntry {
-		if let value = values[key] {
+		if let value = cachedValue(for: key, at: Date()) {
 			return try value.result.get()
 		}
 
-		if let task = inFlightTasks[key] {
-			return try await task.value
+		if let lookup = inFlightTasks[key] {
+			return try await lookup.task.value
 		}
 
 		let task = Task {
 			try await loader()
 		}
-		inFlightTasks[key] = task
+		let taskID = UUID()
+		let taskGeneration = generation
+		inFlightTasks[key] = InFlightLookup(id: taskID, task: task)
 
 		do {
 			let entry = try await task.value
-			values[key] = .entry(entry)
-			inFlightTasks[key] = nil
+			if taskGeneration == generation {
+				store(.entry(entry), for: key, lifetime: successfulLookupLifetime)
+			}
+			removeInFlightLookup(for: key, matching: taskID)
 			return entry
 		} catch let error as LatestError {
-			if case .updateInfoUnavailable = error {
-				values[key] = .unavailable
+			if taskGeneration == generation, case .updateInfoUnavailable = error {
+				store(.unavailable, for: key, lifetime: unavailableLookupLifetime)
 			}
-			inFlightTasks[key] = nil
+			removeInFlightLookup(for: key, matching: taskID)
 			throw error
 		} catch {
-			inFlightTasks[key] = nil
+			removeInFlightLookup(for: key, matching: taskID)
 			throw error
+		}
+	}
+
+	private func removeInFlightLookup(for key: AppStoreLookupCacheKey, matching taskID: UUID) {
+		guard inFlightTasks[key]?.id == taskID else { return }
+		inFlightTasks[key] = nil
+	}
+
+	private func cachedValue(for key: AppStoreLookupCacheKey, at date: Date) -> AppStoreLookupCacheValue? {
+		guard var entry = values[key] else { return nil }
+		guard entry.expiresAt > date else {
+			values[key] = nil
+			return nil
+		}
+		entry.lastAccessedAt = date
+		values[key] = entry
+		return entry.value
+	}
+
+	private func store(_ value: AppStoreLookupCacheValue, for key: AppStoreLookupCacheKey, lifetime: TimeInterval) {
+		let now = Date()
+		pruneExpiredEntries(at: now)
+		values[key] = Entry(
+			value: value,
+			expiresAt: now.addingTimeInterval(lifetime),
+			lastAccessedAt: now
+		)
+
+		while values.count > maximumEntryCount {
+			guard let leastRecentlyUsedKey = values.min(by: {
+				$0.value.lastAccessedAt < $1.value.lastAccessedAt
+			})?.key else { return }
+			values[leastRecentlyUsedKey] = nil
+		}
+	}
+
+	private func pruneExpiredEntries(at date: Date) {
+		let expiredKeys = values.compactMap { key, entry in
+			entry.expiresAt <= date ? key : nil
+		}
+		for key in expiredKeys {
+			values[key] = nil
 		}
 	}
 }
 
-private final class AppStoreLookupClient: @unchecked Sendable {
+private final class AppStoreLookupClient: Sendable {
 	static let shared = AppStoreLookupClient()
 
 	private let endpoint = URL(string: "https://itunes.apple.com/lookup")
@@ -86,6 +146,10 @@ private final class AppStoreLookupClient: @unchecked Sendable {
 
 	init(session: URLSession = .shared) {
 		self.session = session
+	}
+
+	func invalidateCache() async {
+		await cache.removeAll()
 	}
 
 	func lookup(bundleIdentifier: String, entityTypes: [String]) async throws -> AppStoreEntry {
@@ -139,6 +203,9 @@ private final class AppStoreLookupClient: @unchecked Sendable {
 
 /// The operation for checking for updates for a Mac App Store app.
 class AppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, @unchecked Sendable {
+	static func invalidateLookupCache() async {
+		await AppStoreLookupClient.shared.invalidateCache()
+	}
 	
 	// MARK: - Update Check
 	
@@ -364,7 +431,7 @@ fileprivate struct EntryList: Decodable {
 }
 
 /// Object representing a single entry in fetched information from the app store.
-fileprivate struct AppStoreEntry: Decodable {
+fileprivate struct AppStoreEntry: Decodable, Sendable {
 	
 	/// The version number of the entry.
 	let versionNumber: String

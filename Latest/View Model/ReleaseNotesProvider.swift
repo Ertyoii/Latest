@@ -13,6 +13,10 @@ private let releaseNotesLogger = Logger(
 	subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
 	category: "ReleaseNotes"
 )
+private let releaseNotesSignposter = OSSignposter(
+	subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+	category: "ReleaseNotesPerformance"
+)
 
 private let releaseNotesHTMLCache = ReleaseNotesHTMLCache()
 
@@ -28,7 +32,10 @@ class ReleaseNotesProvider {
 
 	/// Initializes the provider.
 	init() {
-		self.cache = NSCache()
+		let cache = NSCache<ReleaseNotesCacheKey, NSAttributedString>()
+		cache.countLimit = 128
+		cache.totalCostLimit = 16 * 1_024 * 1_024
+		self.cache = cache
 	}
 
 	/// Tracks the currently requested app.
@@ -60,7 +67,7 @@ class ReleaseNotesProvider {
 		self.loadReleaseNotes(for: app) { releaseNotes in
 			let releaseNotes = Self.validated(releaseNotes)
 			if case .success(let text) = releaseNotes {
-				self.cache.setObject(text, forKey: cacheKey)
+				self.cache.setObject(text, forKey: cacheKey, cost: text.length * 2)
 			}
 
 			/// Release notes may be returned late or updated while another app was already requested. Don't forward this update, just cache in case of success.
@@ -148,8 +155,13 @@ class ReleaseNotesProvider {
 
 			do {
 				let html = try await Self.fetchHTML(from: url)
+				let releaseNotes = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
+					from: html,
+					baseURL: url,
+					relevantVersion: relevantVersion
+				)
 				guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
-				completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: url, relevantVersion: relevantVersion))
+				completion(releaseNotes)
 				return
 			} catch FetchHTMLError.unusableText {
 				guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
@@ -174,8 +186,18 @@ class ReleaseNotesProvider {
 
 			switch result {
 			case .success(let html):
-				self.webContentLoader?.cancel()
-				completion(ReleaseNotesMarkup.attributedString(from: html, baseURL: url, relevantVersion: relevantVersion))
+				self.currentReleaseNotesTask?.cancel()
+				self.currentReleaseNotesTask = Task { [weak self] in
+					guard let self else { return }
+					let releaseNotes = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
+						from: html,
+						baseURL: url,
+						relevantVersion: relevantVersion
+					)
+					guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
+					self.webContentLoader?.cancel()
+					completion(releaseNotes)
+				}
 			case .failure(let error):
 				completion(.failure(error))
 			}
@@ -203,7 +225,20 @@ class ReleaseNotesProvider {
 				releaseNotesLogger.info(
 					"Using fallback release notes HTML after GitHub release body was not useful for \(url.host ?? "unknown", privacy: .public)"
 				)
-				return ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil, relevantVersion: relevantVersion)
+				return await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
+					from: fallbackHTML,
+					baseURL: nil,
+					relevantVersion: relevantVersion
+				)
+			}
+			return .failure(LatestError.releaseNotesUnavailable)
+		} catch GitHubReleaseFetchError.notFound {
+			if let fallbackHTML {
+				return await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
+					from: fallbackHTML,
+					baseURL: nil,
+					relevantVersion: relevantVersion
+				)
 			}
 			return .failure(LatestError.releaseNotesUnavailable)
 		} catch {
@@ -215,87 +250,72 @@ class ReleaseNotesProvider {
 				releaseNotesLogger.info(
 					"Using fallback release notes HTML after GitHub release fetch failed for \(url.host ?? "unknown", privacy: .public)"
 				)
-				return ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil, relevantVersion: relevantVersion)
+				return await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
+					from: fallbackHTML,
+					baseURL: nil,
+					relevantVersion: relevantVersion
+				)
 			}
 			return .failure(error)
 		}
 	}
 
-	private nonisolated static func githubReleaseNotes(fromBody body: String, title: String?, baseURL: URL?, relevantVersion: String?) async -> ReleaseNotes? {
+	private static func githubReleaseNotes(fromBody body: String, title: String?, baseURL: URL?, relevantVersion: String?) async -> ReleaseNotes? {
 		let body = deduplicating(title: title, in: body.trimmingCharacters(in: .whitespacesAndNewlines))
-		if let releaseNotes = githubReleaseNotes(fromUsefulMarkup: body, title: title, baseURL: baseURL, relevantVersion: relevantVersion) {
+		if let releaseNotes = await githubReleaseNotes(fromUsefulMarkup: body, title: title, baseURL: baseURL, relevantVersion: relevantVersion) {
 			return releaseNotes
 		}
 
 		return await linkedReleaseNotes(fromMarkup: body, baseURL: baseURL, relevantVersion: relevantVersion)
 	}
 
-	private nonisolated static func githubReleasePageNotes(fromAPIURL apiURL: URL, relevantVersion: String?) async -> ReleaseNotes? {
+	private static func githubReleasePageNotes(fromAPIURL apiURL: URL, relevantVersion: String?) async -> ReleaseNotes? {
 		guard let webURL = githubReleaseWebURL(fromAPIURL: apiURL),
-		      let html = try? await fetchHTML(from: webURL),
-		      let bodyHTML = githubReleaseBodyHTML(fromHTML: html) else {
+		      let html = try? await fetchHTML(from: webURL) else {
 			return nil
 		}
+		let bodyHTML = await Task.detached(priority: .userInitiated) {
+			githubReleaseBodyHTML(fromHTML: html)
+		}.value
+		guard let bodyHTML else { return nil }
 
-		if let releaseNotes = githubReleaseNotes(fromUsefulMarkup: bodyHTML, title: nil, baseURL: webURL, relevantVersion: relevantVersion) {
+		if let releaseNotes = await githubReleaseNotes(fromUsefulMarkup: bodyHTML, title: nil, baseURL: webURL, relevantVersion: relevantVersion) {
 			return releaseNotes
 		}
 
 		return await linkedReleaseNotes(fromMarkup: bodyHTML, baseURL: webURL, relevantVersion: relevantVersion)
 	}
 
-	private nonisolated static func githubReleaseNotes(fromUsefulMarkup markup: String, title: String?, baseURL: URL?, relevantVersion: String?) -> ReleaseNotes? {
-		let relevantMarkup: String
-		if markup.containsHTMLTag {
-			relevantMarkup = markup
-		} else {
-			relevantMarkup = ReleaseNotesMarkup.relevantText(from: markup, version: relevantVersion, allowFirstSectionFallback: true) ?? markup
-		}
-
-		guard ReleaseNotesMarkup.isUsefulReleaseNotesText(relevantMarkup, relevantVersion: relevantVersion) else {
-			return nil
-		}
-
-		let title = title?.trimmingCharacters(in: .whitespacesAndNewlines)
-		let renderedMarkup = ([title, relevantMarkup]
-			.compactMap { text in
-				guard let text, !text.isEmpty else { return nil }
-				return text
-			} as [String]).joined(separator: "\n\n")
-
-		let result = ReleaseNotesMarkup.attributedString(from: renderedMarkup, baseURL: baseURL, relevantVersion: relevantVersion)
-		if case .success = result {
-			return result
-		}
-
-		return nil
+	private static func githubReleaseNotes(fromUsefulMarkup markup: String, title: String?, baseURL: URL?, relevantVersion: String?) async -> ReleaseNotes? {
+		await ReleaseNotesMarkup.githubAttributedStringByPreparingOffMain(
+			from: markup,
+			title: title,
+			baseURL: baseURL,
+			relevantVersion: relevantVersion
+		)
 	}
 
-	private nonisolated static func linkedReleaseNotes(fromMarkup markup: String, baseURL: URL?, relevantVersion: String?) async -> ReleaseNotes? {
+	private static func linkedReleaseNotes(fromMarkup markup: String, baseURL: URL?, relevantVersion: String?) async -> ReleaseNotes? {
 		guard let linkedURL = ReleaseNotesMarkup.firstReleaseNotesURL(in: markup, baseURL: baseURL),
 		      linkedURL != baseURL,
 		      let linkedHTML = try? await fetchHTML(from: linkedURL) else {
 			return nil
 		}
 
-		if let text = ReleaseNotesMarkup.relevantChangelogText(fromHTML: linkedHTML, version: relevantVersion, pageURL: linkedURL, allowFirstSectionFallback: true) {
-			let result = ReleaseNotesMarkup.attributedString(from: text, baseURL: linkedURL, relevantVersion: relevantVersion)
-			if case .success = result {
-				return result
-			}
-		}
-
-		guard let text = ReleaseNotesMarkup.plainText(fromHTML: linkedHTML),
-		      ReleaseNotesMarkup.isUsefulReleaseNotesText(text, relevantVersion: relevantVersion) else {
-			return nil
-		}
-
-		let result = ReleaseNotesMarkup.attributedString(from: text, baseURL: linkedURL, relevantVersion: relevantVersion)
-		if case .success = result {
+		if let result = await ReleaseNotesMarkup.attributedStringFromChangelogByPreparingOffMain(
+			fromHTML: linkedHTML,
+			baseURL: linkedURL,
+			relevantVersion: relevantVersion,
+			allowFirstSectionFallback: true
+		) {
 			return result
 		}
 
-		return nil
+		return await ReleaseNotesMarkup.plainTextAttributedStringByPreparingOffMain(
+			fromHTML: linkedHTML,
+			baseURL: linkedURL,
+			relevantVersion: relevantVersion
+		)
 	}
 
 	private func changelogReleaseNotes(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, fallbackHTML: String?, requestID: UUID, with completion: @escaping Completion) {
@@ -303,8 +323,13 @@ class ReleaseNotesProvider {
 			guard let self else { return }
 
 			if let content = await Self.fetchChangelogContent(from: urls, versionPrefix: versionPrefix, allowsLatestFallback: allowsLatestFallback) {
+				let releaseNotes = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
+					from: content.text,
+					baseURL: content.baseURL,
+					relevantVersion: versionPrefix
+				)
 				guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
-				completion(ReleaseNotesMarkup.attributedString(from: content.text, baseURL: content.baseURL, relevantVersion: versionPrefix))
+				completion(releaseNotes)
 				return
 			}
 
@@ -312,7 +337,13 @@ class ReleaseNotesProvider {
 
 			if let fallbackHTML {
 				releaseNotesLogger.info("Using fallback release notes HTML after direct changelog fetch failed")
-				completion(ReleaseNotesMarkup.attributedString(from: fallbackHTML, baseURL: nil, relevantVersion: versionPrefix))
+				let releaseNotes = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
+					from: fallbackHTML,
+					baseURL: nil,
+					relevantVersion: versionPrefix
+				)
+				guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
+				completion(releaseNotes)
 				return
 			}
 
@@ -348,13 +379,27 @@ class ReleaseNotesProvider {
 
 				switch result {
 				case .success(let html):
-					if let relevantText = ReleaseNotesMarkup.relevantChangelogText(fromHTML: html, version: versionPrefix, pageURL: url, allowFirstSectionFallback: allowsLatestFallback) {
-						finish(ReleaseNotesMarkup.attributedString(from: relevantText, baseURL: url, relevantVersion: versionPrefix))
-						return
+					self.currentReleaseNotesTask?.cancel()
+					self.currentReleaseNotesTask = Task { [weak self] in
+						guard let self else { return }
+						let releaseNotes = await ReleaseNotesMarkup.attributedStringFromChangelogByPreparingOffMain(
+							fromHTML: html,
+							baseURL: url,
+							relevantVersion: versionPrefix,
+							allowFirstSectionFallback: allowsLatestFallback
+						)
+						guard !Task.isCancelled,
+						      self.isCurrentRequest(requestID),
+						      activeAttemptID == attemptID,
+						      !didComplete else { return }
+						if let releaseNotes {
+							finish(releaseNotes)
+						} else {
+							loadNext()
+						}
 					}
-
-					loadNext()
 				case .failure:
+					self.currentReleaseNotesTask?.cancel()
 					loadNext()
 				}
 			}
@@ -479,9 +524,13 @@ class ReleaseNotesProvider {
 		request.setValue("Latest", forHTTPHeaderField: "User-Agent")
 
 		let (data, response) = try await URLSession.shared.data(for: request)
-		if let response = response as? HTTPURLResponse,
-		   !(200..<300).contains(response.statusCode) {
-			throw FetchHTMLError.unusableText
+		if let response = response as? HTTPURLResponse {
+			if response.statusCode == 404 {
+				throw GitHubReleaseFetchError.notFound
+			}
+			if !(200..<300).contains(response.statusCode) {
+				throw FetchHTMLError.unusableText
+			}
 		}
 
 		return data
@@ -494,6 +543,8 @@ private actor ReleaseNotesHTMLCache {
 	private struct Entry {
 		let value: Value
 		let expiresAt: Date
+		var lastAccessedAt: Date
+		let cost: Int
 	}
 
 	private enum Value {
@@ -508,20 +559,32 @@ private actor ReleaseNotesHTMLCache {
 				throw error
 			}
 		}
+
+		var cost: Int {
+			switch self {
+			case .success(let html):
+				return html.utf8.count
+			case .failure:
+				return 0
+			}
+		}
 	}
 
 	private var entries = [URL: Entry]()
 	private var inFlightTasks = [URL: Task<String, Error>]()
+	private var storedHTMLBytes = 0
 	private let successfulResponseLifetime: TimeInterval = 30 * 60
 	private let failedResponseLifetime: TimeInterval = 5 * 60
+	private let maximumEntryCount = 128
+	private let maximumStoredHTMLBytes = 8 * 1_024 * 1_024
 
 	func html(for url: URL, loader: @escaping @Sendable () async throws -> String) async throws -> String {
 		let now = Date()
-		if let entry = entries[url] {
-			if entry.expiresAt > now {
-				return try entry.value.get()
-			}
-			entries[url] = nil
+		pruneExpiredEntries(at: now)
+		if var entry = entries[url] {
+			entry.lastAccessedAt = now
+			entries[url] = entry
+			return try entry.value.get()
 		}
 
 		if let task = inFlightTasks[url] {
@@ -535,18 +598,58 @@ private actor ReleaseNotesHTMLCache {
 
 		do {
 			let html = try await task.value
-			entries[url] = Entry(value: .success(html), expiresAt: Date().addingTimeInterval(successfulResponseLifetime))
+			store(.success(html), for: url, lifetime: successfulResponseLifetime)
 			inFlightTasks[url] = nil
 			return html
 		} catch FetchHTMLError.unusableText {
-			entries[url] = Entry(value: .failure(.unusableText), expiresAt: Date().addingTimeInterval(failedResponseLifetime))
+			store(.failure(.unusableText), for: url, lifetime: failedResponseLifetime)
 			inFlightTasks[url] = nil
 			throw FetchHTMLError.unusableText
 		} catch {
-			entries[url] = Entry(value: .failure(.fetchFailed), expiresAt: Date().addingTimeInterval(failedResponseLifetime))
+			store(.failure(.fetchFailed), for: url, lifetime: failedResponseLifetime)
 			inFlightTasks[url] = nil
 			throw error
 		}
+	}
+
+	private func store(_ value: Value, for url: URL, lifetime: TimeInterval) {
+		let now = Date()
+		pruneExpiredEntries(at: now)
+		removeEntry(for: url)
+
+		let cost = value.cost
+		guard cost <= maximumStoredHTMLBytes else { return }
+		entries[url] = Entry(
+			value: value,
+			expiresAt: now.addingTimeInterval(lifetime),
+			lastAccessedAt: now,
+			cost: cost
+		)
+		storedHTMLBytes += cost
+		trimToLimits()
+	}
+
+	private func pruneExpiredEntries(at date: Date) {
+		let expiredURLs = entries.compactMap { url, entry in
+			entry.expiresAt <= date ? url : nil
+		}
+		for url in expiredURLs {
+			removeEntry(for: url)
+		}
+	}
+
+	private func trimToLimits() {
+		while entries.count > maximumEntryCount || storedHTMLBytes > maximumStoredHTMLBytes {
+			guard let leastRecentlyUsedURL = entries.min(by: {
+				$0.value.lastAccessedAt < $1.value.lastAccessedAt
+			})?.key else { return }
+			removeEntry(for: leastRecentlyUsedURL)
+		}
+	}
+
+	private func removeEntry(for url: URL) {
+		guard let entry = entries.removeValue(forKey: url) else { return }
+		storedHTMLBytes -= entry.cost
 	}
 
 }
@@ -562,6 +665,10 @@ private enum FetchHTMLError: Error {
 	case fetchFailed
 }
 
+private enum GitHubReleaseFetchError: Error {
+	case notFound
+}
+
 extension ReleaseNotesProvider {
 
 	nonisolated static func githubReleaseWebURL(fromAPIURL apiURL: URL) -> URL? {
@@ -570,15 +677,19 @@ extension ReleaseNotesProvider {
 		}
 
 		let components = apiURL.pathComponents
-		guard components.count >= 7,
+		guard components.count >= 6,
 		      components[1] == "repos",
-		      components[4] == "releases",
-		      components[5] == "tags" else {
+		      components[4] == "releases" else {
 			return nil
 		}
 
 		let owner = components[2]
 		let repository = components[3]
+		if components[5] == "latest" {
+			return URL(string: "https://github.com/\(owner)/\(repository)/releases/latest")
+		}
+
+		guard components.count >= 7, components[5] == "tags" else { return nil }
 		let tag = components[6]
 		return URL(string: "https://github.com/\(owner)/\(repository)/releases/tag/\(tag)")
 	}
@@ -735,6 +846,17 @@ private extension App.Update.ReleaseNotes {
 }
 
 enum ReleaseNotesMarkup {
+	private struct PreparedMarkup: Sendable {
+		enum Kind: Sendable {
+			case markdown
+			case plainText
+			case html
+		}
+
+		let string: String
+		let kind: Kind
+		let baseURL: URL?
+	}
 
 	private static let genericReleaseNoteWords: Set<String> = [
 		"changelog", "changes", "details", "history", "latest", "link", "links",
@@ -761,10 +883,126 @@ enum ReleaseNotesMarkup {
 	]
 
 	static func attributedString(from markup: String, baseURL: URL?, relevantVersion: String? = nil) -> ReleaseNotesProvider.ReleaseNotes {
-		let trimmedMarkup = markup.trimmingCharacters(in: .whitespacesAndNewlines)
-		guard !trimmedMarkup.isEmpty else {
+		let signpostID = releaseNotesSignposter.makeSignpostID()
+		let interval = releaseNotesSignposter.beginInterval("Render Release Notes", id: signpostID)
+		defer { releaseNotesSignposter.endInterval("Render Release Notes", interval) }
+		guard let preparedMarkup = prepare(markup, baseURL: baseURL, relevantVersion: relevantVersion) else {
 			return .failure(LatestError.releaseNotesUnavailable)
 		}
+		return render(preparedMarkup)
+	}
+
+	@MainActor
+	static func attributedStringByPreparingOffMain(
+		from markup: String,
+		baseURL: URL?,
+		relevantVersion: String?
+	) async -> ReleaseNotesProvider.ReleaseNotes {
+		let preparedMarkup = await prepareOffMain {
+			prepare(markup, baseURL: baseURL, relevantVersion: relevantVersion)
+		}
+		guard let preparedMarkup else {
+			return .failure(LatestError.releaseNotesUnavailable)
+		}
+		return render(preparedMarkup)
+	}
+
+	@MainActor
+	static func githubAttributedStringByPreparingOffMain(
+		from markup: String,
+		title: String?,
+		baseURL: URL?,
+		relevantVersion: String?
+	) async -> ReleaseNotesProvider.ReleaseNotes? {
+		let preparedMarkup = await prepareOffMain {
+			let relevantMarkup: String
+			if markup.containsHTMLTag {
+				relevantMarkup = markup
+			} else {
+				relevantMarkup = relevantText(
+					from: markup,
+					version: relevantVersion,
+					allowFirstSectionFallback: true
+				) ?? markup
+			}
+			guard isUsefulReleaseNotesText(relevantMarkup, relevantVersion: relevantVersion) else {
+				return nil
+			}
+
+			let title = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+			let renderedMarkup = ([title, relevantMarkup]
+				.compactMap { text in
+					guard let text, !text.isEmpty else { return nil }
+					return text
+				} as [String]).joined(separator: "\n\n")
+			return prepare(renderedMarkup, baseURL: baseURL, relevantVersion: relevantVersion)
+		}
+		guard let preparedMarkup else { return nil }
+		let result = render(preparedMarkup)
+		guard case .success = result else { return nil }
+		return result
+	}
+
+	@MainActor
+	static func plainTextAttributedStringByPreparingOffMain(
+		fromHTML html: String,
+		baseURL: URL?,
+		relevantVersion: String?
+	) async -> ReleaseNotesProvider.ReleaseNotes? {
+		let preparedMarkup = await prepareOffMain {
+			guard let text = plainText(fromHTML: html),
+			      isUsefulReleaseNotesText(text, relevantVersion: relevantVersion) else {
+				return nil
+			}
+			return prepare(text, baseURL: baseURL, relevantVersion: relevantVersion)
+		}
+		guard let preparedMarkup else { return nil }
+		let result = render(preparedMarkup)
+		guard case .success = result else { return nil }
+		return result
+	}
+
+	@MainActor
+	static func attributedStringFromChangelogByPreparingOffMain(
+		fromHTML html: String,
+		baseURL: URL,
+		relevantVersion: String?,
+		allowFirstSectionFallback: Bool
+	) async -> ReleaseNotesProvider.ReleaseNotes? {
+		let preparedMarkup = await prepareOffMain {
+			guard let relevantText = relevantChangelogText(
+				fromHTML: html,
+				version: relevantVersion,
+				pageURL: baseURL,
+				allowFirstSectionFallback: allowFirstSectionFallback
+			) else { return nil }
+			return prepare(relevantText, baseURL: baseURL, relevantVersion: relevantVersion)
+		}
+		guard let preparedMarkup else { return nil }
+		return render(preparedMarkup)
+	}
+
+	private static func prepareOffMain(
+		_ operation: @escaping @Sendable () -> PreparedMarkup?
+	) async -> PreparedMarkup? {
+		let preparationTask = Task.detached(priority: .userInitiated) {
+			guard !Task.isCancelled else { return Optional<PreparedMarkup>.none }
+			let signpostID = releaseNotesSignposter.makeSignpostID()
+			let interval = releaseNotesSignposter.beginInterval("Prepare Release Notes", id: signpostID)
+			defer { releaseNotesSignposter.endInterval("Prepare Release Notes", interval) }
+			return operation()
+		}
+		return await withTaskCancellationHandler {
+			await preparationTask.value
+		} onCancel: {
+			preparationTask.cancel()
+		}
+	}
+
+	private static func prepare(_ markup: String, baseURL: URL?, relevantVersion: String?) -> PreparedMarkup? {
+
+		let trimmedMarkup = markup.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !trimmedMarkup.isEmpty else { return nil }
 
 		let sourceMarkup = trimmedMarkup.containsHTMLTag ? trimmedMarkup : Self.normalizedPlainText(trimmedMarkup)
 		let markup: String
@@ -778,19 +1016,28 @@ enum ReleaseNotesMarkup {
 
 		let displayMarkup = markup.containsHTMLTag ? markup : Self.cleaningInlineMarkdown(in: markup)
 		let normalizedMarkup = Self.removingDuplicateLeadingLines(displayMarkup)
-		guard Self.isUsefulReleaseNotesText(normalizedMarkup, relevantVersion: relevantVersion) else {
-			return .failure(LatestError.releaseNotesUnavailable)
-		}
+		guard Self.isUsefulReleaseNotesText(normalizedMarkup, relevantVersion: relevantVersion) else { return nil }
 
 		if Self.prefersMarkdown(normalizedMarkup) {
-			return .success(Self.attributedString(fromMarkdown: normalizedMarkup))
+			return PreparedMarkup(string: normalizedMarkup, kind: .markdown, baseURL: baseURL)
 		}
 
 		if !normalizedMarkup.containsHTMLTag {
-			return .success(Self.attributedString(fromPlainText: normalizedMarkup))
+			return PreparedMarkup(string: normalizedMarkup, kind: .plainText, baseURL: baseURL)
 		}
 
-		return Self.attributedString(fromHTML: normalizedMarkup, baseURL: baseURL)
+		return PreparedMarkup(string: normalizedMarkup, kind: .html, baseURL: baseURL)
+	}
+
+	private static func render(_ preparedMarkup: PreparedMarkup) -> ReleaseNotesProvider.ReleaseNotes {
+		switch preparedMarkup.kind {
+		case .markdown:
+			return .success(Self.attributedString(fromMarkdown: preparedMarkup.string))
+		case .plainText:
+			return .success(Self.attributedString(fromPlainText: preparedMarkup.string))
+		case .html:
+			return Self.attributedString(fromHTML: preparedMarkup.string, baseURL: preparedMarkup.baseURL)
+		}
 	}
 
 	static func attributedString(from data: Data, baseURL: URL?, relevantVersion: String? = nil) -> ReleaseNotesProvider.ReleaseNotes {
@@ -1620,11 +1867,15 @@ enum ReleaseNotesMarkup {
 			return .failure(LatestError.releaseNotesUnavailable)
 		}
 
-		guard let string = Self.attributedString(fromHTMLData: data, baseURL: baseURL) else {
-			return .failure(LatestError.releaseNotesUnavailable)
+		if let string = Self.attributedString(fromHTMLData: data, baseURL: baseURL) {
+			return .success(string)
 		}
 
-		return .success(string)
+		guard let plainText = Self.plainText(fromHTML: html),
+		      Self.isUsefulReleaseNotesText(plainText) else {
+			return .failure(LatestError.releaseNotesUnavailable)
+		}
+		return .success(Self.attributedString(fromPlainText: plainText))
 	}
 
 	private static func attributedString(fromHTMLData data: Data, baseURL: URL?) -> NSAttributedString? {

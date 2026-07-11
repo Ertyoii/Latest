@@ -112,6 +112,8 @@ class ReleaseNotesViewController: NSViewController {
 	private var supportStatePopover: NSPopover?
 	private var appInfoTopConstraint: NSLayoutConstraint?
 	private var appInfoLabelCenterYConstraint: NSLayoutConstraint?
+	private var loadingTimer: Timer?
+	private var displayRequestID = UUID()
     
 	/// The app currently presented
 	private(set) var app: App? {
@@ -349,6 +351,11 @@ class ReleaseNotesViewController: NSViewController {
      - parameter content: The content to be displayed
      */
 	func display(releaseNotesFor app: App?) {
+		displayRequestID = UUID()
+		let requestID = displayRequestID
+		loadingTimer?.invalidate()
+		loadingTimer = nil
+
 		guard let app = app else {
 			self.setEmptyState()
 			return
@@ -357,13 +364,19 @@ class ReleaseNotesViewController: NSViewController {
         self.display(app)
 
 		// Delay the loading screen to avoid flickering
-		let timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { [weak self] _ in
+		loadingTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { [weak self] _ in
 			Task { @MainActor in
-				self?.loadContent(.loading)
+				guard let self,
+				      self.displayRequestID == requestID,
+				      self.app?.identifier == app.identifier else { return }
+				self.loadingTimer = nil
+				self.loadContent(.loading)
 			}
 		}
 		releaseNotesProvider.releaseNotes(for: app) { result in
-			timer.invalidate()
+			guard self.displayRequestID == requestID, self.app?.identifier == app.identifier else { return }
+			self.loadingTimer?.invalidate()
+			self.loadingTimer = nil
 
 			switch result {
 				case .success(let releaseNotes):
@@ -409,6 +422,7 @@ class ReleaseNotesViewController: NSViewController {
 		
 		// Icon
 		IconCache.shared.icon(for: app) { (image) in
+			guard self.app?.identifier == app.identifier else { return }
 			self.appIconImageView.image = image
 		}
 		

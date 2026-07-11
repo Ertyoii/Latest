@@ -11,6 +11,15 @@ import XCTest
 
 @MainActor
 final class AppListSnapshotTest: XCTestCase {
+	func testUpdatesListViewModelDoesNotRebuildSnapshotForDuplicateSearchAction() {
+		let viewModel = UpdatesListViewModel()
+
+		XCTAssertEqual(viewModel.snapshotRevision, 0)
+		viewModel.setSearchQuery("latest")
+		XCTAssertEqual(viewModel.snapshotRevision, 1)
+		viewModel.setSearchQuery("latest")
+		XCTAssertEqual(viewModel.snapshotRevision, 1)
+	}
 
 	func testSnapshotPartitionsAppsIntoAvailableInstalledAndIgnoredSections() {
 		configureSettings()
@@ -41,6 +50,25 @@ final class AppListSnapshotTest: XCTestCase {
 		XCTAssertEqual(snapshot.entries.count, 2)
 		XCTAssertEqual(section(at: 0, in: snapshot)?.numberOfApps, 1)
 		XCTAssertEqual(snapshot.app(at: 1)?.name, "Alpha")
+	}
+
+	func testSearchRefilterMatchesFullSnapshotRebuild() {
+		configureSettings()
+		let apps = [
+			makeApp(name: "Alpha", versionNumber: "1.0", remoteVersionNumber: "2.0"),
+			makeApp(name: "Alphabet", versionNumber: "1.0"),
+			makeApp(name: "Beta", versionNumber: "1.0", remoteVersionNumber: "2.0", isIgnored: true)
+		]
+		let snapshot = AppListSnapshot(withApps: apps, filterQuery: nil)
+
+		XCTAssertEqual(
+			snapshot.refiltered(with: "alpha").entries,
+			AppListSnapshot(withApps: apps, filterQuery: "alpha").entries
+		)
+		XCTAssertEqual(
+			snapshot.refiltered(with: nil).entries,
+			AppListSnapshot(withApps: apps, filterQuery: nil).entries
+		)
 	}
 
 	func testInstalledAppsAreSortedByBundleModificationDate() throws {

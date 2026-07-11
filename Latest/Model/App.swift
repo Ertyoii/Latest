@@ -9,7 +9,7 @@
 import Cocoa
 
 /// The combined representation of an app bundle and its associated update information.
-class App {
+final class App: Sendable {
 	
 	/// The bundle of the locally available app.
 	let bundle: App.Bundle
@@ -159,8 +159,8 @@ extension App {
 		return self.update?.externalUpdaterName
 	}
 	
-	/// Updates the app. This is a sub-classing hook. The default implementation opens the app.
-	final func performUpdate(isBulkUpdate: Bool = false) {
+	/// Performs the update action associated with the app.
+	func performUpdate(isBulkUpdate: Bool = false) {
 		self.update?.perform(isBulkUpdate: isBulkUpdate)
 	}
 	
@@ -280,5 +280,3 @@ extension App: CustomDebugStringConvertible {
 		
 	}
 }
-
-extension App: @unchecked Sendable {}

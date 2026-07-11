@@ -12,7 +12,7 @@ import Darwin
 extension App {
 	
 	/// An object representing a single application that is available on the computer.
-	class Bundle {
+	final class Bundle: Sendable {
 		
 		typealias Identifier = URL
 		
@@ -135,5 +135,3 @@ extension App.Bundle: CustomDebugStringConvertible {
 		return "\(name), \(version)"
 	}
 }
-
-extension App.Bundle: @unchecked Sendable {}

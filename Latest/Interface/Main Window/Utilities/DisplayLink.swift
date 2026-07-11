@@ -12,7 +12,8 @@ import AppKit
 #endif
 
 /// Cross-platform convenience for accessing a DisplayLink.
-class DisplayLink: NSObject, @unchecked Sendable {
+@MainActor
+final class DisplayLink: NSObject {
 
 	/// The amount of time the display link should be running. If  set to `nil`, the display link runs indefinitely.
 	private(set) var duration : Double?
@@ -55,8 +56,8 @@ class DisplayLink: NSObject, @unchecked Sendable {
 		self.displayLink?.isPaused = true
 	}
 
-	deinit {
-		self.invalidate()
+	isolated deinit {
+		invalidate()
 	}
 
 
@@ -66,7 +67,7 @@ class DisplayLink: NSObject, @unchecked Sendable {
 		self.advanceFrame(frameDuration: displayLink.duration > 0 ? displayLink.duration : 1 / 60.0)
 	}
 
-	private func timerTick() {
+	@objc private func timerTick(_ timer: Timer) {
 		self.advanceFrame(frameDuration: 1 / 60.0)
 	}
 
@@ -79,16 +80,14 @@ class DisplayLink: NSObject, @unchecked Sendable {
 
 		self._currentFrame += frameDuration / (1 / 60.0)
 
-		// Forward progress to the observer
-		Task { @MainActor in
-			self.progress = self._currentFrame / self._frames
-			if self.duration != nil, self.progress >= 1 {
-				self.completionHandler?()
-				self.stop()
-			}
-
-			self.callback(self.progress)
+		// The display link and fallback timer are installed on the main run loop.
+		self.progress = self._currentFrame / self._frames
+		if self.duration != nil, self.progress >= 1 {
+			self.completionHandler?()
+			self.stop()
 		}
+
+		self.callback(self.progress)
 	}
 
 	
@@ -100,9 +99,13 @@ class DisplayLink: NSObject, @unchecked Sendable {
 		if let displayLink {
 			displayLink.isPaused = false
 		} else {
-			let timer = Timer(timeInterval: 1 / 60.0, repeats: true) { [weak self] _ in
-				self?.timerTick()
-			}
+			let timer = Timer(
+				timeInterval: 1 / 60.0,
+				target: self,
+				selector: #selector(timerTick(_:)),
+				userInfo: nil,
+				repeats: true
+			)
 			self.fallbackTimer = timer
 			RunLoop.current.add(timer, forMode: .common)
 		}

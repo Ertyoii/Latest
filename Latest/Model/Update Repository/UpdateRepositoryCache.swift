@@ -38,7 +38,7 @@ final class UpdateRepositoryCache: @unchecked Sendable {
 
 		do {
 			try fileManager.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-			try data.write(to: cacheURL)
+			try data.write(to: cacheURL, options: .atomic)
 			userDefaults.setValue(Date.timeIntervalSinceReferenceDate, forKey: userDefaultsKey)
 		} catch {
 			try? fileManager.removeItem(at: cacheURL)

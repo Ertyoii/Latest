@@ -15,7 +15,7 @@ import Foundation
  Also, if the two versions are the same, or the strings are not parsable, the build numbers get compared.
  This class is very much work in progress and needs some deep thoughts on edge cases and a more clever implementation
  */
-struct Version : Hashable, Comparable {
+struct Version : Hashable, Comparable, Sendable {
 
 	/// The version number itself
 	let versionNumber : String?
@@ -292,9 +292,9 @@ fileprivate extension CharacterSet {
 
 // Defining the type of a character
 fileprivate extension Version {
-	enum Segment: Equatable {
+	enum Segment: Equatable, Sendable {
 
-		enum Atom: Equatable {
+		enum Atom: Equatable, Sendable {
 			case number(value: Int) // 0..9
 			case string(value: String) // Everything else
 

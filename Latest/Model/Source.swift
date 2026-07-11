@@ -11,7 +11,7 @@ import AppKit
 extension App {
 	
 	/// The source of update information.
-	enum Source: String, Equatable {
+	enum Source: String, Equatable, Sendable {
 		/// No known source had information about this app. It is unsupported by the update checker.
 		case none
 		
@@ -59,7 +59,7 @@ extension App {
 
 extension App.Source {
 	/// Possible states for whether a source is supported by the app.
-	enum SupportState {
+	enum SupportState: Sendable {
 		/// The source is fully supported, including in-app updates.
 		case full
 		

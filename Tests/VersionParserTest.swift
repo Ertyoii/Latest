@@ -111,6 +111,70 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertTrue(fallbackHTML?.contains("eqMac 1.8.15") == true)
 	}
 
+	func testHomebrewCaskEntryDerivesLatestGitHubReleaseFromLatestDownloadURL() throws {
+		let json = """
+		{
+			"token": "example-app",
+			"version": "2.4.1",
+			"name": ["Example App"],
+			"homepage": "https://example.com/",
+			"url": "https://github.com/example/example-app/releases/latest/download/Example.zip",
+			"artifacts": [{ "app": ["Example App.app"] }],
+			"depends_on": { "macos": {} }
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		guard case .githubRelease(let apiURL, _) = entry.releaseNotes else {
+			return XCTFail("Expected GitHub release notes")
+		}
+
+		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/example/example-app/releases/latest")
+		XCTAssertEqual(
+			ReleaseNotesProvider.githubReleaseWebURL(fromAPIURL: apiURL)?.absoluteString,
+			"https://github.com/example/example-app/releases/latest"
+		)
+	}
+
+	func testHomebrewCaskEntryDerivesLatestGitHubReleaseFromRepositoryHomepage() throws {
+		let json = """
+		{
+			"token": "example-app",
+			"version": "2.4.1",
+			"name": ["Example App"],
+			"homepage": "https://github.com/example/example-app/",
+			"url": "https://downloads.example.com/Example.zip",
+			"artifacts": [{ "app": ["Example App.app"] }],
+			"depends_on": { "macos": {} }
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		guard case .githubRelease(let apiURL, _) = entry.releaseNotes else {
+			return XCTFail("Expected GitHub release notes")
+		}
+
+		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/example/example-app/releases/latest")
+	}
+
+	func testHomebrewNonAppCaskDoesNotConstructReleaseNotes() throws {
+		let json = """
+		{
+			"token": "example-font",
+			"version": { "unexpected": true },
+			"name": ["Example Font"],
+			"homepage": 42,
+			"artifacts": [{ "font": ["Example.ttf"] }],
+			"depends_on": "not-app-metadata"
+		}
+		"""
+		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+
+		XCTAssertTrue(entry.names.isEmpty)
+		XCTAssertTrue(entry.version.isEmpty)
+		XCTAssertNil(entry.releaseNotes)
+	}
+
 	func testHomebrewCaskEntryUsesKnownReleaseNotesCatalogBeforeHomepageGuesses() throws {
 		let json = """
 		{
@@ -301,6 +365,55 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertTrue(fallbackHTML?.contains("Bruno 3.4.2") == true)
 	}
 
+	func testElectronReleaseNotesSourceReadsGitHubProviderConfiguration() {
+		let configuration = """
+		provider: github
+		owner: example-org
+		repo: example-app
+		updaterCacheDirName: example-updater
+		"""
+
+		XCTAssertEqual(
+			ElectronReleaseNotesSource.githubReleaseAPIURL(from: configuration)?.absoluteString,
+			"https://api.github.com/repos/example-org/example-app/releases/latest"
+		)
+		XCTAssertNil(
+			ElectronReleaseNotesSource.githubReleaseAPIURL(
+				from: "provider: generic\nurl: https://updates.example.com"
+			)
+		)
+	}
+
+	func testReleaseNotesSourceCatalogUsesBundledElectronUpdaterConfiguration() throws {
+		let appURL = FileManager.default.temporaryDirectory
+			.appendingPathComponent("Electron-\(UUID().uuidString).app", isDirectory: true)
+		defer { try? FileManager.default.removeItem(at: appURL) }
+
+		let resourcesURL = appURL.appendingPathComponent("Contents/Resources", isDirectory: true)
+		try FileManager.default.createDirectory(at: resourcesURL, withIntermediateDirectories: true)
+		let configuration = "provider: github\nowner: example-org\nrepo: desktop-client\n"
+		try Data(configuration.utf8).write(to: resourcesURL.appendingPathComponent("app-update.yml"))
+
+		let bundle = App.Bundle(
+			version: Version(versionNumber: "1.0", buildNumber: nil),
+			name: "Uncatalogued Electron App",
+			bundleIdentifier: "com.example.uncatalogued-electron",
+			fileURL: appURL,
+			source: .none
+		)
+		let remoteVersion = Version(versionNumber: "2.0", buildNumber: nil)
+
+		guard case .githubRelease(let apiURL, let fallbackHTML) = ReleaseNotesSourceCatalog.releaseNotes(
+			for: bundle,
+			remoteVersion: remoteVersion
+		) else {
+			return XCTFail("Expected Electron GitHub release notes")
+		}
+
+		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/example-org/desktop-client/releases/latest")
+		XCTAssertTrue(fallbackHTML?.contains("Uncatalogued Electron App 2.0") == true)
+	}
+
 	func testReleaseNotesSourceCatalogUsesGhosttySourceMarkdown() throws {
 		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, _) = ReleaseNotesSourceCatalog.releaseNotes(
 			forHomebrewToken: "ghostty",
@@ -328,6 +441,35 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertEqual(versionPrefix, "1.12.7")
 		XCTAssertFalse(allowsLatestFallback)
 		XCTAssertTrue(fallbackHTML?.contains("Obsidian 1.12.7") == true)
+	}
+
+	func testReleaseNotesSourceCatalogUsesVersionedJetBrainsWhatsNewPage() throws {
+		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, _) = ReleaseNotesSourceCatalog.releaseNotes(
+			forHomebrewToken: "intellij-idea",
+			version: Version(versionNumber: "2026.1.4", buildNumber: "261.26222.65"),
+			fallbackHTML: nil
+		) else {
+			return XCTFail("Expected JetBrains What's New release notes")
+		}
+
+		XCTAssertEqual(urls, [URL(string: "https://www.jetbrains.com/idea/whatsnew/2026-1/")!])
+		XCTAssertEqual(versionPrefix, "2026.1")
+		XCTAssertFalse(allowsLatestFallback)
+	}
+
+	func testReleaseNotesSourceCatalogUsesRogueAmoebaProductHistory() throws {
+		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, _) = ReleaseNotesSourceCatalog.releaseNotes(
+			forHomebrewToken: "audio-hijack",
+			version: Version(versionNumber: "4.5.9", buildNumber: nil),
+			fallbackHTML: nil
+		) else {
+			return XCTFail("Expected Rogue Amoeba release notes")
+		}
+
+		XCTAssertEqual(urls.first?.host, "rogueamoeba.com")
+		XCTAssertEqual(URLComponents(url: try XCTUnwrap(urls.first), resolvingAgainstBaseURL: false)?.queryItems?.first?.value, "Audio Hijack")
+		XCTAssertEqual(versionPrefix, "4.5.9")
+		XCTAssertFalse(allowsLatestFallback)
 	}
 
 	func testHomebrewCaskEntryUsesObsidianCatalogBeforeGitHubDownloadURL() throws {
@@ -578,6 +720,32 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertTrue(string.string.contains("Added gapless audio playback options"))
 		XCTAssertFalse(string.string.contains("* Added"))
 		XCTAssertFalse(string.string.contains("•        •"))
+	}
+
+	@MainActor
+	func testOffMainReleaseNotesPreparationPreservesRenderedOutput() async throws {
+		let markup = """
+		<h2>Version 2.4.1</h2>
+		<ul>
+			<li>Improved update discovery performance.</li>
+			<li>Fixed release note selection.</li>
+		</ul>
+		<h2>Version 2.4.0</h2>
+		<p>Older release details.</p>
+		"""
+
+		let synchronous = try ReleaseNotesMarkup.attributedString(
+			from: markup,
+			baseURL: URL(string: "https://example.com/changelog"),
+			relevantVersion: "2.4.1"
+		).get()
+		let preparedOffMain = try await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
+			from: markup,
+			baseURL: URL(string: "https://example.com/changelog"),
+			relevantVersion: "2.4.1"
+		).get()
+
+		XCTAssertEqual(preparedOffMain.string, synchronous.string)
 	}
 
 	func testMarkdownReleaseNotesStripFrontMatterAndInlineMarkup() throws {

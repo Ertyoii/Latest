@@ -22,8 +22,12 @@ final class ComplexityBenchmarkTest: XCTestCase {
 
 		let dataStoreBundles = makeBundles(count: 2_000)
 		let snapshotApps = makeApps(count: 1_500)
+		let searchSnapshot = AppListSnapshot(withApps: snapshotApps, filterQuery: nil)
+		let searchQueries = (0..<40).map { "Benchmark App \($0)" }
 		let lookupApps = Array(snapshotApps.prefix(400))
 		let versionPairs = makeVersionPairs(count: 80_000)
+		let releaseNotesMarkup = makeReleaseNotesMarkup(sectionCount: 300)
+		let repositoryCatalogData = try makeRepositoryData(count: 7_737, appArtifactCount: 4_168)
 		let repositoryEntries = try makeRepositoryEntries(count: 3_000)
 		let repositoryCandidateGroups = makeRepositoryCandidateGroups(from: repositoryEntries)
 		let bundleCollectionRoot = try makeBundleCollectionRoot(appCount: 250, fillerDirectoryCount: 250)
@@ -55,6 +59,22 @@ final class ComplexityBenchmarkTest: XCTestCase {
 			return checksum
 		}
 
+		benchmark("app_list_search_refilter", iterations: 7) {
+			var checksum = 0
+			for query in searchQueries {
+				checksum &+= searchSnapshot.refiltered(with: query).entries.count
+			}
+			return checksum
+		}
+
+		benchmark("app_list_search_full_rebuild", iterations: 7) {
+			var checksum = 0
+			for query in searchQueries {
+				checksum &+= AppListSnapshot(withApps: snapshotApps, filterQuery: query).entries.count
+			}
+			return checksum
+		}
+
 		benchmark("version_comparison_repeated_parse", iterations: 7) {
 			var checksum = 0
 			for pair in versionPairs {
@@ -63,6 +83,22 @@ final class ComplexityBenchmarkTest: XCTestCase {
 				}
 			}
 			return checksum
+		}
+
+		try benchmark("release_notes_markup_parse_and_render", iterations: 5) {
+			try ReleaseNotesMarkup.attributedString(
+				from: releaseNotesMarkup,
+				baseURL: URL(string: "https://example.com/changelog"),
+				relevantVersion: "150.0"
+			).get().length
+		}
+
+		try benchmark("update_repository_catalog_decode", iterations: 5) {
+			let entries = try JSONDecoder().decode([UpdateRepository.Entry].self, from: repositoryCatalogData)
+			return entries.reduce(into: 0) { checksum, entry in
+				checksum &+= entry.names.count
+				checksum &+= entry.bundleIdentifiers.count
+			}
 		}
 
 		benchmark("update_repository_entry_metadata_and_matching", iterations: 5) {
@@ -76,6 +112,24 @@ final class ComplexityBenchmarkTest: XCTestCase {
 
 			for group in repositoryCandidateGroups {
 				checksum &+= UpdateRepository.preferredEntry(from: group.entries, for: group.bundleIdentifier)?.token.count ?? 0
+			}
+
+			return checksum
+		}
+
+		benchmark("update_repository_lazy_metadata_and_matching", iterations: 5) {
+			var checksum = 0
+			for (index, group) in repositoryCandidateGroups.enumerated() {
+				guard let entry = UpdateRepository.preferredEntry(from: group.entries, for: group.bundleIdentifier) else {
+					continue
+				}
+				checksum &+= entry.token.count
+				if index < 40 {
+					checksum &+= entry.version.versionNumber?.count ?? 0
+					if entry.releaseNotes != nil {
+						checksum &+= 1
+					}
+				}
 			}
 
 			return checksum
@@ -107,14 +161,25 @@ final class ComplexityBenchmarkTest: XCTestCase {
 		let minSample = samples.min() ?? 0
 		let maxSample = samples.max() ?? 0
 		let average = samples.reduce(0, +) / Double(samples.count)
+		let sortedSamples = samples.sorted()
+		let median = percentile(0.50, in: sortedSamples)
+		let p95 = percentile(0.95, in: sortedSamples)
 		emitBenchmarkLine(
 			name: name,
 			iterations: iterations,
 			minimum: minSample,
 			average: average,
+			median: median,
+			p95: p95,
 			maximum: maxSample,
 			checksum: checksum
 		)
+	}
+
+	private func percentile(_ percentile: Double, in sortedSamples: [Double]) -> Double {
+		guard !sortedSamples.isEmpty else { return 0 }
+		let index = Int((Double(sortedSamples.count - 1) * percentile).rounded(.up))
+		return sortedSamples[index]
 	}
 
 	private func emitBenchmarkLine(
@@ -122,15 +187,19 @@ final class ComplexityBenchmarkTest: XCTestCase {
 		iterations: Int,
 		minimum: Double,
 		average: Double,
+		median: Double,
+		p95: Double,
 		maximum: Double,
 		checksum: Int
 	) {
 		let line = String(
-			format: "BENCHMARK name=%@ iterations=%d min_ms=%.3f avg_ms=%.3f max_ms=%.3f checksum=%d",
+			format: "BENCHMARK name=%@ iterations=%d min_ms=%.3f avg_ms=%.3f median_ms=%.3f p95_ms=%.3f max_ms=%.3f checksum=%d",
 			name,
 			iterations,
 			minimum,
 			average,
+			median,
+			p95,
 			maximum,
 			checksum
 		)
@@ -194,7 +263,25 @@ final class ComplexityBenchmarkTest: XCTestCase {
 		}
 	}
 
+	private func makeReleaseNotesMarkup(sectionCount: Int) -> String {
+		(0..<sectionCount).map { index in
+			"""
+			<h2>Version \(index).0</h2>
+			<ul>
+				<li>Improved update discovery performance for application \(index).</li>
+				<li>Fixed a release note rendering issue in section \(index).</li>
+				<li>Added compatibility improvements for macOS \(index).</li>
+			</ul>
+			"""
+		}.joined(separator: "\n")
+	}
+
 	private func makeRepositoryEntries(count: Int) throws -> [UpdateRepository.Entry] {
+		let data = try makeRepositoryData(count: count, appArtifactCount: count)
+		return try JSONDecoder().decode([UpdateRepository.Entry].self, from: data)
+	}
+
+	private func makeRepositoryData(count: Int, appArtifactCount: Int) throws -> Data {
 		let objects: [[String: Any]] = (0..<count).map { index in
 			let group = index / 3
 			let channel = index % 3
@@ -210,14 +297,9 @@ final class ComplexityBenchmarkTest: XCTestCase {
 
 			let appName = "Repo Benchmark \(group).app"
 			let bundleIdentifier = "com.example.repository.\(group)"
-			return [
-				"token": token,
-				"version": "\(group % 20).\(index % 50).\(index % 9),\(index)",
-				"name": ["Repo Benchmark \(group)"],
-				"homepage": "https://example.com/repo-\(group)",
-				"url": "https://example.com/repo-\(group).zip",
-				"desc": "Repository benchmark entry \(index) with metadata.",
-				"artifacts": [
+			let artifacts: [[String: Any]]
+			if index < appArtifactCount {
+				artifacts = [
 					[
 						"app": [appName],
 						"uninstall": [
@@ -226,15 +308,26 @@ final class ComplexityBenchmarkTest: XCTestCase {
 							]
 						]
 					]
-				],
+				]
+			} else {
+				artifacts = [["font": ["Benchmark-\(index).ttf"]]]
+			}
+
+			return [
+				"token": token,
+				"version": "\(group % 20).\(index % 50).\(index % 9),\(index)",
+				"name": ["Repo Benchmark \(group)"],
+				"homepage": "https://example.com/repo-\(group)",
+				"url": "https://example.com/repo-\(group).zip",
+				"desc": "Repository benchmark entry \(index) with metadata.",
+				"artifacts": artifacts,
 				"depends_on": [
 					"macos": [:]
 				]
 			]
 		}
 
-		let data = try JSONSerialization.data(withJSONObject: objects)
-		return try JSONDecoder().decode([UpdateRepository.Entry].self, from: data)
+		return try JSONSerialization.data(withJSONObject: objects)
 	}
 
 	private func makeRepositoryCandidateGroups(

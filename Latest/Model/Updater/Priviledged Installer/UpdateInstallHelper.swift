@@ -6,8 +6,9 @@
 //  Copyright © 2026 Max Langer. All rights reserved.
 //
 
-import AppKit
+import Foundation
 import ServiceManagement
+import Synchronization
 
 /// Manages the privileged helper daemon used to install App Store updates via XPC.
 actor InstallHelper {
@@ -16,6 +17,9 @@ actor InstallHelper {
 	static let shared = InstallHelper()
 	
 	private static let installHelperName = "com.max-langer.latest.UpdateInstaller"
+	private static let availabilityRefreshLifetime: TimeInterval = 5 * 60
+	private var lastAvailabilityRefresh: Date?
+	private var availabilityRefreshTask: Task<Void, Error>?
 	
 	private init() {}
 	
@@ -57,14 +61,33 @@ actor InstallHelper {
 	/// Re-registers the helper to ensure it is available for use.
 	private func ensureAvailability() async throws {
 		try Self.verifyAvailability()
-		
-		let service = Self.helperService
-		
-		// Services may be unreliable even though reported as enabled, so always re-register to ensure they are working
-		try await service.unregister()
-		try await Task.sleep(for: .seconds(0.5))
-		
-		try service.register()
+
+		if let lastAvailabilityRefresh,
+		   Date().timeIntervalSince(lastAvailabilityRefresh) < Self.availabilityRefreshLifetime {
+			return
+		}
+
+		if let availabilityRefreshTask {
+			try await availabilityRefreshTask.value
+			return
+		}
+
+		let refreshTask = Task {
+			let service = Self.helperService
+			try await service.unregister()
+			try await Task.sleep(for: .seconds(0.5))
+			try service.register()
+		}
+		availabilityRefreshTask = refreshTask
+		defer { availabilityRefreshTask = nil }
+
+		do {
+			try await refreshTask.value
+			lastAvailabilityRefresh = Date()
+		} catch {
+			lastAvailabilityRefresh = nil
+			throw error
+		}
 	}
 	
 	// MARK: - Package Installation
@@ -76,33 +99,86 @@ actor InstallHelper {
 		let connection = NSXPCConnection(machServiceName: Self.installHelperName)
 		connection.remoteObjectInterface = NSXPCInterface(with: UpdateInstallerProtocol.self)
 		
-		var connectionInvalidated = false
-		connection.interruptionHandler = {
-			connectionInvalidated = true
-		}
-		connection.invalidationHandler = {
-			connectionInvalidated = true
-		}
-		
 		connection.activate()
 		defer { connection.invalidate() }
-		
-		guard !connectionInvalidated, let proxy = connection.remoteObjectProxy as? UpdateInstallerProtocol else {
-			throw LatestError.installHelperCommunicationFailed
-		}
-		
+
 		try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+			let replyGate = InstallationReplyGate(continuation: continuation)
+			replyGate.scheduleTimeout()
 			connection.interruptionHandler = {
-				continuation.resume(throwing: LatestError.installHelperCommunicationFailed)
+				replyGate.resume(with: .failure(LatestError.installHelperCommunicationFailed))
 			}
-			
+			connection.invalidationHandler = {
+				replyGate.resume(with: .failure(LatestError.installHelperCommunicationFailed))
+			}
+
+			guard let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
+				replyGate.resume(with: .failure(error))
+			}) as? UpdateInstallerProtocol else {
+				replyGate.resume(with: .failure(LatestError.installHelperCommunicationFailed))
+				return
+			}
+
 			proxy.performInstallation(ofPackageAt: url, targetURL: targetURL, receiptData: receiptData, receiptURL: receiptURL) { error in
 				if let error {
-					continuation.resume(throwing: error)
+					replyGate.resume(with: .failure(error))
 				} else {
-					continuation.resume()
+					replyGate.resume(with: .success(()))
 				}
 			}
+		}
+	}
+}
+
+final class InstallationReplyGate: Sendable {
+	private struct State {
+		var continuation: CheckedContinuation<Void, Error>?
+		var timeoutTask: Task<Void, Never>?
+	}
+
+	private let state: Mutex<State>
+
+	init(continuation: CheckedContinuation<Void, Error>) {
+		state = Mutex(State(continuation: continuation))
+	}
+
+	func scheduleTimeout(after duration: Duration = .seconds(120)) {
+		let task = Task.detached(priority: .utility) { [self] in
+			do {
+				try await Task.sleep(for: duration)
+			} catch {
+				return
+			}
+			guard !Task.isCancelled else { return }
+			resume(with: .failure(LatestError.installHelperCommunicationFailed))
+		}
+
+		let alreadyFinished = state.withLock { state in
+			guard state.continuation != nil else { return true }
+			state.timeoutTask = task
+			return false
+		}
+		if alreadyFinished {
+			task.cancel()
+		}
+	}
+
+	func resume(with result: Result<Void, Error>) {
+		let completion = state.withLock { state -> (CheckedContinuation<Void, Error>, Task<Void, Never>?)? in
+			guard let continuation = state.continuation else { return nil }
+			state.continuation = nil
+			let timeoutTask = state.timeoutTask
+			state.timeoutTask = nil
+			return (continuation, timeoutTask)
+		}
+		guard let (continuation, timeoutTask) = completion else { return }
+
+		timeoutTask?.cancel()
+		switch result {
+		case .success:
+			continuation.resume()
+		case .failure(let error):
+			continuation.resume(throwing: error)
 		}
 	}
 }

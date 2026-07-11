@@ -8,6 +8,7 @@
 
 import Foundation
 import Darwin
+import Synchronization
 import UniformTypeIdentifiers
 
 /// Gathers apps at a given URL.
@@ -29,6 +30,7 @@ enum BundleCollector {
 	])
 
 	private static let metadataCache = BundleMetadataCache()
+	private static let collectionCountCache = BundleCollectionCountCache()
 
 	/// Returns a list of application bundles at the given URL.
 	static func collectBundles(at url: URL) -> [App.Bundle] {
@@ -61,7 +63,14 @@ enum BundleCollector {
 			}
 		}
 
+		metadataCache.pruneEntries(below: url, keeping: Set(bundles.map(\.fileURL)))
+		collectionCountCache.store(bundles.count, for: url)
 		return bundles
+	}
+
+	/// Returns a recently collected app count without walking the directory again.
+	static func cachedBundleCount(at url: URL) -> Int? {
+		collectionCountCache.count(for: url)
 	}
 
 	/// Returns a single application bundle at the given URL.
@@ -139,19 +148,18 @@ enum BundleCollector {
 
 }
 
-private final class BundleMetadataCache: @unchecked Sendable {
-	private struct Entry {
+private final class BundleMetadataCache: Sendable {
+	private struct Entry: Sendable {
 		let signature: BundleFileSignature
 		let bundle: App.Bundle
 	}
 
-	private let lock = NSLock()
-	private var entries = [URL: Entry]()
+	private let entries = Mutex([URL: Entry]())
 
 	func bundle(forAppAt url: URL, signature: BundleFileSignature, loader: () -> App.Bundle?) -> App.Bundle? {
 		let key = url.standardizedFileURL
 
-		if let cachedBundle = lock.withCriticalScope(block: { entries[key] }) {
+		if let cachedBundle = entries.withLock({ $0[key] }) {
 			if cachedBundle.signature == signature {
 				return cachedBundle.bundle
 			}
@@ -162,7 +170,7 @@ private final class BundleMetadataCache: @unchecked Sendable {
 			return nil
 		}
 
-		lock.withCriticalScope {
+		entries.withLock { entries in
 			entries[key] = Entry(signature: signature, bundle: bundle)
 		}
 		return bundle
@@ -170,13 +178,67 @@ private final class BundleMetadataCache: @unchecked Sendable {
 
 	func removeBundle(forAppAt url: URL) {
 		let key = url.standardizedFileURL
-		lock.withCriticalScope {
+		entries.withLock { entries in
 			_ = entries.removeValue(forKey: key)
+		}
+	}
+
+	func pruneEntries(below rootURL: URL, keeping retainedURLs: Set<URL>) {
+		let rootPath = rootURL.standardizedFileURL.path
+		let descendantPrefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+		let retainedURLs = Set(retainedURLs.map(\.standardizedFileURL))
+
+		entries.withLock { entries in
+			entries = entries.filter { url, _ in
+				let path = url.path
+				guard path == rootPath || path.hasPrefix(descendantPrefix) else { return true }
+				return retainedURLs.contains(url)
+			}
 		}
 	}
 }
 
-private struct BundleFileSignature: Equatable {
+private final class BundleCollectionCountCache: Sendable {
+	private struct Entry: Sendable {
+		let count: Int
+		let collectedAt: Date
+		var lastAccessedAt: Date
+	}
+
+	private let entries = Mutex([URL: Entry]())
+	private let lifetime: TimeInterval = 60
+	private let maximumEntryCount = 64
+
+	func count(for url: URL) -> Int? {
+		let key = url.standardizedFileURL
+		let now = Date()
+		return entries.withLock { entries in
+			guard var entry = entries[key], now.timeIntervalSince(entry.collectedAt) < lifetime else {
+				entries[key] = nil
+				return nil
+			}
+			entry.lastAccessedAt = now
+			entries[key] = entry
+			return entry.count
+		}
+	}
+
+	func store(_ count: Int, for url: URL) {
+		let key = url.standardizedFileURL
+		let now = Date()
+		entries.withLock { entries in
+			entries[key] = Entry(count: count, collectedAt: now, lastAccessedAt: now)
+			while entries.count > maximumEntryCount {
+				guard let leastRecentlyUsedKey = entries.min(by: {
+					$0.value.lastAccessedAt < $1.value.lastAccessedAt
+				})?.key else { return }
+				entries[leastRecentlyUsedKey] = nil
+			}
+		}
+	}
+}
+
+private struct BundleFileSignature: Equatable, Sendable {
 	let app: FileSystemItemSignature?
 	let contents: FileSystemItemSignature?
 	let infoPlist: FileSystemItemSignature
@@ -210,7 +272,7 @@ private struct BundleFileSignature: Equatable {
 	}
 }
 
-private struct FileSystemItemSignature: Equatable {
+private struct FileSystemItemSignature: Equatable, Sendable {
 	let modificationSeconds: Int
 	let modificationNanoseconds: Int
 	let size: Int64

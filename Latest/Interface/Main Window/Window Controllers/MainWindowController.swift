@@ -111,7 +111,6 @@ class MainWindowController: NSWindowController, NSMenuItemValidation, NSMenuDele
 		let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
 		toolbar.autosavesConfiguration = false
 		toolbar.allowsUserCustomization = false
-		toolbar.showsBaselineSeparator = false
 		toolbar.displayMode = .iconOnly
 		toolbar.sizeMode = .regular
 		toolbar.delegate = self

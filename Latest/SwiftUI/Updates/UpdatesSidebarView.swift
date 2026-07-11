@@ -148,6 +148,7 @@ private struct UpdatesTableRepresentable: NSViewRepresentable {
 			self.viewModel = viewModel
 			let previousEntries = entries
 			let previousContentState = contentState
+			let previousSelectedRowIndex = selectedRowIndex
 			let needsContentUpdate = previousContentState != update.contentState
 			let tableChange = needsContentUpdate ? TableViewSnapshotDiff(from: previousEntries, to: update.snapshot.entries).change : nil
 			entries = update.snapshot.entries
@@ -160,6 +161,8 @@ private struct UpdatesTableRepresentable: NSViewRepresentable {
 				tableView?.reloadData()
 			} else if needsContentUpdate {
 				apply(tableChange)
+			} else if previousSelectedRowIndex != update.selectedRowIndex {
+				refreshRows(at: [previousSelectedRowIndex, update.selectedRowIndex].compactMap { $0 })
 			} else {
 				refreshVisibleRows()
 			}
@@ -386,7 +389,12 @@ private struct UpdatesTableRepresentable: NSViewRepresentable {
 			let visibleRows = tableView.rows(in: tableView.visibleRect)
 			guard visibleRows.location != NSNotFound else { return }
 
-			for row in visibleRows.location..<NSMaxRange(visibleRows) {
+			refreshRows(at: Array(visibleRows.location..<NSMaxRange(visibleRows)))
+		}
+
+		private func refreshRows(at rows: [Int]) {
+			guard let tableView else { return }
+			for row in Set(rows) {
 				guard row >= 0, row < entries.count, case .app(let app) = entries[row] else { continue }
 				guard let view = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? LegacyUpdateRowContentView else { continue }
 				view.update(
@@ -497,60 +505,12 @@ private struct UpdatesTableRepresentable: NSViewRepresentable {
 				self.snapshot = viewModel.snapshot
 				self.selectedIdentifier = viewModel.selectedApp?.identifier
 				self.selectedRowIndex = viewModel.selectedApp.flatMap { viewModel.snapshot.firstIndex(of: $0) }
-				self.contentState = TableContentState(snapshot: viewModel.snapshot)
+				self.contentState = TableContentState(snapshotRevision: viewModel.snapshotRevision)
 			}
 		}
 
 		@MainActor private struct TableContentState: Equatable {
-			let filterQuery: String?
-			let rows: [Row]
-
-			init(snapshot: AppListSnapshot) {
-				self.filterQuery = snapshot.filterQuery
-				self.rows = snapshot.entries.map(Row.init)
-			}
-		}
-
-		@MainActor private enum Row: Equatable {
-			case section(title: String, numberOfApps: Int)
-			case app(AppRowDisplayState)
-
-			init(entry: AppListSnapshot.Entry) {
-				switch entry {
-				case .section(let section):
-					self = .section(title: section.title, numberOfApps: section.numberOfApps)
-				case .app(let app):
-					self = .app(AppRowDisplayState(app: app))
-				}
-			}
-		}
-
-		@MainActor private struct AppRowDisplayState: Equatable {
-			let identifier: App.Bundle.Identifier
-			let name: String
-			let localVersion: Version
-			let remoteVersion: Version?
-			let updateAvailable: Bool
-			let updateDate: Date
-			let source: App.Source
-			let isIgnored: Bool
-			let usesBuiltInUpdater: Bool
-			let externalUpdaterName: String?
-			let errorDescription: String?
-
-			init(app: App) {
-				self.identifier = app.identifier
-				self.name = app.name
-				self.localVersion = app.version
-				self.remoteVersion = app.remoteVersion
-				self.updateAvailable = app.updateAvailable
-				self.updateDate = app.updateDate
-				self.source = app.source
-				self.isIgnored = app.isIgnored
-				self.usesBuiltInUpdater = app.usesBuiltInUpdater
-				self.externalUpdaterName = app.externalUpdaterName
-				self.errorDescription = app.error.map { String(describing: $0) }
-			}
+			let snapshotRevision: Int
 		}
 
 		private static let dateFormatter: DateFormatter = {

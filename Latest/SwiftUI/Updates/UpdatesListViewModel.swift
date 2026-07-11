@@ -16,6 +16,7 @@ final class UpdatesListViewModel: NSObject, ObservableObject, Observer {
 	nonisolated let id = UUID()
 
 	@Published private(set) var snapshot: AppListSnapshot
+	private(set) var snapshotRevision = 0
 	@Published var selectedApp: App?
 	@Published var searchQuery = ""
 	@Published private(set) var statusText = ""
@@ -38,7 +39,7 @@ final class UpdatesListViewModel: NSObject, ObservableObject, Observer {
 
 		UpdateCheckCoordinator.shared.appProvider.addObserver(self) { [weak self] apps in
 			guard let self else { return }
-			self.snapshot = AppListSnapshot(withApps: apps, filterQuery: self.normalizedSearchQuery)
+			self.replaceSnapshot(with: AppListSnapshot(withApps: apps, filterQuery: self.normalizedSearchQuery))
 			self.maintainSelectionAfterSnapshotChange()
 			self.updateTitleAndBadge()
 		}
@@ -52,8 +53,9 @@ final class UpdatesListViewModel: NSObject, ObservableObject, Observer {
 	}
 
 	func setSearchQuery(_ query: String) {
+		guard query != searchQuery else { return }
 		searchQuery = query
-		snapshot = snapshot.updated(with: normalizedSearchQuery)
+		replaceSnapshot(with: snapshot.refiltered(with: normalizedSearchQuery))
 		maintainSelectionAfterSnapshotChange()
 	}
 
@@ -86,9 +88,14 @@ final class UpdatesListViewModel: NSObject, ObservableObject, Observer {
 	}
 
 	private func refreshSnapshot() {
-		snapshot = snapshot.updated(with: normalizedSearchQuery)
+		replaceSnapshot(with: snapshot.updated(with: normalizedSearchQuery))
 		maintainSelectionAfterSnapshotChange()
 		updateTitleAndBadge()
+	}
+
+	private func replaceSnapshot(with snapshot: AppListSnapshot) {
+		snapshotRevision &+= 1
+		self.snapshot = snapshot
 	}
 
 	private func maintainSelectionAfterSnapshotChange() {

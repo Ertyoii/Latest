@@ -43,8 +43,13 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 
 	private static let updateCoalescingInterval: TimeInterval = 0.15
 
+	private let userDefaults: UserDefaults
+	private var ignoredAppIdentifiers: Set<String>
 
-	init() {}
+	init(userDefaults: UserDefaults = .standard) {
+		self.userDefaults = userDefaults
+		self.ignoredAppIdentifiers = Set((userDefaults.array(forKey: Self.IgnoredAppsKey) as? [String]) ?? [])
+	}
 
 
 	// MARK: - Delegate Scheduling
@@ -185,24 +190,16 @@ class AppDataStore: AppProviding, @unchecked Sendable {
 
 	/// Sets the ignored state of the given app.
 	func setIgnoredState(_ ignored: Bool, for app: App) {
-		var ignoredApps = self.ignoredAppIdentifiers
-
-		if ignored {
-			ignoredApps.insert(app.bundleIdentifier)
-		} else {
-			ignoredApps.remove(app.bundleIdentifier)
-		}
-
-		UserDefaults.standard.set(Array(ignoredApps), forKey: Self.IgnoredAppsKey)
-
 		updateQueue.sync {
+			if ignored {
+				self.ignoredAppIdentifiers.insert(app.bundleIdentifier)
+			} else {
+				self.ignoredAppIdentifiers.remove(app.bundleIdentifier)
+			}
+
+			self.userDefaults.set(Array(self.ignoredAppIdentifiers), forKey: Self.IgnoredAppsKey)
 			self.update(app.with(ignoredState: ignored))
 		}
-	}
-
-	/// Returns the identifiers of ignored apps.
-	private var ignoredAppIdentifiers: Set<String> {
-		return Set((UserDefaults.standard.array(forKey: Self.IgnoredAppsKey) as? [String]) ?? [])
 	}
 
 

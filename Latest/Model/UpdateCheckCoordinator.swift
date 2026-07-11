@@ -8,6 +8,7 @@
 
 import Foundation
 import OSLog
+import Synchronization
 
 private let updateCheckLogger = Logger(
 	subsystem: Foundation.Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
@@ -127,11 +128,25 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 			return
 		}
 
-		self.library.reload { [weak self] bundles in
+		invalidateActiveUpdateCheck()
+		Task { [weak self] in
+			await AppStoreUpdateCheckerOperation.invalidateLookupCache()
 			guard let self else { return }
-			let bundles = Array(Set(bundles))
-			_ = self.dataStore.set(appBundles: Set(bundles))
-			self.runUpdateCheck(on: bundles)
+
+			self.library.reload { [weak self] bundles in
+				guard let self else { return }
+				let bundles = Array(Set(bundles))
+				_ = self.dataStore.set(appBundles: Set(bundles))
+				self.runUpdateCheck(on: bundles)
+			}
+		}
+	}
+
+	/// Prevents results from the previous generation from being published while a manual rescan is collecting bundles.
+	private func invalidateActiveUpdateCheck() {
+		updateCheckSchedulingLock.withCriticalScope {
+			_ = updateCheckGeneration.begin()
+			updateOperationQueue.cancelAllOperations()
 		}
 	}
 
@@ -226,21 +241,19 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 
 }
 
-final class UpdateCheckGenerationTracker: @unchecked Sendable {
+final class UpdateCheckGenerationTracker: Sendable {
 
-	private let lock = NSLock()
-
-	private var currentGeneration = 0
+	private let currentGeneration = Mutex(0)
 
 	func begin() -> Int {
-		lock.withCriticalScope {
+		currentGeneration.withLock { currentGeneration in
 			currentGeneration += 1
 			return currentGeneration
 		}
 	}
 
 	func currentOrBegin() -> Int {
-		lock.withCriticalScope {
+		currentGeneration.withLock { currentGeneration in
 			if currentGeneration == 0 {
 				currentGeneration = 1
 			}
@@ -250,7 +263,7 @@ final class UpdateCheckGenerationTracker: @unchecked Sendable {
 	}
 
 	func isCurrent(_ generation: Int) -> Bool {
-		lock.withCriticalScope {
+		currentGeneration.withLock { currentGeneration in
 			generation == currentGeneration
 		}
 	}

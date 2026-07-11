@@ -13,7 +13,7 @@ extension App {
 	/**
 	 A simple class holding the update information for a single app.
 	 */
-	class Update: Equatable {
+	final class Update: Equatable, Sendable {
 		
 		/// The update for which this update exists.
 		let app: App.Bundle
@@ -77,7 +77,7 @@ extension App {
 		// MARK: - Actions
 				
 		/// Updates the app.
-		final func perform(isBulkUpdate: Bool) {
+		func perform(isBulkUpdate: Bool) {
 			guard !self.isUpdating else {
 				return
 			}
@@ -121,7 +121,7 @@ extension App {
 extension App.Update {
 	
 	/// Provides several types of release notes.
-	enum ReleaseNotes {
+		enum ReleaseNotes: Sendable {
 		
 		/// The url from which release notes can be fetched.
 		case url(url: URL)
@@ -142,8 +142,6 @@ extension App.Update {
 	
 }
 
-extension App.Update: @unchecked Sendable {}
-
 extension App.Update: CustomDebugStringConvertible {
 	var debugDescription: String {
 		return self.remoteVersion.debugDescription
@@ -152,10 +150,10 @@ extension App.Update: CustomDebugStringConvertible {
 
 extension App.Update {
 	
-	typealias UpdateAction = (_ app: App.Bundle) -> Void
+	typealias UpdateAction = @Sendable (_ app: App.Bundle) -> Void
 	
 	/// Defines possible update actions.
-	enum Action {
+	enum Action: Sendable {
 		
 		/// The update will be performed within this app.
 		case builtIn(block: UpdateAction)

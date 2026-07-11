@@ -94,6 +94,26 @@ class AppStoreCheckerOperationTest: XCTestCase {
 		XCTAssertFalse(AppStoreUpdateCheckerOperation.isIOSAppBundle(at: appURL))
 	}
 
+	func testInstallationReplyGateResumesContinuationOnlyOnce() async throws {
+		try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+			let replyGate = InstallationReplyGate(continuation: continuation)
+			replyGate.resume(with: .success(()))
+			replyGate.resume(with: .failure(LatestError.installHelperCommunicationFailed))
+		}
+	}
+
+	func testInstallationReplyGateTimesOutWhenHelperNeverReplies() async {
+		do {
+			try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+				let replyGate = InstallationReplyGate(continuation: continuation)
+				replyGate.scheduleTimeout(after: .milliseconds(10))
+			}
+			XCTFail("Expected the helper reply gate to time out")
+		} catch {
+			XCTAssertNotNil(error as? LatestError)
+		}
+	}
+
 	private func temporaryAppURL() -> URL {
 		let url = FileManager.default.temporaryDirectory
 			.appendingPathComponent(UUID().uuidString, isDirectory: true)

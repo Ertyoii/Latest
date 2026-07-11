@@ -64,12 +64,10 @@ struct SearchFieldRepresentable: NSViewRepresentable {
 
 		func controlTextDidChange(_ notification: Notification) {
 			guard let field = notification.object as? NSSearchField else { return }
-			parent.text = field.stringValue
 			parent.onTextChanged(field.stringValue)
 		}
 
 		@objc func searchFieldAction(_ sender: NSSearchField) {
-			parent.text = sender.stringValue
 			parent.onTextChanged(sender.stringValue)
 		}
 	}

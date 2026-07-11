@@ -14,6 +14,11 @@
 /// - A filtered list of apps based on a given filter string
 @MainActor
 struct AppListSnapshot {
+	private struct PreparedSections {
+		let availableUpdates: [App]
+		let installedUpdates: [App]
+		let ignoredUpdates: [App]
+	}
 	
 	/// The query after which apps can be filtered
 	let filterQuery: String?
@@ -25,15 +30,42 @@ struct AppListSnapshot {
 	init(withApps apps: [App], filterQuery: String?) {
 		self.filterQuery = filterQuery
 		self.apps = apps
-		let entries = Self.generateEntries(from: apps, filterQuery: filterQuery)
+		let preparedSections = Self.prepareSections(from: apps)
+		self.preparedSections = preparedSections
+		let entries = Self.generateEntries(from: preparedSections, filterQuery: filterQuery)
 		self.entries = entries
 		self.entryIndexesByAppIdentifier = Self.entryIndexesByAppIdentifier(entries)
 		self.appIdentifiers = Set(apps.map(\.identifier))
+	}
+
+	private init(
+		apps: [App],
+		filterQuery: String?,
+		preparedSections: PreparedSections,
+		appIdentifiers: Set<App.Bundle.Identifier>
+	) {
+		self.filterQuery = filterQuery
+		self.apps = apps
+		self.preparedSections = preparedSections
+		let entries = Self.generateEntries(from: preparedSections, filterQuery: filterQuery)
+		self.entries = entries
+		self.entryIndexesByAppIdentifier = Self.entryIndexesByAppIdentifier(entries)
+		self.appIdentifiers = appIdentifiers
 	}
 	
 	/// Returns a new snapshot containing an updated filter query.
 	func updated(with filterQuery: String?) -> AppListSnapshot {
 		return AppListSnapshot(withApps: self.apps, filterQuery: filterQuery)
+	}
+
+	/// Refilters the existing snapshot without recategorizing or resorting unchanged apps.
+	func refiltered(with filterQuery: String?) -> AppListSnapshot {
+		AppListSnapshot(
+			apps: apps,
+			filterQuery: filterQuery,
+			preparedSections: preparedSections,
+			appIdentifiers: appIdentifiers
+		)
 	}
 	
 	/// Returns an updated snapshot.
@@ -47,9 +79,11 @@ struct AppListSnapshot {
 	private let entryIndexesByAppIdentifier: [App.Bundle.Identifier: Int]
 
 	private let appIdentifiers: Set<App.Bundle.Identifier>
+
+	private let preparedSections: PreparedSections
 	
 	/// Sorts and filters all available apps based on the given filter criteria.
-	private static func generateEntries(from apps: [App], filterQuery: String?) -> [Entry] {
+	private static func prepareSections(from apps: [App]) -> PreparedSections {
 		let settings = AppListSettings.shared
 		let showInstalledUpdates = settings.showInstalledUpdates
 		let showIgnoredUpdates = settings.showIgnoredUpdates
@@ -62,11 +96,6 @@ struct AppListSnapshot {
 		var ignoredUpdates = [App]()
 
 		for app in apps {
-			// Apply filter query
-			if let filterQuery = filterQuery, !app.name.localizedCaseInsensitiveContains(filterQuery) {
-				continue
-			}
-
 			// Filter installed updates
 			if !showInstalledUpdates && !(app.updateAvailable || app.isIgnored) {
 				continue
@@ -110,6 +139,18 @@ struct AppListSnapshot {
 			}
 			.map(\.app)
 
+		return PreparedSections(
+			availableUpdates: availableUpdates,
+			installedUpdates: installedUpdates,
+			ignoredUpdates: ignoredUpdates
+		)
+	}
+
+	private static func generateEntries(from preparedSections: PreparedSections, filterQuery: String?) -> [Entry] {
+		let availableUpdates = Self.filtered(preparedSections.availableUpdates, with: filterQuery)
+		let installedUpdates = Self.filtered(preparedSections.installedUpdates, with: filterQuery)
+		let ignoredUpdates = Self.filtered(preparedSections.ignoredUpdates, with: filterQuery)
+
 		var entries = [Entry]()
 		entries.reserveCapacity(availableUpdates.count + installedUpdates.count + ignoredUpdates.count + 3)
 		Self.appendSection(
@@ -128,6 +169,11 @@ struct AppListSnapshot {
 			to: &entries
 		)
 		return entries
+	}
+
+	private static func filtered(_ apps: [App], with query: String?) -> [App] {
+		guard let query, !query.isEmpty else { return apps }
+		return apps.filter { $0.name.localizedCaseInsensitiveContains(query) }
 	}
 
 	private static func sort(_ apps: inout [App], by sortOrder: AppListSettings.SortOptions) {

@@ -6,6 +6,7 @@
 //  Copyright © 2026 Max Langer. All rights reserved.
 //
 
+import Synchronization
 import XCTest
 @testable import Latest
 
@@ -25,6 +26,26 @@ final class AppDataStoreTest: XCTestCase {
 
 		XCTAssertEqual(refreshedApp.version.versionNumber, "1.1")
 		XCTAssertEqual(refreshedApp.remoteVersion, remoteVersion)
+	}
+
+	func testIgnoredIdentifiersAreCachedAndPersistedWithAppState() throws {
+		let suiteName = "AppDataStoreTest.\(UUID().uuidString)"
+		let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+		defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+		let store = AppDataStore(userDefaults: userDefaults)
+		let appURL = URL(fileURLWithPath: "/Applications/Ignored-\(UUID().uuidString).app", isDirectory: true)
+		let initialBundle = makeBundle(versionNumber: "1.0", at: appURL)
+		let app = store.set(appBundle: initialBundle)
+
+		store.setIgnoredState(true, for: app)
+
+		let refreshedBundle = makeBundle(versionNumber: "1.1", at: appURL)
+		XCTAssertTrue(store.set(appBundle: refreshedBundle).isIgnored)
+		XCTAssertEqual(
+			Set(userDefaults.stringArray(forKey: "IgnoredAppsKey") ?? []),
+			Set([initialBundle.bundleIdentifier])
+		)
 	}
 
 	private func makeBundle(versionNumber: String, at url: URL) -> App.Bundle {
@@ -69,6 +90,7 @@ final class AppDirectoryTest: XCTestCase {
 		wait(for: [initialCollection], timeout: 2)
 
 		XCTAssertEqual(directory.bundles.first?.version.versionNumber, "1.0")
+		XCTAssertEqual(BundleCollector.cachedBundleCount(at: directoryURL), 1)
 
 		try writeAppBundle(at: appURL, versionNumber: "1.1")
 
@@ -108,6 +130,37 @@ final class AppDirectoryTest: XCTestCase {
 		XCTAssertEqual(directory.bundles.first?.version.versionNumber, "1.0")
 	}
 
+	func testRefreshBurstCoalescesIntoSingleTrailingCollection() throws {
+		let directoryURL = FileManager.default.temporaryDirectory
+			.appendingPathComponent(UUID().uuidString, isDirectory: true)
+		try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+		let probe = AppDirectoryCollectionProbe()
+		let directory = AppDirectory(
+			url: directoryURL,
+			notifyOnInitialCollection: false,
+			bundleCollector: { probe.collect(at: $0) },
+			updateHandler: {}
+		)
+
+		XCTAssertEqual(probe.firstCollectionStarted.wait(timeout: .now() + 1), .success)
+
+		let refreshesCompleted = expectation(description: "Coalesced refreshes completed")
+		refreshesCompleted.expectedFulfillmentCount = 10
+		for _ in 0..<10 {
+			directory.refresh {
+				refreshesCompleted.fulfill()
+			}
+		}
+
+		probe.allowFirstCollectionToFinish.signal()
+		wait(for: [refreshesCompleted], timeout: 2)
+
+		XCTAssertEqual(probe.invocationCount, 2)
+		withExtendedLifetime(directory) {}
+	}
+
 	private func writeAppBundle(at url: URL, versionNumber: String) throws {
 		let contentsURL = url.appendingPathComponent("Contents", isDirectory: true)
 		try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
@@ -123,4 +176,29 @@ final class AppDirectoryTest: XCTestCase {
 		try data.write(to: contentsURL.appendingPathComponent("Info.plist"), options: .atomic)
 	}
 
+}
+
+private final class AppDirectoryCollectionProbe: Sendable {
+	let firstCollectionStarted = DispatchSemaphore(value: 0)
+	let allowFirstCollectionToFinish = DispatchSemaphore(value: 0)
+
+	private let invocationCountStorage = Mutex(0)
+
+	var invocationCount: Int {
+		invocationCountStorage.withLock { $0 }
+	}
+
+	func collect(at url: URL) -> [App.Bundle] {
+		let invocation = invocationCountStorage.withLock { invocationCount in
+			invocationCount += 1
+			return invocationCount
+		}
+
+		if invocation == 1 {
+			firstCollectionStarted.signal()
+			allowFirstCollectionToFinish.wait()
+		}
+
+		return []
+	}
 }

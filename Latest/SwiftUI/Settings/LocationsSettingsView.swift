@@ -24,70 +24,28 @@ struct LocationsSettingsView: View {
 				.frame(width: 400, height: 200)
 				.offset(x: 20, y: 44)
 
-			DirectoryActionControlRepresentable(
-				canRemove: viewModel.canRemove(viewModel.selectedDirectory),
-				onAdd: { viewModel.addDirectory(attachedTo: window) },
-				onRemove: { viewModel.removeSelectedDirectory() }
-			)
+			ControlGroup {
+				Button {
+					viewModel.addDirectory(attachedTo: window)
+				} label: {
+					Image(systemName: "plus")
+				}
+				.accessibilityLabel("Add Location")
+
+				Button {
+					viewModel.removeSelectedDirectory()
+				} label: {
+					Image(systemName: "minus")
+				}
+				.accessibilityLabel("Remove Location")
+				.disabled(!viewModel.canRemove(viewModel.selectedDirectory))
+			}
+			.controlSize(.small)
 			.frame(width: 61, height: 24)
 			.offset(x: 20, y: 252)
 		}
 		.frame(width: 440, height: 296, alignment: .topLeading)
 		.background(WindowAccessor { window = $0 })
-	}
-}
-
-private struct DirectoryActionControlRepresentable: NSViewRepresentable {
-	let canRemove: Bool
-	let onAdd: () -> Void
-	let onRemove: () -> Void
-
-	func makeCoordinator() -> Coordinator {
-		Coordinator(onAdd: onAdd, onRemove: onRemove)
-	}
-
-	func makeNSView(context: Context) -> NSSegmentedControl {
-		let control = NSSegmentedControl(
-			images: [
-				NSImage(named: NSImage.addTemplateName) ?? NSImage(),
-				NSImage(named: NSImage.removeTemplateName) ?? NSImage()
-			],
-			trackingMode: .momentary,
-			target: context.coordinator,
-			action: #selector(Coordinator.performAction(_:))
-		)
-		control.segmentStyle = .rounded
-		control.setWidth(30, forSegment: 0)
-		control.setWidth(30, forSegment: 1)
-		return control
-	}
-
-	func updateNSView(_ control: NSSegmentedControl, context: Context) {
-		context.coordinator.onAdd = onAdd
-		context.coordinator.onRemove = onRemove
-		control.setEnabled(canRemove, forSegment: 1)
-	}
-
-	final class Coordinator: NSObject {
-		var onAdd: () -> Void
-		var onRemove: () -> Void
-
-		init(onAdd: @escaping () -> Void, onRemove: @escaping () -> Void) {
-			self.onAdd = onAdd
-			self.onRemove = onRemove
-		}
-
-		@MainActor
-		@objc func performAction(_ sender: NSSegmentedControl) {
-			switch sender.selectedSegment {
-			case 0:
-				onAdd()
-			case 1:
-				onRemove()
-			default:
-				break
-			}
-		}
 	}
 }
 
@@ -310,30 +268,49 @@ private actor DirectoryAppCountCache {
 	private struct Entry {
 		let count: Int
 		let expiresAt: Date
+		var lastAccessedAt: Date
 	}
 
 	private var entries = [URL: Entry]()
 	private var inFlightTasks = [URL: Task<Int, Never>]()
 	private let lifetime: TimeInterval = 60
+	private let maximumEntryCount = 64
 
 	func count(for url: URL) async -> Int {
 		let key = url.standardizedFileURL
 		let now = Date()
-		if let entry = entries[key], entry.expiresAt > now {
+		if var entry = entries[key], entry.expiresAt > now {
+			entry.lastAccessedAt = now
+			entries[key] = entry
 			return entry.count
 		}
+		entries[key] = nil
 
 		if let task = inFlightTasks[key] {
 			return await task.value
 		}
 
 		let task = Task.detached(priority: .utility) {
-			BundleCollector.collectBundles(at: key).count
+			if let count = BundleCollector.cachedBundleCount(at: key) {
+				return count
+			}
+			return BundleCollector.collectBundles(at: key).count
 		}
 		inFlightTasks[key] = task
 
 		let count = await task.value
-		entries[key] = Entry(count: count, expiresAt: Date().addingTimeInterval(lifetime))
+		let storedAt = Date()
+		entries[key] = Entry(
+			count: count,
+			expiresAt: storedAt.addingTimeInterval(lifetime),
+			lastAccessedAt: storedAt
+		)
+		while entries.count > maximumEntryCount {
+			guard let leastRecentlyUsedKey = entries.min(by: {
+				$0.value.lastAccessedAt < $1.value.lastAccessedAt
+			})?.key else { break }
+			entries[leastRecentlyUsedKey] = nil
+		}
 		inFlightTasks[key] = nil
 		return count
 	}
