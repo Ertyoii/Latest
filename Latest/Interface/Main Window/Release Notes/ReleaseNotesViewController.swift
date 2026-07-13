@@ -110,7 +110,6 @@ class ReleaseNotesViewController: NSViewController {
 	
 	private let releaseNotesProvider = ReleaseNotesProvider()
 	private var supportStatePopover: NSPopover?
-	private var appInfoTopConstraint: NSLayoutConstraint?
 	private var appInfoLabelCenterYConstraint: NSLayoutConstraint?
 	private var loadingTimer: Timer?
 	private var displayRequestID = UUID()
@@ -233,13 +232,13 @@ class ReleaseNotesViewController: NSViewController {
 
 		contentStack.addArrangedSubview(iconImageView)
 		contentStack.addArrangedSubview(labelStack)
-		contentStack.addArrangedSubview(actionContainer)
 
 		let separator = NSBox()
 		separator.boxType = .separator
 		separator.translatesAutoresizingMaskIntoConstraints = false
 
 		headerView.addSubview(contentStack)
+		headerView.addSubview(actionContainer)
 		headerView.addSubview(separator)
 		rootView.addSubview(headerView)
 
@@ -252,13 +251,16 @@ class ReleaseNotesViewController: NSViewController {
 			headerView.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
 			headerView.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
 			headerView.widthAnchor.constraint(greaterThanOrEqualToConstant: 400),
+			headerView.heightAnchor.constraint(equalToConstant: VisualMetrics.detailHeaderHeight),
 
-			contentStack.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 20),
-			contentStack.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -20),
-			contentStack.bottomAnchor.constraint(equalTo: headerView.bottomAnchor, constant: -15),
+			contentStack.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: VisualMetrics.detailHeaderHorizontalPadding),
+			contentStack.trailingAnchor.constraint(lessThanOrEqualTo: actionContainer.leadingAnchor, constant: -12),
+			contentStack.topAnchor.constraint(greaterThanOrEqualTo: headerView.topAnchor),
+			contentStack.bottomAnchor.constraint(lessThanOrEqualTo: headerView.bottomAnchor),
 
 			iconImageView.widthAnchor.constraint(equalToConstant: 64),
 			iconImageView.heightAnchor.constraint(equalTo: iconImageView.widthAnchor),
+			iconImageView.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
 			labelCenterYConstraint,
 			labelStack.topAnchor.constraint(greaterThanOrEqualTo: iconImageView.topAnchor, constant: 2),
 			labelStack.bottomAnchor.constraint(lessThanOrEqualTo: iconImageView.bottomAnchor, constant: -2),
@@ -274,13 +276,15 @@ class ReleaseNotesViewController: NSViewController {
 
 			updateButton.widthAnchor.constraint(equalToConstant: 59),
 			updateButton.heightAnchor.constraint(equalToConstant: 24),
-			updateButton.topAnchor.constraint(equalTo: iconImageView.topAnchor, constant: 7),
+			updateButton.centerYAnchor.constraint(equalTo: iconImageView.centerYAnchor),
 			updateButton.trailingAnchor.constraint(equalTo: actionContainer.trailingAnchor),
 			externalUpdateLabel.topAnchor.constraint(equalTo: updateButton.bottomAnchor, constant: 5),
 			externalUpdateLabelCenterConstraint,
 			externalUpdateLabel.bottomAnchor.constraint(equalTo: actionContainer.bottomAnchor),
 			actionContainer.widthAnchor.constraint(equalTo: updateButton.widthAnchor),
-			actionContainer.heightAnchor.constraint(equalToConstant: 40),
+			actionContainer.heightAnchor.constraint(equalTo: iconImageView.heightAnchor),
+			actionContainer.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -VisualMetrics.detailHeaderHorizontalPadding),
+			actionContainer.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
 
 			separator.leadingAnchor.constraint(equalTo: headerView.leadingAnchor),
 			separator.trailingAnchor.constraint(equalTo: headerView.trailingAnchor),
@@ -305,17 +309,11 @@ class ReleaseNotesViewController: NSViewController {
 
 		supportStateButton.target = self
 		supportStateButton.action = #selector(showSupportStateInfo(_:))
+		setEmptyState()
 	}
     
     override func viewWillAppear() {
         super.viewWillAppear()
-
-		if appInfoTopConstraint == nil, let contentLayoutGuide = self.view.window?.contentLayoutGuide as? NSLayoutGuide {
-			appInfoTopConstraint = self.appInfoContentView.topAnchor.constraint(equalTo: contentLayoutGuide.topAnchor)
-			appInfoTopConstraint?.isActive = true
-		}
-
-		self.setEmptyState()
 	}
 	
     

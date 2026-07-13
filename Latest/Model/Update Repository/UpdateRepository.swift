@@ -26,6 +26,12 @@ private let updateRepositorySignposter = OSSignposter(
 ///
 /// Can be asked for update version information for a given application bundle.
 class UpdateRepository: @unchecked Sendable {
+	private static let locallyExcludedBundleIdentifiers: Set<String> = [
+		// OpenAI's Codex desktop app was renamed to ChatGPT but remains a separate
+		// product from the consumer ChatGPT cask. Name-only matching would assign
+		// com.openai.codex the unrelated chatgpt Homebrew version.
+		"com.openai.codex"
+	]
 
 	private static let reusableRepositories = UpdateRepositoryReuseCache()
 
@@ -124,6 +130,10 @@ class UpdateRepository: @unchecked Sendable {
 
 	static func preferredEntry(from possibleEntries: [Entry], for bundleIdentifier: String) -> Entry? {
 		EntryMatcher.preferredEntry(from: possibleEntries, for: bundleIdentifier)
+	}
+
+	static func isLocallyExcludedFromHomebrewMatching(_ bundleIdentifier: String) -> Bool {
+		locallyExcludedBundleIdentifiers.contains(bundleIdentifier)
 	}
 
 
@@ -347,7 +357,8 @@ private struct EntryMatcher {
 
 	func entry(for bundle: App.Bundle) -> UpdateRepository.Entry? {
 		// Don't return an entry for unsupported apps.
-		guard !unsupportedBundleIdentifiers.contains(bundle.bundleIdentifier) else { return nil }
+		guard !UpdateRepository.isLocallyExcludedFromHomebrewMatching(bundle.bundleIdentifier),
+		      !unsupportedBundleIdentifiers.contains(bundle.bundleIdentifier) else { return nil }
 
 		// Finding the correct entry is not trivial as there is no bundle identifier stored in an entry. We have a list of app names (could be ambiguous) and a list of bundle identifier guesses.
 		// However, both app names and bundle identifiers may occur in more than one entry:

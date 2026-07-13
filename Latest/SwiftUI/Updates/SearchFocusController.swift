@@ -6,13 +6,20 @@
 //  Copyright © 2026 Max Langer. All rights reserved.
 //
 
+import AppKit
 import Combine
 
 @MainActor
 final class SearchFocusController: ObservableObject {
-	@Published private(set) var focusRequest = 0
+	weak var searchField: NSSearchField?
 
 	func focus() {
-		focusRequest &+= 1
+		guard let searchField else { return }
+		searchField.window?.makeFirstResponder(searchField)
+	}
+
+	func resignFocus() {
+		guard let searchField else { return }
+		searchField.window?.makeFirstResponder(nil)
 	}
 }

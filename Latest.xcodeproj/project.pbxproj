@@ -87,8 +87,10 @@
 		51A001032FC3000000000001 /* AppCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000032FC3000000000001 /* AppCommands.swift */; };
 		51A001042FC3000000000001 /* UpdateCheckingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000042FC3000000000001 /* UpdateCheckingService.swift */; };
 		51A001062FC3000000000001 /* VisualMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000062FC3000000000001 /* VisualMetrics.swift */; };
+		51A001082FC3000000000001 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000082FC3000000000001 /* WindowAccessor.swift */; };
 		51A001092FC3000000000001 /* UpdatesListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000092FC3000000000001 /* UpdatesListViewModel.swift */; };
 		51A0010A2FC3000000000001 /* SearchFocusController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A0000A2FC3000000000001 /* SearchFocusController.swift */; };
+		51A0010B2FC3000000000001 /* SearchFieldRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A0000B2FC3000000000001 /* SearchFieldRepresentable.swift */; };
 		51A0010F2FC3000000000001 /* UpdateSectionHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */; };
 		51A001102FC3000000000001 /* UpdateRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000102FC3000000000001 /* UpdateRowView.swift */; };
 		51A001112FC3000000000001 /* UpdatesSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000112FC3000000000001 /* UpdatesSidebarView.swift */; };
@@ -99,6 +101,7 @@
 		51A020082FC4000000000001 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A020032FC4000000000001 /* GeneralSettingsView.swift */; };
 		51A020092FC4000000000001 /* LocationsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A020042FC4000000000001 /* LocationsSettingsView.swift */; };
 		51B000012FC5000000000001 /* ReleaseNotesSources.json in Resources */ = {isa = PBXBuildFile; fileRef = 51B000002FC5000000000001 /* ReleaseNotesSources.json */; };
+		51D000012FC7000000000001 /* UpdateSources.json in Resources */ = {isa = PBXBuildFile; fileRef = 51D000002FC7000000000001 /* UpdateSources.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -365,6 +368,7 @@
 		51A000082FC3000000000001 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 		51A000092FC3000000000001 /* UpdatesListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatesListViewModel.swift; sourceTree = "<group>"; };
 		51A0000A2FC3000000000001 /* SearchFocusController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchFocusController.swift; sourceTree = "<group>"; };
+		51A0000B2FC3000000000001 /* SearchFieldRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchFieldRepresentable.swift; sourceTree = "<group>"; };
 		51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateSectionHeaderView.swift; sourceTree = "<group>"; };
 		51A000102FC3000000000001 /* UpdateRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateRowView.swift; sourceTree = "<group>"; };
 		51A000112FC3000000000001 /* UpdatesSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatesSidebarView.swift; sourceTree = "<group>"; };
@@ -376,6 +380,7 @@
 		51A020032FC4000000000001 /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
 		51A020042FC4000000000001 /* LocationsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationsSettingsView.swift; sourceTree = "<group>"; };
 		51B000002FC5000000000001 /* ReleaseNotesSources.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ReleaseNotesSources.json; sourceTree = "<group>"; };
+		51D000002FC7000000000001 /* UpdateSources.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = UpdateSources.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -490,6 +495,7 @@
 		51A010042FC3000000000001 /* Updates */ = {
 			isa = PBXGroup;
 			children = (
+				51A0000B2FC3000000000001 /* SearchFieldRepresentable.swift */,
 				51A0000A2FC3000000000001 /* SearchFocusController.swift */,
 				51A000102FC3000000000001 /* UpdateRowView.swift */,
 				51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */,
@@ -703,6 +709,7 @@
 				50A86BBC27EA6BF4007A5F80 /* Credits.rtf */,
 				50FEB8802B1D2402006FB75D /* ExcludedAppIdentifiers.plist */,
 				51B000002FC5000000000001 /* ReleaseNotesSources.json */,
+				51D000002FC7000000000001 /* UpdateSources.json */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -1040,6 +1047,7 @@
 				50C8C85C208A0EE9004FF5D5 /* dsa_pub.pem in Resources */,
 				50FEB8812B1D2402006FB75D /* ExcludedAppIdentifiers.plist in Resources */,
 				51B000012FC5000000000001 /* ReleaseNotesSources.json in Resources */,
+				51D000012FC7000000000001 /* UpdateSources.json in Resources */,
 				501EA9821EB1BA4400D05821 /* Localizable.strings in Resources */,
 				508605292E78B077009235D2 /* App.icon in Resources */,
 				50A86BBD27EA6BF4007A5F80 /* Credits.rtf in Resources */,
@@ -1092,9 +1100,11 @@
 				51A001032FC3000000000001 /* AppCommands.swift in Sources */,
 				51A001042FC3000000000001 /* UpdateCheckingService.swift in Sources */,
 				51A001062FC3000000000001 /* VisualMetrics.swift in Sources */,
+				51A001082FC3000000000001 /* WindowAccessor.swift in Sources */,
 				51C100012FC6000000000001 /* LatestApplication.swift in Sources */,
 				51A001092FC3000000000001 /* UpdatesListViewModel.swift in Sources */,
 				51A0010A2FC3000000000001 /* SearchFocusController.swift in Sources */,
+				51A0010B2FC3000000000001 /* SearchFieldRepresentable.swift in Sources */,
 				51A0010F2FC3000000000001 /* UpdateSectionHeaderView.swift in Sources */,
 				51A001102FC3000000000001 /* UpdateRowView.swift in Sources */,
 				51A001112FC3000000000001 /* UpdatesSidebarView.swift in Sources */,
@@ -1480,7 +1490,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.41;
+				MARKETING_VERSION = 0.42;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1519,7 +1529,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.41;
+				MARKETING_VERSION = 0.42;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

@@ -31,8 +31,13 @@ enum VisualMetrics {
 	static let rowHorizontalPadding: CGFloat = 12
 	static let rowTextSpacing: CGFloat = 2
 
-	static let detailHeaderHeight: CGFloat = 119
-	static let detailHeaderHorizontalPadding: CGFloat = 20
+	// The SwiftUI detail host starts below the unified toolbar. The former
+	// full-size AppKit host included the 40pt toolbar inset in its 119pt header.
+	// Keep the visible header at 79pt and center its 64pt content between the
+	// toolbar and release-note separators.
+	static let detailHeaderVerticalPadding: CGFloat = 7.5
+	static let detailHeaderHeight: CGFloat = detailIconSize + (detailHeaderVerticalPadding * 2)
+	static let detailHeaderHorizontalPadding: CGFloat = 24
 	static let detailUpdateButtonWidth: CGFloat = 59
 	static let detailUpdateButtonHeight: CGFloat = 24
 }

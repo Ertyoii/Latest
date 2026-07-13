@@ -15,6 +15,10 @@ struct ReleaseNotesDetailView: View {
 	var body: some View {
 		LegacyReleaseNotesViewControllerRepresentable(app: updatesViewModel.selectedApp)
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
+		.transaction { transaction in
+			transaction.animation = nil
+			transaction.disablesAnimations = true
+		}
 	}
 }
 
@@ -45,7 +49,11 @@ private struct LegacyReleaseNotesViewControllerRepresentable: NSViewControllerRe
 			guard nextKey != displayedKey else { return }
 
 			displayedKey = nextKey
-			controller.display(releaseNotesFor: app)
+			NSAnimationContext.runAnimationGroup { context in
+				context.duration = 0
+				context.allowsImplicitAnimation = false
+				controller.display(releaseNotesFor: app)
+			}
 		}
 
 		private static func displayKey(for app: App) -> String {

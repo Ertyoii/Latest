@@ -11,6 +11,23 @@ import XCTest
 
 
 final class VersionParserTest: XCTestCase {
+	func testRenamedCodexAppDoesNotMatchConsumerChatGPTCask() {
+		XCTAssertTrue(UpdateRepository.isLocallyExcludedFromHomebrewMatching("com.openai.codex"))
+		XCTAssertFalse(UpdateRepository.isLocallyExcludedFromHomebrewMatching("com.openai.chat"))
+	}
+
+	func testRenamedCodexAppUsesItsOfficialSparkleFeed() {
+		let feedURL = Sparke.feedURL(
+			from: [:],
+			bundleIdentifier: "com.openai.codex",
+			bundleURL: URL(fileURLWithPath: "/Applications/ChatGPT.app", isDirectory: true)
+		)
+
+		XCTAssertEqual(
+			feedURL?.absoluteString,
+			"https://persistent.oaistatic.com/codex-app-prod/appcast.xml"
+		)
+	}
 
 	func testBuildNumberParsing() {
 		XCTAssertEqual(VersionParser.parse(buildNumber: "1234"), "1234")
@@ -1617,6 +1634,24 @@ final class VersionParserTest: XCTestCase {
 }
 
 final class BundleCollectorTest: XCTestCase {
+	func testRenamedCodexBundleUsesCatalogedSparkleSource() throws {
+		let directory = try makeTemporaryDirectory()
+		let appURL = try makeAppBundle(
+			named: "ChatGPT",
+			in: directory,
+			info: [
+				"CFBundleName": "ChatGPT",
+				"CFBundleExecutable": "ChatGPT",
+				"CFBundleIdentifier": "com.openai.codex",
+				"CFBundleShortVersionString": "26.707.51957",
+				"CFBundleVersion": "5175"
+			]
+		)
+
+		let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
+
+		XCTAssertEqual(bundle.source, .sparkle)
+	}
 
 	func testCollectsAppUsingDisplayNameWhenBundleNameIsMissing() throws {
 		let directory = try makeTemporaryDirectory()

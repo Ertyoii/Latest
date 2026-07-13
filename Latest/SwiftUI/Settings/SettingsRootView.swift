@@ -18,6 +18,7 @@ struct SettingsRootView: View {
 	var body: some View {
 		TabView(selection: $viewModel.selectedTab) {
 			GeneralSettingsView(viewModel: viewModel)
+				.frame(width: 440, height: 225, alignment: .topLeading)
 				.tabItem {
 					Label(SettingsViewModel.Tab.general.title, systemImage: SettingsViewModel.Tab.general.systemImageName)
 				}
@@ -29,6 +30,9 @@ struct SettingsRootView: View {
 				}
 				.tag(SettingsViewModel.Tab.locations)
 		}
-		.frame(width: 440, height: 300)
+		.frame(
+			width: viewModel.selectedTab.contentSize.width,
+			height: viewModel.selectedTab.contentSize.height
+		)
 	}
 }

@@ -136,8 +136,11 @@ class ReleaseNotesProvider {
 			case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML):
 				self.changelogReleaseNotes(from: urls, versionPrefix: versionPrefix ?? app.remoteVersion?.versionNumber, allowsLatestFallback: allowsLatestFallback, fallbackHTML: fallbackHTML, requestID: requestID, with: completion)
 			}
-		} else if let error = app.error {
-			completion(.failure(error))
+		} else if app.error != nil {
+			// Update-check failures describe the scan, not the content pane. The
+			// detail view should state that notes are unavailable instead of
+			// presenting a long networking/update error as release-note content.
+			completion(.failure(LatestError.releaseNotesUnavailable))
 		} else {
 			completion(.failure(LatestError.releaseNotesUnavailable))
 		}

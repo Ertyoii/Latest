@@ -11,6 +11,11 @@ import Sparkle
 
 /// The operation for checking for updates for a Sparkle app.
 class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, @unchecked Sendable {
+
+	/// Sparkle normally completes through one of the user-driver callbacks. A
+	/// malformed or unreachable vendor feed must not keep the entire app scan
+	/// waiting forever, though.
+	static let checkTimeout: TimeInterval = 10
 	
 	// MARK: - Update Check
 	
@@ -57,6 +62,9 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 	/// The updater used to check for updates to this app.
 	private var updater: SPUUpdater?
 
+	/// Completes the operation if Sparkle never calls its user driver back.
+	private var timeoutWorkItem: DispatchWorkItem?
+
 	
 	// MARK: - Operation
 	
@@ -67,7 +75,19 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 			return
 		}
 		
+		let timeoutWorkItem = DispatchWorkItem { [weak self] in
+			guard let self, !self.isFinished else { return }
+			self.finish(with: URLError(.timedOut))
+		}
+		self.timeoutWorkItem = timeoutWorkItem
+		DispatchQueue.main.asyncAfter(
+			deadline: .now() + Self.checkTimeout,
+			execute: timeoutWorkItem
+		)
+
 		Task { @MainActor in
+			guard !self.isCancelled, !self.isFinished else { return }
+
 			// Instantiate a new updater that performs the update
 			let updater = SPUUpdater(hostBundle: bundle, applicationBundle: bundle, userDriver: self, delegate: self)
 			
@@ -75,6 +95,7 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 				try updater.start()
 			} catch let error {
 				self.finish(with: error)
+				return
 			}
 			
 			updater.checkForUpdates()
@@ -82,8 +103,25 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 			self.updater = updater
 		}
 	}
+
+	override func cancel() {
+		super.cancel()
+		self.finish()
+	}
+
+	override func finish() {
+		timeoutWorkItem?.cancel()
+		timeoutWorkItem = nil
+		super.finish()
+
+		Task { @MainActor [weak self] in
+			self?.updater = nil
+		}
+	}
 	
 	fileprivate func finish(with appcastItem: SUAppcastItem) {
+		guard !self.isFinished else { return }
+
 		let version = Version(versionNumber: appcastItem.displayVersionString, buildNumber: appcastItem.versionString)
 		
 		// OS Version
@@ -145,9 +183,9 @@ extension SparkleUpdateCheckerOperation: SPUUserDriver {
 		let nsError = error as NSError
 		if nsError.domain == SUSparkleErrorDomain && nsError.code == SUError.noUpdateError.rawValue, let appcastItem = nsError.userInfo[SPULatestAppcastItemFoundKey] as? SUAppcastItem {
 			self.finish(with: appcastItem)
+		} else {
+			self.finish(with: error)
 		}
-		
-		self.finish(with: error)
 		acknowledgement()
 	}
 	

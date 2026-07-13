@@ -53,6 +53,9 @@ class ReleaseNotesErrorViewController: NSViewController {
  
     /// Updates the description of the error
     func show(_ error: Error) {
+		titleTextField.stringValue = ""
+		descriptionTextField.stringValue = ""
+
 		if let localizedError = error as? LocalizedError, let failureReason = localizedError.failureReason {
 			titleTextField.stringValue = localizedError.localizedDescription
 			descriptionTextField.stringValue = failureReason

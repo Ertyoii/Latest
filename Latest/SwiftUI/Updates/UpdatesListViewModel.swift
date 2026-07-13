@@ -20,6 +20,7 @@ final class UpdatesListViewModel: ObservableObject {
 	@Published private(set) var statusText = ""
 
 	private var observationTasks = [Task<Void, Never>]()
+	private var selectionWasUserInitiated = false
 
 	init() {
 		self.snapshot = AppListSnapshot(withApps: [], filterQuery: nil)
@@ -60,6 +61,7 @@ final class UpdatesListViewModel: ObservableObject {
 	}
 
 	func select(_ app: App?) {
+		selectionWasUserInitiated = true
 		selectedApp = app
 	}
 
@@ -99,10 +101,16 @@ final class UpdatesListViewModel: ObservableObject {
 	}
 
 	private func maintainSelectionAfterSnapshotChange() {
-		guard let selectedApp else { return }
-		if snapshot.firstIndex(of: selectedApp) == nil {
-			self.selectedApp = nil
+		if selectionWasUserInitiated,
+		   let selectedApp,
+		   snapshot.firstIndex(of: selectedApp) != nil {
+			return
 		}
+
+		if selectionWasUserInitiated {
+			selectionWasUserInitiated = false
+		}
+		selectedApp = snapshot.sections.first?.apps.first
 	}
 
 	private func updateTitleAndBadge() {
