@@ -14,6 +14,7 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 		static let leftInset: CGFloat = 10
 		static let selectionLeadingInset: CGFloat = 0
 		static let selectionTrailingInset: CGFloat = 24
+		static let selectionCornerRadius: CGFloat = 12
 		static let rightInset: CGFloat = 32
 		static let iconSize: CGFloat = 50
 		static let iconTextSpacing: CGFloat = 8
@@ -81,7 +82,7 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 
 	private func setupView() {
 		selectionBackground.boxType = .custom
-		selectionBackground.cornerRadius = 6
+		selectionBackground.cornerRadius = Layout.selectionCornerRadius
 		selectionBackground.fillColor = .controlAccentColor
 		selectionBackground.borderColor = .clear
 		selectionBackground.translatesAutoresizingMaskIntoConstraints = false

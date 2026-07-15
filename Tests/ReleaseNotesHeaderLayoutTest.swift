@@ -151,6 +151,29 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 	}
 
 	@MainActor
+	func testSidebarGlassUsesWindowConcentricCornerRadius() {
+		let rootView = NSView(frame: NSRect(x: 0, y: 0, width: 768, height: 516))
+		let sidebarGlass = NSGlassEffectView(
+			frame: NSRect(
+				x: 8,
+				y: 8,
+				width: VisualMetrics.sidebarIdealWidth,
+				height: VisualMetrics.mainWindowMinHeight - (VisualMetrics.sidebarGlassInset * 2)
+			)
+		)
+		let compactGlass = NSGlassEffectView(
+			frame: NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 40)
+		)
+		rootView.addSubview(sidebarGlass)
+		rootView.addSubview(compactGlass)
+
+		MainWindowChrome.configureSidebarGlassSurface(in: rootView)
+
+		XCTAssertEqual(sidebarGlass.cornerRadius, VisualMetrics.sidebarGlassCornerRadius)
+		XCTAssertNotEqual(compactGlass.cornerRadius, VisualMetrics.sidebarGlassCornerRadius)
+	}
+
+	@MainActor
 	func testSidebarCustomSelectionUsesCompensatedInsets() {
 		XCTAssertLessThan(
 			LegacyUpdateRowContentView.Layout.selectionLeadingInset,
@@ -159,6 +182,7 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 		)
 		XCTAssertEqual(LegacyUpdateRowContentView.Layout.selectionLeadingInset, 0)
 		XCTAssertEqual(LegacyUpdateRowContentView.Layout.selectionTrailingInset, 24)
+		XCTAssertEqual(LegacyUpdateRowContentView.Layout.selectionCornerRadius, 12)
 	}
 
 	@MainActor

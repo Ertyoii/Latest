@@ -148,6 +148,9 @@ enum MainWindowChrome {
 
 	static func configure(_ window: NSWindow, commands: AppCommands, refreshIsEnabled: Bool) {
 		window.titlebarSeparatorStyle = .none
+		if let contentView = window.contentView {
+			configureSidebarGlassSurface(in: contentView)
+		}
 
 		let target = refreshTarget(for: window, commands: commands)
 		repurposeSidebarToggleItem(in: window, target: target, isEnabled: refreshIsEnabled)
@@ -156,7 +159,24 @@ enum MainWindowChrome {
 		// main-loop pass. Repeat once so the native toggle is reliably retargeted.
 		DispatchQueue.main.async { [weak window, weak target] in
 			guard let window, let target else { return }
+			if let contentView = window.contentView {
+				configureSidebarGlassSurface(in: contentView)
+			}
 			repurposeSidebarToggleItem(in: window, target: target, isEnabled: refreshIsEnabled)
+		}
+	}
+
+	static func configureSidebarGlassSurface(in rootView: NSView) {
+		if let glassView = rootView as? NSGlassEffectView,
+		   abs(glassView.bounds.width - VisualMetrics.sidebarIdealWidth) < 0.5,
+		   glassView.bounds.height >= VisualMetrics.mainWindowMinHeight - (VisualMetrics.sidebarGlassInset * 2) {
+			// The system insets this surface from the window by 8pt. A 20pt
+			// inner radius follows the standard window's 28pt concentric curve.
+			glassView.cornerRadius = VisualMetrics.sidebarGlassCornerRadius
+		}
+
+		for subview in rootView.subviews {
+			configureSidebarGlassSurface(in: subview)
 		}
 	}
 
