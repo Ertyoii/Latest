@@ -193,7 +193,7 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 	private func updateTitle(for app: App, filterQuery: String?, isSelected: Bool) {
 		let title = NSMutableAttributedString(attributedString: app.highlightedName(for: filterQuery))
 		title.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .semibold), range: NSRange(location: 0, length: title.length))
-		title.addAttribute(.foregroundColor, value: isSelected ? NSColor.selectedControlTextColor : NSColor.labelColor, range: NSRange(location: 0, length: title.length))
+		title.addAttribute(.foregroundColor, value: isSelected ? NSColor.alternateSelectedControlTextColor : NSColor.labelColor, range: NSRange(location: 0, length: title.length))
 		nameField.attributedStringValue = title
 	}
 
@@ -224,7 +224,7 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 		selectionBackground.fillColor = .controlAccentColor
 		selectionBackground.isHidden = !drawsSelectionBackground || !isSelected
 		separator.isHidden = isSelected
-		let textColor: NSColor = isSelected ? .selectedControlTextColor : .secondaryLabelColor
+		let textColor: NSColor = isSelected ? .alternateSelectedControlTextColor : .secondaryLabelColor
 		currentVersionField.textColor = textColor
 		newVersionField.textColor = textColor
 		dateField.textColor = textColor
