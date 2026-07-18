@@ -8,130 +8,118 @@
 
 import Cocoa
 import Sparkle
+import Synchronization
 
-/// The operation for checking for updates for a Sparkle app.
-class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, @unchecked Sendable {
+private actor SparkleCheckResultGate {
+	private var continuation: CheckedContinuation<App.Update, Error>?
+	private var pendingResult: Result<App.Update, Error>?
 
-	/// Sparkle normally completes through one of the user-driver callbacks. A
-	/// malformed or unreachable vendor feed must not keep the entire app scan
-	/// waiting forever, though.
-	static let checkTimeout: TimeInterval = 10
-	
-	// MARK: - Update Check
-	
-	static func canPerformUpdateCheck(forAppAt url: URL) -> Bool {
-		// Can check for updates if a feed URL is available for the given app
-		return Self.feedURL(from: url) != nil
-	}
-
-	static var sourceType: App.Source {
-		return .sparkle
-	}
-	
-	required init(with app: App.Bundle, repository: UpdateRepository?, completionBlock: @escaping UpdateCheckerCompletionBlock) {
-		self.app = app
-		self.url = Self.feedURL(from: app.fileURL)
-		
-		super.init()
-
-		self.completionBlock = {
-			guard !self.isCancelled else { return }
-			if let update = self.update {
-				completionBlock(.success(update))
-			} else {
-				completionBlock(.failure(self.error ?? LatestError.updateInfoUnavailable))
-			}
+	func install(_ continuation: CheckedContinuation<App.Update, Error>) {
+		if let pendingResult {
+			self.pendingResult = nil
+			continuation.resume(with: pendingResult)
+		} else {
+			self.continuation = continuation
 		}
 	}
-	
-	/// Returns the Sparkle feed url for the app at the given URL, if available.
+
+	func resume(with result: Result<App.Update, Error>) {
+		if let continuation {
+			self.continuation = nil
+			continuation.resume(with: result)
+		} else if pendingResult == nil {
+			pendingResult = result
+		}
+	}
+}
+
+/// Async update checking for a Sparkle app. The historical type name is
+/// retained for source compatibility, but checking is no longer an Operation.
+final class SparkleUpdateCheckerOperation: NSObject, @unchecked Sendable {
+	static let checkTimeout: TimeInterval = 10
+
+	static func canPerformUpdateCheck(forAppAt url: URL) -> Bool {
+		feedURL(from: url) != nil
+	}
+
+	static var sourceType: App.Source { .sparkle }
+
 	private static func feedURL(from appURL: URL) -> URL? {
 		guard let bundle = Bundle(path: appURL.path) else { return nil }
 		return Sparke.feedURL(from: bundle)
 	}
 
-	/// The bundle to be checked for updates.
 	private let app: App.Bundle
-	
-	/// The url to check for updates.
 	private let url: URL?
-	
-	/// The update fetched during the checking operation.
-	fileprivate var update: App.Update?
+	private let resultGate = SparkleCheckResultGate()
+	private let cancellationState = Mutex(false)
+	@MainActor private var updater: SPUUpdater?
 
-	/// The updater used to check for updates to this app.
-	private var updater: SPUUpdater?
+	init(with app: App.Bundle) {
+		self.app = app
+		self.url = Self.feedURL(from: app.fileURL)
+	}
 
-	/// Completes the operation if Sparkle never calls its user driver back.
-	private var timeoutWorkItem: DispatchWorkItem?
-
-	
-	// MARK: - Operation
-	
-	override func execute() {
-		// Gather app and app bundle
-		guard let bundle = Bundle(path: self.app.fileURL.path) else {
-			self.finish(with: LatestError.updateInfoUnavailable)
-			return
+	func check() async throws -> App.Update {
+		guard let bundle = Bundle(path: app.fileURL.path) else {
+			throw LatestError.updateInfoUnavailable
 		}
-		
-		let timeoutWorkItem = DispatchWorkItem { [weak self] in
-			guard let self, !self.isFinished else { return }
-			self.finish(with: URLError(.timedOut))
+		let timeoutTask = Task { [weak self] in
+			try? await Task.sleep(nanoseconds: UInt64(Self.checkTimeout * 1_000_000_000))
+			guard !Task.isCancelled else { return }
+			self?.complete(.failure(URLError(.timedOut)))
 		}
-		self.timeoutWorkItem = timeoutWorkItem
-		DispatchQueue.main.asyncAfter(
-			deadline: .now() + Self.checkTimeout,
-			execute: timeoutWorkItem
-		)
+		defer {
+			timeoutTask.cancel()
+			Task { @MainActor [weak self] in self?.updater = nil }
+		}
 
-		Task { @MainActor in
-			guard !self.isCancelled, !self.isFinished else { return }
-
-			// Instantiate a new updater that performs the update
-			let updater = SPUUpdater(hostBundle: bundle, applicationBundle: bundle, userDriver: self, delegate: self)
-			
-			do {
-				try updater.start()
-			} catch let error {
-				self.finish(with: error)
-				return
+		return try await withTaskCancellationHandler {
+			try await withCheckedThrowingContinuation { continuation in
+				Task { [weak self] in
+					guard let self else {
+						continuation.resume(throwing: CancellationError())
+						return
+					}
+					await self.resultGate.install(continuation)
+					guard !self.cancellationState.withLock({ $0 }) else { return }
+					do {
+						try await self.startUpdater(for: bundle)
+					} catch {
+						self.complete(.failure(error))
+					}
+				}
 			}
-			
-			updater.checkForUpdates()
-			
-			self.updater = updater
+		} onCancel: { [weak self] in
+			guard let self else { return }
+			self.cancellationState.withLock { $0 = true }
+			self.complete(.failure(CancellationError()))
 		}
 	}
 
-	override func cancel() {
-		super.cancel()
-		self.finish()
-	}
-
-	override func finish() {
-		timeoutWorkItem?.cancel()
-		timeoutWorkItem = nil
-		super.finish()
-
-		Task { @MainActor [weak self] in
-			self?.updater = nil
+	@MainActor
+	private func startUpdater(for bundle: Bundle) throws {
+		guard !cancellationState.withLock({ $0 }) else {
+			throw CancellationError()
 		}
+		let updater = SPUUpdater(hostBundle: bundle, applicationBundle: bundle, userDriver: self, delegate: self)
+		try updater.start()
+		updater.checkForUpdates()
+		self.updater = updater
 	}
-	
-	fileprivate func finish(with appcastItem: SUAppcastItem) {
-		guard !self.isFinished else { return }
 
+	private func complete(_ result: Result<App.Update, Error>) {
+		Task { await resultGate.resume(with: result) }
+	}
+
+	private func finish(with appcastItem: SUAppcastItem) {
+		guard !cancellationState.withLock({ $0 }) else { return }
 		let version = Version(versionNumber: appcastItem.displayVersionString, buildNumber: appcastItem.versionString)
-		
-		// OS Version
-		var minimumOSVersion: OperatingSystemVersion? = nil
-		if let minimumVersion = appcastItem.minimumSystemVersion {
-			minimumOSVersion = try? OperatingSystemVersion(string: minimumVersion)
+		let minimumOSVersion = appcastItem.minimumSystemVersion.flatMap {
+			try? OperatingSystemVersion(string: $0)
 		}
-		
-		// Release Notes
-		var releaseNotes: App.Update.ReleaseNotes? = nil
+
+		var releaseNotes: App.Update.ReleaseNotes?
 		let releaseNotesURL = appcastItem.releaseNotesURL ?? appcastItem.fullReleaseNotesURL
 		if let description = appcastItem.itemDescription {
 			if ReleaseNotesMarkup.isUsefulReleaseNotesText(description, relevantVersion: version.versionNumber) {
@@ -155,80 +143,73 @@ class SparkleUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, 
 			releaseNotes = ReleaseNotesSourceCatalog.releaseNotes(for: app, remoteVersion: version)
 		}
 
-		// Build update
-		self.update = App.Update(app: self.app, remoteVersion: version, minimumOSVersion: minimumOSVersion, source: .sparkle, date: appcastItem.date, releaseNotes: releaseNotes, updateAction: .builtIn(block: { app in
-			UpdateQueue.shared.addOperation(SparkleUpdateOperation(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier))
-		}))
-
-		Task { @MainActor in
-			self.finish()
-		}
+		complete(.success(App.Update(
+			app: app,
+			remoteVersion: version,
+			minimumOSVersion: minimumOSVersion,
+			source: .sparkle,
+			date: appcastItem.date,
+			releaseNotes: releaseNotes,
+			updateAction: .builtIn { app in
+				UpdateQueue.shared.addOperation(SparkleUpdateOperation(
+					bundleIdentifier: app.bundleIdentifier,
+					appIdentifier: app.identifier
+				))
+			}
+		)))
 	}
 }
 
-// MARK: - Driver Implementation
 extension SparkleUpdateCheckerOperation: SPUUserDriver {
-	
-	// MARK: - Checking for Updates
-	
 	func show(_ request: SPUUpdatePermissionRequest, reply: @escaping (SUUpdatePermissionResponse) -> Void) {
 		reply(.init(automaticUpdateChecks: false, sendSystemProfile: false))
 	}
-	
+
 	func showUpdateFound(with appcastItem: SUAppcastItem, state: SPUUserUpdateState, reply: @escaping (SPUUserUpdateChoice) -> Void) {
-		self.finish(with: appcastItem)
+		finish(with: appcastItem)
 	}
-		
+
 	func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
 		let nsError = error as NSError
-		if nsError.domain == SUSparkleErrorDomain && nsError.code == SUError.noUpdateError.rawValue, let appcastItem = nsError.userInfo[SPULatestAppcastItemFoundKey] as? SUAppcastItem {
-			self.finish(with: appcastItem)
+		if nsError.domain == SUSparkleErrorDomain,
+		   nsError.code == SUError.noUpdateError.rawValue,
+		   let appcastItem = nsError.userInfo[SPULatestAppcastItemFoundKey] as? SUAppcastItem {
+			finish(with: appcastItem)
 		} else {
-			self.finish(with: error)
+			complete(.failure(error))
 		}
 		acknowledgement()
 	}
-	
+
 	func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
-		self.finish(with: error)
+		complete(.failure(error))
 		acknowledgement()
-	}
-	
-	func showUpdateInstalledAndRelaunched(_ relaunched: Bool, acknowledgement: @escaping () -> Void) {
-		acknowledgement()
-		self.finish()
 	}
 
-	
-	// MARK: - Ignored Methods
+	func showUpdateInstalledAndRelaunched(_ relaunched: Bool, acknowledgement: @escaping () -> Void) {
+		acknowledgement()
+		complete(.failure(LatestError.updateInfoUnavailable))
+	}
+
 	func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {}
 	func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {}
 	func showUpdateReleaseNotesFailedToDownloadWithError(_ error: Error) {}
-
 	func showUpdateInFocus() {}
 	func showDownloadInitiated(cancellation: @escaping () -> Void) {}
 	func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {}
 	func showDownloadDidReceiveData(ofLength length: UInt64) {}
-	private func scheduleProgressHandler() {}
-	
 	func showDownloadDidStartExtractingUpdate() {}
 	func showExtractionReceivedProgress(_ progress: Double) {}
 	func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {}
 	func showInstallingUpdate(withApplicationTerminated applicationTerminated: Bool, retryTerminatingApplication: @escaping () -> Void) {}
-
 	func showCanCheck(forUpdates canCheckForUpdates: Bool) {}
 	func dismissUserInitiatedUpdateCheck() {}
 	func showSendingTerminationSignal() {}
 	func dismissUpdateInstallation() {}
-	
 }
 
 extension SparkleUpdateCheckerOperation: SPUUpdaterDelegate {
-	
 	func feedURLString(for updater: SPUUpdater) -> String? {
-		// We can try to supply a valid feed as addition to Sparkle's own methods.
-		// For some cases (like DevMate) Sparkle fails to retrieve an appcast by itself.
-		return url?.absoluteString
+		url?.absoluteString
 	}
-	
 }

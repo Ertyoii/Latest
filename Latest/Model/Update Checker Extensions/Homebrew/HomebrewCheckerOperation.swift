@@ -8,61 +8,49 @@
 
 import Cocoa
 
-/// The operation for checking for updates via Homebrew.
-class HomebrewCheckerOperation: StatefulOperation, UpdateCheckerOperation, @unchecked Sendable {
-	
-	static var sourceType: App.Source {
-		return .none
-	}
-	
-	/// The bundle to be checked for updates.
-	private let bundle: App.Bundle
-	
-	/// The update fetched during the checking operation.
-	fileprivate var update: App.Update?
-	
-	private let repository: UpdateRepository?
-	
-	static func canPerformUpdateCheck(forAppAt url: URL) -> Bool {
-		return true
-	}
-		
-	required init(with bundle: App.Bundle, repository: UpdateRepository?, completionBlock: @escaping UpdateCheckerCompletionBlock) {
-		self.bundle =  bundle
-		self.repository = repository
-		
-		super.init()
-		
-		self.completionBlock = {
-			if let update = self.update {
-				completionBlock(.success(update))
-			} else {
-				completionBlock(.failure(self.error ?? LatestError.updateInfoUnavailable))
-			}
-		}
-	}
-	
-	
-	// MARK: - Operation
+/// Async update checking via Homebrew. The historical type name is retained to
+/// avoid needless source churn, but checking is no longer an Operation.
+final class HomebrewCheckerOperation: Sendable {
+	static var sourceType: App.Source { .none }
 
-	override func execute() {
-		guard let repository else {
-			self.finish()
-			return
-		}
-		
-		repository.updateInfo(for: bundle) { bundle, version, minimumOSVersion, releaseNotes in
-			defer { self.finish() }
-			guard let version else { return }
-			let releaseNotes = ReleaseNotesSourceCatalog.releaseNotes(
-				for: bundle,
-				remoteVersion: version,
-				allowNameFallback: false
-			) ?? releaseNotes
-			self.update = App.Update(app: bundle, remoteVersion: version, minimumOSVersion: minimumOSVersion, source: .homebrew, date: nil, releaseNotes: releaseNotes, updateAction: .external(label: bundle.name, block: { app in
-				app.open()
-			}))
-		}
+	private let bundle: App.Bundle
+	private let repository: UpdateRepository?
+
+	static func canPerformUpdateCheck(forAppAt url: URL) -> Bool {
+		true
 	}
-	
+
+	init(with bundle: App.Bundle, repository: UpdateRepository?) {
+		self.bundle = bundle
+		self.repository = repository
+	}
+
+	func check() async throws -> App.Update {
+		try Task.checkCancellation()
+		guard let repository else {
+			throw LatestError.updateInfoUnavailable
+		}
+
+		let info = await repository.updateInfo(for: bundle)
+		try Task.checkCancellation()
+		guard let version = info.version else {
+			throw LatestError.updateInfoUnavailable
+		}
+		let releaseNotes = ReleaseNotesSourceCatalog.releaseNotes(
+			for: info.bundle,
+			remoteVersion: version,
+			allowNameFallback: false
+		) ?? info.releaseNotes
+		return App.Update(
+			app: info.bundle,
+			remoteVersion: version,
+			minimumOSVersion: info.minimumOSVersion,
+			source: .homebrew,
+			date: nil,
+			releaseNotes: releaseNotes,
+			updateAction: .external(label: info.bundle.name) { app in
+				app.open()
+			}
+		)
+	}
 }

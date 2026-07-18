@@ -6,6 +6,7 @@
 //  Copyright © 2023 Max Langer. All rights reserved.
 //
 
+import CryptoKit
 import XCTest
 @testable import Latest
 
@@ -88,8 +89,8 @@ final class VersionParserTest: XCTestCase {
 		"""
 		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
 
-		guard case .html(let fallbackHTML) = entry.releaseNotes else {
-			return XCTFail("Expected immediate fallback release notes")
+		guard case .genericMetadata(let fallbackHTML) = entry.releaseNotes else {
+			return XCTFail("Expected separately classified Homebrew metadata")
 		}
 
 		XCTAssertTrue(fallbackHTML.contains("Example App 2.4.1"))
@@ -123,7 +124,7 @@ final class VersionParserTest: XCTestCase {
 		}
 
 		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/bitgapp/eqMac/releases/tags/v1.8.15")
-		XCTAssertTrue(fallbackHTML?.contains("eqMac 1.8.15") == true)
+		XCTAssertNil(fallbackHTML)
 	}
 
 	func testHomebrewCaskEntryDerivesLatestGitHubReleaseFromLatestDownloadURL() throws {
@@ -218,10 +219,10 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertEqual(urls, [URL(string: "https://releases.1password.com/mac/stable/")!])
 		XCTAssertEqual(versionPrefix, "8.12.22")
 		XCTAssertFalse(allowsLatestFallback)
-		XCTAssertTrue(fallbackHTML?.contains("1Password 8.12.22") == true)
+		XCTAssertNil(fallbackHTML)
 	}
 
-	func testReleaseNotesSourceCatalogAddsSparkleFallbackForBetterDisplay() throws {
+	func testReleaseNotesSourceCatalogUsesBetterDisplayGitHubReleaseAPI() throws {
 		let bundle = App.Bundle(
 			version: Version(versionNumber: "4.3.3", buildNumber: "50020"),
 			name: "BetterDisplay",
@@ -234,10 +235,10 @@ final class VersionParserTest: XCTestCase {
 			for: bundle,
 			remoteVersion: Version(versionNumber: "4.3.4", buildNumber: "50021")
 		) else {
-			return XCTFail("Expected catalog GitHub release notes")
+			return XCTFail("Expected BetterDisplay GitHub release API")
 		}
 
-		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v4.3.4")
+		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/waydabber/BetterDummy/releases/tags/v4.3.4")
 		XCTAssertTrue(fallbackHTML?.contains("BetterDisplay 4.3.4") == true)
 	}
 
@@ -255,14 +256,14 @@ final class VersionParserTest: XCTestCase {
 			bundle: bundle,
 			remoteVersion: Version(versionNumber: "4.3.4", buildNumber: "50021")
 		) else {
-			return XCTFail("Expected BetterDisplay appcast link to resolve to the GitHub release API")
+			return XCTFail("Expected BetterDisplay appcast link to resolve to its backing GitHub release")
 		}
 
-		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v4.3.4")
+		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/waydabber/BetterDummy/releases/tags/v4.3.4")
 		XCTAssertTrue(fallbackHTML?.contains("BetterDisplay 4.3.4") == true)
 	}
 
-	func testReleaseNotesSourceCatalogUsesTelegramDesktopGitHubRelease() throws {
+	func testReleaseNotesSourceCatalogUsesTelegramDesktopChangelog() throws {
 		let json = """
 		{
 			"token": "telegram-desktop",
@@ -282,12 +283,14 @@ final class VersionParserTest: XCTestCase {
 		"""
 		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
 
-		guard case .githubRelease(let apiURL, let fallbackHTML) = entry.releaseNotes else {
-			return XCTFail("Expected Telegram Desktop GitHub release notes")
+		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML) = entry.releaseNotes else {
+			return XCTFail("Expected Telegram Desktop changelog")
 		}
 
-		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/telegramdesktop/tdesktop/releases/tags/v6.9.2")
-		XCTAssertTrue(fallbackHTML?.contains("Telegram 6.9.2") == true)
+		XCTAssertEqual(urls.map(\.absoluteString), ["https://raw.githubusercontent.com/telegramdesktop/tdesktop/dev/changelog.txt"])
+		XCTAssertEqual(versionPrefix, "6.9.2")
+		XCTAssertFalse(allowsLatestFallback)
+		XCTAssertNil(fallbackHTML)
 	}
 
 	func testReleaseNotesSourceCatalogUsesDockerDesktopMarkdownSource() throws {
@@ -317,7 +320,7 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertEqual(urls, [URL(string: "https://docs.docker.com/desktop/release-notes.md")!])
 		XCTAssertEqual(versionPrefix, "4.77.0")
 		XCTAssertFalse(allowsLatestFallback)
-		XCTAssertTrue(fallbackHTML?.contains("Docker 4.77.0") == true)
+		XCTAssertNil(fallbackHTML)
 	}
 
 	func testReleaseNotesSourceCatalogUsesChromeReleaseBlog() throws {
@@ -347,14 +350,13 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertEqual(urls, [URL(string: "https://chromereleases.googleblog.com/")!])
 		XCTAssertEqual(versionPrefix, "149.0.7827.115")
 		XCTAssertFalse(allowsLatestFallback)
-		XCTAssertTrue(fallbackHTML?.contains("Google Chrome 149.0.7827.115") == true)
+		XCTAssertNil(fallbackHTML)
 	}
 
 	func testReleaseNotesSourceCatalogDoesNotUseNotionProductReleases() {
 		let releaseNotes = ReleaseNotesSourceCatalog.releaseNotes(
 			forHomebrewToken: "notion",
-			version: Version(versionNumber: "7.21.0", buildNumber: nil),
-			fallbackHTML: "<p>Notion 7.21.0 is available.</p>"
+			version: Version(versionNumber: "7.21.0", buildNumber: nil)
 		)
 
 		XCTAssertNil(releaseNotes)
@@ -377,7 +379,7 @@ final class VersionParserTest: XCTestCase {
 		}
 
 		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/usebruno/bruno/releases/tags/v3.4.2")
-		XCTAssertTrue(fallbackHTML?.contains("Bruno 3.4.2") == true)
+		XCTAssertNil(fallbackHTML)
 	}
 
 	func testElectronReleaseNotesSourceReadsGitHubProviderConfiguration() {
@@ -426,7 +428,7 @@ final class VersionParserTest: XCTestCase {
 		}
 
 		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/example-org/desktop-client/releases/latest")
-		XCTAssertTrue(fallbackHTML?.contains("Uncatalogued Electron App 2.0") == true)
+		XCTAssertNil(fallbackHTML)
 	}
 
 	func testReleaseNotesSourceCatalogCoversPopularNonGitHubApps() throws {
@@ -441,8 +443,7 @@ final class VersionParserTest: XCTestCase {
 		for (token, expectedURL) in expectedURLs {
 			guard case .changelog(let urls, let versionPrefix, _, _) = ReleaseNotesSourceCatalog.releaseNotes(
 				forHomebrewToken: token,
-				version: version,
-				fallbackHTML: nil
+				version: version
 			) else {
 				return XCTFail("Expected catalog changelog for \(token)")
 			}
@@ -460,8 +461,7 @@ final class VersionParserTest: XCTestCase {
 			XCTAssertNotNil(
 				ReleaseNotesSourceCatalog.releaseNotes(
 					forHomebrewToken: token,
-					version: version,
-					fallbackHTML: nil
+					version: version
 				),
 				"Missing release-note route for \(token)"
 			)
@@ -471,8 +471,7 @@ final class VersionParserTest: XCTestCase {
 	func testReleaseNotesSourceCatalogUsesGhosttySourceMarkdown() throws {
 		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, _) = ReleaseNotesSourceCatalog.releaseNotes(
 			forHomebrewToken: "ghostty",
-			version: Version(versionNumber: "1.3.1", buildNumber: nil),
-			fallbackHTML: nil
+			version: Version(versionNumber: "1.3.1", buildNumber: nil)
 		) else {
 			return XCTFail("Expected Ghostty changelog release notes")
 		}
@@ -485,8 +484,7 @@ final class VersionParserTest: XCTestCase {
 	func testReleaseNotesSourceCatalogUsesObsidianChangelog() throws {
 		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML) = ReleaseNotesSourceCatalog.releaseNotes(
 			forHomebrewToken: "obsidian",
-			version: Version(versionNumber: "1.12.7", buildNumber: nil),
-			fallbackHTML: "<p>Obsidian 1.12.7 is available.</p>"
+			version: Version(versionNumber: "1.12.7", buildNumber: nil)
 		) else {
 			return XCTFail("Expected Obsidian changelog release notes")
 		}
@@ -494,14 +492,13 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertEqual(urls, [URL(string: "https://obsidian.md/changelog/")!])
 		XCTAssertEqual(versionPrefix, "1.12.7")
 		XCTAssertFalse(allowsLatestFallback)
-		XCTAssertTrue(fallbackHTML?.contains("Obsidian 1.12.7") == true)
+		XCTAssertNil(fallbackHTML)
 	}
 
 	func testReleaseNotesSourceCatalogUsesVersionedJetBrainsWhatsNewPage() throws {
 		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, _) = ReleaseNotesSourceCatalog.releaseNotes(
 			forHomebrewToken: "intellij-idea",
-			version: Version(versionNumber: "2026.1.4", buildNumber: "261.26222.65"),
-			fallbackHTML: nil
+			version: Version(versionNumber: "2026.1.4", buildNumber: "261.26222.65")
 		) else {
 			return XCTFail("Expected JetBrains What's New release notes")
 		}
@@ -514,8 +511,7 @@ final class VersionParserTest: XCTestCase {
 	func testReleaseNotesSourceCatalogUsesRogueAmoebaProductHistory() throws {
 		guard case .changelog(let urls, let versionPrefix, let allowsLatestFallback, _) = ReleaseNotesSourceCatalog.releaseNotes(
 			forHomebrewToken: "audio-hijack",
-			version: Version(versionNumber: "4.5.9", buildNumber: nil),
-			fallbackHTML: nil
+			version: Version(versionNumber: "4.5.9", buildNumber: nil)
 		) else {
 			return XCTFail("Expected Rogue Amoeba release notes")
 		}
@@ -666,8 +662,8 @@ final class VersionParserTest: XCTestCase {
 		"""
 		let entry = try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
 
-		guard case .html(let html) = entry.releaseNotes else {
-			return XCTFail("Expected fallback HTML release notes")
+		guard case .genericMetadata(let html) = entry.releaseNotes else {
+			return XCTFail("Expected separately classified Homebrew metadata")
 		}
 
 		XCTAssertTrue(html.contains("ExpressVPN 14.1.1.13156"))
@@ -1601,7 +1597,9 @@ final class VersionParserTest: XCTestCase {
 			result = notes
 			expectation.fulfill()
 		}
-		await fulfillment(of: [expectation], timeout: 1)
+		// HTML-to-attributed-string conversion can briefly exceed one second on a
+		// busy debug XCTest host even though it runs fully off the network.
+		await fulfillment(of: [expectation], timeout: 3)
 
 		return try XCTUnwrap(result).get()
 	}
@@ -1829,6 +1827,310 @@ final class BundleCollectorTest: XCTestCase {
 		XCTAssertEqual(Set(bundles.map(\.name)), ["Visible App"])
 	}
 
+}
+
+final class ReleaseNotesPipelineTest: XCTestCase {
+
+	func testCurrentBetterDisplayRegressionUsesVersionedGitHubRelease() throws {
+		let bundle = App.Bundle(
+			version: Version(versionNumber: "4.3.4", buildNumber: nil),
+			name: "BetterDisplay",
+			bundleIdentifier: "pro.betterdisplay.BetterDisplay",
+			fileURL: URL(fileURLWithPath: "/Applications/BetterDisplay.app", isDirectory: true),
+			source: .sparkle
+		)
+
+		guard case .githubRelease(let apiURL, _) = ReleaseNotesSourceCatalog.releaseNotes(
+			for: bundle,
+			remoteVersion: Version(versionNumber: "4.3.5", buildNumber: nil)
+		) else {
+			return XCTFail("Expected BetterDisplay 4.3.5 GitHub release")
+		}
+		XCTAssertEqual(apiURL.absoluteString, "https://api.github.com/repos/waydabber/BetterDummy/releases/tags/v4.3.5")
+	}
+
+	func testCurrentTelegramRegressionSelectsExactDesktopVersion() throws {
+		let changelog = """
+		7.0.3
+		- Fix media viewer freezes on macOS.
+		- Improve message rendering performance.
+		7.0.2
+		- Older unrelated fix.
+		"""
+		let text = try XCTUnwrap(ReleaseNotesMarkup.relevantChangelogText(
+			fromHTML: changelog,
+			version: "7.0.3",
+			pageURL: URL(string: "https://raw.githubusercontent.com/telegramdesktop/tdesktop/dev/changelog.txt")!,
+			allowFirstSectionFallback: false
+		))
+
+		XCTAssertTrue(text.contains("Fix media viewer freezes on macOS"))
+		XCTAssertFalse(text.contains("Older unrelated fix"))
+	}
+
+	func testCurrentZedRegressionPrefersCompleteRenderedArticleOverTruncatedTransportPayload() throws {
+		let html = """
+		<html><body>
+		<nav><a>1.11.4</a><a>1.11.3</a></nav>
+		<main><div id="zed-1.11.3"><header><p>1.11.3</p><p>July 16, 2026</p></header><article>
+		<p>This week's release includes complete collaboration improvements for shared projects.</p>
+		<h2>Features</h2>
+		<p>Fixed language server crashes when opening large workspaces.</p></article></div></main>
+		<script>self.__next_f.push([1,"{\\\"release\\\":{\\\"version\\\":\\\"1.11.3\\\",\\\"description\\\":\\\"Fixed one truncated item.\\\"}}"])</script>
+		</body></html>
+		"""
+		let text = try XCTUnwrap(ReleaseNotesMarkup.zedReleaseText(
+			fromHTML: html,
+			version: "1.11.3",
+			pageURL: URL(string: "https://zed.dev/releases/stable/1.11.3")!
+		))
+
+		XCTAssertTrue(text.contains("complete collaboration improvements"))
+		XCTAssertTrue(text.contains("language server crashes"))
+		XCTAssertFalse(text.contains("truncated item"))
+	}
+
+	func testCurrentZoomRegressionDropsIOSOnlyRows() throws {
+		let html = """
+		<html><body>
+		<h2>July 15, 2026 version 7.1.0 (83064)</h2>
+		<h3>New, enhanced, and changed features</h3>
+		<p>New or enhanced feature</p><p>Desktop meeting controls</p>
+		<p>Improves meeting controls for desktop participants.</p><p>Windows</p><p>macOS</p><p>Linux</p>
+		<p>New or enhanced feature</p><p>Mobile camera effects</p>
+		<p>Adds iPhone camera effects.</p><p>iOS</p><p>iOS (Intune)</p>
+		<h2>July 8, 2026 version 7.0.9</h2><p>Resolved issue</p><p>Older fix.</p><p>macOS</p>
+		</body></html>
+		"""
+		let text = try XCTUnwrap(ReleaseNotesMarkup.zoomReleaseText(
+			fromHTML: html,
+			version: "7.1.0",
+			pageURL: URL(string: "https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0061222")!
+		))
+
+		XCTAssertTrue(text.contains("Desktop meeting controls"))
+		XCTAssertFalse(text.contains("Mobile camera effects"))
+		XCTAssertFalse(text.contains("iPhone camera effects"))
+		XCTAssertFalse(text.contains("Older fix"))
+	}
+
+	func testReleaseNotesCandidateScorerRejectsWrongIdentityVersionPlatformAndSize() {
+		let scorer = ReleaseNotesCandidateScorer(maximumMarkupSize: 32)
+		let context = ReleaseNotesContext(
+			appName: "Zed",
+			bundleIdentifier: "dev.zed.Zed",
+			localVersion: "1.11.2",
+			remoteVersion: "1.11.3"
+		)
+
+		XCTAssertThrowsError(try scorer.quality(of: ReleaseNotesCandidate(
+			markup: "Useful fixes for editors.", baseURL: nil, provenance: .changelog,
+			declaredAppIdentifiers: ["com.example.Other"]
+		), for: context)) { XCTAssertEqual($0 as? ReleaseNotesCandidateRejection, .wrongApplication) }
+		XCTAssertThrowsError(try scorer.quality(of: ReleaseNotesCandidate(
+			markup: "Useful fixes for editors.", baseURL: nil, provenance: .changelog,
+			declaredVersion: "1.12.0"
+		), for: context)) { XCTAssertEqual($0 as? ReleaseNotesCandidateRejection, .wrongVersion) }
+		XCTAssertThrowsError(try scorer.quality(of: ReleaseNotesCandidate(
+			markup: "Useful fixes for editors.", baseURL: nil, provenance: .changelog,
+			declaredPlatforms: ["iOS"]
+		), for: context)) { XCTAssertEqual($0 as? ReleaseNotesCandidateRejection, .wrongPlatform) }
+		XCTAssertThrowsError(try scorer.quality(of: ReleaseNotesCandidate(
+			markup: String(repeating: "x", count: 33), baseURL: nil, provenance: .changelog
+		), for: context)) { XCTAssertEqual($0 as? ReleaseNotesCandidateRejection, .oversized) }
+	}
+
+	func testReleaseNotesResolverPrefersGenuineNotesOverGenericHomebrewMetadata() throws {
+		let context = ReleaseNotesContext(
+			appName: "Example",
+			bundleIdentifier: "com.example.App",
+			localVersion: "1.0",
+			remoteVersion: "1.1"
+		)
+		let generic = ReleaseNotesCandidate(
+			markup: "Example 1.1 is available from Homebrew.",
+			baseURL: nil,
+			provenance: .homebrewMetadata,
+			qualityHint: .genericMetadata
+		)
+		let genuine = ReleaseNotesCandidate(
+			markup: "Fixed a crash when reopening documents.",
+			baseURL: nil,
+			provenance: .changelog,
+			qualityHint: .genuine
+		)
+
+		let resolved = try ReleaseNotesResolver().resolve(
+			[generic, genuine],
+			for: context,
+			scorer: ReleaseNotesCandidateScorer()
+		)
+		XCTAssertEqual(resolved.quality, .genuine)
+		XCTAssertEqual(resolved.candidate.provenance, .changelog)
+	}
+
+	func testGenericHomebrewMetadataHasDistinctQualityAndProvenance() {
+		let releaseNotes = App.Update.ReleaseNotes.genericMetadata(string: "Example 1.1 is available from Homebrew.")
+		XCTAssertEqual(releaseNotes.qualityHint, .genericMetadata)
+		XCTAssertEqual(releaseNotes.provenance, .homebrewMetadata)
+	}
+
+	func testReleaseNotesFetcherRejectsMalformedAndOversizedContent() async throws {
+		let url = URL(string: "https://example.com/notes")!
+		let malformedFetcher = ReleaseNotesFetcher(loader: StubReleaseNotesLoader(response: Self.httpResponse(
+			url: url,
+			data: Data(repeating: 0, count: 128)
+		)))
+		await XCTAssertThrowsErrorAsync(try await malformedFetcher.fetchMarkup(from: url)) {
+			XCTAssertEqual($0 as? ReleaseNotesFetchError, .unusableText)
+		}
+
+		let oversizedFetcher = ReleaseNotesFetcher(
+			loader: StubReleaseNotesLoader(response: Self.httpResponse(url: url, data: Data("12345".utf8))),
+			maximumResponseSize: 4
+		)
+		await XCTAssertThrowsErrorAsync(try await oversizedFetcher.fetchMarkup(from: url)) {
+			XCTAssertEqual($0 as? ReleaseNotesFetchError, .oversized)
+		}
+	}
+
+	func testSignedCatalogAcceptsValidRemoteDocument() async throws {
+		let fixture = try makeSignedCatalogFixture(schemaVersion: 1)
+		let client = SignedReleaseNotesCatalogClient(
+			configuration: .init(
+				isEnabled: true,
+				remoteURL: fixture.url,
+				publicKey: fixture.publicKey,
+				maximumEnvelopeSize: 64 * 1_024
+			),
+			bundledCatalogData: fixture.bundled,
+			loader: StubCatalogLoader(response: Self.httpResponse(url: fixture.url, data: fixture.envelope))
+		)
+
+		let loaded = try await client.load()
+		XCTAssertEqual(loaded.origin, .remote)
+		XCTAssertEqual(loaded.document.definitions.first?.keys, ["remote-app"])
+	}
+
+	func testSignedCatalogRejectsWrongSignatureAndUsesBundledLastKnownGood() async throws {
+		var fixture = try makeSignedCatalogFixture(schemaVersion: 1)
+		var envelope = try JSONDecoder().decode(SignedReleaseNotesCatalogEnvelope.self, from: fixture.envelope)
+		envelope = SignedReleaseNotesCatalogEnvelope(
+			schemaVersion: envelope.schemaVersion,
+			payload: envelope.payload,
+			signature: Data(repeating: 0, count: envelope.signature.count)
+		)
+		fixture.envelope = try JSONEncoder().encode(envelope)
+		let client = catalogClient(fixture: fixture)
+
+		let loaded = try await client.load()
+		XCTAssertEqual(loaded.origin, .bundledFallback(.invalidSignature))
+		XCTAssertEqual(loaded.document.definitions.first?.keys, ["bundled-app"])
+	}
+
+	func testSignedCatalogRejectsUnsupportedSchemaAndUsesBundledLastKnownGood() async throws {
+		let fixture = try makeSignedCatalogFixture(schemaVersion: 99)
+		let loaded = try await catalogClient(fixture: fixture).load()
+
+		XCTAssertEqual(loaded.origin, .bundledFallback(.invalidCatalog))
+		XCTAssertEqual(loaded.document.definitions.first?.keys, ["bundled-app"])
+	}
+
+	func testSignedCatalogRejectsUnsupportedEnvelopeSchemaAndUsesBundledLastKnownGood() async throws {
+		var fixture = try makeSignedCatalogFixture(schemaVersion: 1)
+		let validEnvelope = try JSONDecoder().decode(SignedReleaseNotesCatalogEnvelope.self, from: fixture.envelope)
+		fixture.envelope = try JSONEncoder().encode(SignedReleaseNotesCatalogEnvelope(
+			schemaVersion: 99,
+			payload: validEnvelope.payload,
+			signature: validEnvelope.signature
+		))
+
+		let loaded = try await catalogClient(fixture: fixture).load()
+		XCTAssertEqual(loaded.origin, .bundledFallback(.invalidEnvelopeSchema))
+		XCTAssertEqual(loaded.document.definitions.first?.keys, ["bundled-app"])
+	}
+
+	func testSignedCatalogOfflineAndDisabledModesUseBundledLastKnownGood() async throws {
+		let fixture = try makeSignedCatalogFixture(schemaVersion: 1)
+		let offlineClient = SignedReleaseNotesCatalogClient(
+			configuration: .init(
+				isEnabled: true,
+				remoteURL: fixture.url,
+				publicKey: fixture.publicKey,
+				maximumEnvelopeSize: 64 * 1_024
+			),
+			bundledCatalogData: fixture.bundled,
+			loader: OfflineCatalogLoader()
+		)
+		let offline = try await offlineClient.load()
+		XCTAssertEqual(offline.origin, .bundledFallback(.network))
+
+		let disabled = try await SignedReleaseNotesCatalogClient(
+			configuration: .disabled,
+			bundledCatalogData: fixture.bundled
+		).load()
+		XCTAssertEqual(disabled.origin, .bundledFallback(.disabled))
+	}
+
+	private static func httpResponse(url: URL, data: Data) -> ReleaseNotesFetchResponse {
+		let response = HTTPURLResponse(
+			url: url,
+			statusCode: 200,
+			httpVersion: "HTTP/1.1",
+			headerFields: ["Content-Type": "application/json", "Content-Length": "\(data.count)"]
+		)!
+		return ReleaseNotesFetchResponse(data: data, response: response)
+	}
+
+	private func catalogClient(fixture: SignedCatalogFixture) -> SignedReleaseNotesCatalogClient {
+		SignedReleaseNotesCatalogClient(
+			configuration: .init(
+				isEnabled: true,
+				remoteURL: fixture.url,
+				publicKey: fixture.publicKey,
+				maximumEnvelopeSize: 64 * 1_024
+			),
+			bundledCatalogData: fixture.bundled,
+			loader: StubCatalogLoader(response: Self.httpResponse(url: fixture.url, data: fixture.envelope))
+		)
+	}
+
+	private func makeSignedCatalogFixture(schemaVersion: Int) throws -> SignedCatalogFixture {
+		let bundled = try JSONEncoder().encode([Self.catalogDefinition(key: "bundled-app")])
+		let remoteDocument = ReleaseNotesCatalogDocument(
+			schemaVersion: schemaVersion,
+			definitions: [Self.catalogDefinition(key: "remote-app")]
+		)
+		let payload = try JSONEncoder().encode(remoteDocument)
+		let privateKey = Curve25519.Signing.PrivateKey()
+		let envelope = SignedReleaseNotesCatalogEnvelope(
+			schemaVersion: SignedReleaseNotesCatalogEnvelope.supportedSchemaVersion,
+			payload: payload,
+			signature: try privateKey.signature(for: payload)
+		)
+		return SignedCatalogFixture(
+			url: URL(string: "https://catalog.example.com/release-notes.json")!,
+			publicKey: privateKey.publicKey.rawRepresentation,
+			bundled: bundled,
+			envelope: try JSONEncoder().encode(envelope)
+		)
+	}
+
+	private static func catalogDefinition(key: String) -> ReleaseNotesSourceDefinition {
+		ReleaseNotesSourceDefinition(
+			keys: [key],
+			homebrewTokens: [],
+			kind: .changelog,
+			urlTemplate: "https://example.com/changelog/{version}",
+			versionPrefix: .exact,
+			knownFallbackKey: nil,
+			allowsLatestFallback: false
+		)
+	}
+
+}
+
+private extension BundleCollectorTest {
 	private func makeTemporaryDirectory() throws -> URL {
 		let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -1886,4 +2188,49 @@ private func homebrewEntry(token: String, bundleIdentifier: String) throws -> Up
 	"""
 
 	return try JSONDecoder().decode(UpdateRepository.Entry.self, from: Data(json.utf8))
+}
+
+private struct SignedCatalogFixture {
+	let url: URL
+	let publicKey: Data
+	let bundled: Data
+	var envelope: Data
+}
+
+private struct StubReleaseNotesLoader: ReleaseNotesHTTPDataLoading {
+	let response: ReleaseNotesFetchResponse
+
+	func load(_ request: URLRequest) async throws -> ReleaseNotesFetchResponse {
+		response
+	}
+}
+
+private struct StubCatalogLoader: ReleaseNotesCatalogHTTPDataLoading {
+	let response: ReleaseNotesFetchResponse
+
+	func load(_ request: URLRequest) async throws -> ReleaseNotesFetchResponse {
+		response
+	}
+}
+
+private struct OfflineCatalogLoader: ReleaseNotesCatalogHTTPDataLoading {
+	private struct Offline: Error {}
+
+	func load(_ request: URLRequest) async throws -> ReleaseNotesFetchResponse {
+		throw Offline()
+	}
+}
+
+private func XCTAssertThrowsErrorAsync<T>(
+	_ expression: @autoclosure () async throws -> T,
+	_ errorHandler: (Error) -> Void = { _ in },
+	file: StaticString = #filePath,
+	line: UInt = #line
+) async {
+	do {
+		_ = try await expression()
+		XCTFail("Expected expression to throw", file: file, line: line)
+	} catch {
+		errorHandler(error)
+	}
 }

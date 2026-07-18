@@ -38,7 +38,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
 		XCTAssertFalse(restored.matches(changedSourceData))
 	}
 
-	func testComplexityBenchmarks() throws {
+	func testComplexityBenchmarks() async throws {
 		guard FileManager.default.fileExists(atPath: Self.benchmarkFlagURL.path) else {
 			throw XCTSkip("Run script/benchmark_complexity.sh to execute complexity benchmarks.")
 		}
@@ -181,6 +181,10 @@ final class ComplexityBenchmarkTest: XCTestCase {
 		benchmark("bundle_collection_path_filtering", iterations: 5) {
 			BundleCollector.collectBundles(at: bundleCollectionRoot).count
 		}
+
+		try await benchmarkAsync("update_check_end_to_end", iterations: 7) {
+			await self.runStructuredUpdateCheckBatch(taskCount: 120, maximumConcurrentChecks: 6)
+		}
 	}
 
 	private static var benchmarkFlagURL: URL {
@@ -217,6 +221,53 @@ final class ComplexityBenchmarkTest: XCTestCase {
 			maximum: maxSample,
 			checksum: checksum
 		)
+	}
+
+	private func benchmarkAsync(
+		_ name: String,
+		iterations: Int,
+		block: () async throws -> Int
+	) async rethrows {
+		var samples = [Double]()
+		var checksum = 0
+
+		for _ in 0..<iterations {
+			let start = DispatchTime.now().uptimeNanoseconds
+			checksum &+= try await block()
+			let end = DispatchTime.now().uptimeNanoseconds
+			samples.append(Double(end - start) / 1_000_000)
+		}
+
+		let sortedSamples = samples.sorted()
+		emitBenchmarkLine(
+			name: name,
+			iterations: iterations,
+			minimum: samples.min() ?? 0,
+			average: samples.reduce(0, +) / Double(samples.count),
+			median: percentile(0.50, in: sortedSamples),
+			p95: percentile(0.95, in: sortedSamples),
+			maximum: samples.max() ?? 0,
+			checksum: checksum
+		)
+	}
+
+	/// Measures the production structured-concurrency scheduler with the same
+	/// deterministic workload used for the before measurement.
+	private func runStructuredUpdateCheckBatch(
+		taskCount: Int,
+		maximumConcurrentChecks: Int
+	) async -> Int {
+		let execution = await BoundedUpdateCheckExecutor(
+			maximumConcurrentTasks: maximumConcurrentChecks
+		).run(Array(0..<taskCount)) { index in
+			try await Task.sleep(for: .milliseconds(1))
+			return index
+		}
+		return execution.results.reduce(into: 0) { checksum, result in
+			if case .success(let value) = result.result {
+				checksum &+= value
+			}
+		}
 	}
 
 	private func percentile(_ percentile: Double, in sortedSamples: [Double]) -> Double {

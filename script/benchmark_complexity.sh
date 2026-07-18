@@ -53,6 +53,10 @@ BEGIN {
 	budgets["update_repository_entry_metadata_and_matching"] = 280
 	budgets["update_repository_lazy_metadata_and_matching"] = 15
 	budgets["bundle_collection_path_filtering"] = 170
+	# The debug XCTest runtime occasionally adds a scheduler/timer spike. This
+	# remains below the 144 ms pre-migration baseline while leaving headroom for
+	# that measured noise.
+	budgets["update_check_end_to_end"] = 120
 }
 
 $1 == "BENCHMARK" {

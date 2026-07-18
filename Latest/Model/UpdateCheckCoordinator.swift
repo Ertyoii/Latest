@@ -96,24 +96,34 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 	/// The data store updated apps should be passed to
 	private let dataStore = AppDataStore()
 
-	/// List of available update checking operations.
-	fileprivate static let availableOperations: [UpdateCheckerOperation.Type] = [
-		AppStoreUpdateCheckerOperation.self,
-		SparkleUpdateCheckerOperation.self,
-		HomebrewCheckerOperation.self
+	private struct CheckerDefinition: Sendable {
+		let source: App.Source
+		let canPerform: @Sendable (URL) -> Bool
+		let check: @Sendable (App.Bundle, UpdateRepository?) async throws -> App.Update
+	}
+
+	private static let availableCheckers: [CheckerDefinition] = [
+		CheckerDefinition(
+			source: .appStore,
+			canPerform: AppStoreUpdateCheckerOperation.canPerformUpdateCheck,
+			check: { bundle, _ in try await AppStoreUpdateCheckerOperation(with: bundle).check() }
+		),
+		CheckerDefinition(
+			source: .sparkle,
+			canPerform: SparkleUpdateCheckerOperation.canPerformUpdateCheck,
+			check: { bundle, _ in try await SparkleUpdateCheckerOperation(with: bundle).check() }
+		),
+		CheckerDefinition(
+			source: .none,
+			canPerform: HomebrewCheckerOperation.canPerformUpdateCheck,
+			check: { bundle, repository in try await HomebrewCheckerOperation(with: bundle, repository: repository).check() }
+		)
 	]
 
-	/// The queue to run update checks on.
-	private let updateOperationQueue: OperationQueue = {
-		let operationQueue = OperationQueue()
-
-		operationQueue.qualityOfService = .userInitiated
-		operationQueue.maxConcurrentOperationCount = 6
-
-		return operationQueue
-	}()
+	private let updateCheckExecutor = BoundedUpdateCheckExecutor(maximumConcurrentTasks: 6)
 
 	private let updateCheckSchedulingLock = NSLock()
+	private var activeUpdateCheckTasks = [UUID: Task<Void, Never>]()
 
 	private let updateCheckGeneration = UpdateCheckGenerationTracker()
 
@@ -146,69 +156,83 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 	private func invalidateActiveUpdateCheck() {
 		updateCheckSchedulingLock.withCriticalScope {
 			_ = updateCheckGeneration.begin()
-			updateOperationQueue.cancelAllOperations()
+			activeUpdateCheckTasks.values.forEach { $0.cancel() }
+			activeUpdateCheckTasks.removeAll(keepingCapacity: true)
 		}
 	}
 
 	/// Performs the update check on the given bundles.
 	private func runUpdateCheck(on bundles: [App.Bundle], cancelsExistingChecks: Bool = true) {
 		updateCheckSchedulingLock.lock()
-		defer { updateCheckSchedulingLock.unlock() }
 
 		let generation: Int
 		if cancelsExistingChecks {
 			generation = updateCheckGeneration.begin()
-			updateOperationQueue.cancelAllOperations()
+			activeUpdateCheckTasks.values.forEach { $0.cancel() }
+			activeUpdateCheckTasks.removeAll(keepingCapacity: true)
 		} else {
 			generation = updateCheckGeneration.currentOrBegin()
 		}
 
 		let repository = UpdateRepository.newRepository()
 		let prioritizedBundles = Self.prioritizedBundlesForUpdateCheck(bundles)
-		let operations = prioritizedBundles.compactMap { bundle in
-			return Self.operation(forChecking: bundle, repository: repository) { [weak self] result in
-				self?.didCheck(bundle, result, generation: generation)
-			}
+		let checkableBundles = prioritizedBundles.filter { bundle in
+			Self.checker(for: bundle.source) != nil
 		}
 		updateCheckLogger.info(
-			"Scheduled update check generation \(generation, privacy: .public) for \(bundles.count, privacy: .public) bundles and \(operations.count, privacy: .public) operations"
+			"Scheduled update check generation \(generation, privacy: .public) for \(bundles.count, privacy: .public) bundles and \(checkableBundles.count, privacy: .public) child tasks"
 		)
 
-		self.performUpdateCheck(with: operations, generation: generation)
+		let taskID = UUID()
+		let task = Task(priority: .userInitiated) { [weak self] in
+			guard let self else { return }
+			defer { self.removeActiveTask(taskID) }
+			await self.performUpdateCheck(
+				on: checkableBundles,
+				repository: repository,
+				generation: generation
+			)
+		}
+		activeUpdateCheckTasks[taskID] = task
+		updateCheckSchedulingLock.unlock()
 	}
 
-	/// Performs update checks for the given check operations.
-	private func performUpdateCheck(with operations: [UpdateCheckerOperation], generation: Int) {
-		guard !operations.isEmpty else {
-			Task { @MainActor in
-				guard self.updateCheckGeneration.isCurrent(generation) else { return }
-				updateCheckLogger.info("Finished update check generation \(generation, privacy: .public) with no operations")
-				self.progressDelegate?.updateChecker(self, didStartCheckingApps: 0)
-				self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self)
-			}
-			return
+	private func performUpdateCheck(
+		on bundles: [App.Bundle],
+		repository: UpdateRepository?,
+		generation: Int
+	) async {
+		await MainActor.run {
+			guard self.updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
+			self.progressDelegate?.updateChecker(self, didStartCheckingApps: bundles.count)
 		}
 
-		// Inform delegate of update check
-		Task { @MainActor in
-			guard self.updateCheckGeneration.isCurrent(generation) else { return }
-			self.progressDelegate?.updateChecker(self, didStartCheckingApps: operations.count)
+		let execution = await updateCheckExecutor.run(bundles, onCompletion: { [weak self] (indexedResult: IndexedUpdateCheckResult<App.Update>) in
+			guard let self, bundles.indices.contains(indexedResult.index) else { return }
+			self.didCheck(bundles[indexedResult.index], indexedResult.result, generation: generation)
+		}) { bundle in
+			try Task.checkCancellation()
+			guard let result = await Self.check(bundle, repository: repository) else {
+				throw LatestError.updateInfoUnavailable
+			}
+			return try result.get()
 		}
 
-		// Start update check
-		self.updateOperationQueue.addOperations(operations, waitUntilFinished: false)
-		self.updateOperationQueue.addBarrierBlock { [weak self] in
-			guard let self else { return }
-			guard self.updateCheckGeneration.isCurrent(generation) else { return }
-			updateCheckLogger.info("Finished update check generation \(generation, privacy: .public)")
-			Task { @MainActor in
-				self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self)
-			}
+		guard updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
+		let durationComponents = execution.metrics.duration.components
+		let durationMilliseconds = Int64(durationComponents.seconds * 1_000) +
+			Int64(durationComponents.attoseconds / 1_000_000_000_000_000)
+		updateCheckLogger.info(
+			"Finished update check generation \(generation, privacy: .public), completed \(execution.metrics.completedCount, privacy: .public) of \(execution.metrics.scheduledCount, privacy: .public) tasks in \(durationMilliseconds, privacy: .public) ms"
+		)
+		await MainActor.run {
+			guard self.updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
+			self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self)
 		}
 	}
 
 	/// Callback to notify that an app has been updated.
-	private func didCheck(_ bundle: App.Bundle, _ update: Result<App.Update, Error>?, generation: Int) {
+	private func didCheck(_ bundle: App.Bundle, _ update: Result<App.Update, Error>, generation: Int) {
 		guard updateCheckGeneration.isCurrent(generation) else {
 			return
 		}
@@ -218,6 +242,12 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 		Task { @MainActor in
 			guard self.updateCheckGeneration.isCurrent(generation) else { return }
 			self.progressDelegate?.updateChecker(self, didCheckApp: app)
+		}
+	}
+
+	private func removeActiveTask(_ taskID: UUID) {
+		updateCheckSchedulingLock.withCriticalScope {
+			activeUpdateCheckTasks[taskID] = nil
 		}
 	}
 
@@ -276,12 +306,20 @@ extension UpdateCheckCoordinator {
 
 	/// Returns the update source for the app at the given url.
 	static func source(forAppAt url: URL) -> App.Source? {
-		return self.availableOperations.first { $0.canPerformUpdateCheck(forAppAt: url) }?.sourceType
+		availableCheckers.first { $0.canPerform(url) }?.source
 	}
 
-	/// Returns the update check operation for the given app bundle.
-	static func operation(forChecking bundle: App.Bundle, repository: UpdateRepository?, completion: @escaping UpdateCheckerOperation.UpdateCheckerCompletionBlock) -> UpdateCheckerOperation? {
-		return self.availableOperations.first { $0.sourceType == bundle.source }?.init(with: bundle, repository: repository, completionBlock: completion)
+	static func check(_ bundle: App.Bundle, repository: UpdateRepository?) async -> Result<App.Update, Error>? {
+		guard let checker = checker(for: bundle.source) else { return nil }
+		do {
+			return .success(try await checker.check(bundle, repository))
+		} catch {
+			return .failure(error)
+		}
+	}
+
+	private static func checker(for source: App.Source) -> CheckerDefinition? {
+		availableCheckers.first { $0.source == source }
 	}
 
 	private static func prioritizedBundlesForUpdateCheck(_ bundles: [App.Bundle]) -> [App.Bundle] {

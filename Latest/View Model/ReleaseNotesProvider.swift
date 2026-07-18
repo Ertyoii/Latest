@@ -29,6 +29,7 @@ class ReleaseNotesProvider {
 	/// The return value, containing either the desired release notes, or an error if unavailable.
 	typealias ReleaseNotes = Result<NSAttributedString, Error>
 	typealias Completion = @MainActor (ReleaseNotes) -> Void
+	typealias ResolvedCompletion = @MainActor (Result<ResolvedReleaseNotes, Error>) -> Void
 
 	/// Initializes the provider.
 	init() {
@@ -37,6 +38,8 @@ class ReleaseNotesProvider {
 		cache.totalCostLimit = 16 * 1_024 * 1_024
 		self.cache = cache
 	}
+
+	private let pipeline = ReleaseNotesPipeline()
 
 	/// Tracks the currently requested app.
 	///
@@ -77,6 +80,19 @@ class ReleaseNotesProvider {
 		}
 	}
 
+	/// Provides the same UI content together with source provenance and quality.
+	/// Existing callers intentionally keep using `releaseNotes(for:with:)` so the
+	/// visual and interaction contract remains unchanged.
+	func resolvedReleaseNotes(for app: App, with completion: @escaping ResolvedCompletion) {
+		releaseNotes(for: app) { result in
+			let provenance = app.releaseNotes?.provenance ?? .bundledFallback
+			let quality = app.releaseNotes?.qualityHint ?? .rejected
+			completion(result.map {
+				ResolvedReleaseNotes(content: $0, quality: quality, provenance: provenance)
+			})
+		}
+	}
+
 
 	// MARK: - Release Notes Handling
 
@@ -105,13 +121,32 @@ class ReleaseNotesProvider {
 			case .html(let html):
 				currentReleaseNotesTask = Task { [weak self] in
 					guard let self else { return }
-					let releaseNotes = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
-						from: html,
-						baseURL: nil,
-						relevantVersion: app.remoteVersion?.versionNumber
+					let releaseNotes = await self.pipeline.resolve(
+						ReleaseNotesCandidate(
+							markup: html,
+							baseURL: nil,
+							provenance: releaseNotes.provenance,
+							qualityHint: releaseNotes.qualityHint
+						),
+						for: ReleaseNotesContext(app: app)
 					)
 					guard !Task.isCancelled, self.isCurrentRequest(requestID, for: app) else { return }
-					completion(releaseNotes)
+					completion(releaseNotes.map(\.content))
+				}
+			case .genericMetadata(let html):
+				currentReleaseNotesTask = Task { [weak self] in
+					guard let self else { return }
+					let releaseNotes = await self.pipeline.resolve(
+						ReleaseNotesCandidate(
+							markup: html,
+							baseURL: nil,
+							provenance: .homebrewMetadata,
+							qualityHint: .genericMetadata
+						),
+						for: ReleaseNotesContext(app: app)
+					)
+					guard !Task.isCancelled, self.isCurrentRequest(requestID, for: app) else { return }
+					completion(releaseNotes.map(\.content))
 				}
 			case .url(let url):
 				self.releaseNotes(from: url, relevantVersion: app.remoteVersion?.versionNumber, requestID: requestID, with: completion)
@@ -175,15 +210,20 @@ class ReleaseNotesProvider {
 		currentReleaseNotesTask = Task { [weak self] in
 			guard let self else { return }
 
-			do {
-				let html = try await Self.fetchHTML(from: url)
-				let releaseNotes = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
-					from: html,
-					baseURL: url,
-					relevantVersion: relevantVersion
-				)
-				guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
-				completion(releaseNotes)
+				do {
+					let html = try await Self.fetchHTML(from: url)
+					let context = ReleaseNotesContext(
+						appName: self.currentApp?.name ?? "",
+						bundleIdentifier: self.currentApp?.bundleIdentifier ?? "",
+						localVersion: self.currentApp?.version.versionNumber,
+						remoteVersion: relevantVersion
+					)
+					let releaseNotes = await self.pipeline.resolve(
+						ReleaseNotesCandidate(markup: html, baseURL: url, provenance: .remoteURL),
+						for: context
+					)
+					guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
+					completion(releaseNotes.map(\.content))
 				return
 			} catch FetchHTMLError.unusableText {
 				guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
@@ -517,25 +557,11 @@ class ReleaseNotesProvider {
 	}
 
 	private nonisolated static func fetchFreshHTML(from url: URL) async throws -> String {
-		var request = URLRequest(url: url)
-		request.cachePolicy = .useProtocolCachePolicy
-		request.timeoutInterval = 6
-		request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
-
-		let (data, response) = try await URLSession.shared.data(for: request)
-
-		if let response = response as? HTTPURLResponse,
-		   !(200..<400).contains(response.statusCode) {
+		do {
+			return try await ReleaseNotesFetcher().fetchMarkup(from: url)
+		} catch is ReleaseNotesFetchError {
 			throw FetchHTMLError.unusableText
 		}
-
-		guard Self.responseCanContainText(response),
-			  let html = Self.decodedText(from: data, response: response),
-			  !ReleaseNotesMarkup.looksLikeBinaryOrMojibakeText(html) else {
-			throw FetchHTMLError.unusableText
-		}
-
-		return html
 	}
 
 	private nonisolated static func fetchGitHubReleaseData(from url: URL) async throws -> Data {
@@ -776,29 +802,6 @@ private extension ReleaseNotesProvider {
 		return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
 	}
 
-	nonisolated static func responseCanContainText(_ response: URLResponse) -> Bool {
-		guard let mimeType = response.mimeType?.lowercased() else { return true }
-		return mimeType.hasPrefix("text/") ||
-			mimeType == "application/json" ||
-			mimeType == "application/xml" ||
-			mimeType == "application/xhtml+xml" ||
-			mimeType == "application/rss+xml" ||
-			mimeType == "application/atom+xml"
-	}
-
-	nonisolated static func decodedText(from data: Data, response: URLResponse) -> String? {
-		if let text = String(data: data, encoding: .utf8) {
-			return text
-		}
-
-		let encodingName = response.textEncodingName?.lowercased() ?? ""
-		if encodingName.contains("iso-8859-1") || encodingName.contains("latin1") || encodingName.contains("windows-1252") {
-			return String(data: data, encoding: .isoLatin1)
-		}
-
-		return nil
-	}
-
 }
 
 private struct GitHubRelease: Decodable {
@@ -856,6 +859,8 @@ private extension App.Update.ReleaseNotes {
 			return "url:\(url.absoluteString)"
 		case .html(let string):
 			return "html:\(string.hashValue)"
+		case .genericMetadata(let string):
+			return "homebrew-metadata:\(string.hashValue)"
 		case .encoded(let data):
 			return "encoded:\(data.hashValue)"
 		case .githubRelease(let apiURL, let fallbackHTML):
@@ -1038,7 +1043,11 @@ enum ReleaseNotesMarkup {
 
 		let displayMarkup = markup.containsHTMLTag ? markup : Self.cleaningInlineMarkdown(in: markup)
 		let normalizedMarkup = Self.removingDuplicateLeadingLines(displayMarkup)
-		guard Self.isUsefulReleaseNotesText(normalizedMarkup, relevantVersion: relevantVersion) else { return nil }
+		let isValidatedZedArticle = baseURL?.host?.localizedCaseInsensitiveContains("zed.dev") == true &&
+			Self.isUsefulZedReleaseArticleText(normalizedMarkup)
+		guard isValidatedZedArticle || Self.isUsefulReleaseNotesText(normalizedMarkup, relevantVersion: relevantVersion) else {
+			return nil
+		}
 
 		if Self.prefersMarkdown(normalizedMarkup) {
 			return PreparedMarkup(string: normalizedMarkup, kind: .markdown, baseURL: baseURL)
@@ -1131,6 +1140,23 @@ enum ReleaseNotesMarkup {
 			return nil
 		}
 
+		// Zed's version page currently contains both rendered article text and React
+		// transport records. Prefer the rendered article: transport descriptions can
+		// be references or partial payloads even when they decode successfully.
+		if let articleHTML = Self.zedArticleBodyHTML(fromHTML: html, version: version),
+		   let text = Self.plainText(fromHTML: articleHTML),
+		   let cleanedText = Self.cleanedZedReleaseText(text),
+		   Self.isUsefulZedReleaseArticleText(cleanedText) {
+			return cleanedText
+		}
+
+		if let text = Self.plainText(fromHTML: html),
+		   let releaseText = Self.zedReleaseText(fromPlainText: text, version: version),
+		   let cleanedText = Self.cleanedZedReleaseText(releaseText),
+		   Self.isUsefulReleaseNotesText(cleanedText, relevantVersion: version) {
+			return cleanedText
+		}
+
 		let escapedVersion = NSRegularExpression.escapedPattern(for: version)
 		let pattern = #"\\\"release\\\":\{\\\"version\\\":\\\""# + escapedVersion + #"\\\",\\\"description\\\":\\\"((?:\\\\.|[^\\\"])*)\\\""#
 		if let regex = try? NSRegularExpression(pattern: pattern) {
@@ -1160,19 +1186,12 @@ enum ReleaseNotesMarkup {
 			}
 		}
 
-		guard let text = Self.plainText(fromHTML: html),
-			  let releaseText = Self.zedReleaseText(fromPlainText: text, version: version),
-			  let cleanedText = Self.cleanedZedReleaseText(releaseText),
-			  Self.isUsefulReleaseNotesText(cleanedText, relevantVersion: version) else {
-			return nil
-		}
-
-		return cleanedText
+		return nil
 	}
 
 	static func zoomReleaseText(fromHTML html: String, version: String?, pageURL: URL) -> String? {
 		guard pageURL.host?.localizedCaseInsensitiveContains("zoom.com") == true,
-			  let text = Self.plainText(fromHTML: Self.zoomArticleBodyHTML(fromHTML: html) ?? html) else {
+			  let text = Self.plainText(fromHTML: Self.zoomTableAwareHTML(Self.zoomArticleBodyHTML(fromHTML: html) ?? html)) else {
 			return nil
 		}
 
@@ -1963,6 +1982,7 @@ enum ReleaseNotesMarkup {
 		let lines = text.components(separatedBy: .newlines).compactMap { line -> String? in
 			let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
 			guard !trimmedLine.isEmpty,
+				  !["-", "–", "—"].contains(trimmedLine),
 				  !Self.zedReleaseChromeLines.contains(trimmedLine.lowercased()) else {
 				return nil
 			}
@@ -1974,8 +1994,54 @@ enum ReleaseNotesMarkup {
 		return cleanedText.isEmpty ? nil : cleanedText
 	}
 
+	private static func zedArticleBodyHTML(fromHTML html: String, version: String) -> String? {
+		let identifiers = ["id=\"zed-\(version)\"", "id='zed-\(version)'"]
+		guard let cardIdentifier = identifiers.compactMap({ identifier in
+			html.range(of: identifier, options: [.caseInsensitive, .diacriticInsensitive])
+		}).min(by: { $0.lowerBound < $1.lowerBound }),
+		      let articleTag = html.range(
+			of: "<article",
+			options: [.caseInsensitive, .diacriticInsensitive],
+			range: cardIdentifier.upperBound..<html.endIndex
+		),
+		      let articleBodyStart = html.range(of: ">", range: articleTag.upperBound..<html.endIndex)?.upperBound,
+		      let articleBodyEnd = html.range(
+			of: "</article>",
+			options: [.caseInsensitive, .diacriticInsensitive],
+			range: articleBodyStart..<html.endIndex
+		)?.lowerBound else {
+			return nil
+		}
+		return String(html[articleBodyStart..<articleBodyEnd])
+	}
+
+	private static func isUsefulZedReleaseArticleText(_ text: String) -> Bool {
+		guard text.count >= 80,
+		      !Self.looksLikeBinaryOrMojibakeText(text) else {
+			return false
+		}
+		return text.range(
+			of: #"(?m)^(This week's release|Features|Bug Fixes|Shipped by the Zed Guild)\b"#,
+			options: [.regularExpression, .caseInsensitive]
+		) != nil
+	}
+
+	private static func zoomTableAwareHTML(_ html: String) -> String {
+		html
+			.replacingOccurrences(
+				of: #"(?is)</(?:td|th)>\s*<(?:td|th)\b[^>]*>"#,
+				with: "<br />",
+				options: .regularExpression
+			)
+			.replacingOccurrences(
+				of: #"(?is)</tr>\s*<tr\b[^>]*>"#,
+				with: "<br />",
+				options: .regularExpression
+			)
+	}
+
 	private static func cleanedZoomReleaseText(_ lines: [String]) -> String {
-		var cleanedLines = [String]()
+		var normalizedLines = [String]()
 		var skippingFullVersions = false
 
 		for line in lines {
@@ -1995,12 +2061,38 @@ enum ReleaseNotesMarkup {
 				}
 			}
 
-			if trimmedLine.localizedCaseInsensitiveCompare("Type Feature title Description Platforms") == .orderedSame ||
-				Self.isZoomPlatformOnlyLine(trimmedLine) {
+			if trimmedLine.localizedCaseInsensitiveCompare("Type Feature title Description Platforms") == .orderedSame {
 				continue
 			}
 
-			cleanedLines.append(trimmedLine)
+			normalizedLines.append(trimmedLine)
+		}
+
+		var cleanedLines = [String]()
+		var index = normalizedLines.startIndex
+		while index < normalizedLines.endIndex {
+			let line = normalizedLines[index]
+			guard Self.looksLikeZoomFeatureRowStart(line) else {
+				if !Self.isZoomPlatformOnlyLine(line) {
+					cleanedLines.append(line)
+				}
+				index += 1
+				continue
+			}
+
+			var endIndex = index + 1
+			while endIndex < normalizedLines.endIndex,
+			      !Self.looksLikeZoomFeatureRowStart(normalizedLines[endIndex]),
+			      !Self.looksLikeZoomReleaseNotesSectionStart(normalizedLines[endIndex]) {
+				endIndex += 1
+			}
+
+			let block = Array(normalizedLines[index..<endIndex])
+			let declaredPlatforms = block.dropFirst().flatMap { Self.zoomPlatformsIfOnlyLine($0) ?? [] }
+			if declaredPlatforms.isEmpty || declaredPlatforms.contains("macos") {
+				cleanedLines.append(contentsOf: block.filter { Self.zoomPlatformsIfOnlyLine($0) == nil })
+			}
+			index = endIndex
 		}
 
 		return cleanedLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2052,23 +2144,40 @@ enum ReleaseNotesMarkup {
 		line.range(of: #"^(New, enhanced, and changed features|Resolved issues|Changed features|Security enhancements)"#, options: [.regularExpression, .caseInsensitive]) != nil
 	}
 
+	private static func looksLikeZoomFeatureRowStart(_ line: String) -> Bool {
+		line.range(
+			of: #"^(New or enhanced feature|Changed feature|Resolved issue|Security enhancement)\b"#,
+			options: [.regularExpression, .caseInsensitive]
+		) != nil
+	}
+
 	private static func isZoomPlatformOnlyLine(_ line: String) -> Bool {
-		let normalizedLine = line.lowercased()
-		return [
-			"windows",
-			"macos",
-			"linux",
-			"android",
-			"android*",
-			"android (intune)",
-			"android (intune)*",
-			"ios",
-			"ios*",
-			"ios (intune)",
-			"ios (intune)*",
-			"visionos",
-			"visionos*"
-		].contains(normalizedLine)
+		Self.zoomPlatformsIfOnlyLine(line) != nil
+	}
+
+	private static func zoomPlatformsIfOnlyLine(_ line: String) -> [String]? {
+		var remainder = line.lowercased()
+		let platformPatterns: [(pattern: String, value: String)] = [
+			(#"\bmacos\b"#, "macos"),
+			(#"\bwindows\b"#, "windows"),
+			(#"\blinux\b"#, "linux"),
+			(#"\bandroid(?:\s*\(intune\))?"#, "android"),
+			(#"\bios(?:\s*\(intune\))?"#, "ios"),
+			(#"\bvisionos\b"#, "visionos")
+		]
+		var platforms = [String]()
+		for platform in platformPatterns {
+			if remainder.range(of: platform.pattern, options: .regularExpression) != nil {
+				platforms.append(platform.value)
+				remainder = remainder.replacingOccurrences(
+					of: platform.pattern,
+					with: " ",
+					options: .regularExpression
+				)
+			}
+		}
+		remainder = remainder.replacingOccurrences(of: #"[\s,/*|&+()-]+"#, with: "", options: .regularExpression)
+		return !platforms.isEmpty && remainder.isEmpty ? platforms : nil
 	}
 
 	private static func lineContainsVersionCandidate(_ line: String, candidates: [String]) -> Bool {

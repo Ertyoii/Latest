@@ -6,6 +6,7 @@
 //  Copyright © 2026 Max Langer. All rights reserved.
 //
 
+import Synchronization
 import XCTest
 @testable import Latest
 
@@ -142,4 +143,94 @@ final class UpdateCheckGenerationTrackerTest: XCTestCase {
 		XCTAssertEqual(tracker.currentOrBegin(), 2)
 	}
 
+}
+
+final class BoundedUpdateCheckExecutorTest: XCTestCase {
+	func testBoundsParallelismAndReportsProgressForEveryCompletedCheck() async {
+		let activity = UpdateCheckActivityTracker()
+		let progressCount = Mutex(0)
+		let execution = await BoundedUpdateCheckExecutor(maximumConcurrentTasks: 4).run(
+			Array(0..<24),
+			onCompletion: { _ in progressCount.withLock { $0 += 1 } }
+		) { value in
+			await activity.started()
+			try await Task.sleep(for: .milliseconds(3))
+			await activity.finished()
+			return value
+		}
+
+		let maximumConcurrentCount = await activity.maximumConcurrentCount()
+		XCTAssertEqual(maximumConcurrentCount, 4)
+		XCTAssertEqual(execution.results.count, 24)
+		XCTAssertEqual(execution.metrics.scheduledCount, 24)
+		XCTAssertEqual(execution.metrics.completedCount, 24)
+		XCTAssertEqual(progressCount.withLock { $0 }, 24)
+		XCTAssertFalse(execution.metrics.wasCancelled)
+	}
+
+	func testCancellationStopsAdmittingNewChecks() async {
+		let task = Task {
+			await BoundedUpdateCheckExecutor(maximumConcurrentTasks: 4).run(Array(0..<100)) { value in
+				try await Task.sleep(for: .milliseconds(100))
+				return value
+			}
+		}
+		try? await Task.sleep(for: .milliseconds(10))
+		task.cancel()
+		let execution = await task.value
+
+		XCTAssertTrue(execution.metrics.wasCancelled)
+		XCTAssertLessThan(execution.metrics.scheduledCount, 100)
+		XCTAssertLessThanOrEqual(execution.metrics.completedCount, execution.metrics.scheduledCount)
+		XCTAssertLessThan(execution.results.count, 100)
+	}
+
+	func testStaleGenerationCompletionIsNotPublished() async {
+		let tracker = UpdateCheckGenerationTracker()
+		let published = Mutex([Int]())
+		let firstGeneration = tracker.begin()
+		let first = Task {
+			await BoundedUpdateCheckExecutor(maximumConcurrentTasks: 1).run(
+				[1],
+				onCompletion: { (result: IndexedUpdateCheckResult<Int>) in
+					guard tracker.isCurrent(firstGeneration), case .success(let value) = result.result else { return }
+					published.withLock { $0.append(value) }
+				}
+			) { value in
+				try? await Task.sleep(for: .milliseconds(30))
+				return value
+			}
+		}
+
+		try? await Task.sleep(for: .milliseconds(5))
+		let secondGeneration = tracker.begin()
+		_ = await BoundedUpdateCheckExecutor(maximumConcurrentTasks: 1).run(
+			[2],
+			onCompletion: { (result: IndexedUpdateCheckResult<Int>) in
+				guard tracker.isCurrent(secondGeneration), case .success(let value) = result.result else { return }
+				published.withLock { $0.append(value) }
+			}
+		) { $0 }
+		_ = await first.value
+
+		XCTAssertEqual(published.withLock { $0 }, [2])
+	}
+}
+
+private actor UpdateCheckActivityTracker {
+	private var activeCount = 0
+	private var maximumCount = 0
+
+	func started() {
+		activeCount += 1
+		maximumCount = max(maximumCount, activeCount)
+	}
+
+	func finished() {
+		activeCount -= 1
+	}
+
+	func maximumConcurrentCount() -> Int {
+		maximumCount
+	}
 }

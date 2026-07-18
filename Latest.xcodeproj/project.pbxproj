@@ -102,6 +102,8 @@
 		51A020092FC4000000000001 /* LocationsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A020042FC4000000000001 /* LocationsSettingsView.swift */; };
 		51B000012FC5000000000001 /* ReleaseNotesSources.json in Resources */ = {isa = PBXBuildFile; fileRef = 51B000002FC5000000000001 /* ReleaseNotesSources.json */; };
 		51D000012FC7000000000001 /* UpdateSources.json in Resources */ = {isa = PBXBuildFile; fileRef = 51D000002FC7000000000001 /* UpdateSources.json */; };
+		51E000012FC8000000000001 /* ReleaseNotesPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51E000002FC8000000000001 /* ReleaseNotesPipeline.swift */; };
+		51E000032FC8000000000001 /* ReleaseNotesCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51E000022FC8000000000001 /* ReleaseNotesCatalog.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -148,6 +150,8 @@
 		29A88F8A296B7DC2000A5EDE /* fa */ = {isa = PBXFileReference; lastKnownFileType = text.plist.stringsdict; name = fa; path = fa.lproj/Localizable.stringsdict; sourceTree = "<group>"; };
 		29A88F8B296B7DC2000A5EDE /* fa */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fa; path = fa.lproj/Localizable.strings; sourceTree = "<group>"; };
 		501AA0002FC4000000000001 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		51E000002FC8000000000001 /* ReleaseNotesPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesPipeline.swift; sourceTree = "<group>"; };
+		51E000022FC8000000000001 /* ReleaseNotesCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesCatalog.swift; sourceTree = "<group>"; };
 		500A89282924F91C004008F6 /* nb */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = nb; path = nb.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		500A89292924F91C004008F6 /* nb */ = {isa = PBXFileReference; lastKnownFileType = text.plist.stringsdict; name = nb; path = nb.lproj/Localizable.stringsdict; sourceTree = "<group>"; };
 		500A892A2924F91C004008F6 /* nb */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = nb; path = nb.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -770,6 +774,7 @@
 				5073755A278B0A7400F371D8 /* TableViewSnapshotDiff.swift */,
 				5058BA3921202BA7003F332B /* IconCache.swift */,
 				50A8D2B227D2B063004DBA05 /* ReleaseNotesProvider.swift */,
+				51E000002FC8000000000001 /* ReleaseNotesPipeline.swift */,
 				50BEF14B2AC2CB110052C417 /* WebContentLoader.swift */,
 			);
 			path = "View Model";
@@ -797,6 +802,7 @@
 		50C8573E2B25CF6100F5BF0B /* Update Repository */ = {
 			isa = PBXGroup;
 			children = (
+				51E000022FC8000000000001 /* ReleaseNotesCatalog.swift */,
 				50BEF14D2AC972B40052C417 /* UpdateRepository.swift */,
 				50BBF3FE2B21120200AB4D26 /* UpdateRepository+Entry.swift */,
 				50C8573F2B25CF7500F5BF0B /* UpdateRepositoryCache.swift */,
@@ -1160,6 +1166,8 @@
 				5087CD2D22F6E06B0013354C /* SparkleUpdateOperation.swift in Sources */,
 				50C857402B25CF7500F5BF0B /* UpdateRepositoryCache.swift in Sources */,
 				50A8D2B327D2B063004DBA05 /* ReleaseNotesProvider.swift in Sources */,
+				51E000012FC8000000000001 /* ReleaseNotesPipeline.swift in Sources */,
+				51E000032FC8000000000001 /* ReleaseNotesCatalog.swift in Sources */,
 				509C4ABC2AD1FFCC00E9C2E1 /* FailableDecodable.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1474,7 +1482,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 999285;
+				CURRENT_PROJECT_VERSION = 999286;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1490,7 +1498,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.44;
+				MARKETING_VERSION = 0.45;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1513,7 +1521,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 999285;
+				CURRENT_PROJECT_VERSION = 999286;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1529,7 +1537,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.44;
+				MARKETING_VERSION = 0.45;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

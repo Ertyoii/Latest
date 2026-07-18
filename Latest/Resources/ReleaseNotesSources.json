@@ -10,7 +10,7 @@
     "keys": ["betterdisplay", "comgithubwaydabberbetterdisplay", "probetterdisplaybetterdisplay"],
     "homebrewTokens": ["betterdisplay"],
     "kind": "github",
-    "urlTemplate": "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v{version}",
+    "urlTemplate": "https://api.github.com/repos/waydabber/BetterDummy/releases/tags/v{version}",
     "versionPrefix": "exact",
     "knownFallbackKey": "betterdisplay"
   },
@@ -239,8 +239,8 @@
   {
     "keys": ["telegramdesktop", "comtdesktoptelegram"],
     "homebrewTokens": ["telegram-desktop"],
-    "kind": "github",
-    "urlTemplate": "https://api.github.com/repos/telegramdesktop/tdesktop/releases/tags/v{version}",
+    "kind": "changelog",
+    "urlTemplate": "https://raw.githubusercontent.com/telegramdesktop/tdesktop/dev/changelog.txt",
     "versionPrefix": "exact"
   },
   {

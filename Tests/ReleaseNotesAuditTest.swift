@@ -45,10 +45,16 @@ final class ReleaseNotesAuditTest: XCTestCase {
 				switch rendered {
 				case .failure(let error):
 					rows.append(AuditRow(bundle: bundle, status: "rejected", detail: String(describing: error), excerpt: nil))
-				case .success(let text):
-					let issues = Self.issues(in: text, for: bundle)
+				case .success(let resolved):
+					let text = resolved.content.string
+					let issues = Self.issues(in: text, quality: resolved.quality, for: bundle)
 					if issues.isEmpty {
-						rows.append(AuditRow(bundle: bundle, status: "accepted", detail: "source=\(app.source.rawValue)", excerpt: text))
+						rows.append(AuditRow(
+							bundle: bundle,
+							status: "accepted",
+							detail: "source=\(app.source.rawValue) quality=\(resolved.quality) provenance=\(resolved.provenance.rawValue)",
+							excerpt: text
+						))
 					} else {
 						rows.append(AuditRow(bundle: bundle, status: "malformed", detail: issues.joined(separator: ", "), excerpt: text))
 					}
@@ -61,6 +67,14 @@ final class ReleaseNotesAuditTest: XCTestCase {
 
 		let malformedRows = rows.filter { $0.status == "malformed" }
 		XCTAssertTrue(malformedRows.isEmpty, "Malformed release notes remain:\n\(malformedRows.map(\.summary).joined(separator: "\n"))")
+
+		let regressionKeys = Set(["betterdisplay", "telegram", "zed", "zoomus"])
+		let installedRegressionRows = rows.filter { regressionKeys.contains(Self.normalizedBundleKey($0.bundle)) }
+		let unresolvedRegressionRows = installedRegressionRows.filter { $0.status != "accepted" }
+		XCTAssertTrue(
+			unresolvedRegressionRows.isEmpty,
+			"Current release-note regressions remain:\n\(unresolvedRegressionRows.map(\.summary).joined(separator: "\n"))"
+		)
 	}
 
 	private static func discoveredBundles(in directories: [URL]) -> [App.Bundle] {
@@ -76,48 +90,29 @@ final class ReleaseNotesAuditTest: XCTestCase {
 	}
 
 	private static func updateResults(for bundles: [App.Bundle]) async -> [App.Bundle.Identifier: Result<App.Update, Error>] {
-		await withCheckedContinuation { continuation in
-			let repository = UpdateRepository.newRepository()
-			let operationQueue = OperationQueue()
-			operationQueue.qualityOfService = .userInitiated
-			operationQueue.maxConcurrentOperationCount = 6
-
-			let resultStore = UpdateResultStore()
-			let group = DispatchGroup()
-
-			for bundle in bundles {
-				guard let operation = UpdateCheckCoordinator.operation(forChecking: bundle, repository: repository, completion: { result in
-					resultStore.set(result, for: bundle.identifier)
-					group.leave()
-				}) else {
-					continue
-				}
-
-				group.enter()
-				operationQueue.addOperation(operation)
+		let repository = UpdateRepository.newRepository()
+		let execution = await BoundedUpdateCheckExecutor(maximumConcurrentTasks: 6).run(bundles) { bundle in
+			guard let result = await UpdateCheckCoordinator.check(bundle, repository: repository) else {
+				throw LatestError.updateInfoUnavailable
 			}
-
-			DispatchQueue.global(qos: .userInitiated).async {
-				let timeout = DispatchTime.now() + .seconds(120)
-				if group.wait(timeout: timeout) == .timedOut {
-					operationQueue.cancelAllOperations()
-				}
-
-				continuation.resume(returning: resultStore.snapshot())
-			}
+			return try result.get()
+		}
+		return execution.results.reduce(into: [:]) { results, indexedResult in
+			guard bundles.indices.contains(indexedResult.index) else { return }
+			results[bundles[indexedResult.index].identifier] = indexedResult.result
 		}
 	}
 
 	@MainActor
-	private static func renderedReleaseNotes(for app: App, provider: ReleaseNotesProvider) async -> Result<String, Error> {
+	private static func renderedReleaseNotes(for app: App, provider: ReleaseNotesProvider) async -> Result<ResolvedReleaseNotes, Error> {
 		await withCheckedContinuation { continuation in
-			provider.releaseNotes(for: app) { result in
-				continuation.resume(returning: result.map(\.string))
+			provider.resolvedReleaseNotes(for: app) { result in
+				continuation.resume(returning: result)
 			}
 		}
 	}
 
-	private static func issues(in text: String, for bundle: App.Bundle) -> [String] {
+	private static func issues(in text: String, quality: ReleaseNotesQuality, for bundle: App.Bundle) -> [String] {
 		let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
 		var issues = [String]()
 
@@ -154,8 +149,7 @@ final class ReleaseNotesAuditTest: XCTestCase {
 			issues.append("excessive-length")
 		}
 
-		if Self.requiresSpecificReleaseNotes(bundle),
-		   trimmedText.range(of: #"\bis available(?: from Homebrew)?\."#, options: [.regularExpression, .caseInsensitive]) != nil {
+		if Self.requiresSpecificReleaseNotes(bundle), quality == .genericMetadata {
 			issues.append("generic-known-source")
 		}
 
@@ -274,22 +268,5 @@ private struct AuditRow {
 
 	var summary: String {
 		"- \(status): \(bundle.name) \(bundle.version.debugDescription) [\(bundle.source.rawValue)] - \(detail)"
-	}
-}
-
-private final class UpdateResultStore: @unchecked Sendable {
-	private let lock = NSLock()
-	private var results = [App.Bundle.Identifier: Result<App.Update, Error>]()
-
-	func set(_ result: Result<App.Update, Error>, for identifier: App.Bundle.Identifier) {
-		lock.withCriticalScope {
-			results[identifier] = result
-		}
-	}
-
-	func snapshot() -> [App.Bundle.Identifier: Result<App.Update, Error>] {
-		lock.withCriticalScope {
-			results
-		}
 	}
 }

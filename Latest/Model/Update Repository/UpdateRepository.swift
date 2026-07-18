@@ -87,6 +87,26 @@ class UpdateRepository: @unchecked Sendable {
 		}
 	}
 
+	struct UpdateInfo: Sendable {
+		let bundle: App.Bundle
+		let version: Version?
+		let minimumOSVersion: OperatingSystemVersion?
+		let releaseNotes: App.Update.ReleaseNotes?
+	}
+
+	func updateInfo(for bundle: App.Bundle) async -> UpdateInfo {
+		await withCheckedContinuation { continuation in
+			updateInfo(for: bundle) { bundle, version, minimumOSVersion, releaseNotes in
+				continuation.resume(returning: UpdateInfo(
+					bundle: bundle,
+					version: version,
+					minimumOSVersion: minimumOSVersion,
+					releaseNotes: releaseNotes
+				))
+			}
+		}
+	}
+
 	/// A list of requests being performed while the repository was still fetching data.
 	///
 	/// It also acts as a flag for whether initialization finished. The array is initialized when the repository is created. It will be set to nil once `finalize()` is being called.

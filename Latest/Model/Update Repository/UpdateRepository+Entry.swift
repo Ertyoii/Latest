@@ -125,7 +125,7 @@ extension UpdateRepository {
 			private func makeReleaseNotes(version: Version) -> App.Update.ReleaseNotes? {
 				let url = urlString.flatMap { URL(string: $0) }
 				let homepage = homepageString.flatMap { URL(string: $0) }
-				let fallbackReleaseNotesHTML = Entry.fallbackReleaseNotesHTML(
+				let genericMetadataHTML = Entry.genericMetadataHTML(
 					version: version,
 					names: names,
 					token: token,
@@ -134,17 +134,16 @@ extension UpdateRepository {
 				)
 				if let catalogReleaseNotes = ReleaseNotesSourceCatalog.releaseNotes(
 					forHomebrewToken: token,
-					version: version,
-					fallbackHTML: fallbackReleaseNotesHTML
+					version: version
 				) {
 					return catalogReleaseNotes
 				}
 
 				if let githubReleaseURL = Entry.githubReleaseURL(fromDownloadURL: url) ?? Entry.githubReleaseURL(fromHomepage: homepage) {
-					return .githubRelease(apiURL: githubReleaseURL, fallbackHTML: fallbackReleaseNotesHTML)
+					return .githubRelease(apiURL: githubReleaseURL, fallbackHTML: nil)
 				}
 
-				return fallbackReleaseNotesHTML.map { .html(string: $0) }
+				return genericMetadataHTML.map { .genericMetadata(string: $0) }
 			}
 		}
 
@@ -301,38 +300,16 @@ extension UpdateRepository {
 }
 
 enum ReleaseNotesSourceCatalog {
-	private struct Definition: Decodable, Sendable {
-		enum Kind: String, Decodable, Sendable {
-			case changelog
-			case github
-			case none
-		}
-
-		enum VersionPrefix: String, Decodable, Sendable {
-			case exact
-			case majorMinor
-			case none
-		}
-
-		let keys: [String]
-		let homebrewTokens: [String]
-		let kind: Kind
-		let urlTemplate: String?
-		let versionPrefix: VersionPrefix?
-		let knownFallbackKey: String?
-		let allowsLatestFallback: Bool?
-	}
-
-	private static let definitions: [Definition] = {
+	private static let definitions: [ReleaseNotesSourceDefinition] = {
 		guard let url = Bundle.main.url(forResource: "ReleaseNotesSources", withExtension: "json"),
 		      let data = try? Data(contentsOf: url),
-		      let definitions = try? JSONDecoder().decode([Definition].self, from: data) else {
+		      let document = try? ReleaseNotesCatalogCodec.decodeBundled(data) else {
 			return []
 		}
-		return definitions
+		return document.definitions
 	}()
 
-	private static let definitionsByKey: [String: Definition] = definitions.reduce(into: [:]) { result, definition in
+	private static let definitionsByKey: [String: ReleaseNotesSourceDefinition] = definitions.reduce(into: [:]) { result, definition in
 		for key in definition.keys + definition.homebrewTokens {
 			result[normalizedKey(key)] = definition
 		}
@@ -342,8 +319,8 @@ enum ReleaseNotesSourceCatalog {
 		definitions.flatMap(\.homebrewTokens)
 	}
 
-	static func releaseNotes(forHomebrewToken token: String, version: Version, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
-		releaseNotes(forKey: normalizedKey(token), version: version, fallbackHTML: fallbackHTML)
+	static func releaseNotes(forHomebrewToken token: String, version: Version) -> App.Update.ReleaseNotes? {
+		releaseNotes(forKey: normalizedKey(token), version: version)
 	}
 
 	static func releaseNotes(
@@ -351,20 +328,16 @@ enum ReleaseNotesSourceCatalog {
 		remoteVersion: Version,
 		allowNameFallback: Bool = true
 	) -> App.Update.ReleaseNotes? {
-		let fallbackHTML = fallbackReleaseNotesHTML(appName: bundle.name, version: remoteVersion)
-
 		if let releaseNotes = releaseNotes(
 			forKey: normalizedKey(bundle.bundleIdentifier),
-			version: remoteVersion,
-			fallbackHTML: fallbackHTML
+			version: remoteVersion
 		) {
 			return releaseNotes
 		}
 
 		if allowNameFallback, let releaseNotes = releaseNotes(
 			forKey: normalizedKey(bundle.name),
-			version: remoteVersion,
-			fallbackHTML: fallbackHTML
+			version: remoteVersion
 		) {
 			return releaseNotes
 		}
@@ -372,42 +345,40 @@ enum ReleaseNotesSourceCatalog {
 		guard let apiURL = ElectronReleaseNotesSource.githubReleaseAPIURL(forAppAt: bundle.fileURL) else {
 			return nil
 		}
-		return .githubRelease(apiURL: apiURL, fallbackHTML: fallbackHTML)
+		return .githubRelease(apiURL: apiURL, fallbackHTML: nil)
 	}
 
-	private static func releaseNotes(forKey key: String, version: Version, fallbackHTML: String?) -> App.Update.ReleaseNotes? {
+	private static func releaseNotes(forKey key: String, version: Version) -> App.Update.ReleaseNotes? {
 		guard let definition = definitionsByKey[key] else { return nil }
-		guard definition.kind != .none else { return nil }
+		guard !definition.capabilities.contains(.disabled) else { return nil }
 		guard let template = definition.urlTemplate,
 		      let url = expandedURL(template, version: version) else {
 			return nil
 		}
 
-		let versionPrefix: String? = switch definition.versionPrefix ?? .none {
-		case .exact:
+		let versionPrefix: String? = if definition.capabilities.contains(.exactVersion) {
 			version.versionNumber
-		case .majorMinor:
+		} else if definition.capabilities.contains(.majorMinorVersion) {
 			version.versionNumber?.majorMinorVersionPrefix
-		case .none:
+		} else {
 			nil
 		}
-		let resolvedFallbackHTML = definition.knownFallbackKey.flatMap {
+		let bundledFallbackHTML = definition.capabilities.contains(.bundledFallback) ? definition.knownFallbackKey.flatMap {
 			knownReleaseNotesHTML(forKey: $0, version: version)
-		} ?? fallbackHTML
+		} : nil
 
-		switch definition.kind {
-		case .changelog:
+		if definition.capabilities.contains(.changelogHTML) {
 			return .changelog(
 				urls: [url],
 				versionPrefix: versionPrefix,
-				allowsLatestFallback: definition.allowsLatestFallback ?? false,
-				fallbackHTML: resolvedFallbackHTML
+				allowsLatestFallback: definition.capabilities.contains(.latestSectionFallback),
+				fallbackHTML: bundledFallbackHTML
 			)
-		case .github:
-			return .githubRelease(apiURL: url, fallbackHTML: resolvedFallbackHTML)
-		case .none:
-			return nil
 		}
+		if definition.capabilities.contains(.githubReleaseAPI) {
+			return .githubRelease(apiURL: url, fallbackHTML: bundledFallbackHTML)
+		}
+		return nil
 	}
 
 	private static func expandedURL(_ template: String, version: Version) -> URL? {
@@ -441,12 +412,14 @@ enum ReleaseNotesSourceCatalog {
 			return nil
 		}
 
-		return githubRelease(
-			owner: "waydabber",
-			repository: "BetterDisplay",
-			tag: tag,
-			fallbackHTML: knownReleaseNotesHTML(forKey: "betterdisplay", version: remoteVersion) ??
-				fallbackReleaseNotesHTML(appName: bundle.name, version: remoteVersion)
+		guard let version = remoteVersion.versionNumber,
+		      let apiURL = URL(string: "https://api.github.com/repos/waydabber/BetterDummy/releases/tags/v\(version)") else {
+			return nil
+		}
+
+		return .githubRelease(
+			apiURL: apiURL,
+			fallbackHTML: knownReleaseNotesHTML(forKey: "betterdisplay", version: remoteVersion)
 		)
 	}
 
@@ -467,11 +440,6 @@ enum ReleaseNotesSourceCatalog {
 			allowsLatestFallback: allowsLatestFallback,
 			fallbackHTML: fallbackHTML
 		)
-	}
-
-	private static func fallbackReleaseNotesHTML(appName: String, version: Version) -> String? {
-		guard let versionNumber = version.versionNumber ?? version.buildNumber else { return nil }
-		return "<p><strong>\(appName.htmlEscaped) \(versionNumber.htmlEscaped)</strong> is available.</p>"
 	}
 
 	private static func knownReleaseNotesHTML(forKey key: String, version: Version) -> String? {
@@ -588,7 +556,7 @@ private extension UpdateRepository.Entry {
 		return URL(string: "https://api.github.com/repos/\(owner)/\(repository)/releases/latest")
 	}
 
-	static func fallbackReleaseNotesHTML(version: Version, names: Set<String>, token: String, desc: String?, homepage: URL?) -> String? {
+	static func genericMetadataHTML(version: Version, names: Set<String>, token: String, desc: String?, homepage: URL?) -> String? {
 		guard let versionNumber = version.versionNumber ?? version.buildNumber else {
 			return nil
 		}

@@ -128,6 +128,10 @@ extension App.Update {
 		
 		/// The release notes in form of pre-formatted HTML.
 		case html(string: String)
+
+		/// Generic package-manager information. This is useful provenance for an
+		/// update, but it must not be scored or presented as genuine vendor notes.
+		case genericMetadata(string: String)
 		
 		/// Release notes encoded in the given data object.
 		case encoded(data: Data)

@@ -11,6 +11,9 @@ import XCTest
 @testable import Latest
 
 final class ReleaseNotesHeaderLayoutTest: XCTestCase {
+	func testUnitTestsUseIsolatedApplicationLifecycle() {
+		XCTAssertTrue(ApplicationRuntime.isRunningUnitTests)
+	}
 	@MainActor
 	func testDisplayedAppSurvivesViewAppearance() {
 		let controller = ReleaseNotesViewController()

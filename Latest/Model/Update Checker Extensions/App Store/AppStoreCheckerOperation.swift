@@ -201,8 +201,9 @@ private final class AppStoreLookupClient: Sendable {
 	}
 }
 
-/// The operation for checking for updates for a Mac App Store app.
-class AppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation, @unchecked Sendable {
+/// Async update checking for a Mac App Store app. The historical type name is
+/// retained for API compatibility, but checking is no longer an Operation.
+final class AppStoreUpdateCheckerOperation: Sendable {
 	static func invalidateLookupCache() async {
 		await AppStoreLookupClient.shared.invalidateCache()
 	}
@@ -218,58 +219,22 @@ class AppStoreUpdateCheckerOperation: StatefulOperation, UpdateCheckerOperation,
 		return AppStoreReceipt.existingURL(forAppAt: url) != nil
 	}
 	
-	required init(with app: App.Bundle, repository: UpdateRepository?, completionBlock: @escaping UpdateCheckerCompletionBlock) {
+	init(with app: App.Bundle) {
 		self.app = app
-		
-		super.init()
-
-		self.completionBlock = {
-			guard !self.isCancelled else { return }
-			
-			if let update = self.update {
-				completionBlock(.success(update))
-			} else {
-				completionBlock(.failure(self.error ?? LatestError.updateInfoUnavailable))
-			}
-		}
 	}
 
 	/// The bundle to be checked for updates.
 	fileprivate let app: App.Bundle
 
-	/// The update fetched during this operation.
-	fileprivate var update: App.Update?
-
-	private var lookupTask: Task<Void, Never>?
-
 	
-	// MARK: - Operation
-	
-	override func execute() {
-		if self.app.bundleIdentifier.contains("com.apple.InstallAssistant") {
-			self.finish()
-			return
+	func check() async throws -> App.Update {
+		guard !app.bundleIdentifier.contains("com.apple.InstallAssistant") else {
+			throw LatestError.updateInfoUnavailable
 		}
-
-		self.lookupTask = Task {
-			do {
-				let entry = try await self.fetchAppInfo()
-				guard !self.isCancelled else {
-					self.finish()
-					return
-				}
-
-				self.update = self.update(from: entry)
-				self.finish()
-			} catch {
-				self.finish(with: error)
-			}
-		}
-	}
-
-	override func cancel() {
-		self.lookupTask?.cancel()
-		super.cancel()
+		try Task.checkCancellation()
+		let entry = try await fetchAppInfo()
+		try Task.checkCancellation()
+		return update(from: entry)
 	}
 	
 	
