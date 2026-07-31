@@ -9,22 +9,57 @@
 import AppKit
 import SwiftUI
 
-private final class UpdateSearchField: NSSearchField {
+/// A deliberately narrow bridge for the sidebar-local search control. macOS
+/// SwiftUI's `.searchable` places search in the toolbar, which does not preserve
+/// the accepted sidebar geometry or the tested Cmd-F/Escape focus restoration.
+final class UpdateSearchField: NSSearchField {
+	weak var previousFirstResponder: NSResponder?
+
+	func requestFocus() {
+		guard let window else { return }
+		if window.firstResponder !== self,
+		   window.firstResponder !== currentEditor() {
+			// NSTextField instances share their window's field editor. Retaining that
+			// editor would point back at this search field after focus moves, so keep
+			// the control that owned it instead.
+			if let fieldEditor = window.firstResponder as? NSTextView,
+			   let control = fieldEditor.delegate as? NSControl {
+				previousFirstResponder = control
+			} else {
+				previousFirstResponder = window.firstResponder
+			}
+		}
+		window.makeFirstResponder(self)
+	}
+
+	func resignFocus(restoringPreviousResponder: Bool) {
+		guard let window else { return }
+		let previousResponder = previousFirstResponder
+		previousFirstResponder = nil
+		if restoringPreviousResponder,
+		   let previousResponder,
+		   previousResponder !== self,
+		   window.makeFirstResponder(previousResponder) {
+			return
+		}
+		window.makeFirstResponder(nil)
+	}
+
 	override func cancelOperation(_ sender: Any?) {
-		window?.makeFirstResponder(nil)
+		resignFocus(restoringPreviousResponder: true)
 	}
 }
 
 struct SearchFieldRepresentable: NSViewRepresentable {
 	@Binding var text: String
-	let focusController: SearchFocusController
+	@ObservedObject var focusController: SearchFocusController
 	let onTextChanged: (String) -> Void
 
 	func makeCoordinator() -> Coordinator {
 		Coordinator(self)
 	}
 
-	func makeNSView(context: Context) -> NSSearchField {
+	func makeNSView(context: Context) -> UpdateSearchField {
 		let field = UpdateSearchField()
 		field.controlSize = .large
 		field.delegate = context.coordinator
@@ -33,6 +68,8 @@ struct SearchFieldRepresentable: NSViewRepresentable {
 		field.focusRingType = .none
 		field.sendsSearchStringImmediately = true
 		field.sendsWholeSearchString = false
+		field.setAccessibilityIdentifier("updates.search")
+		field.setAccessibilityLabel("Search Apps")
 		if let cell = field.cell as? NSSearchFieldCell {
 			cell.controlSize = .large
 			cell.bezelStyle = .roundedBezel
@@ -40,23 +77,22 @@ struct SearchFieldRepresentable: NSViewRepresentable {
 			cell.lineBreakMode = .byClipping
 			cell.sendsSearchStringImmediately = true
 		}
-		focusController.searchField = field
+		context.coordinator.applyFocusRequest(to: field)
 		return field
 	}
 
-	func updateNSView(_ field: NSSearchField, context: Context) {
+	func updateNSView(_ field: UpdateSearchField, context: Context) {
 		context.coordinator.parent = self
 		if field.stringValue != text {
 			field.stringValue = text
 		}
-		if focusController.searchField !== field {
-			focusController.searchField = field
-		}
+		context.coordinator.applyFocusRequest(to: field)
 	}
 
 	@MainActor
 	final class Coordinator: NSObject, NSSearchFieldDelegate {
 		var parent: SearchFieldRepresentable
+		private var appliedFocusRequest: SearchFocusController.Request = .none
 
 		init(_ parent: SearchFieldRepresentable) {
 			self.parent = parent
@@ -69,6 +105,20 @@ struct SearchFieldRepresentable: NSViewRepresentable {
 
 		@objc func searchFieldAction(_ sender: NSSearchField) {
 			parent.onTextChanged(sender.stringValue)
+		}
+
+		func applyFocusRequest(to field: UpdateSearchField) {
+			let request = parent.focusController.request
+			guard request != appliedFocusRequest else { return }
+			appliedFocusRequest = request
+			switch request {
+			case .none:
+				break
+			case .focus:
+				field.requestFocus()
+			case .resign:
+				field.resignFocus(restoringPreviousResponder: true)
+			}
 		}
 	}
 }

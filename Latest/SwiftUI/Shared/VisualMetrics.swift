@@ -23,8 +23,6 @@ enum VisualMetrics {
 
 	static let sidebarMinWidth: CGFloat = 300
 	static let sidebarIdealWidth: CGFloat = 308
-	static let sidebarGlassInset: CGFloat = 8
-	static let sidebarGlassCornerRadius: CGFloat = 20
 	static let detailMinWidth: CGFloat = 460
 
 	static let appIconSize: CGFloat = 50
@@ -40,6 +38,18 @@ enum VisualMetrics {
 	static let detailHeaderVerticalPadding: CGFloat = 7.5
 	static let detailHeaderHeight: CGFloat = detailIconSize + (detailHeaderVerticalPadding * 2)
 	static let detailHeaderHorizontalPadding: CGFloat = 24
+	// SwiftUI Text reserves more ascent space than the original NSTextField
+	// stack. These measured offsets align the visible glyph baselines while the
+	// header, icon, and action retain their native layout frames.
+	static let detailMetadataVerticalOffset: CGFloat = -7
+	static let detailMetadataLineVerticalCorrection: CGFloat = 1
+	static let detailTitleVerticalCorrection: CGFloat = 0
+	static let supportStatusHorizontalCorrection: CGFloat = -1
 	static let detailUpdateButtonWidth: CGFloat = 59
 	static let detailUpdateButtonHeight: CGFloat = 24
+
+	// The original settings label intentionally starts 2pt before the table and
+	// one point lower. Keep that small asymmetry explicit instead of changing the
+	// native Table's content geometry.
+	static let locationsLabelOffset = CGSize(width: -2, height: 1)
 }

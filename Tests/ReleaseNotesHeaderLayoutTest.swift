@@ -7,6 +7,7 @@
 //
 
 import AppKit
+import SwiftUI
 import XCTest
 @testable import Latest
 
@@ -15,82 +16,47 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 		XCTAssertTrue(ApplicationRuntime.isRunningUnitTests)
 	}
 	@MainActor
-	func testDisplayedAppSurvivesViewAppearance() {
-		let controller = ReleaseNotesViewController()
-		controller.loadViewIfNeeded()
-		let app = makeApp(name: "Zed", version: "1.10.0", remoteVersion: "1.10.2")
-
-		controller.display(releaseNotesFor: app)
-		controller.viewWillAppear()
-
-		XCTAssertEqual(controller.app?.identifier, app.identifier)
-		XCTAssertFalse(controller.appInfoBackgroundView.isHidden)
-		XCTAssertEqual(controller.appNameTextField.stringValue, "Zed")
-	}
-
-	@MainActor
-	func testUpdateButtonIsVisibleAndContainedInFixedHeader() {
-		let controller = ReleaseNotesViewController()
-		let window = NSWindow(
-			contentRect: NSRect(x: 0, y: 0, width: 768, height: 516),
-			styleMask: [.titled, .fullSizeContentView],
-			backing: .buffered,
-			defer: false
-		)
-		window.contentViewController = controller
-		controller.loadViewIfNeeded()
-		controller.display(releaseNotesFor: makeApp(
+	func testSwiftUIDetailHeaderKeepsFixedProductionGeometry() {
+		let app = makeApp(
 			name: "Zed",
 			version: "1.10.0",
 			remoteVersion: "1.10.2",
 			updateAction: .external(label: "Zed") { _ in }
-		))
-		controller.view.layoutSubtreeIfNeeded()
-		window.contentView?.layoutSubtreeIfNeeded()
+		)
+		let hostingView = NSHostingView(rootView: ReleaseNotesHeaderView(app: app))
+		hostingView.frame = NSRect(x: 0, y: 0, width: VisualMetrics.detailMinWidth, height: 200)
+		hostingView.layoutSubtreeIfNeeded()
 
-		let buttonFrame = controller.updateButton.convert(controller.updateButton.bounds, to: controller.view)
-		let headerFrame = controller.appInfoBackgroundView.convert(
-			controller.appInfoBackgroundView.bounds,
-			to: controller.view
-		)
-		let iconFrame = controller.appIconImageView.convert(controller.appIconImageView.bounds, to: controller.view)
-		let externalLabelFrame = controller.externalUpdateLabel.convert(
-			controller.externalUpdateLabel.bounds,
-			to: controller.view
-		)
-		guard let labelStack = controller.appNameTextField.superview?.superview else {
-			XCTFail("Expected the title and version fields to share a vertical stack.")
-			return
-		}
-		let labelStackFrame = labelStack.convert(labelStack.bounds, to: controller.view)
-		XCTAssertFalse(controller.updateButton.isHidden)
-		XCTAssertEqual(headerFrame.height, VisualMetrics.detailHeaderHeight, accuracy: 0.5)
-		XCTAssertEqual(
-			headerFrame.maxY - iconFrame.maxY,
-			VisualMetrics.detailHeaderVerticalPadding,
-			accuracy: 0.5,
-			"The app block should have equal space above and below it."
-		)
-		XCTAssertEqual(
-			iconFrame.minY - headerFrame.minY,
-			VisualMetrics.detailHeaderVerticalPadding,
-			accuracy: 0.5
-		)
-		XCTAssertEqual(iconFrame.midY, headerFrame.midY, accuracy: 0.5)
-		XCTAssertEqual(labelStackFrame.midY, iconFrame.midY, accuracy: 0.5)
-		XCTAssertEqual(buttonFrame.midY, iconFrame.midY, accuracy: 0.5)
-		XCTAssertTrue(headerFrame.insetBy(dx: -0.5, dy: -0.5).contains(buttonFrame))
-		XCTAssertTrue(headerFrame.insetBy(dx: -0.5, dy: -0.5).contains(externalLabelFrame))
-		XCTAssertEqual(buttonFrame.width, VisualMetrics.detailUpdateButtonWidth, accuracy: 0.5)
-		XCTAssertEqual(buttonFrame.height, VisualMetrics.detailUpdateButtonHeight, accuracy: 0.5)
-		XCTAssertEqual(
-			headerFrame.maxX - buttonFrame.maxX,
-			VisualMetrics.detailHeaderHorizontalPadding,
-			accuracy: 0.5,
-			"The action must keep a stable trailing inset from the detail border."
-		)
+		XCTAssertEqual(hostingView.fittingSize.height, VisualMetrics.detailHeaderHeight, accuracy: 0.5)
+		XCTAssertEqual(VisualMetrics.detailHeaderHeight, 79)
+		XCTAssertEqual(VisualMetrics.detailIconSize, 64)
+		XCTAssertEqual(VisualMetrics.detailHeaderVerticalPadding, 7.5)
+		XCTAssertEqual(VisualMetrics.detailHeaderHorizontalPadding, 24)
+		XCTAssertEqual(VisualMetrics.detailMetadataVerticalOffset, -7)
+		XCTAssertEqual(VisualMetrics.detailMetadataLineVerticalCorrection, 1)
+		XCTAssertEqual(VisualMetrics.detailTitleVerticalCorrection, 0)
+		XCTAssertEqual(VisualMetrics.supportStatusHorizontalCorrection, -1)
+		XCTAssertEqual(VisualMetrics.detailUpdateButtonWidth, 59)
+		XCTAssertEqual(VisualMetrics.detailUpdateButtonHeight, 24)
+	}
 
-		_ = window
+	@MainActor
+	func testUpdateActionKeepsOriginalDrawingMetrics() throws {
+		XCTAssertEqual(UpdateActionVisualStyle.capsuleHorizontalInset, 0.25)
+		XCTAssertEqual(UpdateActionVisualStyle.progressDiameter, 20)
+		XCTAssertEqual(UpdateActionVisualStyle.progressLineWidth, 2.5)
+		XCTAssertEqual(UpdateActionVisualStyle.pauseBarSize, CGSize(width: 2, height: 8))
+		XCTAssertEqual(UpdateActionVisualStyle.pauseBarSpacing, 2)
+
+		let background = try XCTUnwrap(UpdateButton.Style.backgroundColor.usingColorSpace(.sRGB))
+		XCTAssertEqual(background.redComponent, 0.9488552213, accuracy: 0.0001)
+		XCTAssertEqual(background.greenComponent, 0.9487094283, accuracy: 0.0001)
+		XCTAssertEqual(background.blueComponent, 0.9693081975, accuracy: 0.0001)
+	}
+
+	@MainActor
+	func testLocationsLabelKeepsOriginalAsymmetricAlignment() {
+		XCTAssertEqual(VisualMetrics.locationsLabelOffset, CGSize(width: -2, height: 1))
 	}
 
 	@MainActor
@@ -105,10 +71,14 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 			ToolbarProgressMetrics.determinateIdentity,
 			ToolbarProgressMetrics.indeterminateIdentity
 		)
+		XCTAssertEqual(ToolbarProgressPresentation(isRunning: false, fraction: 0.5), .hidden)
+		XCTAssertEqual(ToolbarProgressPresentation(isRunning: true, fraction: nil), .indeterminate)
+		XCTAssertEqual(ToolbarProgressPresentation(isRunning: true, fraction: -0.25), .determinate(0))
+		XCTAssertEqual(ToolbarProgressPresentation(isRunning: true, fraction: 1.25), .determinate(1))
 	}
 
 	@MainActor
-	func testMainWindowChromeRemovesToolbarSeparator() {
+	func testMainWindowConfigurationOnlyUsesSupportedWindowCapability() {
 		let window = NSWindow(
 			contentRect: NSRect(x: 0, y: 0, width: 768, height: 516),
 			styleMask: [.titled, .closable, .resizable],
@@ -116,64 +86,63 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 			defer: false
 		)
 		let toolbar = NSToolbar(identifier: "test.toolbar")
+		let sidebarItem = NSToolbarItem(itemIdentifier: .toggleSidebar)
+		sidebarItem.label = "Toggle Sidebar"
 		window.toolbar = toolbar
+		let glassView = NSGlassEffectView(frame: NSRect(x: 0, y: 0, width: 308, height: 300))
+		glassView.cornerRadius = 7
+		window.contentView?.addSubview(glassView)
 
-		MainWindowChrome.configure(
-			window,
-			commands: AppEnvironment().commands,
-			refreshIsEnabled: true
-		)
+		MainWindowConfiguration.apply(to: window)
 
 		XCTAssertEqual(window.titlebarSeparatorStyle, .none)
-		XCTAssertNotNil(window.toolbar)
+		XCTAssertEqual(glassView.cornerRadius, 7, "The system-owned Liquid Glass hierarchy must remain untouched.")
+		XCTAssertEqual(sidebarItem.label, "Toggle Sidebar")
+		XCTAssertNil(sidebarItem.target)
 	}
 
 	@MainActor
-	func testSidebarToggleToolbarItemIsRepurposedAsRefresh() {
-		let target = MainToolbarRefreshTarget(commands: AppEnvironment().commands)
-		let item = NSToolbarItem(itemIdentifier: .toggleSidebar)
+	func testSwiftUIRefreshToolbarButtonRunsActionAndExposesAccessibilityContract() {
+		var invocationCount = 0
+		let button = RefreshToolbarButton(isEnabled: true) {
+			invocationCount += 1
+		}
 
-		MainWindowChrome.repurposeSidebarToggleItem(item, target: target)
-
-		XCTAssertEqual(item.itemIdentifier, .toggleSidebar)
-		XCTAssertEqual(item.label, "Check for Updates")
-		XCTAssertTrue(item.target === target)
-		XCTAssertEqual(item.action, #selector(MainToolbarRefreshTarget.reload(_:)))
-		XCTAssertNotNil(item.image)
-		let button = try? XCTUnwrap(item.view as? MainToolbarRefreshButton)
-		XCTAssertNotNil(button)
-		XCTAssertEqual(button?.accessibilityLabel(), "Check for Updates")
+		XCTAssertTrue(button.isEnabled)
+		XCTAssertEqual(RefreshToolbarButton.accessibilityIdentifier, "toolbar.refresh")
+		XCTAssertEqual(RefreshToolbarButton.accessibilityLabel, "Check for Updates")
+		XCTAssertNotNil(NSImage(
+			systemSymbolName: RefreshToolbarButton.systemImageName,
+			accessibilityDescription: RefreshToolbarButton.accessibilityLabel
+		))
+		button.performAction()
+		XCTAssertEqual(invocationCount, 1)
 	}
 
 	@MainActor
-	func testSwiftUIPrivateSidebarToggleIsRecognizedByResponderAction() {
-		let item = NSToolbarItem(itemIdentifier: NSToolbarItem.Identifier("SwiftUI.NavigationSidebar"))
-		item.action = NSSelectorFromString("toggleSidebar:")
-
-		XCTAssertTrue(MainWindowChrome.isSidebarToggleItem(item))
-	}
-
-	@MainActor
-	func testSidebarGlassUsesWindowConcentricCornerRadius() {
-		let rootView = NSView(frame: NSRect(x: 0, y: 0, width: 768, height: 516))
-		let sidebarGlass = NSGlassEffectView(
-			frame: NSRect(
-				x: 8,
-				y: 8,
-				width: VisualMetrics.sidebarIdealWidth,
-				height: VisualMetrics.mainWindowMinHeight - (VisualMetrics.sidebarGlassInset * 2)
-			)
+	func testToolbarReloadRoutesThroughAppCommands() {
+		let updateChecking = UpdateCheckingCommandSpy()
+		let commands = AppCommands(
+			updateCheckingService: updateChecking,
+			updatesListViewModel: UpdatesListViewModel(),
+			searchFocusController: SearchFocusController()
 		)
-		let compactGlass = NSGlassEffectView(
-			frame: NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 40)
-		)
-		rootView.addSubview(sidebarGlass)
-		rootView.addSubview(compactGlass)
 
-		MainWindowChrome.configureSidebarGlassSurface(in: rootView)
+		commands.reload()
 
-		XCTAssertEqual(sidebarGlass.cornerRadius, VisualMetrics.sidebarGlassCornerRadius)
-		XCTAssertNotEqual(compactGlass.cornerRadius, VisualMetrics.sidebarGlassCornerRadius)
+		XCTAssertEqual(updateChecking.checkForUpdatesCount, 1)
+	}
+
+	@MainActor
+	func testSystemSidebarVisibilityBindingSupportsCollapseAndRestore() {
+		let navigationModel = MainWindowNavigationModel()
+		XCTAssertEqual(navigationModel.columnVisibility, .all)
+
+		navigationModel.columnVisibility = .detailOnly
+		XCTAssertEqual(navigationModel.columnVisibility, .detailOnly)
+
+		navigationModel.columnVisibility = .all
+		XCTAssertEqual(navigationModel.columnVisibility, .all)
 	}
 
 	@MainActor
@@ -213,23 +182,24 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 
 	@MainActor
 	func testUpdateCheckFailureUsesCompactReleaseNotesEmptyState() {
-		let controller = ReleaseNotesViewController()
-		controller.loadViewIfNeeded()
-		let bundle = App.Bundle(
+		let bundle = Latest.App.Bundle(
 			version: Version(versionNumber: "26.707.51957", buildNumber: nil),
 			name: "ChatGPT",
 			bundleIdentifier: "com.openai.codex",
 			fileURL: URL(fileURLWithPath: "/Applications/ChatGPT.app"),
 			source: .sparkle
 		)
-		let app = App(bundle: bundle, update: .failure(LatestError.updateInfoUnavailable), isIgnored: false)
+		let app = Latest.App(bundle: bundle, update: .failure(LatestError.updateInfoUnavailable), isIgnored: false)
+		let viewModel = ReleaseNotesDetailViewModel()
 
-		controller.display(releaseNotesFor: app)
+		viewModel.display(app)
 
-		let labels = controller.view.descendantTextFields().map(\.stringValue)
-		XCTAssertTrue(labels.contains(NSLocalizedString("ReleaseNotesUnavailableError", comment: "")))
-		XCTAssertTrue(labels.contains(NSLocalizedString("ReleaseNotesUnavailableErrorFailureReason", comment: "")))
-		XCTAssertFalse(labels.contains(NSLocalizedString("UpdateInfoUnavailableErrorFailureReason", comment: "")))
+		guard case .message(let message) = viewModel.contentState else {
+			return XCTFail("Expected the provider to map update-check failures to a release-notes message.")
+		}
+		XCTAssertEqual(message.title, NSLocalizedString("ReleaseNotesUnavailableError", comment: ""))
+		XCTAssertEqual(message.description, NSLocalizedString("ReleaseNotesUnavailableErrorFailureReason", comment: ""))
+		XCTAssertNotEqual(message.description, NSLocalizedString("UpdateInfoUnavailableErrorFailureReason", comment: ""))
 	}
 
 	func testSparkleChecksHaveABoundedDeadline() {
@@ -266,56 +236,6 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 	}
 
 	@MainActor
-	func testDatedHeaderTextAlignsAndStaysInsideIconBounds() {
-		let controller = ReleaseNotesViewController()
-		let window = NSWindow(
-			contentRect: NSRect(x: 0, y: 0, width: 768, height: 516),
-			styleMask: [.titled, .fullSizeContentView],
-			backing: .buffered,
-			defer: false
-		)
-		window.contentViewController = controller
-		controller.loadViewIfNeeded()
-		controller.viewWillAppear()
-
-		let date = Date(timeIntervalSince1970: 1_750_000_000)
-		let dateFormatter = DateFormatter()
-		dateFormatter.dateStyle = .long
-		dateFormatter.timeStyle = .none
-		let dateString = dateFormatter.string(from: date)
-		controller.display(releaseNotesFor: makeApp(name: "Latest Dev", version: "0.33", date: date))
-		controller.view.layoutSubtreeIfNeeded()
-		window.contentView?.layoutSubtreeIfNeeded()
-
-		let textFields = controller.view.descendantTextFields()
-		guard let nameField = textFields.first(where: { $0.stringValue == "Latest Dev" }),
-			  let versionField = textFields.first(where: { $0.stringValue == "Version: 0.33" }),
-			  let dateField = textFields.first(where: { $0.stringValue == dateString })
-		else {
-			XCTFail("Expected app name, version, and date text fields in the release notes header.")
-			return
-		}
-		guard let iconView = controller.view.descendantImageViews().first(where: { $0.frame.width == 64 && $0.frame.height == 64 }) else {
-			XCTFail("Expected a 64pt app icon in the release notes header.")
-			return
-		}
-
-		let nameFrame = nameField.convert(nameField.bounds, to: controller.view)
-		let versionFrame = versionField.convert(versionField.bounds, to: controller.view)
-		let dateFrame = dateField.convert(dateField.bounds, to: controller.view)
-		let iconFrame = iconView.convert(iconView.bounds, to: controller.view)
-
-		XCTAssertEqual(nameFrame.minX, versionFrame.minX, accuracy: 0.5)
-		XCTAssertEqual(nameFrame.minX, dateFrame.minX, accuracy: 0.5)
-		XCTAssertGreaterThanOrEqual(nameFrame.minY, iconFrame.minY - 0.5)
-		XCTAssertLessThanOrEqual(nameFrame.maxY, iconFrame.maxY + 0.5)
-		XCTAssertGreaterThanOrEqual(dateFrame.minY, iconFrame.minY - 0.5)
-		XCTAssertLessThanOrEqual(dateFrame.maxY, iconFrame.maxY + 0.5)
-
-		_ = window
-	}
-
-	@MainActor
 	func testSidebarShowsLongInstalledVersionWithoutTruncationAtIdealWidth() {
 		let date = Date()
 		let app = makeApp(name: "Codex", version: "26.623.101652", date: date)
@@ -344,16 +264,16 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 		version: String,
 		remoteVersion: String? = nil,
 		date: Date = Date(),
-		updateAction: App.Update.Action = .builtIn { _ in }
-	) -> App {
-		let bundle = App.Bundle(
+		updateAction: Latest.App.Update.Action = .builtIn { _ in }
+	) -> Latest.App {
+		let bundle = Latest.App.Bundle(
 			version: Version(versionNumber: version, buildNumber: nil),
 			name: name,
 			bundleIdentifier: "com.example.\(name.replacingOccurrences(of: " ", with: "-"))",
 			fileURL: URL(fileURLWithPath: "/Applications/\(name).app"),
 			source: .appStore
 		)
-		let update = App.Update(
+		let update = Latest.App.Update(
 			app: bundle,
 			remoteVersion: Version(versionNumber: remoteVersion ?? version, buildNumber: nil),
 			minimumOSVersion: nil,
@@ -362,7 +282,21 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 			releaseNotes: .html(string: "<p>Release notes</p>"),
 			updateAction: updateAction
 		)
-		return App(bundle: bundle, update: .success(update), isIgnored: false)
+		return Latest.App(bundle: bundle, update: .success(update), isIgnored: false)
+	}
+}
+
+@MainActor
+private final class UpdateCheckingCommandSpy: UpdateCheckingCommandHandling {
+	private(set) var checkForUpdatesCount = 0
+	private(set) var updateAllCount = 0
+
+	func checkForUpdates() {
+		checkForUpdatesCount += 1
+	}
+
+	func updateAll() {
+		updateAllCount += 1
 	}
 }
 

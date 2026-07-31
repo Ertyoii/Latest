@@ -118,10 +118,18 @@ final class SettingsViewModel: ObservableObject {
 		directoryStore.isReachable(url)
 	}
 
+	/// Refreshes the locations snapshot. Kept internal so the migration
+	/// performance harness measures the same path used after add/remove events.
+	func refreshDirectories() {
+		reloadDirectories()
+	}
+
 	private func reloadDirectories() {
-		directoryURLs = directoryStore.URLs
-		if let selectedDirectory, !directoryURLs.contains(selectedDirectory) {
-			self.selectedDirectory = nil
+		MigrationTelemetry.shared.measureSettingsRefresh {
+			directoryURLs = directoryStore.URLs
+			if let selectedDirectory, !directoryURLs.contains(selectedDirectory) {
+				self.selectedDirectory = nil
+			}
 		}
 	}
 }

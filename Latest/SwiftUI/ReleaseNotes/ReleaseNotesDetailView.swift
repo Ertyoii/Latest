@@ -11,63 +11,177 @@ import SwiftUI
 
 struct ReleaseNotesDetailView: View {
 	@ObservedObject var updatesViewModel: UpdatesListViewModel
+	@StateObject private var detailViewModel: ReleaseNotesDetailViewModel
+
+	init(
+		updatesViewModel: UpdatesListViewModel,
+		detailViewModel: ReleaseNotesDetailViewModel = ReleaseNotesDetailViewModel()
+	) {
+		self.updatesViewModel = updatesViewModel
+		_detailViewModel = StateObject(wrappedValue: detailViewModel)
+	}
 
 	var body: some View {
-		LegacyReleaseNotesViewControllerRepresentable(app: updatesViewModel.selectedApp)
-		.frame(maxWidth: .infinity, maxHeight: .infinity)
+		ReleaseNotesDetailSurface(
+			app: detailViewModel.app,
+			contentState: detailViewModel.contentState
+		)
+		.task(id: selectionKey) {
+			detailViewModel.display(updatesViewModel.selectedApp)
+		}
 		.transaction { transaction in
 			transaction.animation = nil
 			transaction.disablesAnimations = true
 		}
 	}
+
+	private var selectionKey: String {
+		updatesViewModel.selectedApp.map(ReleaseNotesDetailViewModel.displayKey(for:)) ?? "no-selection"
+	}
 }
 
-private struct LegacyReleaseNotesViewControllerRepresentable: NSViewControllerRepresentable {
+struct ReleaseNotesDetailSurface: View {
 	let app: App?
+	let contentState: ReleaseNotesDetailContentState
 
-	func makeCoordinator() -> Coordinator {
-		Coordinator()
-	}
-
-	func makeNSViewController(context: Context) -> ReleaseNotesViewController {
-		let controller = ReleaseNotesViewController()
-		_ = controller.view
-		context.coordinator.display(app, in: controller)
-		return controller
-	}
-
-	func updateNSViewController(_ controller: ReleaseNotesViewController, context: Context) {
-		context.coordinator.display(app, in: controller)
-	}
-
-	@MainActor
-	final class Coordinator {
-		private var displayedKey: String?
-
-		func display(_ app: App?, in controller: ReleaseNotesViewController) {
-			let nextKey = app.map(Self.displayKey(for:))
-			guard nextKey != displayedKey else { return }
-
-			displayedKey = nextKey
-			NSAnimationContext.runAnimationGroup { context in
-				context.duration = 0
-				context.allowsImplicitAnimation = false
-				controller.display(releaseNotesFor: app)
+	var body: some View {
+		VStack(spacing: 0) {
+			if let app {
+				ReleaseNotesHeaderView(app: app)
 			}
+			content
 		}
+		.frame(maxWidth: .infinity, maxHeight: .infinity)
+		.background(.background)
+	}
 
-		private static func displayKey(for app: App) -> String {
-			let latestUpdateDate = app.latestUpdateDate?.timeIntervalSinceReferenceDate ?? -1
-			let version = app.localizedVersionInformation?.combined(includeNew: app.updateAvailable) ?? ""
-			let externalUpdater = app.externalUpdaterName ?? ""
-			let supportState = app.source.supportState.compactLabel
-			return [
-				app.identifier.absoluteString,
-				version,
-				String(latestUpdateDate),
-				externalUpdater,
-				supportState
-			].joined(separator: "|")
+	@ViewBuilder
+	private var content: some View {
+		switch contentState {
+		case .message(let message):
+			ReleaseNotesMessageView(message: message)
+		case .loading:
+			ProgressView()
+				.controlSize(.regular)
+				.frame(maxWidth: .infinity, maxHeight: .infinity)
+				.accessibilityLabel("Loading Release Notes")
+		case .text(let text):
+			SelectableReleaseNotesTextView(text: text)
+				.frame(maxWidth: .infinity, maxHeight: .infinity)
 		}
+	}
+}
+
+struct ReleaseNotesHeaderView: View {
+	let app: App
+	@State private var icon: NSImage?
+
+	var body: some View {
+		HStack(spacing: 5) {
+			Group {
+				if let icon {
+					Image(nsImage: icon)
+						.resizable()
+						.scaledToFit()
+				} else {
+					Color.clear
+				}
+			}
+			.frame(width: VisualMetrics.detailIconSize, height: VisualMetrics.detailIconSize)
+			.accessibilityHidden(true)
+
+			VStack(alignment: .leading, spacing: 0) {
+				appTitle
+					.offset(y: VisualMetrics.detailTitleVerticalCorrection)
+					.frame(height: 19)
+
+				if let version = app.localizedVersionInformation?.combined(includeNew: app.updateAvailable) {
+					Text(version)
+						.font(.system(size: NSFont.systemFontSize(for: .small)))
+						.foregroundStyle(Color(nsColor: .secondaryLabelColor))
+						.offset(y: VisualMetrics.detailMetadataLineVerticalCorrection)
+						.lineLimit(1)
+				}
+
+				if let date = app.latestUpdateDate {
+					Text(date, format: .dateTime.year().month(.wide).day())
+						.font(.system(size: NSFont.systemFontSize(for: .small)))
+						.foregroundStyle(Color(nsColor: .secondaryLabelColor))
+						.offset(y: VisualMetrics.detailMetadataLineVerticalCorrection)
+						.lineLimit(1)
+				}
+			}
+			.frame(maxWidth: .infinity, alignment: .leading)
+			.offset(y: VisualMetrics.detailMetadataVerticalOffset)
+			.layoutPriority(1)
+
+			UpdateActionView(app: app)
+				.id(app.identifier)
+		}
+		.padding(.horizontal, VisualMetrics.detailHeaderHorizontalPadding)
+		.frame(height: VisualMetrics.detailHeaderHeight)
+		.background(.bar)
+		.overlay(alignment: .bottom) {
+			Divider()
+		}
+		.accessibilityElement(children: .contain)
+		.accessibilityIdentifier("release-notes.header")
+		.task(id: app.identifier) {
+			let loadedIcon = await IconCache.shared.icon(for: app)
+			guard !Task.isCancelled, app.identifier == self.app.identifier else { return }
+			icon = loadedIcon
+		}
+	}
+
+	private var showsSupportStatus: Bool {
+		AppListSettings.shared.includeUnsupportedApps ||
+			AppListSettings.shared.includeAppsWithLimitedSupport
+	}
+
+	@ViewBuilder
+	private var appTitle: some View {
+		if showsSupportStatus {
+			ViewThatFits(in: .horizontal) {
+				HStack(spacing: 8) {
+					appName
+						.fixedSize(horizontal: true, vertical: false)
+					SupportStatusButton(app: app)
+				}
+
+				HStack(spacing: 5) {
+					appName
+					SupportStatusButton(app: app, showsLabel: false)
+				}
+			}
+		} else {
+			appName
+		}
+	}
+
+	private var appName: some View {
+		Text(app.name)
+			.font(.system(size: 13, weight: .semibold))
+			.lineLimit(1)
+			.truncationMode(.tail)
+	}
+}
+
+private struct ReleaseNotesMessageView: View {
+	let message: ReleaseNotesMessage
+
+	var body: some View {
+		VStack(spacing: 8) {
+			if let title = message.title, !title.isEmpty {
+				Text(title)
+					.font(.headline)
+			}
+			Text(message.description)
+				.multilineTextAlignment(.center)
+		}
+		.frame(maxWidth: 420)
+		.padding(24)
+		.frame(maxWidth: .infinity, maxHeight: .infinity)
+		.accessibilityElement(children: .combine)
+		.accessibilityIdentifier("release-notes.message")
 	}
 }

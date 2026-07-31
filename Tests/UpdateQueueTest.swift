@@ -93,6 +93,27 @@ final class UpdateQueueTest: XCTestCase {
 		XCTFail("Expected .none state, got \(state)")
 	}
 
+	func testStateChangesReturnsCurrentWithoutRepublishingIt() async {
+		let identifier = URL(fileURLWithPath: "/Applications/StateChanges-\(UUID().uuidString).app")
+		let feed = UpdateQueue.shared.stateChanges(for: identifier)
+		if case .none = feed.current {
+			// Expected current value.
+		} else {
+			XCTFail("Expected .none current state, got \(feed.current)")
+		}
+
+		let didReceiveDuplicate = expectation(description: "No duplicate initial state")
+		didReceiveDuplicate.isInverted = true
+		let observation = Task {
+			for await _ in feed.changes {
+				didReceiveDuplicate.fulfill()
+				break
+			}
+		}
+		await fulfillment(of: [didReceiveDuplicate], timeout: 0.05)
+		observation.cancel()
+	}
+
 }
 
 private final class TestUpdateOperation: UpdateOperation, @unchecked Sendable {

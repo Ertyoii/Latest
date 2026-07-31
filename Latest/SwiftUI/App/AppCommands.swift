@@ -10,18 +10,26 @@ import AppKit
 import SwiftUI
 
 @MainActor
+protocol UpdateCheckingCommandHandling: AnyObject {
+	func checkForUpdates()
+	func updateAll()
+}
+
+extension UpdateCheckingService: UpdateCheckingCommandHandling {}
+
+@MainActor
 final class AppCommands {
 	private enum ExternalURL {
 		static let website = URL(string: "https://max.codes/latest")
 		static let donationPage = URL(string: "https://max.codes/latest/donate/")
 	}
 
-	private let updateCheckingService: UpdateCheckingService
+	private let updateCheckingService: UpdateCheckingCommandHandling
 	private let updatesListViewModel: UpdatesListViewModel
 	private let searchFocusController: SearchFocusController
 
 	init(
-		updateCheckingService: UpdateCheckingService,
+		updateCheckingService: UpdateCheckingCommandHandling,
 		updatesListViewModel: UpdatesListViewModel,
 		searchFocusController: SearchFocusController
 	) {

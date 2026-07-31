@@ -68,6 +68,7 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
 	}
 
 	func updateCheckerDidStartScanningForApps(_ updateChecker: UpdateCheckCoordinator) {
+		MigrationTelemetry.shared.scanStarted()
 		isRunning = true
 		isIndeterminate = true
 		checkedApps = 0
@@ -88,5 +89,6 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
 	func updateCheckerDidFinishCheckingForUpdates(_ updateChecker: UpdateCheckCoordinator) {
 		isRunning = false
 		isIndeterminate = false
+		MigrationTelemetry.shared.scanFinished(appCount: totalApps)
 	}
 }

@@ -73,23 +73,30 @@ struct LatestApplication: SwiftUI.App {
 	}
 }
 
-private struct LatestRootView: View {
+struct LatestRootView: View {
 	let environment: AppEnvironment
+	let sidebarImplementation: SidebarImplementation
 
 	@ObservedObject private var updatesViewModel: UpdatesListViewModel
 	@ObservedObject private var updateCheckingService: UpdateCheckingService
+	@StateObject private var navigationModel = MainWindowNavigationModel()
 
-	init(environment: AppEnvironment) {
+	init(
+		environment: AppEnvironment,
+		sidebarImplementation: SidebarImplementation = .runtimeDefault
+	) {
 		self.environment = environment
+		self.sidebarImplementation = sidebarImplementation
 		_updatesViewModel = ObservedObject(wrappedValue: environment.updatesListViewModel)
 		_updateCheckingService = ObservedObject(wrappedValue: environment.updateCheckingService)
 	}
 
 	var body: some View {
-		NavigationSplitView(columnVisibility: .constant(.all)) {
+		NavigationSplitView(columnVisibility: $navigationModel.columnVisibility) {
 			UpdatesSidebarView(
 				viewModel: updatesViewModel,
-				searchFocusController: environment.searchFocusController
+				searchFocusController: environment.searchFocusController,
+				implementation: sidebarImplementation
 			)
 			.navigationSplitViewColumnWidth(
 				min: VisualMetrics.sidebarIdealWidth,
@@ -105,169 +112,119 @@ private struct LatestRootView: View {
 		.navigationSubtitle(updatesViewModel.statusText)
 		.background {
 			WindowAccessor { window in
-				MainWindowChrome.configure(
-					window,
-					commands: environment.commands,
-					refreshIsEnabled: !updateCheckingService.isRunning
-				)
+				MainWindowConfiguration.apply(to: window)
 			}
 		}
 		.toolbar {
-			ToolbarItem(placement: .primaryAction) {
-				updateProgress
+			ToolbarItem(placement: .navigation) {
+				RefreshToolbarButton(isEnabled: !updateCheckingService.isRunning) {
+					environment.commands.reload()
+				}
 			}
-		}
-	}
-
-	@ViewBuilder
-	private var updateProgress: some View {
-		if updateCheckingService.isRunning {
-			if let progress = updateCheckingService.progressFraction {
-				ProgressView(value: ToolbarProgressMetrics.normalized(progress))
-					.id(ToolbarProgressMetrics.determinateIdentity)
-					.frame(width: ToolbarProgressMetrics.width)
-					.padding(.leading, ToolbarProgressMetrics.leadingPadding)
-					.padding(.trailing, ToolbarProgressMetrics.trailingPadding)
-					.accessibilityLabel("Checking for updates")
-			} else {
-				ProgressView()
-					.id(ToolbarProgressMetrics.indeterminateIdentity)
-					.controlSize(.small)
-					.frame(width: ToolbarProgressMetrics.width)
-					.padding(.leading, ToolbarProgressMetrics.leadingPadding)
-					.padding(.trailing, ToolbarProgressMetrics.trailingPadding)
-					.accessibilityLabel("Scanning applications")
+			ToolbarItem(placement: .primaryAction) {
+				ToolbarUpdateProgressView(
+					presentation: ToolbarProgressPresentation(
+						isRunning: updateCheckingService.isRunning,
+						fraction: updateCheckingService.progressFraction
+					)
+				)
 			}
 		}
 	}
 }
 
 @MainActor
-enum MainWindowChrome {
-	private static var refreshTargetAssociationKey: UInt8 = 0
+final class MainWindowNavigationModel: ObservableObject {
+	@Published var columnVisibility: NavigationSplitViewVisibility = .all
+}
 
-	static func configure(_ window: NSWindow, commands: AppCommands, refreshIsEnabled: Bool) {
+/// The sole retained main-window AppKit capability. `titlebarSeparatorStyle` is a
+/// supported window property; this adapter never inspects or mutates the system's
+/// toolbar, sidebar toggle, Liquid Glass views, or private SwiftUI hierarchy.
+@MainActor
+enum MainWindowConfiguration {
+	static func apply(to window: NSWindow) {
 		window.titlebarSeparatorStyle = .none
-		if let contentView = window.contentView {
-			configureSidebarGlassSurface(in: contentView)
-		}
-
-		let target = refreshTarget(for: window, commands: commands)
-		repurposeSidebarToggleItem(in: window, target: target, isEnabled: refreshIsEnabled)
-
-		// SwiftUI may finish installing its standard toolbar items on the next
-		// main-loop pass. Repeat once so the native toggle is reliably retargeted.
-		DispatchQueue.main.async { [weak window, weak target] in
-			guard let window, let target else { return }
-			if let contentView = window.contentView {
-				configureSidebarGlassSurface(in: contentView)
-			}
-			repurposeSidebarToggleItem(in: window, target: target, isEnabled: refreshIsEnabled)
-		}
 	}
+}
 
-	static func configureSidebarGlassSurface(in rootView: NSView) {
-		if let glassView = rootView as? NSGlassEffectView,
-		   abs(glassView.bounds.width - VisualMetrics.sidebarIdealWidth) < 0.5,
-		   glassView.bounds.height >= VisualMetrics.mainWindowMinHeight - (VisualMetrics.sidebarGlassInset * 2) {
-			// The system insets this surface from the window by 8pt. A 20pt
-			// inner radius follows the standard window's 28pt concentric curve.
-			glassView.cornerRadius = VisualMetrics.sidebarGlassCornerRadius
+struct RefreshToolbarButton: View {
+	static let accessibilityIdentifier = "toolbar.refresh"
+	static let accessibilityLabel = "Check for Updates"
+	static let systemImageName = "arrow.clockwise"
+
+	let isEnabled: Bool
+	let action: () -> Void
+
+	var body: some View {
+		Button(action: performAction) {
+			Label(Self.accessibilityLabel, systemImage: Self.systemImageName)
 		}
-
-		for subview in rootView.subviews {
-			configureSidebarGlassSurface(in: subview)
-		}
-	}
-
-	static func repurposeSidebarToggleItem(
-		_ item: NSToolbarItem,
-		target: MainToolbarRefreshTarget,
-		isEnabled: Bool = true
-	) {
-		let tooltip = NSLocalizedString(
+		.labelStyle(.iconOnly)
+		.help(NSLocalizedString(
 			"CheckForUpdatesToolbarItemToolTip",
 			comment: "Tool tip of a toolbar button that checks for updates"
-		)
-		let image = NSImage(
-			systemSymbolName: "arrow.clockwise",
-			accessibilityDescription: "Check for Updates"
-		)
-
-		item.label = "Check for Updates"
-		item.paletteLabel = "Check for Updates"
-		item.toolTip = tooltip
-		item.image = image
-		item.target = target
-		item.action = #selector(MainToolbarRefreshTarget.reload(_:))
-
-		let button = (item.view as? MainToolbarRefreshButton) ?? MainToolbarRefreshButton()
-		button.image = image
-		button.imagePosition = .imageOnly
-		button.imageScaling = .scaleProportionallyDown
-		button.isBordered = false
-		button.bezelStyle = .toolbar
-		button.controlSize = .regular
-		button.target = target
-		button.action = #selector(MainToolbarRefreshTarget.reload(_:))
-		button.toolTip = tooltip
-		button.isEnabled = isEnabled
-		button.setAccessibilityLabel("Check for Updates")
-		item.view = button
+		))
+		.disabled(!isEnabled)
+		.accessibilityIdentifier(Self.accessibilityIdentifier)
+		.accessibilityLabel(Self.accessibilityLabel)
 	}
 
-	private static func repurposeSidebarToggleItem(
-		in window: NSWindow,
-		target: MainToolbarRefreshTarget,
-		isEnabled: Bool
-	) {
-		guard let item = window.toolbar?.items.first(where: isSidebarToggleItem) else {
+	/// Kept as a small test seam because SwiftUI controls intentionally do not
+	/// promise a one-to-one AppKit view hierarchy.
+	func performAction() {
+		action()
+	}
+}
+
+enum ToolbarProgressPresentation: Equatable {
+	case hidden
+	case indeterminate
+	case determinate(Double)
+
+	init(isRunning: Bool, fraction: Double?) {
+		guard isRunning else {
+			self = .hidden
 			return
 		}
-		repurposeSidebarToggleItem(item, target: target, isEnabled: isEnabled)
-	}
-
-	static func isSidebarToggleItem(_ item: NSToolbarItem) -> Bool {
-		if item.itemIdentifier == .toggleSidebar || item.action == NSSelectorFromString("toggleSidebar:") {
-			return true
+		if let fraction {
+			self = .determinate(ToolbarProgressMetrics.normalized(fraction))
+		} else {
+			self = .indeterminate
 		}
-
-		let identifier = item.itemIdentifier.rawValue.lowercased()
-		return identifier.contains("sidebar") && identifier.contains("toggle")
-	}
-
-	private static func refreshTarget(for window: NSWindow, commands: AppCommands) -> MainToolbarRefreshTarget {
-		if let target = objc_getAssociatedObject(window, &refreshTargetAssociationKey) as? MainToolbarRefreshTarget {
-			target.commands = commands
-			return target
-		}
-
-		let target = MainToolbarRefreshTarget(commands: commands)
-		objc_setAssociatedObject(
-			window,
-			&refreshTargetAssociationKey,
-			target,
-			.OBJC_ASSOCIATION_RETAIN_NONATOMIC
-		)
-		return target
 	}
 }
 
-@MainActor
-final class MainToolbarRefreshTarget: NSObject {
-	weak var commands: AppCommands?
+struct ToolbarUpdateProgressView: View {
+	let presentation: ToolbarProgressPresentation
 
-	init(commands: AppCommands) {
-		self.commands = commands
-	}
-
-	@objc func reload(_ sender: Any?) {
-		commands?.reload()
+	@ViewBuilder
+	var body: some View {
+		switch presentation {
+		case .hidden:
+			EmptyView()
+		case .indeterminate:
+			ProgressView()
+				.id(ToolbarProgressMetrics.indeterminateIdentity)
+				.controlSize(.small)
+				.toolbarProgressFrame()
+				.accessibilityLabel("Scanning applications")
+		case .determinate(let fraction):
+			ProgressView(value: fraction)
+				.id(ToolbarProgressMetrics.determinateIdentity)
+				.toolbarProgressFrame()
+				.accessibilityLabel("Checking for updates")
+		}
 	}
 }
 
-@MainActor
-final class MainToolbarRefreshButton: NSButton {}
+private extension View {
+	func toolbarProgressFrame() -> some View {
+		frame(width: ToolbarProgressMetrics.width)
+			.padding(.leading, ToolbarProgressMetrics.leadingPadding)
+			.padding(.trailing, ToolbarProgressMetrics.trailingPadding)
+	}
+}
 
 enum ToolbarProgressMetrics {
 	static let width: CGFloat = 64

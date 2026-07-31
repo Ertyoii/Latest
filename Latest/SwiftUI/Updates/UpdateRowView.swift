@@ -57,7 +57,14 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 		updateStateTask?.cancel()
 	}
 
-	func update(app: App, isSelected: Bool, drawsSelectionBackground: Bool, filterQuery: String?, dateFormatter: DateFormatter) {
+	func update(
+		app: App,
+		isSelected: Bool,
+		drawsSelectionBackground: Bool,
+		filterQuery: String?,
+		dateFormatter: DateFormatter,
+		showsSupportStatusOverride: Bool? = nil
+	) {
 		updateTitle(for: app, filterQuery: filterQuery, isSelected: isSelected)
 
 		if let versionInformation = app.localizedVersionInformation {
@@ -75,12 +82,17 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 		dateField.stringValue = dateFormatter.string(from: app.updateDate)
 		updateButton.app = app
 		observeUpdateState(for: app)
-		updateSupportState(for: app)
+		updateSupportState(for: app, showsSupportStatusOverride: showsSupportStatusOverride)
 		updateSelection(isSelected, drawsSelectionBackground: drawsSelectionBackground)
 		updateIcon(for: app)
+		setAccessibilityLabel(SidebarInteractionPolicy.accessibilityLabel(for: app, dateFormatter: dateFormatter))
+		setAccessibilitySelected(isSelected)
 	}
 
 	private func setupView() {
+		setAccessibilityElement(true)
+		setAccessibilityRole(.group)
+
 		selectionBackground.boxType = .custom
 		selectionBackground.cornerRadius = Layout.selectionCornerRadius
 		selectionBackground.fillColor = .controlAccentColor
@@ -206,8 +218,14 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 		}
 	}
 
-	private func updateSupportState(for app: App) {
-		let showSupportState = AppListSettings.shared.includeAppsWithLimitedSupport || AppListSettings.shared.includeUnsupportedApps
+	private var showsSupportStatusOverride: Bool?
+
+	private func updateSupportState(for app: App, showsSupportStatusOverride: Bool? = nil) {
+		if let showsSupportStatusOverride {
+			self.showsSupportStatusOverride = showsSupportStatusOverride
+		}
+		let showSupportState = self.showsSupportStatusOverride
+			?? (AppListSettings.shared.includeAppsWithLimitedSupport || AppListSettings.shared.includeUnsupportedApps)
 		let isUpdating = switch UpdateQueue.shared.state(for: app.identifier) {
 		case .none, .error: false
 		default: true

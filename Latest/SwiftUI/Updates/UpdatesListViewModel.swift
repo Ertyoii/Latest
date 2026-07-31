@@ -22,8 +22,8 @@ final class UpdatesListViewModel: ObservableObject {
 	private var observationTasks = [Task<Void, Never>]()
 	private var selectionWasUserInitiated = false
 
-	init() {
-		self.snapshot = AppListSnapshot(withApps: [], filterQuery: nil)
+	init(snapshot: AppListSnapshot = AppListSnapshot(withApps: [], filterQuery: nil)) {
+		self.snapshot = snapshot
 		updateTitleAndBadge()
 	}
 
@@ -56,13 +56,24 @@ final class UpdatesListViewModel: ObservableObject {
 	func setSearchQuery(_ query: String) {
 		guard query != searchQuery else { return }
 		searchQuery = query
-		replaceSnapshot(with: snapshot.refiltered(with: normalizedSearchQuery))
+		let filteredSnapshot = MigrationTelemetry.shared.measureFilter(rowCount: snapshot.entries.count) {
+			snapshot.refiltered(with: normalizedSearchQuery)
+		}
+		replaceSnapshot(with: filteredSnapshot)
 		maintainSelectionAfterSnapshotChange()
 	}
 
 	func select(_ app: App?) {
+		guard app?.identifier != selectedApp?.identifier else { return }
 		selectionWasUserInitiated = true
+		if let app, app !== selectedApp {
+			MigrationTelemetry.shared.selectionStarted(appName: app.name)
+		}
 		selectedApp = app
+	}
+
+	func select(identifier: App.Bundle.Identifier?) {
+		select(snapshot.app(withIdentifier: identifier))
 	}
 
 	func update(_ app: App) {
@@ -98,6 +109,10 @@ final class UpdatesListViewModel: ObservableObject {
 	private func replaceSnapshot(with snapshot: AppListSnapshot) {
 		snapshotRevision &+= 1
 		self.snapshot = snapshot
+		MigrationTelemetry.shared.snapshotCommitted(
+			rowCount: snapshot.entries.count,
+			appCount: snapshot.apps.count
+		)
 	}
 
 	private func maintainSelectionAfterSnapshotChange() {

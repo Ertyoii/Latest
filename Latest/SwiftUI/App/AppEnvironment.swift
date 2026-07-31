@@ -36,6 +36,7 @@ final class AppEnvironment: ObservableObject {
 	}
 
 	func start() {
+		MigrationTelemetry.shared.applicationStarted()
 		updateCheckingService.startReportingProgress()
 		updatesListViewModel.startObserving()
 		updateCheckingService.checkForUpdates()

@@ -105,6 +105,28 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 		}
 		return stream
 	}
+
+	/// Atomically captures the current state and registers a stream containing
+	/// only subsequent changes. SwiftUI state owners use this to avoid publishing
+	/// the same initial value while their view is being constructed.
+	@MainActor
+	func stateChanges(
+		for identifier: App.Bundle.Identifier
+	) -> (current: UpdateOperation.ProgressState, changes: AsyncStream<UpdateOperation.ProgressState>) {
+		let streamIdentifier = UUID()
+		let currentState = state(for: identifier)
+		let (stream, continuation) = AsyncStream.makeStream(
+			of: UpdateOperation.ProgressState.self,
+			bufferingPolicy: .bufferingNewest(1)
+		)
+		stateContinuations[identifier, default: [:]][streamIdentifier] = continuation
+		continuation.onTermination = { [weak self] _ in
+			Task { @MainActor [weak self] in
+				self?.removeStateContinuation(streamIdentifier, for: identifier)
+			}
+		}
+		return (currentState, stream)
+	}
 	
 	/// Adds the observer if it is not already registered.
 	@MainActor

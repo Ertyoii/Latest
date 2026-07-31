@@ -6,20 +6,26 @@
 //  Copyright © 2026 Max Langer. All rights reserved.
 //
 
-import AppKit
 import Combine
 
 @MainActor
 final class SearchFocusController: ObservableObject {
-	weak var searchField: NSSearchField?
+	enum Request: Equatable {
+		case none
+		case focus(UInt)
+		case resign(UInt)
+	}
+
+	@Published private(set) var request: Request = .none
+	private var generation: UInt = 0
 
 	func focus() {
-		guard let searchField else { return }
-		searchField.window?.makeFirstResponder(searchField)
+		generation &+= 1
+		request = .focus(generation)
 	}
 
 	func resignFocus() {
-		guard let searchField else { return }
-		searchField.window?.makeFirstResponder(nil)
+		generation &+= 1
+		request = .resign(generation)
 	}
 }
