@@ -78,27 +78,34 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 	}
 
 	@MainActor
-	func testMainWindowConfigurationOnlyUsesSupportedWindowCapability() {
+	func testMainWindowConfigurationUsesConcentricSidebarGlassRadius() {
 		let window = NSWindow(
 			contentRect: NSRect(x: 0, y: 0, width: 768, height: 516),
 			styleMask: [.titled, .closable, .resizable],
 			backing: .buffered,
 			defer: false
 		)
-		let toolbar = NSToolbar(identifier: "test.toolbar")
-		let sidebarItem = NSToolbarItem(itemIdentifier: .toggleSidebar)
-		sidebarItem.label = "Toggle Sidebar"
-		window.toolbar = toolbar
-		let glassView = NSGlassEffectView(frame: NSRect(x: 0, y: 0, width: 308, height: 300))
-		glassView.cornerRadius = 7
-		window.contentView?.addSubview(glassView)
+		let sidebarGlass = NSGlassEffectView(frame: NSRect(
+			x: VisualMetrics.sidebarGlassInset,
+			y: VisualMetrics.sidebarGlassInset,
+			width: VisualMetrics.sidebarIdealWidth,
+			height: VisualMetrics.mainWindowMinHeight - (VisualMetrics.sidebarGlassInset * 2)
+		))
+		let compactGlass = NSGlassEffectView(frame: NSRect(
+			x: 0,
+			y: 0,
+			width: VisualMetrics.sidebarIdealWidth,
+			height: 40
+		))
+		compactGlass.cornerRadius = 7
+		window.contentView?.addSubview(sidebarGlass)
+		window.contentView?.addSubview(compactGlass)
 
 		MainWindowConfiguration.apply(to: window)
 
 		XCTAssertEqual(window.titlebarSeparatorStyle, .none)
-		XCTAssertEqual(glassView.cornerRadius, 7, "The system-owned Liquid Glass hierarchy must remain untouched.")
-		XCTAssertEqual(sidebarItem.label, "Toggle Sidebar")
-		XCTAssertNil(sidebarItem.target)
+		XCTAssertEqual(sidebarGlass.cornerRadius, VisualMetrics.sidebarGlassCornerRadius)
+		XCTAssertEqual(compactGlass.cornerRadius, 7, "Unrelated glass controls must remain untouched.")
 	}
 
 	@MainActor
@@ -134,15 +141,12 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 	}
 
 	@MainActor
-	func testSystemSidebarVisibilityBindingSupportsCollapseAndRestore() {
-		let navigationModel = MainWindowNavigationModel()
-		XCTAssertEqual(navigationModel.columnVisibility, .all)
+	func testMainWindowSidebarVisibilityIsLockedOpen() {
+		let visibility = MainWindowSidebarPolicy.columnVisibility
+		XCTAssertEqual(visibility.wrappedValue, .all)
 
-		navigationModel.columnVisibility = .detailOnly
-		XCTAssertEqual(navigationModel.columnVisibility, .detailOnly)
-
-		navigationModel.columnVisibility = .all
-		XCTAssertEqual(navigationModel.columnVisibility, .all)
+		visibility.wrappedValue = .detailOnly
+		XCTAssertEqual(visibility.wrappedValue, .all)
 	}
 
 	@MainActor

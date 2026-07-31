@@ -23,6 +23,8 @@ enum VisualMetrics {
 
 	static let sidebarMinWidth: CGFloat = 300
 	static let sidebarIdealWidth: CGFloat = 308
+	static let sidebarGlassInset: CGFloat = 8
+	static let sidebarGlassCornerRadius: CGFloat = 20
 	static let detailMinWidth: CGFloat = 460
 
 	static let appIconSize: CGFloat = 50

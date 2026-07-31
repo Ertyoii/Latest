@@ -79,8 +79,6 @@ struct LatestRootView: View {
 
 	@ObservedObject private var updatesViewModel: UpdatesListViewModel
 	@ObservedObject private var updateCheckingService: UpdateCheckingService
-	@StateObject private var navigationModel = MainWindowNavigationModel()
-
 	init(
 		environment: AppEnvironment,
 		sidebarImplementation: SidebarImplementation = .runtimeDefault
@@ -92,12 +90,13 @@ struct LatestRootView: View {
 	}
 
 	var body: some View {
-		NavigationSplitView(columnVisibility: $navigationModel.columnVisibility) {
+		NavigationSplitView(columnVisibility: MainWindowSidebarPolicy.columnVisibility) {
 			UpdatesSidebarView(
 				viewModel: updatesViewModel,
 				searchFocusController: environment.searchFocusController,
 				implementation: sidebarImplementation
 			)
+			.toolbar(removing: .sidebarToggle)
 			.navigationSplitViewColumnWidth(
 				min: VisualMetrics.sidebarIdealWidth,
 				ideal: VisualMetrics.sidebarIdealWidth,
@@ -134,17 +133,40 @@ struct LatestRootView: View {
 }
 
 @MainActor
-final class MainWindowNavigationModel: ObservableObject {
-	@Published var columnVisibility: NavigationSplitViewVisibility = .all
+enum MainWindowSidebarPolicy {
+	static var columnVisibility: Binding<NavigationSplitViewVisibility> {
+		.constant(.all)
+	}
 }
 
-/// The sole retained main-window AppKit capability. `titlebarSeparatorStyle` is a
-/// supported window property; this adapter never inspects or mutates the system's
-/// toolbar, sidebar toggle, Liquid Glass views, or private SwiftUI hierarchy.
+/// Keep the system-created sidebar glass concentric with the window. SwiftUI does
+/// not expose the sidebar surface's shape, so this bridge adjusts only the public
+/// `NSGlassEffectView` matching the fixed sidebar geometry.
 @MainActor
 enum MainWindowConfiguration {
 	static func apply(to window: NSWindow) {
 		window.titlebarSeparatorStyle = .none
+		if let contentView = window.contentView {
+			configureSidebarGlassSurface(in: contentView)
+		}
+
+		// SwiftUI can install the split-view glass after the accessor first runs.
+		DispatchQueue.main.async { [weak window] in
+			guard let contentView = window?.contentView else { return }
+			configureSidebarGlassSurface(in: contentView)
+		}
+	}
+
+	static func configureSidebarGlassSurface(in rootView: NSView) {
+		if let glassView = rootView as? NSGlassEffectView,
+		   abs(glassView.bounds.width - VisualMetrics.sidebarIdealWidth) < 0.5,
+		   glassView.bounds.height >= VisualMetrics.mainWindowMinHeight - (VisualMetrics.sidebarGlassInset * 2) {
+			glassView.cornerRadius = VisualMetrics.sidebarGlassCornerRadius
+		}
+
+		for subview in rootView.subviews {
+			configureSidebarGlassSurface(in: subview)
+		}
 	}
 }
 
