@@ -13,6 +13,26 @@ import XCTest
 
 final class MigrationInteractionContractTest: XCTestCase {
 	@MainActor
+	func testUpdateProgressAggregatesOverlappingBatches() {
+		let service = UpdateCheckingService()
+		let coordinator = UpdateCheckCoordinator()
+
+		service.updateCheckerDidStartScanningForApps(coordinator)
+		service.updateChecker(coordinator, didStartCheckingApps: 4)
+		service.updateChecker(coordinator, didStartCheckingApps: 1)
+
+		XCTAssertTrue(service.isRunning)
+		XCTAssertFalse(service.isIndeterminate)
+		XCTAssertEqual(service.totalApps, 5)
+
+		service.updateCheckerDidFinishCheckingForUpdates(coordinator)
+		XCTAssertTrue(service.isRunning)
+
+		service.updateCheckerDidFinishCheckingForUpdates(coordinator)
+		XCTAssertFalse(service.isRunning)
+	}
+
+	@MainActor
 	func testNativeLocationsTableOwnsSelectionAndRowSemantics() throws {
 		let applicationsURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
 		let unavailableURL = URL(fileURLWithPath: "/Volumes/Unavailable Apps", isDirectory: true)

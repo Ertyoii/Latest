@@ -307,6 +307,16 @@ class UpdateRepository: @unchecked Sendable {
 			rawValue + UpdateDateKey
 		}
 
+		func isValidPayload(_ data: Data) -> Bool {
+			guard !data.isEmpty else { return false }
+			switch self {
+			case .repository:
+				return data.firstNonWhitespaceByte == 0x5B
+			case .unsupportedApps:
+				return (try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String]) != nil
+			}
+		}
+
 	}
 
 }
@@ -466,7 +476,7 @@ private final class RemoteDataSource: Sendable {
 
 	func load(_ urlType: UpdateRepository.RemoteURL, completion: @escaping @Sendable (Data?) -> Void) {
 		let cache = UpdateRepositoryCache(cacheURL: urlType.cacheURL, userDefaultsKey: urlType.userDefaultsKey)
-		if let data = cache.cachedData() {
+		if let data = cache.cachedData(), urlType.isValidPayload(data) {
 			completion(data)
 			return
 		}
@@ -476,16 +486,51 @@ private final class RemoteDataSource: Sendable {
 			return
 		}
 
-		let task = session.dataTask(with: url) { data, _, _ in
-			guard let data = data ?? urlType.fallbackData else {
-				completion(nil)
-				return
+		let staleData = cache.cachedData(allowExpired: true).flatMap { data in
+			urlType.isValidPayload(data) ? data : nil
+		}
+		var request = URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData, timeoutInterval: 20)
+		let validators = cache.validators
+		if let eTag = validators.eTag {
+			request.setValue(eTag, forHTTPHeaderField: "If-None-Match")
+		}
+		if let lastModified = validators.lastModified {
+			request.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since")
+		}
+
+		let task = session.dataTask(with: request) { data, response, _ in
+			if let response = response as? HTTPURLResponse {
+				if response.statusCode == 304, let staleData {
+					cache.markFresh()
+					completion(staleData)
+					return
+				}
+
+				if (200..<300).contains(response.statusCode),
+				   let data,
+				   urlType.isValidPayload(data) {
+					cache.store(data, response: response)
+					completion(data)
+					return
+				}
 			}
 
-			cache.store(data)
-			completion(data)
+			completion(staleData ?? urlType.fallbackData)
 		}
 		task.resume()
 	}
 
+}
+
+private extension Data {
+	var firstNonWhitespaceByte: UInt8? {
+		first { byte in
+			switch byte {
+			case 0x09, 0x0A, 0x0D, 0x20:
+				false
+			default:
+				true
+			}
+		}
+	}
 }

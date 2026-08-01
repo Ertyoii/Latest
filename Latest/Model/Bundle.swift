@@ -37,7 +37,14 @@ extension App {
 		/// The source of the bundle (App Store, Sparkle...)
 		let source: Source
 		
-		init(version: Version, name: String, bundleIdentifier: String, fileURL: URL, source: Source) {
+		init(
+			version: Version,
+			name: String,
+			bundleIdentifier: String,
+			fileURL: URL,
+			source: Source,
+			modificationDate: Date? = nil
+		) {
 			self.version = version
 			self.name = name
 			self.identifier = fileURL
@@ -45,7 +52,7 @@ extension App {
 			self.fileURL = fileURL
 			self.source = source
 			
-			self.modificationDate = Self.modificationDate(forBundleAt: fileURL)
+			self.modificationDate = modificationDate ?? Self.modificationDate(forBundleAt: fileURL)
 		}
 
 		private static func modificationDate(forBundleAt fileURL: URL) -> Date {
@@ -86,33 +93,6 @@ extension App {
 			NSWorkspace.shared.open(self.fileURL, configuration: configuration, completionHandler: nil)
 		}
 		
-		
-		// MARK: - Secure Coding
-		
-		static var supportsSecureCoding: Bool {
-			return true
-		}
-		
-		required convenience init?(coder: NSCoder) {
-			let versionNumber = coder.decodeObject(of: NSString.self, forKey: "versionNumber") as String?
-			let buildNumber = coder.decodeObject(of: NSString.self, forKey: "buildNumber") as String?
-			
-			guard let name = coder.decodeObject(of: NSString.self, forKey: "name") as String?,
-				  let bundleIdentifier = coder.decodeObject(of: NSString.self, forKey: "bundleIdentifier") as String?,
-				  let fileURL = coder.decodeObject(of: NSURL.self, forKey: "fileURL") as URL?,
-				  let rawSource = coder.decodeObject(of: NSString.self, forKey: "source") as String?, let source = Source(rawValue: rawSource) else { return nil }
-			
-			self.init(version: Version(versionNumber: versionNumber, buildNumber: buildNumber), name: name, bundleIdentifier: bundleIdentifier, fileURL: fileURL, source: source)
-		}
-		
-		func encode(with coder: NSCoder) {
-			coder.encode(self.version.versionNumber, forKey: "versionNumber")
-			coder.encode(self.version.buildNumber, forKey: "buildNumber")
-			coder.encode(self.name, forKey: "name")
-			coder.encode(self.identifier, forKey: "bundleIdentifier")
-			coder.encode(self.fileURL, forKey: "fileURL")
-			coder.encode(self.source.rawValue, forKey: "source")
-		}
 	}
 	
 }

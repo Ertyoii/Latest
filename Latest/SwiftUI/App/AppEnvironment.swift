@@ -39,7 +39,10 @@ final class AppEnvironment: ObservableObject {
 		MigrationTelemetry.shared.applicationStarted()
 		updateCheckingService.startReportingProgress()
 		updatesListViewModel.startObserving()
-		updateCheckingService.checkForUpdates()
+		Task {
+			await ReleaseNotesSourceCatalog.refresh()
+		}
+		updateCheckingService.checkForUpdates(hardRefresh: false)
 	}
 
 	func stop() {

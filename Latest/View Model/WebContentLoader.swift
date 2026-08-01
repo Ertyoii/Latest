@@ -21,6 +21,7 @@ class WebContentLoader: NSObject {
 		let loadID = UUID()
 		currentLoadID = loadID
 		currentUpdateHandler = contentUpdateHandler
+		let webView = activeWebView
 		webView.stopLoading()
 		currentNavigation = webView.load(URLRequest(url: url))
 		scheduleLoadTimeout(for: loadID)
@@ -33,7 +34,12 @@ class WebContentLoader: NSObject {
 		currentLoadID = UUID()
 		currentNavigation = nil
 		currentUpdateHandler = nil
+		guard let webView else { return }
 		webView.stopLoading()
+		webView.evaluateJavaScript("window.__latestMutationObserver?.disconnect(); clearTimeout(window.__latestMutationTimer);")
+		webView.navigationDelegate = nil
+		webView.configuration.userContentController.removeScriptMessageHandler(forName: "updateHandler")
+		self.webView = nil
 	}
 
 
@@ -42,22 +48,36 @@ class WebContentLoader: NSObject {
 	/// The web view actually loading the web contents.
 	///
 	/// Required for some websites that use scripts to populate the sites contents.
-	private lazy var webView: WKWebView = {
+	private var webView: WKWebView?
+
+	private var activeWebView: WKWebView {
+		if let webView {
+			return webView
+		}
+
 		let config = WKWebViewConfiguration()
+		config.websiteDataStore = .nonPersistent()
 
 		// Setup observation script
 		let source = """
 			if (window.__latestMutationObserver) {
 				window.__latestMutationObserver.disconnect();
 			}
-			window.__latestMutationObserver = new MutationObserver(function(mutations) {
-				window.webkit.messageHandlers.updateHandler.postMessage("contentsUpdated");
+			window.__latestScheduleUpdate = function() {
+				clearTimeout(window.__latestMutationTimer);
+				window.__latestMutationTimer = setTimeout(function() {
+					window.webkit.messageHandlers.updateHandler.postMessage("contentsUpdated");
+				}, 120);
+			};
+			window.__latestMutationObserver = new MutationObserver(function() {
+				window.__latestScheduleUpdate();
 			});
 
 			window.__latestMutationObserver.observe(document.documentElement || document, { childList: true, subtree: true });
-		"""
+			window.__latestScheduleUpdate();
+			"""
 
-		let script = WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+		let script = WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
 		config.userContentController.addUserScript(script)
 		config.userContentController.add(self, name: "updateHandler")
 
@@ -65,11 +85,9 @@ class WebContentLoader: NSObject {
 		let webView = WKWebView(frame: .zero, configuration: config)
 		webView.navigationDelegate = self
 
-		// Ensure the web view renders with full performance.
-		webView.configuration.preferences.inactiveSchedulingPolicy = .none
-
+		self.webView = webView
 		return webView
-	}()
+	}
 
 	/// The current navigation object.
 	private var currentNavigation: WKNavigation?
@@ -113,7 +131,7 @@ class WebContentLoader: NSObject {
 
 	/// Forwards the current page contents to the caller of the load method.
 	private func notifyContentUpdate(for loadID: UUID) {
-		guard loadID == currentLoadID else { return }
+		guard loadID == currentLoadID, let webView else { return }
 
 		webView.evaluateJavaScript("document.documentElement.outerHTML.toString()") { html, error in
 			Task { @MainActor in

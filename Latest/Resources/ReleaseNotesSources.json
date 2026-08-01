@@ -355,5 +355,152 @@
     "kind": "changelog",
     "urlTemplate": "https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0061222",
     "versionPrefix": "exact"
+  },
+  {
+    "keys": ["abletonlive"],
+    "homebrewTokens": ["ableton-live-intro", "ableton-live-intro@11", "ableton-live-lite", "ableton-live-lite@11", "ableton-live-standard", "ableton-live-standard@11", "ableton-live-suite", "ableton-live-suite@10", "ableton-live-suite@11"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.ableton.com/en/release-notes/live-{major}/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["dcpomatic"],
+    "homebrewTokens": ["dcp-o-matic", "dcp-o-matic-batch-converter", "dcp-o-matic-combiner", "dcp-o-matic-disk-writer", "dcp-o-matic-editor", "dcp-o-matic-encode-server", "dcp-o-matic-kdm-creator", "dcp-o-matic-player", "dcp-o-matic-playlist-editor"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.dcpomatic.com/release-notes?v={version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["iterm2", "comgooglecodeiterm2"],
+    "homebrewTokens": ["iterm2", "iterm2@beta"],
+    "kind": "changelog",
+    "urlTemplate": "https://iterm2.com/downloads.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["devonthink", "comdevontechnologiesthink"],
+    "homebrewTokens": ["devonthink"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.devontechnologies.com/apps/devonthink/releases",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["displaperture"],
+    "homebrewTokens": ["displaperture"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/displaperture/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["keycodes"],
+    "homebrewTokens": ["key-codes"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/keycodes/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["leech"],
+    "homebrewTokens": ["leech"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/leech/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["menuwhere"],
+    "homebrewTokens": ["menuwhere"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/menuwhere/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["moom", "commanytricksmoom"],
+    "homebrewTokens": ["moom"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/moom/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["namemangler"],
+    "homebrewTokens": ["name-mangler"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/namemangler/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["resolutionator"],
+    "homebrewTokens": ["resolutionator"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/resolutionator/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["timesink"],
+    "homebrewTokens": ["time-sink"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/timesink/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["littlesnitch", "atobdevlittlesnitch"],
+    "homebrewTokens": ["little-snitch", "little-snitch@nightly"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.obdev.at/products/littlesnitch/releasenotes.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["littlesnitch5legacy"],
+    "homebrewTokens": ["little-snitch@5"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.obdev.at/products/littlesnitch/releasenotes5.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["abetterfinderattributes"],
+    "homebrewTokens": ["a-better-finder-attributes"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.publicspace.net/ABetterFinderAttributes/version.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["abetterfinderrename"],
+    "homebrewTokens": ["a-better-finder-rename"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.publicspace.net/ABetterFinderRename/version.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["bigmeanfoldermachine"],
+    "homebrewTokens": ["big-mean-folder-machine"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.publicspace.net/BigMeanFolderMachine/version.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["macbreakz"],
+    "homebrewTokens": ["macbreakz"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.publicspace.net/MacBreakZ/version.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["niftyfilelists"],
+    "homebrewTokens": ["nifty-file-lists"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.publicspace.net/NiftyFileLists/version.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["vitaminr"],
+    "homebrewTokens": ["vitamin-r"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.publicspace.net/Vitamin-R/version.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["istatmenus", "comegomenuistatmenus"],
+    "homebrewTokens": ["istat-menus", "istat-menus@5", "istat-menus@6"],
+    "kind": "changelog",
+    "urlTemplate": "https://weather.bjango.com/mac/istatmenus/versionhistory/",
+    "versionPrefix": "exact"
   }
 ]

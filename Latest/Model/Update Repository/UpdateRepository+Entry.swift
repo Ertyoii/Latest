@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import OSLog
 import Synchronization
 
 extension UpdateRepository {
@@ -300,23 +301,68 @@ extension UpdateRepository {
 }
 
 enum ReleaseNotesSourceCatalog {
-	private static let definitions: [ReleaseNotesSourceDefinition] = {
-		guard let url = Bundle.main.url(forResource: "ReleaseNotesSources", withExtension: "json"),
-		      let data = try? Data(contentsOf: url),
-		      let document = try? ReleaseNotesCatalogCodec.decodeBundled(data) else {
-			return []
-		}
-		return document.definitions
-	}()
+	private struct Index: Sendable {
+		let definitions: [ReleaseNotesSourceDefinition]
+		let definitionsByKey: [String: ReleaseNotesSourceDefinition]
 
-	private static let definitionsByKey: [String: ReleaseNotesSourceDefinition] = definitions.reduce(into: [:]) { result, definition in
-		for key in definition.keys + definition.homebrewTokens {
-			result[normalizedKey(key)] = definition
+		init(document: ReleaseNotesCatalogDocument) {
+			definitions = document.definitions
+			definitionsByKey = document.definitions.reduce(into: [:]) { result, definition in
+				for key in definition.keys + definition.homebrewTokens {
+					result[ReleaseNotesSourceCatalog.normalizedKey(key)] = definition
+				}
+			}
+		}
+	}
+
+	private static let logger = Logger(
+		subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+		category: "ReleaseNotesCatalog"
+	)
+	private static let bundledData: Data = {
+		guard let url = Bundle.main.url(forResource: "ReleaseNotesSources", withExtension: "json"),
+		      let data = try? Data(contentsOf: url) else {
+			return Data()
+		}
+		return data
+	}()
+	private static let index = Mutex<Index>({
+		guard let document = try? ReleaseNotesCatalogCodec.decodeBundled(bundledData) else {
+			return Index(document: ReleaseNotesCatalogDocument(
+				schemaVersion: ReleaseNotesCatalogDocument.supportedSchemaVersion,
+				definitions: []
+			))
+		}
+		return Index(document: document)
+	}())
+
+	static func refresh() async {
+		guard !bundledData.isEmpty else {
+			logger.error("Bundled release-notes catalog is unavailable")
+			return
+		}
+
+		do {
+			let loaded = try await SignedReleaseNotesCatalogClient(
+				configuration: .live(),
+				bundledCatalogData: bundledData,
+				cache: .live()
+			).load()
+			index.withLock { index in
+				index = Index(document: loaded.document)
+			}
+			logger.info(
+				"Activated release-notes catalog origin=\(String(describing: loaded.origin), privacy: .public) definitions=\(loaded.document.definitions.count, privacy: .public)"
+			)
+		} catch {
+			logger.error("Could not load release-notes catalog: \(error.localizedDescription, privacy: .public)")
 		}
 	}
 
 	static var catalogHomebrewTokens: [String] {
-		definitions.flatMap(\.homebrewTokens)
+		index.withLock { index in
+			index.definitions.flatMap(\.homebrewTokens)
+		}
 	}
 
 	static func releaseNotes(forHomebrewToken token: String, version: Version) -> App.Update.ReleaseNotes? {
@@ -349,7 +395,10 @@ enum ReleaseNotesSourceCatalog {
 	}
 
 	private static func releaseNotes(forKey key: String, version: Version) -> App.Update.ReleaseNotes? {
-		guard let definition = definitionsByKey[key] else { return nil }
+		let definition = index.withLock { index in
+			index.definitionsByKey[key]
+		}
+		guard let definition else { return nil }
 		guard !definition.capabilities.contains(.disabled) else { return nil }
 		guard let template = definition.urlTemplate,
 		      let url = expandedURL(template, version: version) else {
@@ -383,11 +432,13 @@ enum ReleaseNotesSourceCatalog {
 
 	private static func expandedURL(_ template: String, version: Version) -> URL? {
 		let versionNumber = version.versionNumber
+		let major = versionNumber?.split(separator: ".", maxSplits: 1).first.map(String.init)
 		let majorMinor = versionNumber?.majorMinorVersionPrefix
 		var value = template
 		let replacements: [(placeholder: String, replacement: String?)] = [
 			("{version}", versionNumber),
 			("{version-dashes}", versionNumber?.replacingOccurrences(of: ".", with: "-")),
+			("{major}", major),
 			("{major-minor}", majorMinor),
 			("{major-minor-dashes}", majorMinor?.replacingOccurrences(of: ".", with: "-")),
 			("{major-minor-underscores}", majorMinor?.replacingOccurrences(of: ".", with: "_"))

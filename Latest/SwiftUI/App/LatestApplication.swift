@@ -139,34 +139,12 @@ enum MainWindowSidebarPolicy {
 	}
 }
 
-/// Keep the system-created sidebar glass concentric with the window. SwiftUI does
-/// not expose the sidebar surface's shape, so this bridge adjusts only the public
-/// `NSGlassEffectView` matching the fixed sidebar geometry.
+/// Applies the window behavior SwiftUI does not currently expose. System-owned
+/// split-view and Liquid Glass surfaces are deliberately left untouched.
 @MainActor
 enum MainWindowConfiguration {
 	static func apply(to window: NSWindow) {
 		window.titlebarSeparatorStyle = .none
-		if let contentView = window.contentView {
-			configureSidebarGlassSurface(in: contentView)
-		}
-
-		// SwiftUI can install the split-view glass after the accessor first runs.
-		DispatchQueue.main.async { [weak window] in
-			guard let contentView = window?.contentView else { return }
-			configureSidebarGlassSurface(in: contentView)
-		}
-	}
-
-	static func configureSidebarGlassSurface(in rootView: NSView) {
-		if let glassView = rootView as? NSGlassEffectView,
-		   abs(glassView.bounds.width - VisualMetrics.sidebarIdealWidth) < 0.5,
-		   glassView.bounds.height >= VisualMetrics.mainWindowMinHeight - (VisualMetrics.sidebarGlassInset * 2) {
-			glassView.cornerRadius = VisualMetrics.sidebarGlassCornerRadius
-		}
-
-		for subview in rootView.subviews {
-			configureSidebarGlassSurface(in: subview)
-		}
 	}
 }
 

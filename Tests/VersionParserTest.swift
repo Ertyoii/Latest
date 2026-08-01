@@ -456,7 +456,7 @@ final class VersionParserTest: XCTestCase {
 		let version = Version(versionNumber: "2026.1.4", buildNumber: "261.26222.59")
 		let tokens = ReleaseNotesSourceCatalog.catalogHomebrewTokens
 
-		XCTAssertGreaterThanOrEqual(tokens.count, 55)
+		XCTAssertGreaterThanOrEqual(tokens.count, 85)
 		for token in tokens {
 			XCTAssertNotNil(
 				ReleaseNotesSourceCatalog.releaseNotes(
@@ -465,6 +465,27 @@ final class VersionParserTest: XCTestCase {
 				),
 				"Missing release-note route for \(token)"
 			)
+		}
+	}
+
+	func testReleaseNotesSourceCatalogExpandsMajorVersionAndNewVendorRoutes() throws {
+		let expectations: [(String, String, String)] = [
+			("ableton-live-suite", "12.4.3", "https://www.ableton.com/en/release-notes/live-12/"),
+			("dcp-o-matic-player", "2.18.45", "https://www.dcpomatic.com/release-notes?v=2.18.45"),
+			("moom", "4.5.1", "https://manytricks.com/moom/releasenotes/"),
+			("little-snitch@5", "5.8", "https://www.obdev.at/products/littlesnitch/releasenotes5.html"),
+			("a-better-finder-rename", "12.31", "https://www.publicspace.net/ABetterFinderRename/version.html")
+		]
+
+		for (token, version, expectedURL) in expectations {
+			guard case .changelog(let urls, let versionPrefix, _, _) = ReleaseNotesSourceCatalog.releaseNotes(
+				forHomebrewToken: token,
+				version: Version(versionNumber: version, buildNumber: nil)
+			) else {
+				return XCTFail("Expected catalog changelog for \(token)")
+			}
+			XCTAssertEqual(urls.map(\.absoluteString), [expectedURL])
+			XCTAssertEqual(versionPrefix, version)
 		}
 	}
 
@@ -2072,12 +2093,76 @@ final class ReleaseNotesPipelineTest: XCTestCase {
 		XCTAssertEqual(disabled.origin, .bundledFallback(.disabled))
 	}
 
+	func testSignedCatalogPersistsAndRevalidatesVerifiedRemoteCatalog() async throws {
+		let fixture = try makeSignedCatalogFixture(schemaVersion: 1)
+		let cacheDirectory = FileManager.default.temporaryDirectory
+			.appendingPathComponent(UUID().uuidString, isDirectory: true)
+		let cacheURL = cacheDirectory.appendingPathComponent("catalog.plist")
+		let cache = ReleaseNotesCatalogDiskCache(url: cacheURL)
+		defer { try? FileManager.default.removeItem(at: cacheDirectory) }
+		let configuration = SignedReleaseNotesCatalogClient.Configuration(
+			isEnabled: true,
+			remoteURL: fixture.url,
+			publicKey: fixture.publicKey,
+			maximumEnvelopeSize: 64 * 1_024
+		)
+		let successfulResponse = Self.httpResponse(
+			url: fixture.url,
+			statusCode: 200,
+			data: fixture.envelope,
+			headerFields: ["ETag": "\"catalog-v1\""]
+		)
+
+		let remote = try await SignedReleaseNotesCatalogClient(
+			configuration: configuration,
+			bundledCatalogData: fixture.bundled,
+			loader: StubCatalogLoader(response: successfulResponse),
+			cache: cache
+		).load()
+		XCTAssertEqual(remote.origin, .remote)
+		XCTAssertEqual(cache.load()?.eTag, "\"catalog-v1\"")
+
+		let offline = try await SignedReleaseNotesCatalogClient(
+			configuration: configuration,
+			bundledCatalogData: fixture.bundled,
+			loader: OfflineCatalogLoader(),
+			cache: cache
+		).load()
+		XCTAssertEqual(offline.origin, .remoteCacheFallback(.network))
+		XCTAssertEqual(offline.document.definitions.first?.keys, ["remote-app"])
+
+		let notModified = try await SignedReleaseNotesCatalogClient(
+			configuration: configuration,
+			bundledCatalogData: fixture.bundled,
+			loader: StubCatalogLoader(response: Self.httpResponse(
+				url: fixture.url,
+				statusCode: 304,
+				data: Data()
+			)),
+			cache: cache
+		).load()
+		XCTAssertEqual(notModified.origin, .remoteCache)
+		XCTAssertEqual(notModified.document.definitions.first?.keys, ["remote-app"])
+	}
+
 	private static func httpResponse(url: URL, data: Data) -> ReleaseNotesFetchResponse {
+		httpResponse(url: url, statusCode: 200, data: data)
+	}
+
+	private static func httpResponse(
+		url: URL,
+		statusCode: Int,
+		data: Data,
+		headerFields: [String: String] = [:]
+	) -> ReleaseNotesFetchResponse {
+		var headers = headerFields
+		headers["Content-Type"] = "application/json"
+		headers["Content-Length"] = "\(data.count)"
 		let response = HTTPURLResponse(
 			url: url,
-			statusCode: 200,
+			statusCode: statusCode,
 			httpVersion: "HTTP/1.1",
-			headerFields: ["Content-Type": "application/json", "Content-Length": "\(data.count)"]
+			headerFields: headers
 		)!
 		return ReleaseNotesFetchResponse(data: data, response: response)
 	}

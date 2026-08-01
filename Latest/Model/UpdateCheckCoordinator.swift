@@ -129,7 +129,7 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 
 	/// Initiate the update check, if not already running.
 	@MainActor
-	func run() {
+	func run(hardRefresh: Bool = false) {
 		self.progressDelegate?.updateCheckerDidStartScanningForApps(self)
 
 		if self.waitForInitialCheck {
@@ -140,7 +140,9 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 
 		invalidateActiveUpdateCheck()
 		Task { [weak self] in
-			await AppStoreUpdateCheckerOperation.invalidateLookupCache()
+			if hardRefresh {
+				await AppStoreUpdateCheckerOperation.invalidateLookupCache()
+			}
 			guard let self else { return }
 
 			self.library.reload { [weak self] bundles in

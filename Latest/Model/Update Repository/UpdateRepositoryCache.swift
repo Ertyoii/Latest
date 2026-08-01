@@ -10,6 +10,10 @@ import CryptoKit
 import Foundation
 
 final class UpdateRepositoryCache: @unchecked Sendable {
+	struct Validators: Equatable, Sendable {
+		let eTag: String?
+		let lastModified: String?
+	}
 	
 	/// Duration after which the cache will be invalidated. (1 hour in seconds)
 	private static let cacheInvalidationDuration: Double = 1 * 60 * 60
@@ -26,24 +30,47 @@ final class UpdateRepositoryCache: @unchecked Sendable {
 	private let fileManager: FileManager
 	private let userDefaults: UserDefaults
 
-	func cachedData() -> Data? {
-		guard isCacheValid, let cacheURL else {
+	func cachedData(allowExpired: Bool = false) -> Data? {
+		guard (allowExpired || isCacheValid), let cacheURL else {
 			return nil
 		}
 
 		return try? Data(contentsOf: cacheURL)
 	}
 
-	func store(_ data: Data) {
+	func store(_ data: Data, response: HTTPURLResponse? = nil) {
 		guard let cacheURL else { return }
 
 		do {
 			try fileManager.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 			try data.write(to: cacheURL, options: .atomic)
-			userDefaults.setValue(Date.timeIntervalSinceReferenceDate, forKey: userDefaultsKey)
+			markFresh()
+			if let response {
+				userDefaults.set(response.value(forHTTPHeaderField: "ETag"), forKey: eTagKey)
+				userDefaults.set(response.value(forHTTPHeaderField: "Last-Modified"), forKey: lastModifiedKey)
+			}
 		} catch {
 			try? fileManager.removeItem(at: cacheURL)
 		}
+	}
+
+	var validators: Validators {
+		Validators(
+			eTag: userDefaults.string(forKey: eTagKey),
+			lastModified: userDefaults.string(forKey: lastModifiedKey)
+		)
+	}
+
+	func markFresh() {
+		userDefaults.set(Date.timeIntervalSinceReferenceDate, forKey: userDefaultsKey)
+	}
+
+	private var eTagKey: String {
+		userDefaultsKey + ".etag"
+	}
+
+	private var lastModifiedKey: String {
+		userDefaultsKey + ".lastModified"
 	}
 
 	private var isCacheValid: Bool {

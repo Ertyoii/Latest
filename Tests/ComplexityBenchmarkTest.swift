@@ -12,6 +12,43 @@ import XCTest
 
 @MainActor
 final class ComplexityBenchmarkTest: XCTestCase {
+	func testRepositoryCachePreservesExpiredDataAndHTTPValidators() throws {
+		let directory = FileManager.default.temporaryDirectory
+			.appendingPathComponent(UUID().uuidString, isDirectory: true)
+		let cacheURL = directory.appendingPathComponent("repository.json")
+		let suiteName = "Latest.RepositoryCacheTests.\(UUID().uuidString)"
+		let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+		defer {
+			try? FileManager.default.removeItem(at: directory)
+			defaults.removePersistentDomain(forName: suiteName)
+		}
+
+		let cache = UpdateRepositoryCache(
+			cacheURL: cacheURL,
+			userDefaultsKey: "repository.updated",
+			userDefaults: defaults
+		)
+		let response = try XCTUnwrap(HTTPURLResponse(
+			url: URL(string: "https://example.com/repository.json")!,
+			statusCode: 200,
+			httpVersion: nil,
+			headerFields: ["ETag": "\"catalog-v2\"", "Last-Modified": "Wed, 01 Jul 2026 12:00:00 GMT"]
+		))
+		let payload = Data("[]".utf8)
+
+		cache.store(payload, response: response)
+		XCTAssertEqual(cache.cachedData(), payload)
+		XCTAssertEqual(cache.validators.eTag, "\"catalog-v2\"")
+		XCTAssertEqual(cache.validators.lastModified, "Wed, 01 Jul 2026 12:00:00 GMT")
+
+		defaults.set(Date.timeIntervalSinceReferenceDate - 7_200, forKey: "repository.updated")
+		XCTAssertNil(cache.cachedData())
+		XCTAssertEqual(cache.cachedData(allowExpired: true), payload)
+
+		cache.markFresh()
+		XCTAssertEqual(cache.cachedData(), payload)
+	}
+
 	func testCompactRepositoryIndexRoundTripAndInvalidation() throws {
 		let sourceData = try makeRepositoryData(count: 30, appArtifactCount: 18)
 		let decodedEntries = try JSONDecoder().decode([UpdateRepository.Entry].self, from: sourceData)

@@ -17,11 +17,13 @@ struct NativeUpdatesList: View {
 	@ObservedObject var viewModel: UpdatesListViewModel
 	let showsSupportStatusOverride: Bool?
 	@State private var listSelection: App.Bundle.Identifier?
+	@StateObject private var updateStates: SidebarUpdateStateStore
 
 	init(viewModel: UpdatesListViewModel, showsSupportStatusOverride: Bool? = nil) {
 		self.viewModel = viewModel
 		self.showsSupportStatusOverride = showsSupportStatusOverride
 		_listSelection = State(initialValue: viewModel.selectedApp?.identifier)
+		_updateStates = StateObject(wrappedValue: SidebarUpdateStateStore(apps: viewModel.snapshot.apps))
 	}
 
 	var body: some View {
@@ -33,6 +35,7 @@ struct NativeUpdatesList: View {
 							app: app,
 							filterQuery: viewModel.snapshot.filterQuery,
 							isSelected: viewModel.selectedApp?.identifier == app.identifier,
+							progressState: updateStates.state(for: app.identifier),
 							showsSupportStatusOverride: showsSupportStatusOverride
 						)
 						.tag(app.identifier)
@@ -89,12 +92,21 @@ struct NativeUpdatesList: View {
 			transaction.animation = nil
 			transaction.disablesAnimations = true
 		}
-		.task(id: listSelection) {
-			viewModel.select(identifier: listSelection)
+		.onChange(of: listSelection) { _, identifier in
+			// AppKit updates NSTableView selection from inside its delegate call.
+			// Defer ObservableObject publication until that transaction completes.
+			Task { @MainActor in
+				await Task.yield()
+				guard listSelection == identifier else { return }
+				viewModel.select(identifier: identifier)
+			}
 		}
 		.onChange(of: viewModel.selectedApp?.identifier) { _, identifier in
 			guard identifier != listSelection else { return }
 			listSelection = identifier
+		}
+		.onChange(of: viewModel.snapshotRevision) { _, _ in
+			updateStates.refresh(apps: viewModel.snapshot.apps)
 		}
 		.accessibilityIdentifier("updates.sidebar.native")
 	}
@@ -205,17 +217,24 @@ private struct NativeUpdateRow: View {
 	let app: App
 	let filterQuery: String?
 	let isSelected: Bool
+	let progressState: UpdateOperation.ProgressState
 	let showsSupportStatusOverride: Bool?
 
 	@State private var icon: NSImage?
-	@StateObject private var updateState: SidebarUpdateStateObserver
 
-	init(app: App, filterQuery: String?, isSelected: Bool, showsSupportStatusOverride: Bool?) {
+	init(
+		app: App,
+		filterQuery: String?,
+		isSelected: Bool,
+		progressState: UpdateOperation.ProgressState,
+		showsSupportStatusOverride: Bool?
+	) {
 		self.app = app
 		self.filterQuery = filterQuery
 		self.isSelected = isSelected
+		self.progressState = progressState
 		self.showsSupportStatusOverride = showsSupportStatusOverride
-		_updateState = StateObject(wrappedValue: SidebarUpdateStateObserver(identifier: app.identifier))
+		_icon = State(initialValue: IconCache.shared.cachedIcon(for: app))
 	}
 
 	var body: some View {
@@ -262,7 +281,7 @@ private struct NativeUpdateRow: View {
 					app: app,
 					presentation: UpdateActionPresentation.make(
 						for: app,
-						progressState: updateState.state
+						progressState: progressState
 					),
 					showsSupportStatus: showsSupportStatusOverride
 						?? (AppListSettings.shared.includeAppsWithLimitedSupport || AppListSettings.shared.includeUnsupportedApps)
@@ -286,6 +305,7 @@ private struct NativeUpdateRow: View {
 		.accessibilityLabel(accessibilityLabel)
 		.accessibilityIdentifier("updates.row.\(app.bundleIdentifier)")
 		.task(id: app.identifier) {
+			guard icon == nil else { return }
 			let loadedIcon = await IconCache.shared.icon(for: app)
 			guard !Task.isCancelled, app.identifier == self.app.identifier else { return }
 			icon = loadedIcon
@@ -294,7 +314,7 @@ private struct NativeUpdateRow: View {
 
 	private var accessibilityLabel: String {
 		var label = SidebarInteractionPolicy.accessibilityLabel(for: app, dateFormatter: Self.dateFormatter)
-		switch UpdateActionPresentation.make(for: app, progressState: updateState.state) {
+		switch UpdateActionPresentation.make(for: app, progressState: progressState) {
 		case .waiting(let status), .progress(_, let status), .failed(let status):
 			label += ", \(status)"
 		case .update, .open:
@@ -333,19 +353,44 @@ private struct NativeHighlightedAppName: View {
 }
 
 @MainActor
-private final class SidebarUpdateStateObserver: ObservableObject {
-	@Published private(set) var state: UpdateOperation.ProgressState
+private final class SidebarUpdateStateStore: ObservableObject {
+	private var states = [App.Bundle.Identifier: UpdateOperation.ProgressState]()
 	private var observationTask: Task<Void, Never>?
 
-	init(identifier: App.Bundle.Identifier) {
-		let feed = UpdateQueue.shared.stateChanges(for: identifier)
-		_state = Published(initialValue: feed.current)
+	init(apps: [App]) {
+		refresh(apps: apps, publishesChange: false)
+		let changes = UpdateQueue.shared.stateChanges()
 		observationTask = Task { [weak self] in
 			guard let self else { return }
-			for await state in feed.changes {
+			for await change in changes {
 				guard !Task.isCancelled else { break }
-				self.state = state
+				if case .none = change.state {
+					self.states.removeValue(forKey: change.identifier)
+				} else {
+					self.states[change.identifier] = change.state
+				}
+				self.objectWillChange.send()
 			}
+		}
+	}
+
+	func state(for identifier: App.Bundle.Identifier) -> UpdateOperation.ProgressState {
+		states[identifier] ?? .none
+	}
+
+	func refresh(apps: [App]) {
+		refresh(apps: apps, publishesChange: true)
+	}
+
+	private func refresh(apps: [App], publishesChange: Bool) {
+		let identifiers = Set(apps.map(\.identifier))
+		states = Dictionary(uniqueKeysWithValues: identifiers.compactMap { identifier in
+			let state = UpdateQueue.shared.state(for: identifier)
+			if case .none = state { return nil }
+			return (identifier, state)
+		})
+		if publishesChange {
+			objectWillChange.send()
 		}
 	}
 

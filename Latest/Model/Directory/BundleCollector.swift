@@ -97,12 +97,12 @@ enum BundleCollector {
 		}
 
 		return metadataCache.bundle(forAppAt: url, signature: signature) {
-			bundle(forAppAt: url)
+			bundle(forAppAt: url, modificationDate: signature.bundleModificationDate)
 		}
 	}
 
 	/// Returns a bundle representation for the app at the given url, without Spotlight Metadata.
-	static private func bundle(forAppAt url: URL) -> App.Bundle? {
+	static private func bundle(forAppAt url: URL, modificationDate: Date) -> App.Bundle? {
 		guard let infoDictionary = Bundle.infoDictionary(forAppAt: url),
 			  let identifier = infoDictionary.bundleIdentifier,
 			  let appName = infoDictionary.bundleName else {
@@ -127,7 +127,14 @@ enum BundleCollector {
 		}
 
 		// Create bundle
-		return App.Bundle(version: version, name: appName, bundleIdentifier: identifier, fileURL: url, source: source)
+		return App.Bundle(
+			version: version,
+			name: appName,
+			bundleIdentifier: identifier,
+			fileURL: url,
+			source: source,
+			modificationDate: modificationDate
+		)
 	}
 
 	private static func isExcludedBundleIdentifier(_ identifier: String) -> Bool {
@@ -250,6 +257,23 @@ private struct BundleFileSignature: Equatable, Sendable {
 	let frameworks: FileSystemItemSignature?
 	let codeSignature: FileSystemItemSignature?
 
+	/// Reuses the metadata already read for cache invalidation instead of
+	/// issuing a second set of `stat` calls when constructing `App.Bundle`.
+	var bundleModificationDate: Date {
+		[
+			app,
+			contents,
+			Optional(infoPlist),
+			pkgInfo,
+			executableDirectory,
+			resources,
+			frameworks,
+			codeSignature
+		]
+		.compactMap { $0?.modificationDate }
+		.max() ?? .distantPast
+	}
+
 	init?(appURL: URL) {
 		let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
 		let infoPlistURL = contentsURL.appendingPathComponent("Info.plist", isDirectory: false)
@@ -276,6 +300,13 @@ private struct FileSystemItemSignature: Equatable, Sendable {
 	let modificationSeconds: Int
 	let modificationNanoseconds: Int
 	let size: Int64
+
+	var modificationDate: Date {
+		Date(
+			timeIntervalSince1970: TimeInterval(modificationSeconds)
+				+ TimeInterval(modificationNanoseconds) / 1_000_000_000
+		)
+	}
 
 	init?(url: URL) {
 		var fileInfo = stat()

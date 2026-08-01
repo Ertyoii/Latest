@@ -19,6 +19,7 @@ private let releaseNotesSignposter = OSSignposter(
 )
 
 private let releaseNotesHTMLCache = ReleaseNotesHTMLCache()
+private let releaseNotesGitHubCache = ReleaseNotesGitHubCache()
 
 /// Handles release notes conversion and loading.
 ///
@@ -33,7 +34,7 @@ class ReleaseNotesProvider {
 
 	/// Initializes the provider.
 	init() {
-		let cache = NSCache<ReleaseNotesCacheKey, NSAttributedString>()
+		let cache = NSCache<ReleaseNotesCacheKey, ResolvedReleaseNotesBox>()
 		cache.countLimit = 128
 		cache.totalCostLimit = 16 * 1_024 * 1_024
 		self.cache = cache
@@ -54,6 +55,14 @@ class ReleaseNotesProvider {
 
 	/// Provides release notes for the given app.
 	func releaseNotes(for app: App, with completion: @escaping Completion) {
+		resolvedReleaseNotes(for: app) { result in
+			completion(result.map(\.content))
+		}
+	}
+
+	/// Provides the same UI content together with the source that actually won
+	/// fallback selection and its resulting quality.
+	func resolvedReleaseNotes(for app: App, with completion: @escaping ResolvedCompletion) {
 		let requestID = UUID()
 		currentApp = app
 		currentRequestID = requestID
@@ -62,15 +71,20 @@ class ReleaseNotesProvider {
 		webContentLoader?.cancel()
 
 		let cacheKey = ReleaseNotesCacheKey(app: app)
-		if let releaseNotes = self.cache.object(forKey: cacheKey), !Self.isEffectivelyEmpty(releaseNotes) {
+		if let releaseNotes = self.cache.object(forKey: cacheKey)?.value,
+		   !Self.isEffectivelyEmpty(releaseNotes.content) {
 			completion(.success(releaseNotes))
 			return
 		}
 
 		self.loadReleaseNotes(for: app) { releaseNotes in
 			let releaseNotes = Self.validated(releaseNotes)
-			if case .success(let text) = releaseNotes {
-				self.cache.setObject(text, forKey: cacheKey, cost: text.length * 2)
+			if case .success(let resolved) = releaseNotes {
+				self.cache.setObject(
+					ResolvedReleaseNotesBox(resolved),
+					forKey: cacheKey,
+					cost: resolved.content.length * 2
+				)
 			}
 
 			/// Release notes may be returned late or updated while another app was already requested. Don't forward this update, just cache in case of success.
@@ -80,26 +94,13 @@ class ReleaseNotesProvider {
 		}
 	}
 
-	/// Provides the same UI content together with source provenance and quality.
-	/// Existing callers intentionally keep using `releaseNotes(for:with:)` so the
-	/// visual and interaction contract remains unchanged.
-	func resolvedReleaseNotes(for app: App, with completion: @escaping ResolvedCompletion) {
-		releaseNotes(for: app) { result in
-			let provenance = app.releaseNotes?.provenance ?? .bundledFallback
-			let quality = app.releaseNotes?.qualityHint ?? .rejected
-			completion(result.map {
-				ResolvedReleaseNotes(content: $0, quality: quality, provenance: provenance)
-			})
-		}
-	}
-
 
 	// MARK: - Release Notes Handling
 
 	/// The cache for release notes content.
 	///
 	/// All content is cached, since any given release notes object requires some sort of modification.
-	private var cache: NSCache<ReleaseNotesCacheKey, NSAttributedString>
+	private var cache: NSCache<ReleaseNotesCacheKey, ResolvedReleaseNotesBox>
 
 	/// Object loading HTML content for any given URL.
 	private var webContentLoader: WebContentLoader?
@@ -114,7 +115,7 @@ class ReleaseNotesProvider {
 		return webContentLoader
 	}
 
-	private func loadReleaseNotes(for app: App, with completion: @escaping Completion) {
+	private func loadReleaseNotes(for app: App, with completion: @escaping ResolvedCompletion) {
 		let requestID = currentRequestID
 		if let releaseNotes = app.releaseNotes {
 			switch releaseNotes {
@@ -131,7 +132,7 @@ class ReleaseNotesProvider {
 						for: ReleaseNotesContext(app: app)
 					)
 					guard !Task.isCancelled, self.isCurrentRequest(requestID, for: app) else { return }
-					completion(releaseNotes.map(\.content))
+					completion(releaseNotes)
 				}
 			case .genericMetadata(let html):
 				currentReleaseNotesTask = Task { [weak self] in
@@ -146,11 +147,13 @@ class ReleaseNotesProvider {
 						for: ReleaseNotesContext(app: app)
 					)
 					guard !Task.isCancelled, self.isCurrentRequest(requestID, for: app) else { return }
-					completion(releaseNotes.map(\.content))
+					completion(releaseNotes)
 				}
 			case .url(let url):
 				self.releaseNotes(from: url, relevantVersion: app.remoteVersion?.versionNumber, requestID: requestID, with: completion)
 			case .encoded(let data):
+				let provenance = releaseNotes.provenance
+				let quality = releaseNotes.qualityHint
 				currentReleaseNotesTask = Task { [weak self] in
 					guard let self else { return }
 					let releaseNotes = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
@@ -159,7 +162,13 @@ class ReleaseNotesProvider {
 						relevantVersion: app.remoteVersion?.versionNumber
 					)
 					guard !Task.isCancelled, self.isCurrentRequest(requestID, for: app) else { return }
-					completion(releaseNotes)
+					completion(releaseNotes.map {
+						ResolvedReleaseNotes(
+							content: $0,
+							quality: quality,
+							provenance: provenance
+						)
+					})
 				}
 			case .githubRelease(let apiURL, let fallbackHTML):
 				currentReleaseNotesTask = Task { [weak self] in
@@ -191,9 +200,11 @@ class ReleaseNotesProvider {
 		return true
 	}
 
-	private nonisolated static func validated(_ releaseNotes: ReleaseNotes) -> ReleaseNotes {
+	private nonisolated static func validated(
+		_ releaseNotes: Result<ResolvedReleaseNotes, Error>
+	) -> Result<ResolvedReleaseNotes, Error> {
 		switch releaseNotes {
-		case .success(let text) where isEffectivelyEmpty(text):
+		case .success(let resolved) where isEffectivelyEmpty(resolved.content):
 			return .failure(LatestError.releaseNotesUnavailable)
 		default:
 			return releaseNotes
@@ -206,24 +217,24 @@ class ReleaseNotesProvider {
 
 
 	/// Fetches release notes from the given URL.
-	private func releaseNotes(from url: URL, relevantVersion: String?, requestID: UUID, with completion: @escaping Completion) {
+	private func releaseNotes(from url: URL, relevantVersion: String?, requestID: UUID, with completion: @escaping ResolvedCompletion) {
 		currentReleaseNotesTask = Task { [weak self] in
 			guard let self else { return }
 
-				do {
-					let html = try await Self.fetchHTML(from: url)
-					let context = ReleaseNotesContext(
-						appName: self.currentApp?.name ?? "",
-						bundleIdentifier: self.currentApp?.bundleIdentifier ?? "",
-						localVersion: self.currentApp?.version.versionNumber,
-						remoteVersion: relevantVersion
-					)
-					let releaseNotes = await self.pipeline.resolve(
-						ReleaseNotesCandidate(markup: html, baseURL: url, provenance: .remoteURL),
-						for: context
-					)
-					guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
-					completion(releaseNotes.map(\.content))
+			do {
+				let html = try await Self.fetchHTML(from: url)
+				let context = ReleaseNotesContext(
+					appName: self.currentApp?.name ?? "",
+					bundleIdentifier: self.currentApp?.bundleIdentifier ?? "",
+					localVersion: self.currentApp?.version.versionNumber,
+					remoteVersion: relevantVersion
+				)
+				let releaseNotes = await self.pipeline.resolve(
+					ReleaseNotesCandidate(markup: html, baseURL: url, provenance: .remoteURL),
+					for: context
+				)
+				guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
+				completion(releaseNotes)
 				return
 			} catch FetchHTMLError.unusableText {
 				guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
@@ -242,7 +253,7 @@ class ReleaseNotesProvider {
 		}
 	}
 
-	private func webReleaseNotes(from url: URL, relevantVersion: String?, requestID: UUID, with completion: @escaping Completion) {
+	private func webReleaseNotes(from url: URL, relevantVersion: String?, requestID: UUID, with completion: @escaping ResolvedCompletion) {
 		activeWebContentLoader.load(from: url) { result in
 			guard self.isCurrentRequest(requestID) else { return }
 
@@ -258,7 +269,9 @@ class ReleaseNotesProvider {
 					)
 					guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
 					self.webContentLoader?.cancel()
-					completion(releaseNotes)
+					completion(releaseNotes.map {
+						ResolvedReleaseNotes(content: $0, quality: .genuine, provenance: .webKit)
+					})
 				}
 			case .failure(let error):
 				completion(.failure(error))
@@ -266,7 +279,11 @@ class ReleaseNotesProvider {
 		}
 	}
 
-	private func githubReleaseNotes(from url: URL, relevantVersion: String?, fallbackHTML: String?) async -> ReleaseNotes {
+	private func githubReleaseNotes(
+		from url: URL,
+		relevantVersion: String?,
+		fallbackHTML: String?
+	) async -> Result<ResolvedReleaseNotes, Error> {
 		do {
 			let data = try await Self.fetchGitHubReleaseData(from: url)
 			let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
@@ -276,11 +293,11 @@ class ReleaseNotesProvider {
 				baseURL: Self.githubReleaseWebURL(fromAPIURL: url),
 				relevantVersion: relevantVersion
 			) {
-				return releaseNotes
+				return .success(releaseNotes)
 			}
 
 			if let releaseNotes = await Self.githubReleasePageNotes(fromAPIURL: url, relevantVersion: relevantVersion) {
-				return releaseNotes
+				return .success(releaseNotes)
 			}
 
 			if let fallbackHTML {
@@ -291,7 +308,9 @@ class ReleaseNotesProvider {
 					from: fallbackHTML,
 					baseURL: nil,
 					relevantVersion: relevantVersion
-				)
+				).map {
+					ResolvedReleaseNotes(content: $0, quality: .degraded, provenance: .bundledFallback)
+				}
 			}
 			return .failure(LatestError.releaseNotesUnavailable)
 		} catch GitHubReleaseFetchError.notFound {
@@ -300,12 +319,14 @@ class ReleaseNotesProvider {
 					from: fallbackHTML,
 					baseURL: nil,
 					relevantVersion: relevantVersion
-				)
+				).map {
+					ResolvedReleaseNotes(content: $0, quality: .degraded, provenance: .bundledFallback)
+				}
 			}
 			return .failure(LatestError.releaseNotesUnavailable)
 		} catch {
 			if let releaseNotes = await Self.githubReleasePageNotes(fromAPIURL: url, relevantVersion: relevantVersion) {
-				return releaseNotes
+				return .success(releaseNotes)
 			}
 
 			if let fallbackHTML {
@@ -316,13 +337,15 @@ class ReleaseNotesProvider {
 					from: fallbackHTML,
 					baseURL: nil,
 					relevantVersion: relevantVersion
-				)
+				).map {
+					ResolvedReleaseNotes(content: $0, quality: .degraded, provenance: .bundledFallback)
+				}
 			}
 			return .failure(error)
 		}
 	}
 
-	private static func githubReleaseNotes(fromBody body: String, title: String?, baseURL: URL?, relevantVersion: String?) async -> ReleaseNotes? {
+	private static func githubReleaseNotes(fromBody body: String, title: String?, baseURL: URL?, relevantVersion: String?) async -> ResolvedReleaseNotes? {
 		let body = deduplicating(title: title, in: body.trimmingCharacters(in: .whitespacesAndNewlines))
 		if let releaseNotes = await githubReleaseNotes(fromUsefulMarkup: body, title: title, baseURL: baseURL, relevantVersion: relevantVersion) {
 			return releaseNotes
@@ -331,7 +354,7 @@ class ReleaseNotesProvider {
 		return await linkedReleaseNotes(fromMarkup: body, baseURL: baseURL, relevantVersion: relevantVersion)
 	}
 
-	private static func githubReleasePageNotes(fromAPIURL apiURL: URL, relevantVersion: String?) async -> ReleaseNotes? {
+	private static func githubReleasePageNotes(fromAPIURL apiURL: URL, relevantVersion: String?) async -> ResolvedReleaseNotes? {
 		guard let webURL = githubReleaseWebURL(fromAPIURL: apiURL),
 		      let html = try? await fetchHTML(from: webURL) else {
 			return nil
@@ -348,16 +371,17 @@ class ReleaseNotesProvider {
 		return await linkedReleaseNotes(fromMarkup: bodyHTML, baseURL: webURL, relevantVersion: relevantVersion)
 	}
 
-	private static func githubReleaseNotes(fromUsefulMarkup markup: String, title: String?, baseURL: URL?, relevantVersion: String?) async -> ReleaseNotes? {
-		await ReleaseNotesMarkup.githubAttributedStringByPreparingOffMain(
+	private static func githubReleaseNotes(fromUsefulMarkup markup: String, title: String?, baseURL: URL?, relevantVersion: String?) async -> ResolvedReleaseNotes? {
+		guard let releaseNotes = await ReleaseNotesMarkup.githubAttributedStringByPreparingOffMain(
 			from: markup,
 			title: title,
 			baseURL: baseURL,
 			relevantVersion: relevantVersion
-		)
+		) else { return nil }
+		return try? releaseNotes.get().mapToResolved(quality: .genuine, provenance: .githubRelease)
 	}
 
-	private static func linkedReleaseNotes(fromMarkup markup: String, baseURL: URL?, relevantVersion: String?) async -> ReleaseNotes? {
+	private static func linkedReleaseNotes(fromMarkup markup: String, baseURL: URL?, relevantVersion: String?) async -> ResolvedReleaseNotes? {
 		guard let linkedURL = ReleaseNotesMarkup.firstReleaseNotesURL(in: markup, baseURL: baseURL),
 		      linkedURL != baseURL,
 		      let linkedHTML = try? await fetchHTML(from: linkedURL) else {
@@ -370,17 +394,18 @@ class ReleaseNotesProvider {
 			relevantVersion: relevantVersion,
 			allowFirstSectionFallback: true
 		) {
-			return result
+			return try? result.get().mapToResolved(quality: .genuine, provenance: .changelog)
 		}
 
-		return await ReleaseNotesMarkup.plainTextAttributedStringByPreparingOffMain(
+		guard let releaseNotes = await ReleaseNotesMarkup.plainTextAttributedStringByPreparingOffMain(
 			fromHTML: linkedHTML,
 			baseURL: linkedURL,
 			relevantVersion: relevantVersion
-		)
+		) else { return nil }
+		return try? releaseNotes.get().mapToResolved(quality: .genuine, provenance: .changelog)
 	}
 
-	private func changelogReleaseNotes(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, fallbackHTML: String?, requestID: UUID, with completion: @escaping Completion) {
+	private func changelogReleaseNotes(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, fallbackHTML: String?, requestID: UUID, with completion: @escaping ResolvedCompletion) {
 		currentReleaseNotesTask = Task { [weak self] in
 			guard let self else { return }
 
@@ -391,7 +416,9 @@ class ReleaseNotesProvider {
 					relevantVersion: versionPrefix
 				)
 				guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
-				completion(releaseNotes)
+				completion(releaseNotes.map {
+					ResolvedReleaseNotes(content: $0, quality: .genuine, provenance: .changelog)
+				})
 				return
 			}
 
@@ -405,7 +432,9 @@ class ReleaseNotesProvider {
 					relevantVersion: versionPrefix
 				)
 				guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
-				completion(releaseNotes)
+				completion(releaseNotes.map {
+					ResolvedReleaseNotes(content: $0, quality: .degraded, provenance: .bundledFallback)
+				})
 				return
 			}
 
@@ -414,12 +443,12 @@ class ReleaseNotesProvider {
 		}
 	}
 
-	private func webChangelogReleaseNotes(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, requestID: UUID, with completion: @escaping Completion) {
+	private func webChangelogReleaseNotes(from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, requestID: UUID, with completion: @escaping ResolvedCompletion) {
 		var remainingURLs = urls
 		var activeAttemptID = UUID()
 		var didComplete = false
 
-		func finish(_ releaseNotes: ReleaseNotes) {
+		func finish(_ releaseNotes: Result<ResolvedReleaseNotes, Error>) {
 			guard !didComplete else { return }
 			didComplete = true
 			self.webContentLoader?.cancel()
@@ -455,7 +484,9 @@ class ReleaseNotesProvider {
 						      activeAttemptID == attemptID,
 						      !didComplete else { return }
 						if let releaseNotes {
-							finish(releaseNotes)
+							finish(releaseNotes.map {
+								ResolvedReleaseNotes(content: $0, quality: .genuine, provenance: .webKit)
+							})
 						} else {
 							loadNext()
 						}
@@ -565,25 +596,76 @@ class ReleaseNotesProvider {
 	}
 
 	private nonisolated static func fetchGitHubReleaseData(from url: URL) async throws -> Data {
-		var request = URLRequest(url: url)
-		request.cachePolicy = .useProtocolCachePolicy
-		request.timeoutInterval = 6
-		request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-		request.setValue("Latest", forHTTPHeaderField: "User-Agent")
+		try await releaseNotesGitHubCache.data(for: url) {
+			var request = URLRequest(url: url)
+			request.cachePolicy = .useProtocolCachePolicy
+			request.timeoutInterval = 6
+			request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+			request.setValue("Latest", forHTTPHeaderField: "User-Agent")
 
-		let (data, response) = try await URLSession.shared.data(for: request)
-		if let response = response as? HTTPURLResponse {
-			if response.statusCode == 404 {
-				throw GitHubReleaseFetchError.notFound
+			let (data, response) = try await URLSession.shared.data(for: request)
+			if let response = response as? HTTPURLResponse {
+				if response.statusCode == 404 {
+					throw GitHubReleaseFetchError.notFound
+				}
+				if !(200..<300).contains(response.statusCode) {
+					throw FetchHTMLError.unusableText
+				}
 			}
-			if !(200..<300).contains(response.statusCode) {
-				throw FetchHTMLError.unusableText
-			}
+
+			return data
+		}
+	}
+
+}
+
+private actor ReleaseNotesGitHubCache {
+	private struct Entry {
+		let data: Data
+		let expiresAt: Date
+		var lastAccessedAt: Date
+	}
+
+	private var entries = [URL: Entry]()
+	private var inFlightTasks = [URL: Task<Data, Error>]()
+	private var storedBytes = 0
+	private let lifetime: TimeInterval = 15 * 60
+	private let maximumEntryCount = 128
+	private let maximumStoredBytes = 8 * 1_024 * 1_024
+
+	func data(for url: URL, loader: @escaping @Sendable () async throws -> Data) async throws -> Data {
+		let now = Date()
+		if var entry = entries[url], entry.expiresAt > now {
+			entry.lastAccessedAt = now
+			entries[url] = entry
+			return entry.data
+		}
+		if let entry = entries.removeValue(forKey: url) {
+			storedBytes -= entry.data.count
+		}
+		if let task = inFlightTasks[url] {
+			return try await task.value
 		}
 
+		let task = Task { try await loader() }
+		inFlightTasks[url] = task
+		defer { inFlightTasks[url] = nil }
+		let data = try await task.value
+		entries[url] = Entry(data: data, expiresAt: now.addingTimeInterval(lifetime), lastAccessedAt: now)
+		storedBytes += data.count
+		evictIfNeeded()
 		return data
 	}
 
+	private func evictIfNeeded() {
+		while entries.count > maximumEntryCount || storedBytes > maximumStoredBytes {
+			guard let oldest = entries.min(by: { $0.value.lastAccessedAt < $1.value.lastAccessedAt }) else {
+				return
+			}
+			storedBytes -= oldest.value.data.count
+			entries[oldest.key] = nil
+		}
+	}
 }
 
 private actor ReleaseNotesHTMLCache {
@@ -818,6 +900,14 @@ private struct StructuredArticle: Decodable {
 	let articleBody: String?
 }
 
+private final class ResolvedReleaseNotesBox: NSObject {
+	let value: ResolvedReleaseNotes
+
+	init(_ value: ResolvedReleaseNotes) {
+		self.value = value
+	}
+}
+
 private final class ReleaseNotesCacheKey: NSObject {
 	private let identifier: App.Bundle.Identifier
 	private let localVersion: String
@@ -883,6 +973,37 @@ enum ReleaseNotesMarkup {
 		let string: String
 		let kind: Kind
 		let baseURL: URL?
+	}
+
+	private enum Regexes {
+		static let omittedElements = try! NSRegularExpression(pattern: #"(?is)<(script|style|noscript|svg)\b.*?</\1>"#)
+		static let lineBreak = try! NSRegularExpression(pattern: #"(?i)<br\s*/?>"#)
+		static let listItem = try! NSRegularExpression(pattern: #"(?i)<li\b[^>]*>"#)
+		static let blockOpening = try! NSRegularExpression(pattern: #"(?i)<(p|div|h[1-6]|tr|section|article|header|footer|table|ul|ol|dl|dt|dd)\b[^>]*>"#)
+		static let blockClosing = try! NSRegularExpression(pattern: #"(?i)</(p|div|li|h[1-6]|tr|section|article|header|footer|table|ul|ol|dl|dt|dd)>"#)
+		static let anyTag = try! NSRegularExpression(pattern: #"<[^>]+>"#)
+		static let repeatedWhitespace = try! NSRegularExpression(pattern: #"\s{2,}"#)
+		static let rawURL = try! NSRegularExpression(pattern: #"https?://\S+"#)
+		static let markdownLink = try! NSRegularExpression(pattern: #"\[[^\]]*\]\([^)]+\)"#)
+		static let versionNumber = try! NSRegularExpression(pattern: #"\bv?\d+(?:\.\d+){1,}(?:\.\d+)?\b"#, options: .caseInsensitive)
+		static let namedDate = try! NSRegularExpression(pattern: #"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}\b"#, options: .caseInsensitive)
+		static let isoDate = try! NSRegularExpression(pattern: #"\b\d{4}-\d{2}-\d{2}\b"#)
+		static let firstRawURL = try! NSRegularExpression(pattern: #"https?://[^\s<>\"']+"#)
+		static let anchorWithLabel = try! NSRegularExpression(pattern: #"(?is)<a\b[^>]*\bhref\s*=\s*[\"']([^\"']+)[\"'][^>]*>(.*?)</a>"#)
+		static let anchorHref = try! NSRegularExpression(pattern: #"(?is)<a\b[^>]*\bhref\s*=\s*[\"']([^\"']+)[\"']"#)
+		static let numericEntity = try! NSRegularExpression(pattern: #"&#(x?[0-9A-Fa-f]+);"#)
+	}
+
+	private static func replacingMatches(
+		in string: String,
+		matching regex: NSRegularExpression,
+		with replacement: String
+	) -> String {
+		regex.stringByReplacingMatches(
+			in: string,
+			range: NSRange(string.startIndex..<string.endIndex, in: string),
+			withTemplate: replacement
+		)
 	}
 
 	private static let genericReleaseNoteWords: Set<String> = [
@@ -1477,18 +1598,21 @@ enum ReleaseNotesMarkup {
 	static func plainText(fromHTML html: String) -> String? {
 		var text = html
 
-		text = text.replacingOccurrences(of: #"(?is)<(script|style|noscript|svg)\b.*?</\1>"#, with: "\n", options: .regularExpression)
-		text = text.replacingOccurrences(of: #"(?i)<br\s*/?>"#, with: "\n", options: .regularExpression)
-		text = text.replacingOccurrences(of: #"(?i)<li\b[^>]*>"#, with: "\n- ", options: .regularExpression)
-		text = text.replacingOccurrences(of: #"(?i)<(p|div|h[1-6]|tr|section|article|header|footer|table|ul|ol|dl|dt|dd)\b[^>]*>"#, with: "\n", options: .regularExpression)
-		text = text.replacingOccurrences(of: #"(?i)</(p|div|li|h[1-6]|tr|section|article|header|footer|table|ul|ol|dl|dt|dd)>"#, with: "\n", options: .regularExpression)
-		text = text.replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
+		text = replacingMatches(in: text, matching: Regexes.omittedElements, with: "\n")
+		text = replacingMatches(in: text, matching: Regexes.lineBreak, with: "\n")
+		text = replacingMatches(in: text, matching: Regexes.listItem, with: "\n- ")
+		text = replacingMatches(in: text, matching: Regexes.blockOpening, with: "\n")
+		text = replacingMatches(in: text, matching: Regexes.blockClosing, with: "\n")
+		text = replacingMatches(in: text, matching: Regexes.anyTag, with: " ")
 		text = Self.decodingHTMLEntities(in: text)
 		text = text.replacingOccurrences(of: "\u{00a0}", with: " ")
 
 		let lines = text.components(separatedBy: .newlines).compactMap { line -> String? in
-			let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
-				.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+			let trimmedLine = replacingMatches(
+				in: line.trimmingCharacters(in: .whitespacesAndNewlines),
+				matching: Regexes.repeatedWhitespace,
+				with: " "
+			)
 			return trimmedLine.isEmpty ? nil : trimmedLine
 		}
 
@@ -1500,13 +1624,8 @@ enum ReleaseNotesMarkup {
 			return hrefURL
 		}
 
-		let pattern = #"https?://[^\s<>"']+"#
-		guard let regex = try? NSRegularExpression(pattern: pattern) else {
-			return nil
-		}
-
 		let range = NSRange(markup.startIndex..<markup.endIndex, in: markup)
-		guard let match = regex.firstMatch(in: markup, range: range),
+		guard let match = Regexes.firstRawURL.firstMatch(in: markup, range: range),
 			  let matchRange = Range(match.range, in: markup) else {
 			return nil
 		}
@@ -1519,11 +1638,8 @@ enum ReleaseNotesMarkup {
 		let candidates = versionCandidates(from: version)
 		guard !candidates.isEmpty else { return nil }
 
-		let pattern = #"(?is)<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a>"#
-		guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-
 		let range = NSRange(html.startIndex..<html.endIndex, in: html)
-		let matches = regex.matches(in: html, range: range)
+		let matches = Regexes.anchorWithLabel.matches(in: html, range: range)
 		var fallbackURL: URL?
 		var preferredURL: URL?
 
@@ -1576,14 +1692,14 @@ enum ReleaseNotesMarkup {
 		}
 
 		var informationText = displayText
-		informationText = informationText.replacingOccurrences(of: #"https?://\S+"#, with: " ", options: .regularExpression)
-		informationText = informationText.replacingOccurrences(of: #"\[[^\]]*\]\([^)]+\)"#, with: " ", options: .regularExpression)
-		informationText = informationText.replacingOccurrences(of: #"\bv?\d+(?:\.\d+){1,}(?:\.\d+)?\b"#, with: " ", options: [.regularExpression, .caseInsensitive])
+		informationText = replacingMatches(in: informationText, matching: Regexes.rawURL, with: " ")
+		informationText = replacingMatches(in: informationText, matching: Regexes.markdownLink, with: " ")
+		informationText = replacingMatches(in: informationText, matching: Regexes.versionNumber, with: " ")
 		if let relevantVersion, !relevantVersion.isEmpty {
 			informationText = informationText.replacingOccurrences(of: relevantVersion, with: " ", options: [.caseInsensitive])
 		}
-		informationText = informationText.replacingOccurrences(of: #"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}\b"#, with: " ", options: [.regularExpression, .caseInsensitive])
-		informationText = informationText.replacingOccurrences(of: #"\b\d{4}-\d{2}-\d{2}\b"#, with: " ", options: .regularExpression)
+		informationText = replacingMatches(in: informationText, matching: Regexes.namedDate, with: " ")
+		informationText = replacingMatches(in: informationText, matching: Regexes.isoDate, with: " ")
 
 		let lowercasedInformationText = informationText.lowercased()
 		let words = lowercasedInformationText.matches(of: /[a-z][a-z0-9+-]{1,}/).map { String(lowercasedInformationText[$0.range]) }
@@ -1604,19 +1720,31 @@ enum ReleaseNotesMarkup {
 		var startIndex: Int?
 
 		if !versionCandidates.isEmpty {
-			func matchingVersionIndex(requiresBoundary: Bool, preferredSuffix: String? = nil) -> Int? {
+			func matchers(preferredSuffix: String?) -> [NSRegularExpression] {
+				versionCandidates.compactMap { version in
+					let escapedVersion = NSRegularExpression.escapedPattern(for: version)
+					let pattern: String
+					if let preferredSuffix {
+						let escapedSuffix = NSRegularExpression.escapedPattern(for: preferredSuffix)
+						pattern = #"(^|[^\d])v?\#(escapedVersion)\s+\#(escapedSuffix)([^\w]|\z)"#
+					} else {
+						pattern = #"(^|[^\d])v?\#(escapedVersion)([^\d]|\z)"#
+					}
+					return try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+				}
+			}
+
+			let standardMatchers = matchers(preferredSuffix: nil)
+			let preferredMatchers = preferredSuffix.map { matchers(preferredSuffix: $0) } ?? []
+
+			func matchingVersionIndex(requiresBoundary: Bool, matchers: [NSRegularExpression]) -> Int? {
 				for (index, line) in lines.enumerated() {
 					guard !Self.looksLikeVersionNavigation(line, at: index, in: lines),
 						  !requiresBoundary || Self.looksLikeVersionBoundary(line) else { continue }
 
-					if versionCandidates.contains(where: { version in
-						let escapedVersion = NSRegularExpression.escapedPattern(for: version)
-						if let preferredSuffix {
-							let escapedSuffix = NSRegularExpression.escapedPattern(for: preferredSuffix)
-							return line.range(of: #"(^|[^\d])v?\#(escapedVersion)\s+\#(escapedSuffix)([^\w]|\z)"#, options: [.regularExpression, .caseInsensitive]) != nil
-						}
-
-						return line.range(of: #"(^|[^\d])v?\#(escapedVersion)([^\d]|\z)"#, options: [.regularExpression, .caseInsensitive]) != nil
+					let lineRange = NSRange(line.startIndex..<line.endIndex, in: line)
+					if matchers.contains(where: { regex in
+						regex.firstMatch(in: line, range: lineRange) != nil
 					}) {
 						return index
 					}
@@ -1625,12 +1753,14 @@ enum ReleaseNotesMarkup {
 				return nil
 			}
 
-			if let preferredSuffix {
-				startIndex = matchingVersionIndex(requiresBoundary: true, preferredSuffix: preferredSuffix) ??
-					matchingVersionIndex(requiresBoundary: false, preferredSuffix: preferredSuffix)
+			if preferredSuffix != nil {
+				startIndex = matchingVersionIndex(requiresBoundary: true, matchers: preferredMatchers) ??
+					matchingVersionIndex(requiresBoundary: false, matchers: preferredMatchers)
 			}
 
-			startIndex = startIndex ?? matchingVersionIndex(requiresBoundary: true) ?? matchingVersionIndex(requiresBoundary: false)
+			startIndex = startIndex ??
+				matchingVersionIndex(requiresBoundary: true, matchers: standardMatchers) ??
+				matchingVersionIndex(requiresBoundary: false, matchers: standardMatchers)
 		}
 
 		if startIndex == nil, allowFirstSectionFallback {
@@ -2242,35 +2372,37 @@ enum ReleaseNotesMarkup {
 	}
 
 	private static func nextHTMLElement(in html: String, tagName: String, searchStart: String.Index) -> (range: Range<String.Index>, contentRange: Range<String.Index>)? {
-		let openingPattern = "<\(tagName)\\b"
-		guard let openingRange = html.range(of: openingPattern, options: [.regularExpression, .caseInsensitive], range: searchStart..<html.endIndex),
-		      let openingTagEndRange = html.range(of: ">", range: openingRange.lowerBound..<html.endIndex) else {
+		let escapedTagName = NSRegularExpression.escapedPattern(for: tagName)
+		guard let regex = try? NSRegularExpression(
+			pattern: "(?is)</?\(escapedTagName)\\b[^>]*>"
+		) else {
+			return nil
+		}
+		let searchRange = NSRange(searchStart..<html.endIndex, in: html)
+		let matches = regex.matches(in: html, range: searchRange)
+		guard let firstMatch = matches.first,
+		      let openingRange = Range(firstMatch.range, in: html),
+		      !html[openingRange].hasPrefix("</") else {
 			return nil
 		}
 
-		var depth = 1
-		var currentIndex = openingTagEndRange.upperBound
-		let closingPattern = "</\(tagName)>"
-		while currentIndex < html.endIndex {
-			let nextOpening = html.range(of: openingPattern, options: [.regularExpression, .caseInsensitive], range: currentIndex..<html.endIndex)
-			let nextClosing = html.range(of: closingPattern, options: .caseInsensitive, range: currentIndex..<html.endIndex)
-			guard let closingRange = nextClosing else { return nil }
-
-			if let nextOpening, nextOpening.lowerBound < closingRange.lowerBound {
+		var depth = 0
+		for match in matches {
+			guard let tokenRange = Range(match.range, in: html) else { continue }
+			let token = html[tokenRange]
+			let isClosing = token.hasPrefix("</")
+			let isSelfClosing = token.dropLast().last == "/"
+			if isClosing {
+				depth -= 1
+				if depth == 0 {
+					return (
+						range: openingRange.lowerBound..<tokenRange.upperBound,
+						contentRange: openingRange.upperBound..<tokenRange.lowerBound
+					)
+				}
+			} else if !isSelfClosing {
 				depth += 1
-				currentIndex = nextOpening.upperBound
-				continue
 			}
-
-			depth -= 1
-			if depth == 0 {
-				return (
-					range: openingRange.lowerBound..<closingRange.upperBound,
-					contentRange: openingTagEndRange.upperBound..<closingRange.lowerBound
-				)
-			}
-
-			currentIndex = closingRange.upperBound
 		}
 
 		return nil
@@ -2304,13 +2436,8 @@ enum ReleaseNotesMarkup {
 	}
 
 	private static func firstHrefURL(in html: String, baseURL: URL?) -> URL? {
-		let pattern = #"(?is)<a\b[^>]*\bhref\s*=\s*["']([^"']+)["']"#
-		guard let regex = try? NSRegularExpression(pattern: pattern) else {
-			return nil
-		}
-
 		let range = NSRange(html.startIndex..<html.endIndex, in: html)
-		guard let match = regex.firstMatch(in: html, range: range),
+		guard let match = Regexes.anchorHref.firstMatch(in: html, range: range),
 			  let hrefRange = Range(match.range(at: 1), in: html) else {
 			return nil
 		}
@@ -2335,11 +2462,7 @@ enum ReleaseNotesMarkup {
 			result = result.replacingOccurrences(of: entity, with: replacement)
 		}
 
-		guard let regex = try? NSRegularExpression(pattern: #"&#(x?[0-9A-Fa-f]+);"#) else {
-			return result
-		}
-
-		let matches = regex.matches(in: result, range: NSRange(result.startIndex..<result.endIndex, in: result))
+		let matches = Regexes.numericEntity.matches(in: result, range: NSRange(result.startIndex..<result.endIndex, in: result))
 		for match in matches.reversed() {
 			guard let matchRange = Range(match.range(at: 0), in: result),
 				  let valueRange = Range(match.range(at: 1), in: result) else {
@@ -2438,4 +2561,13 @@ private extension String {
 		range(of: #"<\s*/?\s*(html|body|p|br|div|span|ul|ol|li|h[1-6]|a|strong|em|table)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
 	}
 
+}
+
+private extension NSAttributedString {
+	func mapToResolved(
+		quality: ReleaseNotesQuality,
+		provenance: ReleaseNotesProvenance
+	) -> ResolvedReleaseNotes {
+		ResolvedReleaseNotes(content: self, quality: quality, provenance: provenance)
+	}
 }

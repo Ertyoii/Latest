@@ -114,6 +114,27 @@ final class UpdateQueueTest: XCTestCase {
 		observation.cancel()
 	}
 
+	func testGlobalStateFeedPublishesIdentifierAndCurrentState() async {
+		let identifier = URL(fileURLWithPath: "/Applications/GlobalStream-\(UUID().uuidString).app")
+		let operation = TestUpdateOperation(identifier: identifier)
+		var iterator = UpdateQueue.shared.stateChanges().makeAsyncIterator()
+
+		UpdateQueue.shared.addOperation(operation)
+		guard let change = await iterator.next() else {
+			return XCTFail("Expected a global queue state change")
+		}
+
+		XCTAssertEqual(change.identifier, identifier)
+		if case .pending = change.state {
+			// Expected state assigned by UpdateOperation before execution.
+		} else if case .initializing = change.state {
+			// A fast operation may start before the main actor receives the event.
+		} else {
+			XCTFail("Expected pending or initializing state, got \(change.state)")
+		}
+		operation.complete()
+	}
+
 }
 
 private final class TestUpdateOperation: UpdateOperation, @unchecked Sendable {

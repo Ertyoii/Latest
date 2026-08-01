@@ -8,6 +8,9 @@
 
 import AppKit
 import SwiftUI
+@testable import Latest
+
+private typealias App = Latest.App
 
 /// Deterministic fixtures used by the SwiftUI migration's rendered regression suite.
 ///

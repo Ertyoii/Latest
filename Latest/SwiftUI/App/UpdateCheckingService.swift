@@ -19,6 +19,7 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
 	@Published private(set) var isIndeterminate = false
 	@Published private(set) var checkedApps = 0
 	@Published private(set) var totalApps = 0
+	private var activeCheckingBatches = 0
 
 	var progressFraction: Double? {
 		guard !isIndeterminate, totalApps > 0 else { return nil }
@@ -40,8 +41,14 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
 	}
 
 	func checkForUpdates() {
+		checkForUpdates(hardRefresh: true)
+	}
+
+	/// Startup can reuse short-lived App Store lookups; an explicit user refresh
+	/// invalidates them so the command retains its expected force-refresh behavior.
+	func checkForUpdates(hardRefresh: Bool) {
 		startReportingProgress()
-		UpdateCheckCoordinator.shared.run()
+		UpdateCheckCoordinator.shared.run(hardRefresh: hardRefresh)
 	}
 
 	func updateAll() {
@@ -73,13 +80,20 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
 		isIndeterminate = true
 		checkedApps = 0
 		totalApps = 0
+		activeCheckingBatches = 0
 	}
 
 	func updateChecker(_ updateChecker: UpdateCheckCoordinator, didStartCheckingApps numberOfApps: Int) {
+		let isFirstBatch = activeCheckingBatches == 0
+		activeCheckingBatches += 1
 		isRunning = true
 		isIndeterminate = false
-		checkedApps = 0
-		totalApps = numberOfApps
+		if isFirstBatch {
+			checkedApps = 0
+			totalApps = numberOfApps
+		} else {
+			totalApps += numberOfApps
+		}
 	}
 
 	func updateChecker(_ updateChecker: UpdateCheckCoordinator, didCheckApp: App) {
@@ -87,6 +101,8 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
 	}
 
 	func updateCheckerDidFinishCheckingForUpdates(_ updateChecker: UpdateCheckCoordinator) {
+		activeCheckingBatches = max(0, activeCheckingBatches - 1)
+		guard activeCheckingBatches == 0 else { return }
 		isRunning = false
 		isIndeterminate = false
 		MigrationTelemetry.shared.scanFinished(appCount: totalApps)

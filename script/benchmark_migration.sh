@@ -41,6 +41,7 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY="" \
+  -enableCodeCoverage NO \
   -only-testing:'Latest Tests/MigrationPerformanceTest/testMigrationPerformanceMatrix' \
   test 2>&1 | tee "$LOG_FILE"
 

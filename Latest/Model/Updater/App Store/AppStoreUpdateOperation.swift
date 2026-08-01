@@ -70,7 +70,7 @@ fileprivate class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable 
 		super.execute()
 		
 		// Construct purchase to receive update
-		let purchase = SSPurchase(itemIdentifier: self.itemIdentifier, account: nil)
+		let purchase = SSPurchase(itemIdentifier: self.itemIdentifier)
 		CKPurchaseController.shared().perform(purchase, withOptions: 0) { [weak self] purchase, _, error, response in
 			guard let self = self else { return }
 
@@ -198,27 +198,8 @@ extension AppStoreUpdateOperation: CKDownloadQueueObserver {
 
 }
 
-private extension ISStoreAccount {
-	static var primaryAccount: ISStoreAccount? {
-		var account: ISStoreAccount?
-		
-		let group = DispatchGroup()
-		group.enter()
-		
-		let accountService: ISAccountService = ISServiceProxy.genericShared().accountService
-		accountService.primaryAccount { (storeAccount: ISStoreAccount) in
-			account = storeAccount
-			group.leave()
-		}
-		
-		_ = group.wait(timeout: .now() + 30)
-		
-		return account
-	}
-}
-
 private extension SSPurchase {
-	convenience init(itemIdentifier: UInt64, account: ISStoreAccount?) {
+	convenience init(itemIdentifier: UInt64) {
 		self.init()
 
 		let parameters: [String: Any] = [
@@ -237,11 +218,6 @@ private extension SSPurchase {
 				"\(key)=\(value)"
 			}
 			.joined(separator: "&")
-
-		if let account = account {
-			accountIdentifier = account.dsID
-			appleID = account.identifier
-		}
 
 		let downloadMetadata = SSDownloadMetadata()
 		downloadMetadata.kind = "software"

@@ -10,6 +10,10 @@ import Foundation
 
 /// The queue where update operations are scheduled on.
 class UpdateQueue: OperationQueue, @unchecked Sendable {
+	struct StateChange: @unchecked Sendable {
+		let identifier: App.Bundle.Identifier
+		let state: UpdateOperation.ProgressState
+	}
 	
 	// MARK: - Initialization
 	private override init() {
@@ -88,6 +92,12 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 		App.Bundle.Identifier: [UUID: AsyncStream<UpdateOperation.ProgressState>.Continuation]
 	]()
 
+	/// One process-wide feed for consumers that display many apps at once. This
+	/// avoids creating an AsyncStream and task for every visible sidebar row.
+	@MainActor private var allStateContinuations = [
+		UUID: AsyncStream<StateChange>.Continuation
+	]()
+
 	@MainActor
 	func states(for identifier: App.Bundle.Identifier) -> AsyncStream<UpdateOperation.ProgressState> {
 		let streamIdentifier = UUID()
@@ -127,6 +137,21 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 		}
 		return (currentState, stream)
 	}
+
+	@MainActor
+	func stateChanges() -> AsyncStream<StateChange> {
+		let streamIdentifier = UUID()
+		// Every terminal state must reach a multi-row consumer. A bounded FIFO can
+		// drop one app's final event when many other updates finish in the same run.
+		let (stream, continuation) = AsyncStream.makeStream(of: StateChange.self)
+		allStateContinuations[streamIdentifier] = continuation
+		continuation.onTermination = { [weak self] _ in
+			Task { @MainActor [weak self] in
+				self?.allStateContinuations.removeValue(forKey: streamIdentifier)
+			}
+		}
+		return stream
+	}
 	
 	/// Adds the observer if it is not already registered.
 	@MainActor
@@ -162,6 +187,10 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 				for continuation in continuations.values {
 					continuation.yield(state)
 				}
+			}
+			let change = StateChange(identifier: identifier, state: state)
+			for continuation in self.allStateContinuations.values {
+				continuation.yield(change)
 			}
 		}
 	}

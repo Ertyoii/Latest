@@ -242,6 +242,7 @@ enum ReleaseNotesCatalogCodec {
 		let expanded = template
 			.replacingOccurrences(of: "{version}", with: "1.2.3")
 			.replacingOccurrences(of: "{version-dashes}", with: "1-2-3")
+			.replacingOccurrences(of: "{major}", with: "1")
 			.replacingOccurrences(of: "{major-minor}", with: "1.2")
 			.replacingOccurrences(of: "{major-minor-dashes}", with: "1-2")
 			.replacingOccurrences(of: "{major-minor-underscores}", with: "1_2")
@@ -294,6 +295,8 @@ enum ReleaseNotesCatalogRemoteRejection: Error, Equatable, Sendable {
 
 enum ReleaseNotesCatalogOrigin: Equatable, Sendable {
 	case remote
+	case remoteCache
+	case remoteCacheFallback(ReleaseNotesCatalogRemoteRejection)
 	case bundledFallback(ReleaseNotesCatalogRemoteRejection)
 }
 
@@ -315,20 +318,43 @@ struct SignedReleaseNotesCatalogClient: Sendable {
 			publicKey: nil,
 			maximumEnvelopeSize: 1 * 1_024 * 1_024
 		)
+
+		static func live(bundle: Bundle = .main, environment: [String: String] = ProcessInfo.processInfo.environment) -> Configuration {
+			let urlString = environment["LATEST_RELEASE_NOTES_CATALOG_URL"]
+				?? bundle.object(forInfoDictionaryKey: "ReleaseNotesCatalogURL") as? String
+			let publicKeyString = environment["LATEST_RELEASE_NOTES_CATALOG_PUBLIC_KEY"]
+				?? bundle.object(forInfoDictionaryKey: "ReleaseNotesCatalogPublicKey") as? String
+			guard let urlString,
+			      let remoteURL = URL(string: urlString),
+			      let publicKeyString,
+			      let publicKey = Data(base64Encoded: publicKeyString) else {
+				return .disabled
+			}
+
+			return Configuration(
+				isEnabled: true,
+				remoteURL: remoteURL,
+				publicKey: publicKey,
+				maximumEnvelopeSize: 1 * 1_024 * 1_024
+			)
+		}
 	}
 
 	private let configuration: Configuration
 	private let bundledCatalogData: Data
 	private let loader: any ReleaseNotesCatalogHTTPDataLoading
+	private let cache: ReleaseNotesCatalogDiskCache?
 
 	init(
 		configuration: Configuration,
 		bundledCatalogData: Data,
-		loader: any ReleaseNotesCatalogHTTPDataLoading = URLSessionReleaseNotesCatalogDataLoader()
+		loader: any ReleaseNotesCatalogHTTPDataLoading = URLSessionReleaseNotesCatalogDataLoader(),
+		cache: ReleaseNotesCatalogDiskCache? = nil
 	) {
 		self.configuration = configuration
 		self.bundledCatalogData = bundledCatalogData
 		self.loader = loader
+		self.cache = cache
 	}
 
 	func load() async throws -> LoadedReleaseNotesCatalog {
@@ -337,36 +363,79 @@ struct SignedReleaseNotesCatalogClient: Sendable {
 			return LoadedReleaseNotesCatalog(document: fallback, origin: .bundledFallback(.disabled))
 		}
 
+		let cachedEnvelope = cache?.load()
 		do {
-			let remote = try await loadRemote()
-			return LoadedReleaseNotesCatalog(document: remote, origin: .remote)
+			let remote = try await loadRemote(cachedEnvelope: cachedEnvelope)
+			return LoadedReleaseNotesCatalog(
+				document: remote.document,
+				origin: remote.wasNotModified ? .remoteCache : .remote
+			)
 		} catch let rejection as ReleaseNotesCatalogRemoteRejection {
+			if let cachedEnvelope,
+			   let cachedDocument = try? verifiedDocument(from: cachedEnvelope.envelopeData) {
+				return LoadedReleaseNotesCatalog(
+					document: cachedDocument,
+					origin: .remoteCacheFallback(rejection)
+				)
+			}
 			return LoadedReleaseNotesCatalog(document: fallback, origin: .bundledFallback(rejection))
 		} catch {
+			if let cachedEnvelope,
+			   let cachedDocument = try? verifiedDocument(from: cachedEnvelope.envelopeData) {
+				return LoadedReleaseNotesCatalog(
+					document: cachedDocument,
+					origin: .remoteCacheFallback(.network)
+				)
+			}
 			return LoadedReleaseNotesCatalog(document: fallback, origin: .bundledFallback(.network))
 		}
 	}
 
-	private func loadRemote() async throws -> ReleaseNotesCatalogDocument {
+	private struct RemoteLoadResult {
+		let document: ReleaseNotesCatalogDocument
+		let wasNotModified: Bool
+	}
+
+	private func loadRemote(cachedEnvelope: ReleaseNotesCatalogDiskCache.Record?) async throws -> RemoteLoadResult {
 		guard let remoteURL = configuration.remoteURL,
 		      remoteURL.scheme?.lowercased() == "https",
-		      let publicKeyData = configuration.publicKey else {
+		      remoteURL.host != nil,
+		      remoteURL.user == nil,
+		      remoteURL.password == nil,
+		      configuration.publicKey != nil else {
 			throw ReleaseNotesCatalogRemoteRejection.invalidConfiguration
 		}
 
-		let request = URLRequest(
+		var request = URLRequest(
 			url: remoteURL,
 			cachePolicy: .reloadRevalidatingCacheData,
 			timeoutInterval: 10
 		)
+		if let eTag = cachedEnvelope?.eTag {
+			request.setValue(eTag, forHTTPHeaderField: "If-None-Match")
+		}
+		if let lastModified = cachedEnvelope?.lastModified {
+			request.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since")
+		}
 		let response: ReleaseNotesFetchResponse
 		do {
 			response = try await loader.load(request)
 		} catch {
 			throw ReleaseNotesCatalogRemoteRejection.network
 		}
-		guard let httpResponse = response.response as? HTTPURLResponse,
-		      (200..<300).contains(httpResponse.statusCode) else {
+		guard let httpResponse = response.response as? HTTPURLResponse else {
+			throw ReleaseNotesCatalogRemoteRejection.http
+		}
+		if httpResponse.statusCode == 304 {
+			guard let cachedEnvelope else {
+				throw ReleaseNotesCatalogRemoteRejection.http
+			}
+			return RemoteLoadResult(
+				document: try verifiedDocument(from: cachedEnvelope.envelopeData),
+				wasNotModified: true
+			)
+		}
+		guard (200..<300).contains(httpResponse.statusCode) else {
 			throw ReleaseNotesCatalogRemoteRejection.http
 		}
 		guard response.data.count <= configuration.maximumEnvelopeSize,
@@ -374,9 +443,27 @@ struct SignedReleaseNotesCatalogClient: Sendable {
 			throw ReleaseNotesCatalogRemoteRejection.oversized
 		}
 
+		let document = try verifiedDocument(from: response.data)
+		cache?.store(
+			ReleaseNotesCatalogDiskCache.Record(
+				envelopeData: response.data,
+				eTag: httpResponse.value(forHTTPHeaderField: "ETag"),
+				lastModified: httpResponse.value(forHTTPHeaderField: "Last-Modified")
+			)
+		)
+		return RemoteLoadResult(document: document, wasNotModified: false)
+	}
+
+	private func verifiedDocument(from envelopeData: Data) throws -> ReleaseNotesCatalogDocument {
+		guard envelopeData.count <= configuration.maximumEnvelopeSize else {
+			throw ReleaseNotesCatalogRemoteRejection.oversized
+		}
+		guard let publicKeyData = configuration.publicKey else {
+			throw ReleaseNotesCatalogRemoteRejection.invalidConfiguration
+		}
 		let envelope: SignedReleaseNotesCatalogEnvelope
 		do {
-			envelope = try JSONDecoder().decode(SignedReleaseNotesCatalogEnvelope.self, from: response.data)
+			envelope = try JSONDecoder().decode(SignedReleaseNotesCatalogEnvelope.self, from: envelopeData)
 		} catch {
 			throw ReleaseNotesCatalogRemoteRejection.invalidCatalog
 		}
@@ -401,6 +488,57 @@ struct SignedReleaseNotesCatalogClient: Sendable {
 			return try ReleaseNotesCatalogCodec.decodeRemotePayload(envelope.payload)
 		} catch {
 			throw ReleaseNotesCatalogRemoteRejection.invalidCatalog
+		}
+	}
+}
+
+final class ReleaseNotesCatalogDiskCache: @unchecked Sendable {
+	struct Record: Codable, Equatable, Sendable {
+		let envelopeData: Data
+		let eTag: String?
+		let lastModified: String?
+	}
+
+	private let url: URL?
+	private let fileManager: FileManager
+	private let lock = NSLock()
+
+	init(url: URL?, fileManager: FileManager = .default) {
+		self.url = url
+		self.fileManager = fileManager
+	}
+
+	static func live(fileManager: FileManager = .default, bundleIdentifier: String? = Bundle.main.bundleIdentifier) -> ReleaseNotesCatalogDiskCache {
+		let url = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first?
+			.appendingPathComponent(bundleIdentifier ?? "com.max-langer.Latest", isDirectory: true)
+			.appendingPathComponent("ReleaseNotesCatalog", isDirectory: false)
+			.appendingPathExtension("plist")
+		return ReleaseNotesCatalogDiskCache(url: url, fileManager: fileManager)
+	}
+
+	func load() -> Record? {
+		lock.withLock {
+			guard let url,
+			      let data = try? Data(contentsOf: url),
+			      let record = try? PropertyListDecoder().decode(Record.self, from: data) else {
+				return nil
+			}
+			return record
+		}
+	}
+
+	func store(_ record: Record) {
+		lock.withLock {
+			guard let url else { return }
+			do {
+				let encoder = PropertyListEncoder()
+				encoder.outputFormat = .binary
+				let data = try encoder.encode(record)
+				try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+				try data.write(to: url, options: .atomic)
+			} catch {
+				try? fileManager.removeItem(at: url)
+			}
 		}
 	}
 }

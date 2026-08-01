@@ -78,34 +78,23 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 	}
 
 	@MainActor
-	func testMainWindowConfigurationUsesConcentricSidebarGlassRadius() {
+	func testMainWindowConfigurationUsesPublicWindowBehaviorWithoutMutatingContent() throws {
 		let window = NSWindow(
 			contentRect: NSRect(x: 0, y: 0, width: 768, height: 516),
 			styleMask: [.titled, .closable, .resizable],
 			backing: .buffered,
 			defer: false
 		)
-		let sidebarGlass = NSGlassEffectView(frame: NSRect(
-			x: VisualMetrics.sidebarGlassInset,
-			y: VisualMetrics.sidebarGlassInset,
-			width: VisualMetrics.sidebarIdealWidth,
-			height: VisualMetrics.mainWindowMinHeight - (VisualMetrics.sidebarGlassInset * 2)
-		))
-		let compactGlass = NSGlassEffectView(frame: NSRect(
-			x: 0,
-			y: 0,
-			width: VisualMetrics.sidebarIdealWidth,
-			height: 40
-		))
-		compactGlass.cornerRadius = 7
-		window.contentView?.addSubview(sidebarGlass)
-		window.contentView?.addSubview(compactGlass)
+		let sentinelView = NSView(frame: NSRect(x: 8, y: 8, width: 40, height: 40))
+		let contentView = try XCTUnwrap(window.contentView)
+		contentView.addSubview(sentinelView)
+		let subviewsBeforeConfiguration = contentView.subviews
 
 		MainWindowConfiguration.apply(to: window)
 
 		XCTAssertEqual(window.titlebarSeparatorStyle, .none)
-		XCTAssertEqual(sidebarGlass.cornerRadius, VisualMetrics.sidebarGlassCornerRadius)
-		XCTAssertEqual(compactGlass.cornerRadius, 7, "Unrelated glass controls must remain untouched.")
+		XCTAssertEqual(contentView.subviews, subviewsBeforeConfiguration)
+		XCTAssertTrue(contentView.subviews.contains { $0 === sentinelView })
 	}
 
 	@MainActor
