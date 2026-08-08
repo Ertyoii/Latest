@@ -13,6 +13,9 @@ import UniformTypeIdentifiers
 
 /// Gathers apps at a given URL.
 enum BundleCollector {
+	private static let collectionCoordinator = BundleCollectionCoordinator { url in
+		Self.collectBundlesUncoordinated(at: url)
+	}
 
 	/// Excluded subfolders that won't be checked.
 	private static let excludedSubfolders = Set(["Setapp"])
@@ -34,6 +37,10 @@ enum BundleCollector {
 
 	/// Returns a list of application bundles at the given URL.
 	static func collectBundles(at url: URL) -> [App.Bundle] {
+		collectionCoordinator.collectBundles(at: url)
+	}
+
+	private static func collectBundlesUncoordinated(at url: URL) -> [App.Bundle] {
 		guard !isInExcludedSubfolder(url) else { return [] }
 
 		let enumerator = FileManager.default.enumerator(
@@ -155,6 +162,62 @@ enum BundleCollector {
 
 }
 
+/// Coalesces simultaneous walks of the same directory across app discovery and Settings.
+final class BundleCollectionCoordinator: @unchecked Sendable {
+	typealias Collector = @Sendable (URL) -> [App.Bundle]
+
+	private struct Slot {
+		var generation = 0
+		var isCollecting = false
+		var mostRecentBundles = [App.Bundle]()
+	}
+
+	private let condition = NSCondition()
+	private var slots = [URL: Slot]()
+	private let collector: Collector
+	private let waiterDidJoin: @Sendable () -> Void
+
+	init(
+		collector: @escaping Collector,
+		waiterDidJoin: @escaping @Sendable () -> Void = {}
+	) {
+		self.collector = collector
+		self.waiterDidJoin = waiterDidJoin
+	}
+
+	func collectBundles(at url: URL) -> [App.Bundle] {
+		let key = url.standardizedFileURL
+		condition.lock()
+		var slot = slots[key] ?? Slot()
+		if slot.isCollecting {
+			let awaitedGeneration = slot.generation
+			waiterDidJoin()
+			while slots[key, default: Slot()].generation == awaitedGeneration {
+				condition.wait()
+			}
+			let bundles = slots[key, default: Slot()].mostRecentBundles
+			condition.unlock()
+			return bundles
+		}
+
+		slot.isCollecting = true
+		slots[key] = slot
+		condition.unlock()
+
+		let bundles = collector(key)
+
+		condition.lock()
+		slot = slots[key] ?? Slot()
+		slot.generation &+= 1
+		slot.isCollecting = false
+		slot.mostRecentBundles = bundles
+		slots[key] = slot
+		condition.broadcast()
+		condition.unlock()
+		return bundles
+	}
+}
+
 private final class BundleMetadataCache: Sendable {
 	private struct Entry: Sendable {
 		let signature: BundleFileSignature
@@ -246,28 +309,17 @@ private final class BundleCollectionCountCache: Sendable {
 }
 
 private struct BundleFileSignature: Equatable, Sendable {
-	let app: FileSystemItemSignature?
-	let contents: FileSystemItemSignature?
-	let infoPlist: FileSystemItemSignature
-	let pkgInfo: FileSystemItemSignature?
-	let executableDirectory: FileSystemItemSignature?
 	let resources: FileSystemItemSignature?
+	let infoPlist: FileSystemItemSignature
 	let standardReceipt: FileSystemItemSignature?
-	let wrapper: FileSystemItemSignature?
-	let frameworks: FileSystemItemSignature?
 	let codeSignature: FileSystemItemSignature?
 
 	/// Reuses the metadata already read for cache invalidation instead of
 	/// issuing a second set of `stat` calls when constructing `App.Bundle`.
 	var bundleModificationDate: Date {
 		[
-			app,
-			contents,
-			Optional(infoPlist),
-			pkgInfo,
-			executableDirectory,
 			resources,
-			frameworks,
+			Optional(infoPlist),
 			codeSignature
 		]
 		.compactMap { $0?.modificationDate }
@@ -276,6 +328,7 @@ private struct BundleFileSignature: Equatable, Sendable {
 
 	init?(appURL: URL) {
 		let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
+		let resourcesURL = contentsURL.appendingPathComponent("Resources", isDirectory: true)
 		let infoPlistURL = contentsURL.appendingPathComponent("Info.plist", isDirectory: false)
 		guard let infoPlist = FileSystemItemSignature(url: infoPlistURL) else {
 			return nil
@@ -283,15 +336,9 @@ private struct BundleFileSignature: Equatable, Sendable {
 
 		let standardReceiptURL = contentsURL.appendingPathComponent("_MASReceipt/receipt", isDirectory: false)
 
-		self.app = FileSystemItemSignature(url: appURL)
-		self.contents = FileSystemItemSignature(url: contentsURL)
+		self.resources = FileSystemItemSignature(url: resourcesURL)
 		self.infoPlist = infoPlist
-		self.pkgInfo = FileSystemItemSignature(url: contentsURL.appendingPathComponent("PkgInfo", isDirectory: false))
-		self.executableDirectory = FileSystemItemSignature(url: contentsURL.appendingPathComponent("MacOS", isDirectory: true))
-		self.resources = FileSystemItemSignature(url: contentsURL.appendingPathComponent("Resources", isDirectory: true))
 		self.standardReceipt = FileSystemItemSignature(url: standardReceiptURL)
-		self.wrapper = FileSystemItemSignature(url: contentsURL.appendingPathComponent("Wrapper", isDirectory: true))
-		self.frameworks = FileSystemItemSignature(url: contentsURL.appendingPathComponent("Frameworks", isDirectory: true))
 		self.codeSignature = FileSystemItemSignature(url: contentsURL.appendingPathComponent("_CodeSignature/CodeResources", isDirectory: false))
 	}
 }

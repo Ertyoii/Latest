@@ -89,6 +89,19 @@ final class ComplexityBenchmarkTest: XCTestCase {
 		let lookupApps = Array(snapshotApps.prefix(400))
 		let versionPairs = makeVersionPairs(count: 80_000)
 		let releaseNotesMarkup = makeReleaseNotesMarkup(sectionCount: 300)
+		let releaseNotesCacheDirectory = FileManager.default.temporaryDirectory
+			.appendingPathComponent("Latest-ReleaseNotes-Benchmark-\(UUID().uuidString)", isDirectory: true)
+		defer { try? FileManager.default.removeItem(at: releaseNotesCacheDirectory) }
+		let releaseNotesCache = ReleaseNotesPersistentCache(directoryURL: releaseNotesCacheDirectory)
+		let releaseNotesCachePayload = ReleaseNotesPersistentPayload(
+			richTextData: Data(repeating: 0x41, count: 4_096),
+			qualityRawValue: ReleaseNotesQuality.genuine.rawValue,
+			provenanceRawValue: ReleaseNotesProvenance.changelog.rawValue,
+			storedAt: Date()
+		)
+		for index in 0..<100 {
+			await releaseNotesCache.store(releaseNotesCachePayload, forKey: "benchmark-\(index)")
+		}
 		let repositoryCatalogData = try makeRepositoryData(count: 7_737, appArtifactCount: 4_168)
 		let decodedRepositoryEntries = try JSONDecoder().decode([UpdateRepository.Entry].self, from: repositoryCatalogData)
 		let compactRepositoryIndex = UpdateRepositoryCompactIndex(
@@ -164,6 +177,14 @@ final class ComplexityBenchmarkTest: XCTestCase {
 			).get().length
 		}
 
+		await benchmarkAsync("release_notes_persistent_cache_read", iterations: 7) {
+			var checksum = 0
+			for index in 0..<100 {
+				checksum &+= await releaseNotesCache.payload(forKey: "benchmark-\(index)")?.richTextData.count ?? 0
+			}
+			return checksum
+		}
+
 		try benchmark("update_repository_catalog_decode", iterations: 5) {
 			let entries = try JSONDecoder().decode([UpdateRepository.Entry].self, from: repositoryCatalogData)
 			return entries.reduce(into: 0) { checksum, entry in
@@ -219,7 +240,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
 			BundleCollector.collectBundles(at: bundleCollectionRoot).count
 		}
 
-		try await benchmarkAsync("update_check_end_to_end", iterations: 7) {
+		await benchmarkAsync("update_check_end_to_end", iterations: 7) {
 			await self.runStructuredUpdateCheckBatch(taskCount: 120, maximumConcurrentChecks: 6)
 		}
 	}

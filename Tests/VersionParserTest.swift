@@ -12,6 +12,32 @@ import XCTest
 
 
 final class VersionParserTest: XCTestCase {
+	@MainActor
+	func testPersistentReleaseNotesCacheRoundTripsRenderedContentAndProvenance() async throws {
+		let directoryURL = FileManager.default.temporaryDirectory
+			.appendingPathComponent(UUID().uuidString, isDirectory: true)
+		defer { try? FileManager.default.removeItem(at: directoryURL) }
+		let cache = ReleaseNotesPersistentCache(directoryURL: directoryURL)
+		let source = NSMutableAttributedString(string: "Version 2.0\nFixed repeated release-note parsing.")
+		source.addAttribute(
+			.link,
+			value: URL(string: "https://example.com/releases/2.0")!,
+			range: NSRange(location: 0, length: 11)
+		)
+		let resolved = ResolvedReleaseNotes(content: source, quality: .genuine, provenance: .changelog)
+		let payload = try XCTUnwrap(ReleaseNotesPersistentCache.payload(from: resolved))
+
+		await cache.store(payload, forKey: "com.example.app-2.0")
+		let loadedPayload = await cache.payload(forKey: "com.example.app-2.0")
+		let storedPayload = try XCTUnwrap(loadedPayload)
+		let restored = try XCTUnwrap(ReleaseNotesPersistentCache.resolvedReleaseNotes(from: storedPayload))
+
+		XCTAssertEqual(restored.content.string, source.string)
+		XCTAssertEqual(restored.quality, .genuine)
+		XCTAssertEqual(restored.provenance, .changelog)
+		XCTAssertNotNil(restored.content.attribute(.link, at: 0, effectiveRange: nil))
+	}
+
 	func testRenamedCodexAppDoesNotMatchConsumerChatGPTCask() {
 		XCTAssertTrue(UpdateRepository.isLocallyExcludedFromHomebrewMatching("com.openai.codex"))
 		XCTAssertFalse(UpdateRepository.isLocallyExcludedFromHomebrewMatching("com.openai.chat"))
@@ -456,7 +482,7 @@ final class VersionParserTest: XCTestCase {
 		let version = Version(versionNumber: "2026.1.4", buildNumber: "261.26222.59")
 		let tokens = ReleaseNotesSourceCatalog.catalogHomebrewTokens
 
-		XCTAssertGreaterThanOrEqual(tokens.count, 85)
+		XCTAssertGreaterThanOrEqual(tokens.count, 115)
 		for token in tokens {
 			XCTAssertNotNil(
 				ReleaseNotesSourceCatalog.releaseNotes(
@@ -475,6 +501,37 @@ final class VersionParserTest: XCTestCase {
 			("moom", "4.5.1", "https://manytricks.com/moom/releasenotes/"),
 			("little-snitch@5", "5.8", "https://www.obdev.at/products/littlesnitch/releasenotes5.html"),
 			("a-better-finder-rename", "12.31", "https://www.publicspace.net/ABetterFinderRename/version.html")
+		]
+
+		for (token, version, expectedURL) in expectations {
+			guard case .changelog(let urls, let versionPrefix, _, _) = ReleaseNotesSourceCatalog.releaseNotes(
+				forHomebrewToken: token,
+				version: Version(versionNumber: version, buildNumber: nil)
+			) else {
+				return XCTFail("Expected catalog changelog for \(token)")
+			}
+			XCTAssertEqual(urls.map(\.absoluteString), [expectedURL])
+			XCTAssertEqual(versionPrefix, version)
+		}
+	}
+
+	func testReleaseNotesSourceCatalogUsesVerifiedVendorReleaseNotePages() throws {
+		let expectations: [(String, String, String)] = [
+			("sidenotes", "1.6.3", "https://www.apptorium.com/sidenotes/release-notes/1.6.3"),
+			("elgato-wave-link", "3.2.2", "https://help.elgato.com/hc/en-us/sections/4913442828941-Wave-Link-Release-Notesverf%C3%BCgbar"),
+			("app-cleaner", "9.2.4", "https://nektony.com/mac-app-cleaner/download"),
+			("disk-expert", "6.0.2", "https://nektony.com/disk-expert/download"),
+			("duplicate-file-finder", "9.2.1", "https://nektony.com/duplicate-finder-free/download"),
+			("memory-cleaner", "5.5.3", "https://nektony.com/memory-cleaner/download"),
+			("navicat-premium", "17.3.12", "https://www.navicat.com/en/products/navicat-premium-release-note"),
+			("navicat-for-mysql", "17.3.12", "https://www.navicat.com/en/products/navicat-for-mysql-release-note"),
+			("teacode", "1.1.3", "https://www.apptorium.com/teacode/release-notes/1.1.3"),
+			("workspaces", "2.1.5", "https://www.apptorium.com/workspaces/release-notes/2.1.5"),
+			("windowkeys", "3.0.1", "https://www.apptorium.com/windowkeys/release-notes/3.0.1"),
+			("expressions", "1.3.9", "https://www.apptorium.com/expressions/release-notes/1.3.9"),
+			("screenfocus", "1.1.1", "https://www.apptorium.com/screenfocus/release-notes/1.1.1"),
+			("eclipse-java", "4.40", "https://www.eclipse.org/eclipse/news/4.40/"),
+			("parallels", "26.4.0", "https://kb.parallels.com/en/131014")
 		]
 
 		for (token, version, expectedURL) in expectations {
@@ -1067,6 +1124,29 @@ final class VersionParserTest: XCTestCase {
 		XCTAssertTrue(text.contains("28 security fixes"))
 		XCTAssertFalse(text.contains("Android is available"))
 		XCTAssertFalse(text.contains("Extended Stable channel"))
+	}
+
+	func testReleaseNotesMarkupExtractsNavicatMacReleaseInsteadOfWindows() throws {
+		let html = """
+		<h2>Navicat Premium (Windows) version 17.3.12</h2>
+		<p>Fixed a Windows-only credential manager issue.</p>
+		<h2>Navicat Premium (macOS) version 17.3.12</h2>
+		<ul><li>Added native support for the latest macOS database driver.</li><li>Improved sidebar responsiveness.</li></ul>
+		<h2>Navicat Premium (Linux) version 17.3.12</h2>
+		<p>Fixed a Linux package installation issue.</p>
+		"""
+
+		let text = try XCTUnwrap(ReleaseNotesMarkup.relevantChangelogText(
+			fromHTML: html,
+			version: "17.3.12",
+			pageURL: URL(string: "https://www.navicat.com/en/products/navicat-premium-release-note")!,
+			allowFirstSectionFallback: false
+		))
+
+		XCTAssertTrue(text.contains("Navicat Premium (macOS) version 17.3.12"))
+		XCTAssertTrue(text.contains("native support"))
+		XCTAssertFalse(text.contains("Windows-only"))
+		XCTAssertFalse(text.contains("Linux package"))
 	}
 
 	func testReleaseNotesMarkupExtractsChromeDesktopReleaseFromBloggerTemplate() throws {
@@ -2033,6 +2113,34 @@ final class ReleaseNotesPipelineTest: XCTestCase {
 		XCTAssertEqual(loaded.document.definitions.first?.keys, ["remote-app"])
 	}
 
+	func testSignedCatalogLiveConfigurationRequiresACompleteHTTPSKeyPair() {
+		let publicKey = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation.base64EncodedString()
+		let valid = SignedReleaseNotesCatalogClient.Configuration.live(environment: [
+			"LATEST_RELEASE_NOTES_CATALOG_URL": "https://example.com/release-notes.json",
+			"LATEST_RELEASE_NOTES_CATALOG_PUBLIC_KEY": publicKey
+		])
+		XCTAssertTrue(valid.isEnabled)
+		XCTAssertEqual(valid.remoteURL?.absoluteString, "https://example.com/release-notes.json")
+
+		for environment in [
+			["LATEST_RELEASE_NOTES_CATALOG_URL": "https://example.com/release-notes.json"],
+			[
+				"LATEST_RELEASE_NOTES_CATALOG_URL": "http://example.com/release-notes.json",
+				"LATEST_RELEASE_NOTES_CATALOG_PUBLIC_KEY": publicKey
+			],
+			[
+				"LATEST_RELEASE_NOTES_CATALOG_URL": "https://user@example.com/release-notes.json",
+				"LATEST_RELEASE_NOTES_CATALOG_PUBLIC_KEY": publicKey
+			],
+			[
+				"LATEST_RELEASE_NOTES_CATALOG_URL": "https://example.com/release-notes.json",
+				"LATEST_RELEASE_NOTES_CATALOG_PUBLIC_KEY": "invalid"
+			]
+		] {
+			XCTAssertFalse(SignedReleaseNotesCatalogClient.Configuration.live(environment: environment).isEnabled)
+		}
+	}
+
 	func testSignedCatalogRejectsWrongSignatureAndUsesBundledLastKnownGood() async throws {
 		var fixture = try makeSignedCatalogFixture(schemaVersion: 1)
 		var envelope = try JSONDecoder().decode(SignedReleaseNotesCatalogEnvelope.self, from: fixture.envelope)
@@ -2091,6 +2199,24 @@ final class ReleaseNotesPipelineTest: XCTestCase {
 			bundledCatalogData: fixture.bundled
 		).load()
 		XCTAssertEqual(disabled.origin, .bundledFallback(.disabled))
+	}
+
+	func testSignedCatalogClassifiesStreamingSizeLimitAsOversized() async throws {
+		let fixture = try makeSignedCatalogFixture(schemaVersion: 1)
+		let client = SignedReleaseNotesCatalogClient(
+			configuration: .init(
+				isEnabled: true,
+				remoteURL: fixture.url,
+				publicKey: fixture.publicKey,
+				maximumEnvelopeSize: 64 * 1_024
+			),
+			bundledCatalogData: fixture.bundled,
+			loader: OversizedCatalogLoader()
+		)
+
+		let loaded = try await client.load()
+		XCTAssertEqual(loaded.origin, .bundledFallback(.oversized))
+		XCTAssertEqual(loaded.document.definitions.first?.keys, ["bundled-app"])
 	}
 
 	func testSignedCatalogPersistsAndRevalidatesVerifiedRemoteCatalog() async throws {
@@ -2285,7 +2411,7 @@ private struct SignedCatalogFixture {
 private struct StubReleaseNotesLoader: ReleaseNotesHTTPDataLoading {
 	let response: ReleaseNotesFetchResponse
 
-	func load(_ request: URLRequest) async throws -> ReleaseNotesFetchResponse {
+	func load(_ request: URLRequest, maximumResponseSize: Int) async throws -> ReleaseNotesFetchResponse {
 		response
 	}
 }
@@ -2293,7 +2419,7 @@ private struct StubReleaseNotesLoader: ReleaseNotesHTTPDataLoading {
 private struct StubCatalogLoader: ReleaseNotesCatalogHTTPDataLoading {
 	let response: ReleaseNotesFetchResponse
 
-	func load(_ request: URLRequest) async throws -> ReleaseNotesFetchResponse {
+	func load(_ request: URLRequest, maximumResponseSize: Int) async throws -> ReleaseNotesFetchResponse {
 		response
 	}
 }
@@ -2301,8 +2427,14 @@ private struct StubCatalogLoader: ReleaseNotesCatalogHTTPDataLoading {
 private struct OfflineCatalogLoader: ReleaseNotesCatalogHTTPDataLoading {
 	private struct Offline: Error {}
 
-	func load(_ request: URLRequest) async throws -> ReleaseNotesFetchResponse {
+	func load(_ request: URLRequest, maximumResponseSize: Int) async throws -> ReleaseNotesFetchResponse {
 		throw Offline()
+	}
+}
+
+private struct OversizedCatalogLoader: ReleaseNotesCatalogHTTPDataLoading {
+	func load(_ request: URLRequest, maximumResponseSize: Int) async throws -> ReleaseNotesFetchResponse {
+		throw ReleaseNotesCatalogRemoteRejection.oversized
 	}
 }
 

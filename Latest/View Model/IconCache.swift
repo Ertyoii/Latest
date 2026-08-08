@@ -23,12 +23,15 @@ class IconCache {
 	}
 
 	/// The object storing app images.
-	private var cache: NSCache<NSString, NSImage>
+	private let cache: NSCache<NSString, NSImage>
+	private var missingApplicationIcon: NSImage?
 
-	/// Returns a previously decoded icon without scheduling work. Native rows use
-	/// this to avoid spawning a task for every cache hit while they are recycled.
-	func cachedIcon(for app: App) -> NSImage? {
-		cache.object(forKey: cacheKey(for: app))
+	/// Loads an icon immediately for a row that is being materialized. The
+	/// AppKit renderer always had the icon before its cell was displayed; using
+	/// the same contract prevents a first-frame blank while LazyVStack keeps the
+	/// number of materialized rows bounded to the visible viewport.
+	func iconImmediately(for app: App) -> NSImage {
+		loadIcon(for: app)
 	}
 
 	/// Returns an icon after an asynchronous scheduling boundary. SwiftUI tasks
@@ -42,12 +45,20 @@ class IconCache {
 		return loadIcon(for: app)
 	}
 
-	/// Provides the icon for the given app through the given completion handler.
-	func icon(for app: App, with completion: @escaping (NSImage) -> Void) {
-		completion(loadIcon(for: app))
-	}
-
 	private func loadIcon(for app: App) -> NSImage {
+		// Discovery results normally point to real bundles. Fixtures, stale
+		// volumes, and benchmark rows can point at missing paths; asking
+		// NSWorkspace to rediscover the same generic icon for every such path
+		// blocks scrolling and needlessly fills the cache with identical images.
+		guard FileManager.default.fileExists(atPath: app.fileURL.path) else {
+			if let missingApplicationIcon {
+				return missingApplicationIcon
+			}
+			let icon = NSWorkspace.shared.icon(forFile: app.fileURL.path)
+			missingApplicationIcon = icon
+			return icon
+		}
+
 		let cacheKey = cacheKey(for: app)
 
 		if let icon = self.cache.object(forKey: cacheKey) {

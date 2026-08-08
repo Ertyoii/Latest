@@ -20,10 +20,10 @@ private typealias App = Latest.App
 struct MigrationGalleryScenario: Identifiable {
 		enum Surface {
 			case main(DetailState)
-			case locations
-			case updateStateShelf
-			case toolbarStateShelf
-			case sidebar(SidebarImplementation)
+		case locations
+		case updateStateShelf
+		case toolbarStateShelf
+		case sidebar
 	}
 
 	enum DetailState {
@@ -144,30 +144,6 @@ struct MigrationGalleryScenario: Identifiable {
 			size: MigrationGalleryMetrics.minimumWindowSize,
 			colorScheme: .dark,
 			tint: .orange
-		),
-		MigrationGalleryScenario(
-			"sidebar-legacy-light",
-			surface: .sidebar(.legacyTable),
-			size: MigrationGalleryMetrics.sidebarFixtureSize
-		),
-		MigrationGalleryScenario(
-			"sidebar-native-light",
-			surface: .sidebar(.nativeList),
-			size: MigrationGalleryMetrics.sidebarFixtureSize
-		),
-		MigrationGalleryScenario(
-			"sidebar-legacy-dark",
-			surface: .sidebar(.legacyTable),
-			size: MigrationGalleryMetrics.sidebarFixtureSize,
-			colorScheme: .dark,
-			tint: .orange
-		),
-		MigrationGalleryScenario(
-			"sidebar-native-dark",
-			surface: .sidebar(.nativeList),
-			size: MigrationGalleryMetrics.sidebarFixtureSize,
-			colorScheme: .dark,
-			tint: .orange
 		)
 	]
 }
@@ -180,7 +156,7 @@ enum MigrationGalleryMetrics {
 	static let locationsContentSize = CGSize(width: 440, height: 296)
 	static let locationsTableSize = CGSize(width: 400, height: 200)
 	static let sidebarFixtureSize = CGSize(width: sidebarWidth, height: 420)
-	static let appRowHeight: CGFloat = 65
+	static let appRowHeight: CGFloat = 60
 
 	static func sidebarFrame(in size: CGSize) -> CGRect {
 		CGRect(x: 0, y: 0, width: min(sidebarWidth, size.width), height: size.height)
@@ -223,8 +199,8 @@ struct MigrationGalleryView: View {
 			MigrationUpdateStateShelf()
 		case .toolbarStateShelf:
 			MigrationToolbarStateShelf()
-		case .sidebar(let implementation):
-			MigrationSidebarImplementationFixture(implementation: implementation)
+		case .sidebar:
+			MigrationSidebarFixture()
 		}
 	}
 }
@@ -594,6 +570,7 @@ private struct MigrationUpdateActionFixture: View {
 		UpdateActionSurface(
 			app: fixture.app,
 			presentation: fixture.presentation,
+			pausesAnimations: true,
 			performAction: {}
 		)
 	}
@@ -637,12 +614,10 @@ private struct MigrationToolbarStateShelf: View {
 }
 
 @MainActor
-private struct MigrationSidebarImplementationFixture: View {
-	let implementation: SidebarImplementation
+private struct MigrationSidebarFixture: View {
 	@StateObject private var viewModel: UpdatesListViewModel
 
-	init(implementation: SidebarImplementation) {
-		self.implementation = implementation
+	init() {
 		let apps = Self.makeApps()
 		let viewModel = UpdatesListViewModel(snapshot: AppListSnapshot(withApps: apps, filterQuery: nil))
 		viewModel.select(apps.first)
@@ -652,15 +627,10 @@ private struct MigrationSidebarImplementationFixture: View {
 	var body: some View {
 		ZStack {
 			Color(nsColor: .windowBackgroundColor)
-			switch implementation {
-			case .legacyTable:
-				MigrationLegacySidebarRows(snapshot: viewModel.snapshot)
-			case .nativeList:
-				NativeUpdatesList(
-					viewModel: viewModel,
-					showsSupportStatusOverride: true
-				)
-			}
+			NativeUpdatesList(
+				viewModel: viewModel,
+				showsSupportStatusOverride: true
+			)
 		}
 	}
 
@@ -715,96 +685,4 @@ private struct MigrationSidebarImplementationFixture: View {
 		)
 		return App(bundle: bundle, update: .success(update), isIgnored: false)
 	}
-}
-
-private struct MigrationLegacySidebarRows: View {
-	let snapshot: AppListSnapshot
-
-	var body: some View {
-		VStack(spacing: 0) {
-			ForEach(Array(snapshot.entries.enumerated()), id: \.offset) { _, entry in
-				switch entry {
-				case .section(let section):
-					MigrationLegacySectionHeader(section: section)
-						.frame(
-							width: MigrationGalleryMetrics.sidebarWidth,
-							height: VisualMetrics.sectionHeaderHeight
-						)
-				case .app(let app):
-					MigrationLegacyUpdateRow(
-						app: app,
-						isSelected: app.identifier == snapshot.apps.first?.identifier,
-						filterQuery: snapshot.filterQuery
-					)
-						.frame(
-							width: MigrationGalleryMetrics.sidebarWidth,
-							height: VisualMetrics.appRowHeight
-						)
-					}
-				}
-			}
-		.frame(width: MigrationGalleryMetrics.sidebarWidth)
-		.frame(maxHeight: .infinity, alignment: .top)
-		}
-}
-
-private struct MigrationLegacySectionHeader: NSViewRepresentable {
-	let section: AppListSnapshot.Section
-
-	func makeNSView(context: Context) -> LegacyUpdateSectionHeaderContentView {
-		LegacyUpdateSectionHeaderContentView(frame: NSRect(
-			x: 0,
-			y: 0,
-			width: MigrationGalleryMetrics.sidebarWidth,
-			height: VisualMetrics.sectionHeaderHeight
-		))
-	}
-
-	func updateNSView(_ nsView: LegacyUpdateSectionHeaderContentView, context: Context) {
-		nsView.setFrameSize(NSSize(
-			width: MigrationGalleryMetrics.sidebarWidth,
-			height: VisualMetrics.sectionHeaderHeight
-		))
-		nsView.update(section: section)
-		nsView.layoutSubtreeIfNeeded()
-	}
-}
-
-private struct MigrationLegacyUpdateRow: NSViewRepresentable {
-	let app: App
-	let isSelected: Bool
-	let filterQuery: String?
-
-	func makeNSView(context: Context) -> LegacyUpdateRowContentView {
-		LegacyUpdateRowContentView(frame: NSRect(
-			x: 0,
-			y: 0,
-			width: MigrationGalleryMetrics.sidebarWidth,
-			height: VisualMetrics.appRowHeight
-		))
-	}
-
-	func updateNSView(_ nsView: LegacyUpdateRowContentView, context: Context) {
-		nsView.setFrameSize(NSSize(
-			width: MigrationGalleryMetrics.sidebarWidth,
-			height: VisualMetrics.appRowHeight
-		))
-		nsView.update(
-			app: app,
-			isSelected: isSelected,
-			drawsSelectionBackground: true,
-			filterQuery: filterQuery,
-			dateFormatter: Self.dateFormatter,
-			showsSupportStatusOverride: true
-		)
-		nsView.layoutSubtreeIfNeeded()
-	}
-
-	private static let dateFormatter: DateFormatter = {
-		let formatter = DateFormatter()
-		formatter.timeStyle = .none
-		formatter.dateStyle = .short
-		formatter.doesRelativeDateFormatting = true
-		return formatter
-	}()
 }

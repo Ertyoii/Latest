@@ -10,8 +10,8 @@ import AppKit
 import SwiftUI
 
 /// A deliberately narrow bridge for the sidebar-local search control. macOS
-/// SwiftUI's `.searchable` places search in the toolbar, which does not preserve
-/// the accepted sidebar geometry or the tested Cmd-F/Escape focus restoration.
+/// SwiftUI's searchable modifier moves the field into toolbar chrome and does
+/// not preserve the app's established geometry or Escape focus restoration.
 final class UpdateSearchField: NSSearchField {
 	weak var previousFirstResponder: NSResponder?
 
@@ -19,9 +19,6 @@ final class UpdateSearchField: NSSearchField {
 		guard let window else { return }
 		if window.firstResponder !== self,
 		   window.firstResponder !== currentEditor() {
-			// NSTextField instances share their window's field editor. Retaining that
-			// editor would point back at this search field after focus moves, so keep
-			// the control that owned it instead.
 			if let fieldEditor = window.firstResponder as? NSTextView,
 			   let control = fieldEditor.delegate as? NSControl {
 				previousFirstResponder = control

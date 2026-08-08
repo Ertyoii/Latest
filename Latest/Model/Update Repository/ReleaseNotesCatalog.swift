@@ -266,7 +266,7 @@ struct SignedReleaseNotesCatalogEnvelope: Codable, Equatable, Sendable {
 }
 
 protocol ReleaseNotesCatalogHTTPDataLoading: Sendable {
-	func load(_ request: URLRequest) async throws -> ReleaseNotesFetchResponse
+	func load(_ request: URLRequest, maximumResponseSize: Int) async throws -> ReleaseNotesFetchResponse
 }
 
 struct URLSessionReleaseNotesCatalogDataLoader: ReleaseNotesCatalogHTTPDataLoading {
@@ -276,8 +276,22 @@ struct URLSessionReleaseNotesCatalogDataLoader: ReleaseNotesCatalogHTTPDataLoadi
 		self.session = session
 	}
 
-	func load(_ request: URLRequest) async throws -> ReleaseNotesFetchResponse {
-		let (data, response) = try await session.data(for: request)
+	func load(_ request: URLRequest, maximumResponseSize: Int) async throws -> ReleaseNotesFetchResponse {
+		let (bytes, response) = try await session.bytes(for: request)
+		guard response.expectedContentLength <= Int64(maximumResponseSize) else {
+			throw ReleaseNotesCatalogRemoteRejection.oversized
+		}
+
+		var data = Data()
+		if response.expectedContentLength > 0 {
+			data.reserveCapacity(min(Int(response.expectedContentLength), maximumResponseSize))
+		}
+		for try await byte in bytes {
+			guard data.count < maximumResponseSize else {
+				throw ReleaseNotesCatalogRemoteRejection.oversized
+			}
+			data.append(byte)
+		}
 		return ReleaseNotesFetchResponse(data: data, response: response)
 	}
 }
@@ -326,8 +340,13 @@ struct SignedReleaseNotesCatalogClient: Sendable {
 				?? bundle.object(forInfoDictionaryKey: "ReleaseNotesCatalogPublicKey") as? String
 			guard let urlString,
 			      let remoteURL = URL(string: urlString),
+			      remoteURL.scheme?.lowercased() == "https",
+			      remoteURL.host != nil,
+			      remoteURL.user == nil,
+			      remoteURL.password == nil,
 			      let publicKeyString,
-			      let publicKey = Data(base64Encoded: publicKeyString) else {
+			      let publicKey = Data(base64Encoded: publicKeyString),
+			      (try? Curve25519.Signing.PublicKey(rawRepresentation: publicKey)) != nil else {
 				return .disabled
 			}
 
@@ -419,7 +438,12 @@ struct SignedReleaseNotesCatalogClient: Sendable {
 		}
 		let response: ReleaseNotesFetchResponse
 		do {
-			response = try await loader.load(request)
+			response = try await loader.load(
+				request,
+				maximumResponseSize: configuration.maximumEnvelopeSize
+			)
+		} catch let rejection as ReleaseNotesCatalogRemoteRejection {
+			throw rejection
 		} catch {
 			throw ReleaseNotesCatalogRemoteRejection.network
 		}

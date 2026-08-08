@@ -88,6 +88,11 @@ only_testing=(
   "Latest Tests/VersionParserTest/testReleaseNotesMarkupExtractsZedReleasePayloadBeforeVersionNavigation"
   "Latest Tests/VersionParserTest/testReleaseNotesMarkupExtractsRelevantSectionFromHTMLWithoutRendering"
   "Latest Tests/VersionParserTest/testReleaseNotesMarkupExtractsFirstReleaseNotesURLFromStubText"
+  "Latest Tests/VersionParserTest/testEveryCatalogHomebrewTokenProducesAConcreteRoute"
+  "Latest Tests/VersionParserTest/testReleaseNotesSourceCatalogUsesVerifiedVendorReleaseNotePages"
+  "Latest Tests/VersionParserTest/testSignedCatalogAcceptsValidRemoteDocument"
+  "Latest Tests/VersionParserTest/testSignedCatalogClassifiesStreamingSizeLimitAsOversized"
+  "Latest Tests/VersionParserTest/testSignedCatalogPersistsAndRevalidatesVerifiedRemoteCatalog"
   "Latest Tests/ReleaseNotesPipelineTest"
 )
 

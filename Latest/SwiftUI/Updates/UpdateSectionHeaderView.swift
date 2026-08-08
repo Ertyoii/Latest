@@ -8,7 +8,7 @@
 
 import AppKit
 
-final class LegacyUpdateSectionHeaderContentView: NSView {
+final class AppKitUpdateSectionHeaderContentView: NSView {
 	private static let numberFormatter = NumberFormatter()
 	private let titleField = NSTextField(labelWithString: "")
 
@@ -73,8 +73,8 @@ final class LegacyUpdateSectionHeaderContentView: NSView {
 		NSLayoutConstraint.activate([
 			titleField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
 			titleField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -38),
-			titleField.topAnchor.constraint(equalTo: topAnchor, constant: 5),
-			titleField.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -5)
+			titleField.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+			titleField.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4)
 			])
 		}
 }

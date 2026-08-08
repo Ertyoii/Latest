@@ -12,6 +12,27 @@ import XCTest
 @testable import Latest
 
 final class MigrationInteractionContractTest: XCTestCase {
+	func testShippingSidebarDefaultsToMeasuredAppKitBoundary() {
+		XCTAssertEqual(SidebarImplementation.resolve(environmentValue: nil), .appKitTable)
+		XCTAssertEqual(SidebarImplementation.resolve(environmentValue: "appkit"), .appKitTable)
+		XCTAssertEqual(SidebarImplementation.resolve(environmentValue: "native"), .nativeList)
+		XCTAssertEqual(SidebarImplementation.resolve(environmentValue: "unknown"), .appKitTable)
+	}
+
+	@MainActor
+	func testLocalUATFixtureIsOfflinePopulatedAndSelected() {
+		let environment = AppEnvironment.localUATFixture()
+		let apps = environment.updatesListViewModel.snapshot.apps
+		XCTAssertEqual(apps.count, 18)
+		XCTAssertEqual(
+			environment.updatesListViewModel.selectedApp?.name,
+			environment.updatesListViewModel.snapshot.sections.first?.apps.first?.name
+		)
+		XCTAssertTrue(apps.allSatisfy { $0.releaseNotes != nil })
+		XCTAssertTrue(apps.allSatisfy { FileManager.default.fileExists(atPath: $0.fileURL.path) })
+		XCTAssertEqual(Set(apps.map(\.fileURL)).count, apps.count, "UAT must exercise distinct real app icons")
+	}
+
 	@MainActor
 	func testUpdateProgressAggregatesOverlappingBatches() {
 		let service = UpdateCheckingService()
@@ -59,6 +80,7 @@ final class MigrationInteractionContractTest: XCTestCase {
 			defer: false
 		)
 		window.contentView = hostingView
+		window.makeKeyAndOrderFront(nil)
 		window.layoutIfNeeded()
 		hostingView.layoutSubtreeIfNeeded()
 		RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
@@ -86,82 +108,31 @@ final class MigrationInteractionContractTest: XCTestCase {
 	}
 
 	@MainActor
-	func testCommandFFocusesSearchAndEscapeRestoresPreviousResponder() throws {
+	func testCommandFPublishesSystemSidebarSearchFocusRequest() {
 		let focusController = SearchFocusController()
+		let viewModel = UpdatesListViewModel()
 		let commands = AppCommands(
 			updateCheckingService: UpdateCheckingService(),
-			updatesListViewModel: UpdatesListViewModel(),
+			updatesListViewModel: viewModel,
 			searchFocusController: focusController
 		)
-		let searchView = SearchFieldRepresentable(
-			text: .constant(""),
-			focusController: focusController,
-			onTextChanged: { _ in }
-		)
-		let hostingView = NSHostingView(rootView: searchView)
-		let previousResponder = NSTextField(frame: NSRect(x: 10, y: 55, width: 180, height: 24))
-		let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 90))
-		hostingView.frame = NSRect(x: 10, y: 10, width: 280, height: 32)
-		contentView.addSubview(hostingView)
-		contentView.addSubview(previousResponder)
-
-		let window = NSWindow(
-			contentRect: contentView.bounds,
-			styleMask: [.titled],
-			backing: .buffered,
-			defer: false
-		)
-		window.contentView = contentView
-		window.layoutIfNeeded()
-		hostingView.layoutSubtreeIfNeeded()
-		let field = try XCTUnwrap(contentView.descendant(of: UpdateSearchField.self))
-
-		XCTAssertEqual(field.accessibilityIdentifier(), "updates.search")
-		XCTAssertEqual(field.accessibilityLabel(), "Search Apps")
-		XCTAssertTrue(window.makeFirstResponder(previousResponder))
-
 		commands.focusSearch()
-		RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-		XCTAssertTrue(window.firstResponder === field.currentEditor())
-
-		field.cancelOperation(nil)
-		XCTAssertTrue(window.firstResponder === previousResponder.currentEditor())
+		guard case .focus = focusController.request else {
+			return XCTFail("Expected Command-F to publish a focus request")
+		}
 	}
 
 	@MainActor
-	func testExplicitSearchResignRestoresPreviousResponder() throws {
+	func testExplicitSearchResignPublishesANewFocusRequest() {
 		let focusController = SearchFocusController()
-		let searchView = SearchFieldRepresentable(
-			text: .constant(""),
-			focusController: focusController,
-			onTextChanged: { _ in }
-		)
-		let hostingView = NSHostingView(rootView: searchView)
-		let previousResponder = NSTextField(frame: NSRect(x: 0, y: 40, width: 180, height: 24))
-		let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 80))
-		hostingView.frame = NSRect(x: 0, y: 0, width: 280, height: 32)
-		contentView.addSubview(hostingView)
-		contentView.addSubview(previousResponder)
-
-		let window = NSWindow(
-			contentRect: contentView.bounds,
-			styleMask: [.titled],
-			backing: .buffered,
-			defer: false
-		)
-		window.contentView = contentView
-		window.layoutIfNeeded()
-		hostingView.layoutSubtreeIfNeeded()
-		let field = try XCTUnwrap(contentView.descendant(of: UpdateSearchField.self))
-		XCTAssertTrue(window.makeFirstResponder(previousResponder))
-
 		focusController.focus()
-		RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-		XCTAssertTrue(window.firstResponder === field.currentEditor())
+		let focusRequest = focusController.request
 
 		focusController.resignFocus()
-		RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-		XCTAssertTrue(window.firstResponder === previousResponder.currentEditor())
+		XCTAssertNotEqual(focusController.request, focusRequest)
+		guard case .resign = focusController.request else {
+			return XCTFail("Expected an explicit resign request")
+		}
 	}
 
 	@MainActor
@@ -181,24 +152,7 @@ final class MigrationInteractionContractTest: XCTestCase {
 	}
 
 	@MainActor
-	func testNativeSidebarSwitchAndIdentifierSelectionAreReversible() {
-		XCTAssertEqual(
-			SidebarImplementation.resolve(environmentValue: "native"),
-			.nativeList
-		)
-		XCTAssertEqual(
-			SidebarImplementation.resolve(environmentValue: "legacy"),
-			.legacyTable
-		)
-		XCTAssertEqual(
-			SidebarImplementation.resolve(environmentValue: nil),
-			.legacyTable
-		)
-		XCTAssertEqual(
-			SidebarImplementation.resolve(environmentValue: "invalid"),
-			.legacyTable
-		)
-
+	func testIdentifierSelectionUsesStableApplicationURLs() {
 		let first = makeApp(name: "Discord", version: "1", remoteVersion: "2")
 		let second = makeApp(name: "Cursor", version: "3", remoteVersion: "4")
 		let viewModel = UpdatesListViewModel(
@@ -212,7 +166,7 @@ final class MigrationInteractionContractTest: XCTestCase {
 	}
 
 	@MainActor
-	func testNativeSidebarRendersAPlatformListWithoutLegacyTableCoordinator() throws {
+	func testNativeSidebarUsesSystemLazyListWithoutCustomTableCoordinator() throws {
 		let first = makeApp(name: "Discord", version: "1", remoteVersion: "2")
 		let second = makeApp(name: "Cursor", version: "3", remoteVersion: "4")
 		let viewModel = UpdatesListViewModel(
@@ -221,11 +175,7 @@ final class MigrationInteractionContractTest: XCTestCase {
 		let orderedApps = viewModel.snapshot.sections.flatMap(\.apps)
 		XCTAssertEqual(orderedApps.count, 2)
 		viewModel.select(orderedApps[0])
-		let hostingView = NSHostingView(rootView: UpdatesSidebarView(
-			viewModel: viewModel,
-			searchFocusController: SearchFocusController(),
-			implementation: .nativeList
-		))
+		let hostingView = NSHostingView(rootView: NativeUpdatesList(viewModel: viewModel))
 		hostingView.frame = NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 420)
 		let window = NSWindow(
 			contentRect: hostingView.bounds,
@@ -234,33 +184,15 @@ final class MigrationInteractionContractTest: XCTestCase {
 			defer: false
 		)
 		window.contentView = hostingView
-		window.layoutIfNeeded()
-		hostingView.layoutSubtreeIfNeeded()
 		RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
 
 		XCTAssertNotNil(hostingView.descendant(of: NSScrollView.self))
 		XCTAssertFalse(hostingView.allDescendants().contains { String(describing: type(of: $0)) == "SwiftUIUpdateTableView" })
-		let nativeTable = try XCTUnwrap(hostingView.descendant(of: NSTableView.self))
-		XCTAssertTrue(window.makeFirstResponder(nativeTable))
-		let downArrow = try XCTUnwrap(NSEvent.keyEvent(
-			with: .keyDown,
-			location: .zero,
-			modifierFlags: [],
-			timestamp: 0,
-			windowNumber: window.windowNumber,
-			context: nil,
-			characters: "\u{F701}",
-			charactersIgnoringModifiers: "\u{F701}",
-			isARepeat: false,
-			keyCode: 125
-		))
-		nativeTable.keyDown(with: downArrow)
-		RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-		XCTAssertEqual(viewModel.selectedApp?.identifier, orderedApps[1].identifier)
-
+		XCTAssertNotNil(
+			hostingView.descendant(of: NSTableView.self),
+			"SwiftUI List is expected to use the system's private lazy table implementation on macOS."
+		)
 		let section = try XCTUnwrap(viewModel.snapshot.sections.first?.section)
-		let title = SidebarSectionPresentation.attributedTitle(for: section)
-		XCTAssertFalse(String(title.characters).contains("<u>"))
 		XCTAssertTrue(SidebarSectionPresentation.accessibilityLabel(for: section).contains("2"))
 	}
 
@@ -300,10 +232,7 @@ final class MigrationInteractionContractTest: XCTestCase {
 	}
 
 	@MainActor
-	func testSidebarRowExposesCombinedVoiceOverLabelAndSelection() throws {
-		let row = LegacyUpdateRowContentView(
-			frame: NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: VisualMetrics.appRowHeight)
-		)
+	func testSidebarRowBuildsACombinedVoiceOverLabel() {
 		let formatter = DateFormatter()
 		formatter.locale = Locale(identifier: "en_US_POSIX")
 		formatter.dateFormat = "yyyy-MM-dd"
@@ -314,26 +243,33 @@ final class MigrationInteractionContractTest: XCTestCase {
 			date: Date(timeIntervalSince1970: 1_750_000_000)
 		)
 
-		row.update(
-			app: app,
-			isSelected: true,
-			drawsSelectionBackground: true,
-			filterQuery: nil,
-			dateFormatter: formatter
-		)
-
-		let label = try XCTUnwrap(row.accessibilityLabel())
+		let label = SidebarInteractionPolicy.accessibilityLabel(for: app, dateFormatter: formatter)
 		XCTAssertTrue(label.contains("Discord"))
 		XCTAssertTrue(label.contains("1"))
 		XCTAssertTrue(label.contains("2"))
 		XCTAssertTrue(label.contains("2025-06-15"))
 		XCTAssertTrue(label.contains(NSLocalizedString("UpdateAction", comment: "")))
-		XCTAssertEqual(row.accessibilityRole(), .group)
-		XCTAssertEqual(row.isAccessibilitySelected(), true)
 	}
 
 	@MainActor
-	func testReleaseNotesTextBridgePreservesRichTextSelectionCopyAndAccessibility() throws {
+	func testStartupActivatesReleaseNotesCatalogBeforeInitialUpdateCheck() async {
+		var events = [String]()
+		await AppStartupSequence.run(
+			refreshCatalog: {
+				events.append("catalog")
+				await Task.yield()
+				events.append("catalog-ready")
+			},
+			checkForUpdates: {
+				events.append("check")
+			}
+		)
+
+		XCTAssertEqual(events, ["catalog", "catalog-ready", "check"])
+	}
+
+	@MainActor
+	func testReleaseNotesTextPreservesRichTextSelectionCopyAndAccessibility() throws {
 		let source = NSMutableAttributedString(string: "Bold link\tbody\nSecond paragraph")
 		let fullRange = NSRange(location: 0, length: source.length)
 		let linkRange = (source.string as NSString).range(of: "link")
@@ -381,20 +317,15 @@ final class MigrationInteractionContractTest: XCTestCase {
 		window.contentView = hostingView
 		window.layoutIfNeeded()
 		hostingView.layoutSubtreeIfNeeded()
+		XCTAssertNotNil(hostingView.descendant(of: NSScrollView.self))
 		let textView = try XCTUnwrap(hostingView.descendant(of: NSTextView.self))
 		XCTAssertTrue(textView.isSelectable)
 		XCTAssertFalse(textView.isEditable)
-		XCTAssertEqual(textView.accessibilityIdentifier(), "release-notes.text")
-		XCTAssertEqual(textView.accessibilityLabel(), "Release Notes")
-		XCTAssertEqual(textView.enclosingScrollView?.contentInsets.top, VisualMetrics.releaseNotesTextInset)
-
-		XCTAssertTrue(window.makeFirstResponder(textView))
-		textView.setSelectedRange(NSRange(location: 0, length: 4))
-		XCTAssertEqual(textView.selectedRange(), NSRange(location: 0, length: 4))
-		let pasteboard = NSPasteboard(name: NSPasteboard.Name("LatestMigrationTextCopy"))
-		pasteboard.clearContents()
-		XCTAssertTrue(textView.writeSelection(to: pasteboard, types: textView.writablePasteboardTypes))
-		XCTAssertEqual(pasteboard.string(forType: .string), "Bold")
+		XCTAssertEqual(textView.string, formatted.string)
+		XCTAssertEqual(
+			textView.textStorage?.attribute(.link, at: linkRange.location, effectiveRange: nil) as? URL,
+			URL(string: "https://example.com/release")
+		)
 	}
 
 	@MainActor

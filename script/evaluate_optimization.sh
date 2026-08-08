@@ -14,8 +14,8 @@ usage() {
 usage: script/evaluate_optimization.sh [--full] [--installed] [--homebrew-cask PATH|-]
 
 Fast mode runs focused release-note tests plus Release artifact/security checks.
-Full mode also runs the complete test suite, complexity budgets, and both sidebar
-implementations through the native-cutover performance/correctness gate.
+Full mode also runs the complete test suite, complexity budgets, and the
+shipping AppKit parity sidebar through latency, memory, and runtime-warning gates.
 EOF
 }
 
@@ -81,23 +81,9 @@ if [[ "$MODE" == "full" ]]; then
   echo "EVALUATION phase=complexity_budgets"
   "$ROOT_DIR/script/benchmark_complexity.sh"
 
-  legacy_label="evaluation-legacy"
-  native_label="evaluation-native"
-
-  echo
-  echo "EVALUATION phase=migration_legacy"
-  "$ROOT_DIR/script/benchmark_migration.sh" "$legacy_label" legacy
-
-  echo
-  echo "EVALUATION phase=migration_native"
-  "$ROOT_DIR/script/benchmark_migration.sh" "$native_label" native
-
-  echo
-  echo "EVALUATION phase=native_cutover_gate"
-  "$ROOT_DIR/script/compare_migration_benchmarks.sh" --report-only \
-    "$BUILD_DIR/migration-benchmark-$legacy_label.txt" \
-    "$BUILD_DIR/migration-benchmark-$native_label.txt" \
-    "$BUILD_DIR/migration-benchmark-$native_label.log"
+	echo
+	echo "EVALUATION phase=appkit_sidebar_latency_memory_and_runtime_gates"
+	"$ROOT_DIR/script/benchmark_migration.sh" "evaluation-appkit" appkit
 fi
 
 echo

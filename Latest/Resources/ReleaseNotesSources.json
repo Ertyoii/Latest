@@ -497,10 +497,126 @@
     "versionPrefix": "exact"
   },
   {
+    "keys": ["sidenotes", "comapptoriumsidenotes", "comapptoriumsidenotespaddle"],
+    "homebrewTokens": ["sidenotes"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.apptorium.com/sidenotes/release-notes/{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["elgatowavelink", "comelgatowavelink"],
+    "homebrewTokens": ["elgato-wave-link"],
+    "kind": "changelog",
+    "urlTemplate": "https://help.elgato.com/hc/en-us/sections/4913442828941-Wave-Link-Release-Notesverf%C3%BCgbar",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["appcleaner9", "comnektonyappcleanerpro"],
+    "homebrewTokens": ["app-cleaner"],
+    "kind": "changelog",
+    "urlTemplate": "https://nektony.com/mac-app-cleaner/download",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["diskexpert6", "comnektonydiskexpertsii"],
+    "homebrewTokens": ["disk-expert"],
+    "kind": "changelog",
+    "urlTemplate": "https://nektony.com/disk-expert/download",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["duplicatefilefinder9", "comnektonyduplicatefilefindersii"],
+    "homebrewTokens": ["duplicate-file-finder"],
+    "kind": "changelog",
+    "urlTemplate": "https://nektony.com/duplicate-finder-free/download",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["memorycleaner5", "comnektonymemorycleanersii"],
+    "homebrewTokens": ["memory-cleaner"],
+    "kind": "changelog",
+    "urlTemplate": "https://nektony.com/memory-cleaner/download",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["navicatpremium", "comnavicatnavicatpremium"],
+    "homebrewTokens": ["navicat-premium"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.navicat.com/en/products/navicat-premium-release-note",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["navicatformysql", "comnavicatnavicatformysql"],
+    "homebrewTokens": ["navicat-for-mysql"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.navicat.com/en/products/navicat-for-mysql-release-note",
+    "versionPrefix": "exact"
+  },
+  {
     "keys": ["istatmenus", "comegomenuistatmenus"],
     "homebrewTokens": ["istat-menus", "istat-menus@5", "istat-menus@6"],
     "kind": "changelog",
     "urlTemplate": "https://weather.bjango.com/mac/istatmenus/versionhistory/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["teacode", "comapptoriumteacode", "comapptoriumteacodepaddle"],
+    "homebrewTokens": ["teacode"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.apptorium.com/teacode/release-notes/{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["workspaces", "comapptoriumworkspaces", "comapptoriumworkspacespaddle"],
+    "homebrewTokens": ["workspaces"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.apptorium.com/workspaces/release-notes/{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["windowkeys", "comapptoriumwindowkeys", "comapptoriumwindowkeyspaddle"],
+    "homebrewTokens": ["windowkeys"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.apptorium.com/windowkeys/release-notes/{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["expressions", "comapptoriumexpressions", "comapptoriumexpressionspaddle"],
+    "homebrewTokens": ["expressions"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.apptorium.com/expressions/release-notes/{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["screenfocus", "comapptoriumscreenfocus", "comapptoriumscreenfocuspaddle"],
+    "homebrewTokens": ["screenfocus"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.apptorium.com/screenfocus/release-notes/{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["eclipse", "eclipseide", "orgeclipseeclipse", "orgeclipseplatformide"],
+    "homebrewTokens": [
+      "eclipse-cpp",
+      "eclipse-dsl",
+      "eclipse-ide",
+      "eclipse-installer",
+      "eclipse-java",
+      "eclipse-jee",
+      "eclipse-modeling",
+      "eclipse-php",
+      "eclipse-platform",
+      "eclipse-rcp"
+    ],
+    "kind": "changelog",
+    "urlTemplate": "https://www.eclipse.org/eclipse/news/{version}/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["parallelsdesktop", "comparallelsdesktopconsole"],
+    "homebrewTokens": ["parallels"],
+    "kind": "changelog",
+    "urlTemplate": "https://kb.parallels.com/en/131014",
     "versionPrefix": "exact"
   }
 ]

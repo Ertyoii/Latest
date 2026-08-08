@@ -35,8 +35,20 @@ struct LatestApplication: SwiftUI.App {
 	@NSApplicationDelegateAdaptor(ApplicationLifecycleDelegate.self)
 	private var lifecycleDelegate
 
-	@StateObject private var environment = AppEnvironment.live()
+	@StateObject private var environment: AppEnvironment
 	@StateObject private var appUpdateController = AppUpdateController()
+	private let startsLiveServices: Bool
+
+	init() {
+		#if DEBUG
+		let usesLocalUATFixture = ProcessInfo.processInfo.environment["LATEST_LOCAL_UAT_FIXTURE"] == "1"
+		_environment = StateObject(wrappedValue: usesLocalUATFixture ? .localUATFixture() : .live())
+		startsLiveServices = !usesLocalUATFixture
+		#else
+		_environment = StateObject(wrappedValue: .live())
+		startsLiveServices = true
+		#endif
+	}
 
 	var body: some Scene {
 		Window("Latest", id: "main") {
@@ -46,7 +58,9 @@ struct LatestApplication: SwiftUI.App {
 					minHeight: VisualMetrics.mainWindowMinHeight
 				)
 				.onAppear {
-					environment.start()
+					if startsLiveServices {
+						environment.start()
+					}
 				}
 				.onDisappear {
 					environment.stop()
@@ -75,28 +89,22 @@ struct LatestApplication: SwiftUI.App {
 
 struct LatestRootView: View {
 	let environment: AppEnvironment
-	let sidebarImplementation: SidebarImplementation
 
 	@ObservedObject private var updatesViewModel: UpdatesListViewModel
 	@ObservedObject private var updateCheckingService: UpdateCheckingService
-	init(
-		environment: AppEnvironment,
-		sidebarImplementation: SidebarImplementation = .runtimeDefault
-	) {
+	@State private var columnVisibility = MainWindowSidebarPolicy.defaultVisibility
+	init(environment: AppEnvironment) {
 		self.environment = environment
-		self.sidebarImplementation = sidebarImplementation
 		_updatesViewModel = ObservedObject(wrappedValue: environment.updatesListViewModel)
 		_updateCheckingService = ObservedObject(wrappedValue: environment.updateCheckingService)
 	}
 
 	var body: some View {
-		NavigationSplitView(columnVisibility: MainWindowSidebarPolicy.columnVisibility) {
+		NavigationSplitView(columnVisibility: $columnVisibility) {
 			UpdatesSidebarView(
 				viewModel: updatesViewModel,
-				searchFocusController: environment.searchFocusController,
-				implementation: sidebarImplementation
+				searchFocusController: environment.searchFocusController
 			)
-			.toolbar(removing: .sidebarToggle)
 			.navigationSplitViewColumnWidth(
 				min: VisualMetrics.sidebarIdealWidth,
 				ideal: VisualMetrics.sidebarIdealWidth,
@@ -134,9 +142,7 @@ struct LatestRootView: View {
 
 @MainActor
 enum MainWindowSidebarPolicy {
-	static var columnVisibility: Binding<NavigationSplitViewVisibility> {
-		.constant(.all)
-	}
+	static let defaultVisibility = NavigationSplitViewVisibility.all
 }
 
 /// Applies the window behavior SwiftUI does not currently expose. System-owned

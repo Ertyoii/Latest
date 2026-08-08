@@ -165,13 +165,27 @@ struct UpdateActionView: View {
 struct UpdateActionSurface: View {
 	let app: App
 	let presentation: UpdateActionPresentation
+	let pausesAnimations: Bool
 	let performAction: () -> Void
+
+	init(
+		app: App,
+		presentation: UpdateActionPresentation,
+		pausesAnimations: Bool = false,
+		performAction: @escaping () -> Void
+	) {
+		self.app = app
+		self.presentation = presentation
+		self.pausesAnimations = pausesAnimations
+		self.performAction = performAction
+	}
 
 	var body: some View {
 		VStack(spacing: 5) {
 			UpdateActionControl(
 				appName: app.name,
 				presentation: presentation,
+				pausesAnimations: pausesAnimations,
 				performAction: performAction
 			)
 				.frame(
@@ -199,9 +213,18 @@ struct UpdateActionSurface: View {
 
 @MainActor
 enum UpdateActionVisualStyle {
-	// SwiftUI proposes a half-point-aligned representable frame here. A quarter-
-	// point inset gives the AppKit cell the same integral raster bounds as the
-	// former Auto Layout host without changing the 59pt hit target.
+	static let backgroundColor = NSColor(
+		srgbRed: 0.9488552213,
+		green: 0.9487094283,
+		blue: 0.9693081975,
+		alpha: 1
+	)
+	static let highlightedBackgroundColor = NSColor(
+		srgbRed: 0.7995074391,
+		green: 0.8113409281,
+		blue: 0.8403512836,
+		alpha: 1
+	)
 	static let capsuleHorizontalInset: CGFloat = 0.25
 	static let progressDiameter: CGFloat = 20
 	static let progressLineWidth: CGFloat = 2.5
@@ -212,6 +235,7 @@ enum UpdateActionVisualStyle {
 private struct UpdateActionControl: View {
 	let appName: String
 	let presentation: UpdateActionPresentation
+	let pausesAnimations: Bool
 	let performAction: () -> Void
 
 	@ViewBuilder
@@ -230,7 +254,7 @@ private struct UpdateActionControl: View {
 				performAction: performAction
 			)
 		case .waiting(let status):
-			UpdateActionIndeterminateIndicator()
+			UpdateActionIndeterminateIndicator(pausesAnimations: pausesAnimations)
 				.help(status)
 				.accessibilityLabel(status)
 		case .progress(let fraction, let status):
@@ -259,9 +283,9 @@ private struct UpdateActionControl: View {
 	}
 }
 
-/// A drawing-only AppKit bridge for the app's long-standing action capsule.
-/// SwiftUI owns the operation state and action; this wrapper retains the exact
-/// title/image rasterization, pressed color, and hit geometry of UpdateButtonCell.
+/// Narrow public-AppKit drawing bridge for the established action capsule.
+/// SwiftUI continues to own state and actions; AppKit is used only for the
+/// reference title, symbol, pill, and pressed-state rasterization.
 private struct UpdateActionCapsuleButton: NSViewRepresentable {
 	enum Content {
 		case title(String)
@@ -277,13 +301,12 @@ private struct UpdateActionCapsuleButton: NSViewRepresentable {
 	}
 
 	func makeNSView(context: Context) -> CapsuleHostView {
-		let button = UpdateButton(frame: .zero)
-		button.cell = UpdateButtonCell()
+		let button = PixelMatchedActionButton(frame: .zero)
+		button.cell = PixelMatchedActionButtonCell()
 		button.target = context.coordinator
 		button.action = #selector(Coordinator.performAction(_:))
 		button.isBordered = false
-		button.contentTintColor = UpdateButton.Style.tintColor
-		button.showActionButton = true
+		button.contentTintColor = .controlAccentColor
 		configure(button)
 		return CapsuleHostView(button: button)
 	}
@@ -293,9 +316,8 @@ private struct UpdateActionCapsuleButton: NSViewRepresentable {
 		configure(hostView.button)
 	}
 
-	private func configure(_ button: UpdateButton) {
-		button.backgroundColor = UpdateButton.Style.backgroundColor
-		button.contentCell.contentType = .button
+	private func configure(_ button: PixelMatchedActionButton) {
+		button.backgroundColor = UpdateActionVisualStyle.backgroundColor
 		button.setAccessibilityLabel(accessibilityLabel)
 		switch content {
 		case .title(let title):
@@ -309,9 +331,9 @@ private struct UpdateActionCapsuleButton: NSViewRepresentable {
 
 	@MainActor
 	final class CapsuleHostView: NSView {
-		let button: UpdateButton
+		let button: PixelMatchedActionButton
 
-		init(button: UpdateButton) {
+		init(button: PixelMatchedActionButton) {
 			self.button = button
 			super.init(frame: .zero)
 			addSubview(button)
@@ -324,10 +346,7 @@ private struct UpdateActionCapsuleButton: NSViewRepresentable {
 
 		override func layout() {
 			super.layout()
-			button.frame = bounds.insetBy(
-				dx: UpdateActionVisualStyle.capsuleHorizontalInset,
-				dy: 0
-			)
+			button.frame = bounds.insetBy(dx: UpdateActionVisualStyle.capsuleHorizontalInset, dy: 0)
 		}
 	}
 
@@ -345,9 +364,62 @@ private struct UpdateActionCapsuleButton: NSViewRepresentable {
 	}
 }
 
+@MainActor
+private final class PixelMatchedActionButton: NSButton {
+	var backgroundColor = UpdateActionVisualStyle.backgroundColor {
+		didSet { needsDisplay = true }
+	}
+}
+
+private final class PixelMatchedActionButtonCell: NSButtonCell {
+	override func highlight(_ flag: Bool, withFrame cellFrame: NSRect, in controlView: NSView) {
+		super.highlight(flag, withFrame: cellFrame, in: controlView)
+		guard let button = controlView as? PixelMatchedActionButton else { return }
+		button.backgroundColor = flag
+			? UpdateActionVisualStyle.highlightedBackgroundColor
+			: UpdateActionVisualStyle.backgroundColor
+	}
+
+	override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
+		guard let button = controlView as? PixelMatchedActionButton else { return }
+		let radius = cellFrame.height / 2
+		button.backgroundColor.setFill()
+		NSBezierPath(roundedRect: cellFrame, xRadius: radius, yRadius: radius).fill()
+		super.drawInterior(withFrame: cellFrame, in: controlView)
+	}
+
+	override func drawTitle(
+		_ title: NSAttributedString,
+		withFrame frame: NSRect,
+		in controlView: NSView
+	) -> NSRect {
+		let string = NSMutableAttributedString(attributedString: title)
+		let range = NSRange(location: 0, length: string.length)
+		string.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: range)
+		let pointSize = font?.pointSize ?? NSFont.systemFontSize
+		string.addAttribute(
+			.font,
+			value: NSFont.systemFont(ofSize: pointSize - 1, weight: .medium),
+			range: range
+		)
+		var adjustedFrame = frame
+		adjustedFrame.origin.y -= 1
+		return super.drawTitle(string, withFrame: adjustedFrame, in: controlView)
+	}
+
+	override func drawImage(_ image: NSImage, withFrame frame: NSRect, in controlView: NSView) {
+		var adjustedFrame = frame
+		adjustedFrame.origin.y -= 1
+		super.drawImage(image, withFrame: adjustedFrame, in: controlView)
+	}
+}
+
 private struct UpdateActionIndeterminateIndicator: View {
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	let pausesAnimations: Bool
+
 	var body: some View {
-		TimelineView(.animation) { context in
+		TimelineView(.animation(paused: reduceMotion || pausesAnimations)) { context in
 			Circle()
 				.trim(from: 0, to: 0.75)
 				.stroke(
@@ -357,7 +429,9 @@ private struct UpdateActionIndeterminateIndicator: View {
 						lineCap: .round
 					)
 				)
-				.rotationEffect(.degrees(context.date.timeIntervalSinceReferenceDate * 360))
+				.rotationEffect(.degrees(
+					reduceMotion || pausesAnimations ? 90 : context.date.timeIntervalSinceReferenceDate * 360
+				))
 		}
 		.frame(
 			width: UpdateActionVisualStyle.progressDiameter,

@@ -6,6 +6,8 @@
 //  Copyright © 2022 Max Langer. All rights reserved.
 //
 
+import Foundation
+
 /// Describes the contents of the app list.
 ///
 /// This structure supports the following states:
@@ -45,7 +47,8 @@ struct AppListSnapshot {
 		apps: [App],
 		filterQuery: String?,
 		preparedSections: PreparedSections,
-		appIdentifiers: Set<App.Bundle.Identifier>
+		appIdentifiers: Set<App.Bundle.Identifier>,
+		appsByIdentifier: [App.Bundle.Identifier: App]
 	) {
 		self.filterQuery = filterQuery
 		self.apps = apps
@@ -56,7 +59,7 @@ struct AppListSnapshot {
 		self.entries = entries
 		self.entryIndexesByAppIdentifier = Self.entryIndexesByAppIdentifier(entries)
 		self.appIdentifiers = appIdentifiers
-		self.appsByIdentifier = Dictionary(apps.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
+		self.appsByIdentifier = appsByIdentifier
 	}
 	
 	/// Returns a new snapshot containing an updated filter query.
@@ -70,7 +73,8 @@ struct AppListSnapshot {
 			apps: apps,
 			filterQuery: filterQuery,
 			preparedSections: preparedSections,
-			appIdentifiers: appIdentifiers
+			appIdentifiers: appIdentifiers,
+			appsByIdentifier: appsByIdentifier
 		)
 	}
 	
@@ -273,28 +277,24 @@ extension AppListSnapshot {
 	
 	/// Defines one entry in the filtered update.
 	enum Entry: Equatable, Hashable {
-		
 		/// Represents one app in the list.
 		case app(App)
 		
 		/// Represents one section header in the list.
 		case section(Section)
-		
+
+		/// Stable identity comparison used by the AppKit table diff. Content
+		/// changes are handled separately so unchanged rows are not rebuilt.
 		func isSimilar(to entry: Entry) -> Bool {
-			switch self {
-			case .app(let app):
-				if case .app(let other) = entry {
-					return app.identifier == other.identifier
-				}
-			case .section(let section):
-				if case .section(let other) = entry {
-					return section.title == other.title
-				}
+			switch (self, entry) {
+			case (.app(let app), .app(let other)):
+				app.identifier == other.identifier
+			case (.section(let section), .section(let other)):
+				section.title == other.title
+			default:
+				false
 			}
-			
-			return false
 		}
-		
 	}
 	
 	/// A section used for grouping multiple results.

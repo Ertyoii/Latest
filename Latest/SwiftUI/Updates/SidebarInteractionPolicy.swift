@@ -8,9 +8,8 @@
 
 import Foundation
 
-/// Behavior shared by the current table bridge and the reversible native List.
-/// Keeping these decisions independent of either renderer makes clicked-vs-selected
-/// semantics, keyboard movement, and action availability directly testable.
+/// Renderer-independent sidebar behavior. Keeping these decisions outside the
+/// view makes keyboard movement and action availability directly testable.
 @MainActor
 struct SidebarInteractionPolicy {
 	enum Movement {

@@ -55,7 +55,7 @@ extension UpdateRepository {
 		private final class LazyMetadata: Sendable {
 			private enum ReleaseNotesState: Sendable {
 				case uninitialized
-				case value(App.Update.ReleaseNotes?)
+				case value(catalogRevision: UInt64, App.Update.ReleaseNotes?)
 			}
 
 			private struct State: Sendable {
@@ -100,12 +100,14 @@ extension UpdateRepository {
 
 			var releaseNotes: App.Update.ReleaseNotes? {
 				state.withLock { state in
-					if case .value(let releaseNotes) = state.releaseNotes {
+					let catalogRevision = ReleaseNotesSourceCatalog.revision
+					if case .value(let cachedRevision, let releaseNotes) = state.releaseNotes,
+					   cachedRevision == catalogRevision {
 						return releaseNotes
 					}
 
 					guard !names.isEmpty else {
-						state.releaseNotes = .value(nil)
+						state.releaseNotes = .value(catalogRevision: catalogRevision, nil)
 						return nil
 					}
 
@@ -118,7 +120,7 @@ extension UpdateRepository {
 					}
 
 					let releaseNotes = makeReleaseNotes(version: version)
-					state.releaseNotes = .value(releaseNotes)
+					state.releaseNotes = .value(catalogRevision: catalogRevision, releaseNotes)
 					return releaseNotes
 				}
 			}
@@ -315,6 +317,11 @@ enum ReleaseNotesSourceCatalog {
 		}
 	}
 
+	private struct State: Sendable {
+		var index: Index
+		var revision: UInt64
+	}
+
 	private static let logger = Logger(
 		subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
 		category: "ReleaseNotesCatalog"
@@ -326,20 +333,28 @@ enum ReleaseNotesSourceCatalog {
 		}
 		return data
 	}()
-	private static let index = Mutex<Index>({
+	private static let state = Mutex<State>({
 		guard let document = try? ReleaseNotesCatalogCodec.decodeBundled(bundledData) else {
-			return Index(document: ReleaseNotesCatalogDocument(
-				schemaVersion: ReleaseNotesCatalogDocument.supportedSchemaVersion,
-				definitions: []
-			))
+			return State(
+				index: Index(document: ReleaseNotesCatalogDocument(
+					schemaVersion: ReleaseNotesCatalogDocument.supportedSchemaVersion,
+					definitions: []
+				)),
+				revision: 0
+			)
 		}
-		return Index(document: document)
+		return State(index: Index(document: document), revision: 0)
 	}())
 
-	static func refresh() async {
+	static var revision: UInt64 {
+		state.withLock { $0.revision }
+	}
+
+	@discardableResult
+	static func refresh() async -> UInt64 {
 		guard !bundledData.isEmpty else {
 			logger.error("Bundled release-notes catalog is unavailable")
-			return
+			return revision
 		}
 
 		do {
@@ -348,20 +363,24 @@ enum ReleaseNotesSourceCatalog {
 				bundledCatalogData: bundledData,
 				cache: .live()
 			).load()
-			index.withLock { index in
-				index = Index(document: loaded.document)
+			let revision = state.withLock { state in
+				state.index = Index(document: loaded.document)
+				state.revision &+= 1
+				return state.revision
 			}
 			logger.info(
-				"Activated release-notes catalog origin=\(String(describing: loaded.origin), privacy: .public) definitions=\(loaded.document.definitions.count, privacy: .public)"
+				"Activated release-notes catalog origin=\(String(describing: loaded.origin), privacy: .public) definitions=\(loaded.document.definitions.count, privacy: .public) revision=\(revision, privacy: .public)"
 			)
+			return revision
 		} catch {
 			logger.error("Could not load release-notes catalog: \(error.localizedDescription, privacy: .public)")
+			return revision
 		}
 	}
 
 	static var catalogHomebrewTokens: [String] {
-		index.withLock { index in
-			index.definitions.flatMap(\.homebrewTokens)
+		state.withLock { state in
+			state.index.definitions.flatMap(\.homebrewTokens)
 		}
 	}
 
@@ -395,8 +414,8 @@ enum ReleaseNotesSourceCatalog {
 	}
 
 	private static func releaseNotes(forKey key: String, version: Version) -> App.Update.ReleaseNotes? {
-		let definition = index.withLock { index in
-			index.definitionsByKey[key]
+		let definition = state.withLock { state in
+			state.index.definitionsByKey[key]
 		}
 		guard let definition else { return nil }
 		guard !definition.capabilities.contains(.disabled) else { return nil }

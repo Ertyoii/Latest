@@ -287,7 +287,7 @@ struct ReleaseNotesFetchResponse: Sendable {
 }
 
 protocol ReleaseNotesHTTPDataLoading: Sendable {
-	func load(_ request: URLRequest) async throws -> ReleaseNotesFetchResponse
+	func load(_ request: URLRequest, maximumResponseSize: Int) async throws -> ReleaseNotesFetchResponse
 }
 
 struct URLSessionReleaseNotesHTTPDataLoader: ReleaseNotesHTTPDataLoading {
@@ -297,8 +297,22 @@ struct URLSessionReleaseNotesHTTPDataLoader: ReleaseNotesHTTPDataLoading {
 		self.session = session
 	}
 
-	func load(_ request: URLRequest) async throws -> ReleaseNotesFetchResponse {
-		let (data, response) = try await session.data(for: request)
+	func load(_ request: URLRequest, maximumResponseSize: Int) async throws -> ReleaseNotesFetchResponse {
+		let (bytes, response) = try await session.bytes(for: request)
+		if response.expectedContentLength > Int64(maximumResponseSize) {
+			throw ReleaseNotesFetchError.oversized
+		}
+
+		var data = Data()
+		if response.expectedContentLength > 0 {
+			data.reserveCapacity(min(Int(response.expectedContentLength), maximumResponseSize))
+		}
+		for try await byte in bytes {
+			guard data.count < maximumResponseSize else {
+				throw ReleaseNotesFetchError.oversized
+			}
+			data.append(byte)
+		}
 		return ReleaseNotesFetchResponse(data: data, response: response)
 	}
 }
@@ -329,7 +343,7 @@ struct ReleaseNotesFetcher: Sendable {
 		var request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 6)
 		request.setValue(accept, forHTTPHeaderField: "Accept")
 		request.setValue("Latest", forHTTPHeaderField: "User-Agent")
-		let result = try await loader.load(request)
+		let result = try await loader.load(request, maximumResponseSize: maximumResponseSize)
 
 		if let response = result.response as? HTTPURLResponse {
 			guard (200..<400).contains(response.statusCode) else {

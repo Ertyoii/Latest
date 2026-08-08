@@ -133,5 +133,4 @@ final class DisplayLink: NSObject {
 		}
 		return fallbackTimer != nil
 	}
-
 }

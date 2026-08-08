@@ -39,7 +39,6 @@ struct TableViewSnapshotDiff {
 		change = .reloadAll
 	}
 }
-
 private extension Array where Element == AppListSnapshot.Entry {
 	func identityMatches(_ other: [Element]) -> Bool {
 		guard count == other.count else { return false }

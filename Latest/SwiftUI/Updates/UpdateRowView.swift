@@ -9,12 +9,9 @@
 import AppKit
 
 @MainActor
-final class LegacyUpdateRowContentView: NSTableCellView {
+final class AppKitUpdateRowContentView: NSTableCellView {
 	enum Layout {
 		static let leftInset: CGFloat = 10
-		static let selectionLeadingInset: CGFloat = 0
-		static let selectionTrailingInset: CGFloat = 24
-		static let selectionCornerRadius: CGFloat = 12
 		static let rightInset: CGFloat = 32
 		static let iconSize: CGFloat = 50
 		static let iconTextSpacing: CGFloat = 8
@@ -22,7 +19,7 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 		static let statusSize: CGFloat = 16
 
 		static func availableVersionWidth(rowWidth: CGFloat) -> CGFloat {
-			rowWidth - leftInset - rightInset - iconSize - iconTextSpacing - trailingWidth
+			rowWidth - leftInset - rightInset - iconSize - iconTextSpacing
 		}
 	}
 
@@ -35,13 +32,10 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 	private let dateField = NSTextField(labelWithString: "")
 	private let updateButton = UpdateButton(frame: .zero)
 	private let supportStateImageView = NSImageView()
-	private let selectionBackground = NSBox()
 	private let separator = NSBox()
 	private var representedIdentifier: App.Bundle.Identifier?
 	private var observedIdentifier: App.Bundle.Identifier?
 	private var updateStateTask: Task<Void, Never>?
-	private var statusToCurrentVersionConstraint: NSLayoutConstraint!
-	private var statusToNewVersionConstraint: NSLayoutConstraint!
 
 	override init(frame frameRect: NSRect) {
 		super.init(frame: frameRect)
@@ -60,7 +54,6 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 	func update(
 		app: App,
 		isSelected: Bool,
-		drawsSelectionBackground: Bool,
 		filterQuery: String?,
 		dateFormatter: DateFormatter,
 		showsSupportStatusOverride: Bool? = nil
@@ -76,14 +69,11 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 			newVersionField.stringValue = ""
 			newVersionField.isHidden = true
 		}
-		statusToCurrentVersionConstraint.isActive = !app.updateAvailable
-		statusToNewVersionConstraint.isActive = app.updateAvailable
-
 		dateField.stringValue = dateFormatter.string(from: app.updateDate)
 		updateButton.app = app
 		observeUpdateState(for: app)
 		updateSupportState(for: app, showsSupportStatusOverride: showsSupportStatusOverride)
-		updateSelection(isSelected, drawsSelectionBackground: drawsSelectionBackground)
+		updateSelection(isSelected)
 		updateIcon(for: app)
 		setAccessibilityLabel(SidebarInteractionPolicy.accessibilityLabel(for: app, dateFormatter: dateFormatter))
 		setAccessibilitySelected(isSelected)
@@ -92,14 +82,6 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 	private func setupView() {
 		setAccessibilityElement(true)
 		setAccessibilityRole(.group)
-
-		selectionBackground.boxType = .custom
-		selectionBackground.cornerRadius = Layout.selectionCornerRadius
-		selectionBackground.fillColor = .controlAccentColor
-		selectionBackground.borderColor = .clear
-		selectionBackground.translatesAutoresizingMaskIntoConstraints = false
-		selectionBackground.isHidden = true
-		addSubview(selectionBackground)
 
 		iconView.imageScaling = .scaleProportionallyUpOrDown
 		iconView.translatesAutoresizingMaskIntoConstraints = false
@@ -160,20 +142,7 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 		let clickRecognizer = NSClickGestureRecognizer(target: self, action: #selector(selectRow(_:)))
 		addGestureRecognizer(clickRecognizer)
 
-		statusToCurrentVersionConstraint = supportStateImageView.centerYAnchor.constraint(
-			equalTo: currentVersionField.centerYAnchor
-		)
-		statusToNewVersionConstraint = supportStateImageView.centerYAnchor.constraint(
-			equalTo: newVersionField.centerYAnchor
-		)
-		statusToCurrentVersionConstraint.isActive = true
-
 		NSLayoutConstraint.activate([
-			selectionBackground.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Layout.selectionLeadingInset),
-			selectionBackground.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.selectionTrailingInset),
-			selectionBackground.topAnchor.constraint(equalTo: topAnchor, constant: 2),
-			selectionBackground.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
-
 			iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Layout.leftInset),
 			iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
 			iconView.widthAnchor.constraint(equalToConstant: Layout.iconSize),
@@ -181,24 +150,26 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 
 			textStack.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: Layout.iconTextSpacing),
 			textStack.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
-			textStack.trailingAnchor.constraint(lessThanOrEqualTo: dateField.leadingAnchor),
+			textStack.trailingAnchor.constraint(lessThanOrEqualTo: dateField.trailingAnchor),
+			nameField.trailingAnchor.constraint(lessThanOrEqualTo: dateField.leadingAnchor),
 
 			dateField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.rightInset),
-			dateField.firstBaselineAnchor.constraint(equalTo: nameField.firstBaselineAnchor),
+			dateField.topAnchor.constraint(equalTo: topAnchor, constant: 4),
 			dateField.widthAnchor.constraint(equalToConstant: Layout.trailingWidth),
 
 			updateButton.trailingAnchor.constraint(equalTo: dateField.trailingAnchor),
-			updateButton.centerYAnchor.constraint(equalTo: supportStateImageView.centerYAnchor),
+			updateButton.centerYAnchor.constraint(equalTo: centerYAnchor),
 			updateButton.widthAnchor.constraint(equalToConstant: Layout.trailingWidth),
 			updateButton.heightAnchor.constraint(equalToConstant: 24),
 
 			supportStateImageView.trailingAnchor.constraint(equalTo: dateField.trailingAnchor),
+			supportStateImageView.topAnchor.constraint(equalTo: topAnchor, constant: 19),
 			supportStateImageView.widthAnchor.constraint(equalToConstant: Layout.statusSize),
 			supportStateImageView.heightAnchor.constraint(equalToConstant: Layout.statusSize),
 
 			separator.leadingAnchor.constraint(equalTo: textStack.leadingAnchor),
 			separator.trailingAnchor.constraint(equalTo: dateField.trailingAnchor),
-			separator.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1.5)
+			separator.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0.5)
 		])
 	}
 
@@ -212,10 +183,7 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 	private func updateIcon(for app: App) {
 		guard representedIdentifier != app.identifier else { return }
 		representedIdentifier = app.identifier
-		IconCache.shared.icon(for: app) { [weak self] image in
-			guard self?.representedIdentifier == app.identifier else { return }
-			self?.iconView.image = image
-		}
+		iconView.image = IconCache.shared.iconImmediately(for: app)
 	}
 
 	private var showsSupportStatusOverride: Bool?
@@ -238,9 +206,7 @@ final class LegacyUpdateRowContentView: NSTableCellView {
 		}
 	}
 
-	private func updateSelection(_ isSelected: Bool, drawsSelectionBackground: Bool) {
-		selectionBackground.fillColor = .controlAccentColor
-		selectionBackground.isHidden = !drawsSelectionBackground || !isSelected
+	private func updateSelection(_ isSelected: Bool) {
 		separator.isHidden = isSelected
 		let textColor: NSColor = isSelected ? .alternateSelectedControlTextColor : .secondaryLabelColor
 		currentVersionField.textColor = textColor

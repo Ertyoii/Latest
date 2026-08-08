@@ -209,7 +209,7 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 			self.progressDelegate?.updateChecker(self, didStartCheckingApps: bundles.count)
 		}
 
-		let execution = await updateCheckExecutor.run(bundles, onCompletion: { [weak self] (indexedResult: IndexedUpdateCheckResult<App.Update>) in
+		let execution = await updateCheckExecutor.run(bundles, collectResults: false, onCompletion: { [weak self] (indexedResult: IndexedUpdateCheckResult<App.Update>) in
 			guard let self, bundles.indices.contains(indexedResult.index) else { return }
 			self.didCheck(bundles[indexedResult.index], indexedResult.result, generation: generation)
 		}) { bundle in

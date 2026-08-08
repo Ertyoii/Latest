@@ -14,7 +14,7 @@ class WebContentLoader: NSObject {
 
 	/// Loads contents for the given URL.
 	///
-	/// The update handler may be called multiple times, if contents change. The caller is responsible for determining whether updates are still relevant.
+	/// The update handler is called once after the page reaches a settled DOM state.
 	func load(from url: URL, contentUpdateHandler: @escaping @MainActor (Result<String, Error>) -> Void) {
 		pendingContentUpdateTask?.cancel()
 		loadTimeoutTask?.cancel()
@@ -36,7 +36,11 @@ class WebContentLoader: NSObject {
 		currentUpdateHandler = nil
 		guard let webView else { return }
 		webView.stopLoading()
-		webView.evaluateJavaScript("window.__latestMutationObserver?.disconnect(); clearTimeout(window.__latestMutationTimer);")
+		Task<Void, Never> { @MainActor in
+			_ = try? await webView.evaluateJavaScript(
+				"window.__latestMutationObserver?.disconnect(); clearTimeout(window.__latestMutationTimer);"
+			)
+		}
 		webView.navigationDelegate = nil
 		webView.configuration.userContentController.removeScriptMessageHandler(forName: "updateHandler")
 		self.webView = nil
@@ -114,7 +118,7 @@ class WebContentLoader: NSObject {
 		pendingContentUpdateTask = Task { @MainActor in
 			try? await Task.sleep(nanoseconds: 150_000_000)
 			guard !Task.isCancelled, loadID == self.currentLoadID else { return }
-			self.notifyContentUpdate(for: loadID)
+			await self.notifyContentUpdate(for: loadID)
 		}
 	}
 
@@ -130,21 +134,31 @@ class WebContentLoader: NSObject {
 	}
 
 	/// Forwards the current page contents to the caller of the load method.
-	private func notifyContentUpdate(for loadID: UUID) {
-		guard loadID == currentLoadID, let webView else { return }
+	private func notifyContentUpdate(for loadID: UUID) async {
+		guard loadID == currentLoadID,
+		      currentUpdateHandler != nil,
+		      let webView else { return }
 
-		webView.evaluateJavaScript("document.documentElement.outerHTML.toString()") { html, error in
-			Task { @MainActor in
-				guard loadID == self.currentLoadID else { return }
+		do {
+			let result = try await webView.evaluateJavaScript("document.documentElement.outerHTML.toString()")
+			guard loadID == currentLoadID,
+			      let handler = currentUpdateHandler,
+			      let html = result as? String,
+			      !html.isEmpty else { return }
 
-				if let html = html as? String, !html.isEmpty {
-					self.loadTimeoutTask?.cancel()
-					self.currentUpdateHandler?(.success(html))
-				} else if let error = error {
-					self.loadTimeoutTask?.cancel()
-					self.currentUpdateHandler?(.failure(error))
-				}
-			}
+			loadTimeoutTask?.cancel()
+			currentUpdateHandler = nil
+			_ = try? await webView.evaluateJavaScript(
+				"window.__latestMutationObserver?.disconnect(); clearTimeout(window.__latestMutationTimer);"
+			)
+			guard loadID == currentLoadID else { return }
+			handler(.success(html))
+		} catch {
+			guard loadID == currentLoadID,
+			      let handler = currentUpdateHandler else { return }
+			loadTimeoutTask?.cancel()
+			currentUpdateHandler = nil
+			handler(.failure(error))
 		}
 	}
 

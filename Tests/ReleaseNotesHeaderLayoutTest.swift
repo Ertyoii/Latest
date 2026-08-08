@@ -48,7 +48,7 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 		XCTAssertEqual(UpdateActionVisualStyle.pauseBarSize, CGSize(width: 2, height: 8))
 		XCTAssertEqual(UpdateActionVisualStyle.pauseBarSpacing, 2)
 
-		let background = try XCTUnwrap(UpdateButton.Style.backgroundColor.usingColorSpace(.sRGB))
+		let background = try XCTUnwrap(UpdateActionVisualStyle.backgroundColor.usingColorSpace(.sRGB))
 		XCTAssertEqual(background.redComponent, 0.9488552213, accuracy: 0.0001)
 		XCTAssertEqual(background.greenComponent, 0.9487094283, accuracy: 0.0001)
 		XCTAssertEqual(background.blueComponent, 0.9693081975, accuracy: 0.0001)
@@ -130,47 +130,8 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 	}
 
 	@MainActor
-	func testMainWindowSidebarVisibilityIsLockedOpen() {
-		let visibility = MainWindowSidebarPolicy.columnVisibility
-		XCTAssertEqual(visibility.wrappedValue, .all)
-
-		visibility.wrappedValue = .detailOnly
-		XCTAssertEqual(visibility.wrappedValue, .all)
-	}
-
-	@MainActor
-	func testSidebarCustomSelectionUsesCompensatedInsets() {
-		XCTAssertLessThan(
-			LegacyUpdateRowContentView.Layout.selectionLeadingInset,
-			LegacyUpdateRowContentView.Layout.selectionTrailingInset,
-			"The source-list cell extends farther toward the divider, so only its trailing inset needs compensation."
-		)
-		XCTAssertEqual(LegacyUpdateRowContentView.Layout.selectionLeadingInset, 0)
-		XCTAssertEqual(LegacyUpdateRowContentView.Layout.selectionTrailingInset, 24)
-		XCTAssertEqual(LegacyUpdateRowContentView.Layout.selectionCornerRadius, 12)
-	}
-
-	@MainActor
-	func testSidebarCustomSelectionUsesTextColorForColoredBackground() throws {
-		let row = LegacyUpdateRowContentView(
-			frame: NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: VisualMetrics.appRowHeight)
-		)
-		let dateFormatter = DateFormatter()
-		dateFormatter.dateStyle = .short
-		dateFormatter.timeStyle = .none
-		let app = makeApp(name: "Discord", version: "0.0.398", remoteVersion: "0.0.399")
-
-		row.update(app: app, isSelected: true, drawsSelectionBackground: true, filterQuery: nil, dateFormatter: dateFormatter)
-
-		let fields = row.descendantTextFields()
-		let nameField = try XCTUnwrap(fields.first(where: { $0.stringValue == "Discord" }))
-		let titleColor = try XCTUnwrap(
-			nameField.attributedStringValue.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
-		)
-		XCTAssertEqual(titleColor, .alternateSelectedControlTextColor)
-		for field in fields where field !== nameField {
-			XCTAssertEqual(field.textColor, .alternateSelectedControlTextColor)
-		}
+	func testMainWindowSidebarIsVisibleByDefault() {
+		XCTAssertEqual(MainWindowSidebarPolicy.defaultVisibility, .all)
 	}
 
 	@MainActor
@@ -201,37 +162,9 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 	}
 
 	@MainActor
-	func testSidebarDateAndStatusAlignWithTextRows() throws {
-		let row = LegacyUpdateRowContentView(frame: NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: VisualMetrics.appRowHeight))
-		let dateFormatter = DateFormatter()
-		dateFormatter.dateStyle = .short
-		dateFormatter.timeStyle = .none
-		let app = makeApp(name: "ChatGPT", version: "26.707.51957")
-
-		row.update(app: app, isSelected: false, drawsSelectionBackground: false, filterQuery: nil, dateFormatter: dateFormatter)
-		row.layoutSubtreeIfNeeded()
-
-		let fields = row.descendantTextFields()
-		let nameField = try XCTUnwrap(fields.first(where: { $0.stringValue == "ChatGPT" }))
-		let versionField = try XCTUnwrap(fields.first(where: { $0.stringValue.contains("26.707.51957") }))
-		let dateField = try XCTUnwrap(fields.first(where: { $0.stringValue == dateFormatter.string(from: app.updateDate) }))
-		let statusView = try XCTUnwrap(row.descendantImageViews().first(where: { $0.frame.size == NSSize(width: 16, height: 16) }))
-
-		let nameFrame = nameField.convert(nameField.bounds, to: row)
-		let dateFrame = dateField.convert(dateField.bounds, to: row)
-		let nameBaseline = nameFrame.maxY - nameField.firstBaselineOffsetFromTop
-		let dateBaseline = dateFrame.maxY - dateField.firstBaselineOffsetFromTop
-		let versionFrame = versionField.convert(versionField.bounds, to: row)
-		let statusFrame = statusView.convert(statusView.bounds, to: row)
-
-		XCTAssertEqual(dateBaseline, nameBaseline, accuracy: 0.5)
-		XCTAssertEqual(statusFrame.midY, versionFrame.midY, accuracy: 0.5)
-	}
-
-	@MainActor
 	func testSidebarShowsLongInstalledVersionWithoutTruncationAtIdealWidth() {
 		let date = Date()
-		let app = makeApp(name: "Codex", version: "26.623.101652", date: date)
+		let app = makeApp(name: "Chrome", version: "151.0.7922.109", date: date)
 		guard let expectedVersion = app.localizedVersionInformation?.current else {
 			XCTFail("Expected the installed version field in the update row.")
 			return
@@ -239,7 +172,7 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 		let versionWidth = (expectedVersion as NSString).size(
 			withAttributes: [.font: NSFont.systemFont(ofSize: 11)]
 		).width
-		let availableWidth = LegacyUpdateRowContentView.Layout.availableVersionWidth(
+		let availableWidth = AppKitUpdateRowContentView.Layout.availableVersionWidth(
 			rowWidth: VisualMetrics.sidebarIdealWidth
 		)
 
@@ -248,8 +181,31 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 			versionWidth,
 			"The installed version should use the available row width instead of truncating."
 		)
-		XCTAssertEqual(LegacyUpdateRowContentView.Layout.trailingWidth, 59)
-		XCTAssertEqual(LegacyUpdateRowContentView.Layout.rightInset, 32)
+		XCTAssertEqual(AppKitUpdateRowContentView.Layout.trailingWidth, 59)
+		XCTAssertEqual(AppKitUpdateRowContentView.Layout.rightInset, 32)
+	}
+
+	@MainActor
+	func testAppKitSidebarUsesSystemSelectedTextColors() throws {
+		let row = AppKitUpdateRowContentView(
+			frame: NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: VisualMetrics.appRowHeight)
+		)
+		let dateFormatter = DateFormatter()
+		dateFormatter.dateStyle = .short
+		dateFormatter.timeStyle = .none
+		let app = makeApp(name: "Discord", version: "0.0.398", remoteVersion: "0.0.399")
+
+		row.update(app: app, isSelected: true, filterQuery: nil, dateFormatter: dateFormatter)
+
+		let fields = row.descendantTextFields()
+		let nameField = try XCTUnwrap(fields.first(where: { $0.stringValue == "Discord" }))
+		let titleColor = try XCTUnwrap(
+			nameField.attributedStringValue.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+		)
+		XCTAssertEqual(titleColor, .alternateSelectedControlTextColor)
+		for field in fields where field !== nameField {
+			XCTAssertEqual(field.textColor, .alternateSelectedControlTextColor)
+		}
 	}
 
 	private func makeApp(

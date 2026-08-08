@@ -49,6 +49,7 @@ BEGIN {
 	budgets["app_list_search_full_rebuild"] = 360
 	budgets["version_comparison_repeated_parse"] = 75
 	budgets["release_notes_markup_parse_and_render"] = 160
+	budgets["release_notes_persistent_cache_read"] = 45
 	budgets["update_repository_catalog_decode"] = 550
 	budgets["update_repository_compact_index_decode"] = 180
 	budgets["update_repository_entry_metadata_and_matching"] = 280

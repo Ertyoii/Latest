@@ -44,6 +44,7 @@ struct BoundedUpdateCheckExecutor: Sendable {
 
 	func run<Input: Sendable, Output: Sendable>(
 		_ inputs: [Input],
+		collectResults: Bool = true,
 		onCompletion: (@Sendable (IndexedUpdateCheckResult<Output>) -> Void)? = nil,
 		operation: @escaping @Sendable (Input) async throws -> Output
 	) async -> UpdateCheckExecution<Output> {
@@ -54,8 +55,12 @@ struct BoundedUpdateCheckExecutor: Sendable {
 		defer { updateCheckEngineSignposter.endInterval("Update Check Batch", interval) }
 
 		var results = [IndexedUpdateCheckResult<Output>]()
-		results.reserveCapacity(inputs.count)
+		if collectResults {
+			results.reserveCapacity(inputs.count)
+		}
 		var scheduledCount = 0
+		var completedCount = 0
+		var encounteredCancellation = false
 		await withTaskGroup(of: IndexedUpdateCheckResult<Output>.self) { group in
 			var nextInputIndex = 0
 
@@ -80,7 +85,13 @@ struct BoundedUpdateCheckExecutor: Sendable {
 			}
 
 			while let result = await group.next() {
-				results.append(result)
+				completedCount += 1
+				if case .failure(let error) = result.result, error is CancellationError {
+					encounteredCancellation = true
+				}
+				if collectResults {
+					results.append(result)
+				}
 				onCompletion?(result)
 				if Task.isCancelled {
 					group.cancelAll()
@@ -90,17 +101,12 @@ struct BoundedUpdateCheckExecutor: Sendable {
 			}
 		}
 
-		let wasCancelled = Task.isCancelled || results.contains { result in
-			if case .failure(let error) = result.result {
-				return error is CancellationError
-			}
-			return false
-		}
+		let wasCancelled = Task.isCancelled || encounteredCancellation
 		return UpdateCheckExecution(
-			results: results.sorted { $0.index < $1.index },
+			results: collectResults ? results.sorted { $0.index < $1.index } : [],
 			metrics: UpdateCheckExecutionMetrics(
 				scheduledCount: scheduledCount,
-				completedCount: results.count,
+				completedCount: completedCount,
 				wasCancelled: wasCancelled,
 				duration: startedAt.duration(to: clock.now)
 			)

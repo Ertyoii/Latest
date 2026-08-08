@@ -13,10 +13,7 @@ import XCTest
 final class ReleaseNotesAuditTest: XCTestCase {
 
 	func testInstalledApplicationReleaseNotesAudit() async throws {
-		#if !LATEST_RELEASE_NOTES_AUDIT
-		throw XCTSkip("Run script/audit_release_notes.sh to audit installed app release notes.")
-		#endif
-
+		#if LATEST_RELEASE_NOTES_AUDIT
 		let directories = AppDirectoryStore(updateHandler: {}).URLs
 		let bundles = Self.discoveredBundles(in: directories)
 		XCTAssertFalse(bundles.isEmpty, "Expected at least one discoverable app bundle.")
@@ -75,6 +72,9 @@ final class ReleaseNotesAuditTest: XCTestCase {
 			unresolvedRegressionRows.isEmpty,
 			"Current release-note regressions remain:\n\(unresolvedRegressionRows.map(\.summary).joined(separator: "\n"))"
 		)
+		#else
+		throw XCTSkip("Run script/audit_release_notes.sh to audit installed app release notes.")
+		#endif
 	}
 
 	private static func discoveredBundles(in directories: [URL]) -> [App.Bundle] {

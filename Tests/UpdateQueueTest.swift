@@ -188,6 +188,23 @@ final class UpdateCheckGenerationTrackerTest: XCTestCase {
 }
 
 final class BoundedUpdateCheckExecutorTest: XCTestCase {
+	func testStreamingModeDoesNotRetainCompletedResults() async {
+		let completedValues = Mutex([Int]())
+		let execution = await BoundedUpdateCheckExecutor(maximumConcurrentTasks: 3).run(
+			Array(0..<12),
+			collectResults: false,
+			onCompletion: { result in
+				guard case .success(let value) = result.result else { return }
+				completedValues.withLock { $0.append(value) }
+			}
+		) { $0 }
+
+		XCTAssertTrue(execution.results.isEmpty)
+		XCTAssertEqual(execution.metrics.scheduledCount, 12)
+		XCTAssertEqual(execution.metrics.completedCount, 12)
+		XCTAssertEqual(Set(completedValues.withLock { $0 }), Set(0..<12))
+	}
+
 	func testBoundsParallelismAndReportsProgressForEveryCompletedCheck() async {
 		let activity = UpdateCheckActivityTracker()
 		let progressCount = Mutex(0)

@@ -63,8 +63,10 @@ compare_metric() {
 }
 
 # Median is used for cold launch because a single XCTWaiter scheduling spike can
-# dominate this short fixture. Scrolling and selection use p95 to protect input
-# responsiveness and tail latency.
+# dominate this short fixture. Continuous scrolling and selection use p95 to
+# protect input responsiveness and tail latency. Long-distance seeking is gated
+# absolutely by benchmark_migration.sh because old control reports used that
+# teleport workload under the now-corrected scroll-frame name.
 compare_metric "cold_launch_to_populated_sidebar_fixture" "p50_ms" "1.15"
 compare_metric "sidebar_scroll_frame_main_thread" "p95_ms" "1.15"
 compare_metric "selection_to_detail" "p95_ms" "1.20"
@@ -81,10 +83,10 @@ else
 fi
 
 if ((blocked)); then
-  echo "NATIVE CUTOVER RESULT blocked; retain the reviewed UpdatesTableBridge"
+	  echo "NATIVE CUTOVER RESULT blocked against the retained legacy control report"
   if [[ "$REPORT_ONLY" == false ]]; then
     exit 1
   fi
 else
-  echo "NATIVE CUTOVER RESULT eligible for visual, keyboard, and accessibility parity review"
+	  echo "NATIVE CUTOVER RESULT passed performance and runtime-warning gates"
 fi

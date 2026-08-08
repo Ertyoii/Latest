@@ -18,8 +18,10 @@ fi
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_CATALOG="$ROOT_DIR/Latest/Resources/ReleaseNotesSources.json"
 CATALOG_TOKENS="$(jq '[.[].homebrewTokens[]?] | unique' "$SOURCE_CATALOG")"
+MINIMUM_HIGH_CONFIDENCE_PERCENT="${LATEST_MIN_RELEASE_NOTES_COVERAGE_PERCENT:-40}"
+MINIMUM_CATALOG_UNIQUE="${LATEST_MIN_RELEASE_NOTES_CATALOG_UNIQUE:-110}"
 
-jq --argjson catalogTokens "$CATALOG_TOKENS" '
+REPORT="$(jq --argjson catalogTokens "$CATALOG_TOKENS" '
   [ .[] | select(any(.artifacts[]?; type == "object" and has("app"))) ] as $apps |
 
   def direct_tagged_github_release:
@@ -82,4 +84,23 @@ jq --argjson catalogTokens "$CATALOG_TOKENS" '
       | .[:25]
     )
   }
-' "$CATALOG_PATH"
+' "$CATALOG_PATH")"
+
+echo "$REPORT"
+
+high_confidence_percent="$(jq -r '.high_confidence_coverage_percent' <<<"$REPORT")"
+catalog_unique="$(jq -r '.catalog_unique_high_confidence' <<<"$REPORT")"
+failed=0
+if awk -v observed="$high_confidence_percent" -v minimum="$MINIMUM_HIGH_CONFIDENCE_PERCENT" 'BEGIN { exit !(observed >= minimum) }'; then
+	echo "RELEASE NOTES COVERAGE PASS high_confidence_percent=$high_confidence_percent minimum_percent=$MINIMUM_HIGH_CONFIDENCE_PERCENT"
+else
+	echo "RELEASE NOTES COVERAGE FAIL high_confidence_percent=$high_confidence_percent minimum_percent=$MINIMUM_HIGH_CONFIDENCE_PERCENT" >&2
+	failed=1
+fi
+if ((catalog_unique >= MINIMUM_CATALOG_UNIQUE)); then
+	echo "RELEASE NOTES COVERAGE PASS catalog_unique_high_confidence=$catalog_unique minimum=$MINIMUM_CATALOG_UNIQUE"
+else
+	echo "RELEASE NOTES COVERAGE FAIL catalog_unique_high_confidence=$catalog_unique minimum=$MINIMUM_CATALOG_UNIQUE" >&2
+	failed=1
+fi
+exit "$failed"

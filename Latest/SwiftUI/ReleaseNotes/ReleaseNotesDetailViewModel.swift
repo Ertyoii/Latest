@@ -126,7 +126,8 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
 			version,
 			String(latestUpdateDate),
 			app.externalUpdaterName ?? "",
-			app.source.supportState.compactLabel
+			app.source.supportState.compactLabel,
+			String(ReleaseNotesSourceCatalog.revision)
 		].joined(separator: "|")
 	}
 }

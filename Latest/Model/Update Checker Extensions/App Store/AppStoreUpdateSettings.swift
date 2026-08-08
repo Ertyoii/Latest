@@ -6,6 +6,8 @@
 //  Copyright © 2019 Max Langer. All rights reserved.
 //
 
+import Foundation
+
 /// Collection of settings around app store updates
 enum AppStoreUpdateSettings: String {
 	/// Whether app store updates should always be performed manually.
@@ -17,4 +19,3 @@ enum AppStoreUpdateSettings: String {
 		nonmutating set { UserDefaults.standard.set(newValue, forKey: rawValue) }
 	}
 }
-

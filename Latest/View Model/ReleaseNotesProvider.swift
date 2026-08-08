@@ -7,6 +7,7 @@
 //
 
 import AppKit
+import CryptoKit
 import OSLog
 
 private let releaseNotesLogger = Logger(
@@ -20,6 +21,7 @@ private let releaseNotesSignposter = OSSignposter(
 
 private let releaseNotesHTMLCache = ReleaseNotesHTMLCache()
 private let releaseNotesGitHubCache = ReleaseNotesGitHubCache()
+private let releaseNotesPersistentCache = ReleaseNotesPersistentCache()
 
 /// Handles release notes conversion and loading.
 ///
@@ -69,6 +71,10 @@ class ReleaseNotesProvider {
 		currentReleaseNotesTask?.cancel()
 		currentReleaseNotesTask = nil
 		webContentLoader?.cancel()
+		if app.error != nil, app.releaseNotes == nil {
+			completion(.failure(LatestError.releaseNotesUnavailable))
+			return
+		}
 
 		let cacheKey = ReleaseNotesCacheKey(app: app)
 		if let releaseNotes = self.cache.object(forKey: cacheKey)?.value,
@@ -77,7 +83,7 @@ class ReleaseNotesProvider {
 			return
 		}
 
-		self.loadReleaseNotes(for: app) { releaseNotes in
+		let finish: ResolvedCompletion = { releaseNotes in
 			let releaseNotes = Self.validated(releaseNotes)
 			if case .success(let resolved) = releaseNotes {
 				self.cache.setObject(
@@ -85,12 +91,30 @@ class ReleaseNotesProvider {
 					forKey: cacheKey,
 					cost: resolved.content.length * 2
 				)
+				if let payload = ReleaseNotesPersistentCache.payload(from: resolved) {
+					Task {
+						await releaseNotesPersistentCache.store(payload, forKey: cacheKey.stableIdentifier)
+					}
+				}
 			}
 
 			/// Release notes may be returned late or updated while another app was already requested. Don't forward this update, just cache in case of success.
 			guard self.isCurrentRequest(requestID, for: app) else { return }
 
 			completion(releaseNotes)
+		}
+
+		currentReleaseNotesTask = Task { [weak self] in
+			guard let self else { return }
+			if let payload = await releaseNotesPersistentCache.payload(forKey: cacheKey.stableIdentifier),
+			   let resolved = ReleaseNotesPersistentCache.resolvedReleaseNotes(from: payload) {
+				guard !Task.isCancelled, self.isCurrentRequest(requestID, for: app) else { return }
+				finish(.success(resolved))
+				return
+			}
+
+			guard !Task.isCancelled, self.isCurrentRequest(requestID, for: app) else { return }
+			self.loadReleaseNotes(for: app, with: finish)
 		}
 	}
 
@@ -603,8 +627,11 @@ class ReleaseNotesProvider {
 			request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
 			request.setValue("Latest", forHTTPHeaderField: "User-Agent")
 
-			let (data, response) = try await URLSession.shared.data(for: request)
-			if let response = response as? HTTPURLResponse {
+			let result = try await URLSessionReleaseNotesHTTPDataLoader().load(
+				request,
+				maximumResponseSize: ReleaseNotesCandidateScorer.maximumMarkupSize
+			)
+			if let response = result.response as? HTTPURLResponse {
 				if response.statusCode == 404 {
 					throw GitHubReleaseFetchError.notFound
 				}
@@ -613,7 +640,7 @@ class ReleaseNotesProvider {
 				}
 			}
 
-			return data
+			return result.data
 		}
 	}
 
@@ -913,12 +940,22 @@ private final class ReleaseNotesCacheKey: NSObject {
 	private let localVersion: String
 	private let remoteVersion: String
 	private let releaseNotes: String
+	private let catalogRevision: UInt64
+	let stableIdentifier: String
 
 	init(app: App) {
 		self.identifier = app.identifier
 		self.localVersion = app.version.debugDescription
 		self.remoteVersion = app.remoteVersion?.debugDescription ?? ""
 		self.releaseNotes = app.releaseNotes?.cacheIdentifier ?? ""
+		self.catalogRevision = ReleaseNotesSourceCatalog.revision
+		self.stableIdentifier = [
+			identifier.absoluteString,
+			localVersion,
+			remoteVersion,
+			releaseNotes,
+			String(catalogRevision)
+		].joined(separator: "\u{1f}")
 	}
 
 	override var hash: Int {
@@ -927,6 +964,7 @@ private final class ReleaseNotesCacheKey: NSObject {
 		hasher.combine(localVersion)
 		hasher.combine(remoteVersion)
 		hasher.combine(releaseNotes)
+		hasher.combine(catalogRevision)
 		return hasher.finalize()
 	}
 
@@ -938,7 +976,8 @@ private final class ReleaseNotesCacheKey: NSObject {
 		return identifier == other.identifier &&
 			localVersion == other.localVersion &&
 			remoteVersion == other.remoteVersion &&
-			releaseNotes == other.releaseNotes
+			releaseNotes == other.releaseNotes &&
+			catalogRevision == other.catalogRevision
 	}
 }
 
@@ -948,16 +987,133 @@ private extension App.Update.ReleaseNotes {
 		case .url(let url):
 			return "url:\(url.absoluteString)"
 		case .html(let string):
-			return "html:\(string.hashValue)"
+			return "html:\(ReleaseNotesStableDigest.hex(of: Data(string.utf8)))"
 		case .genericMetadata(let string):
-			return "homebrew-metadata:\(string.hashValue)"
+			return "homebrew-metadata:\(ReleaseNotesStableDigest.hex(of: Data(string.utf8)))"
 		case .encoded(let data):
-			return "encoded:\(data.hashValue)"
+			return "encoded:\(ReleaseNotesStableDigest.hex(of: data))"
 		case .githubRelease(let apiURL, let fallbackHTML):
-			return "github:\(apiURL.absoluteString):\(fallbackHTML?.hashValue ?? 0)"
+			let fallbackDigest = fallbackHTML.map { ReleaseNotesStableDigest.hex(of: Data($0.utf8)) } ?? ""
+			return "github:\(apiURL.absoluteString):\(fallbackDigest)"
 		case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML):
 			let urlList = urls.map(\.absoluteString).joined(separator: "|")
-			return "changelog:\(urlList):\(versionPrefix ?? ""):\(allowsLatestFallback):\(fallbackHTML?.hashValue ?? 0)"
+			let fallbackDigest = fallbackHTML.map { ReleaseNotesStableDigest.hex(of: Data($0.utf8)) } ?? ""
+			return "changelog:\(urlList):\(versionPrefix ?? ""):\(allowsLatestFallback):\(fallbackDigest)"
+		}
+	}
+}
+
+private enum ReleaseNotesStableDigest {
+	static func hex(of data: Data) -> String {
+		SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+	}
+}
+
+struct ReleaseNotesPersistentPayload: Codable, Sendable {
+	let richTextData: Data
+	let qualityRawValue: Int
+	let provenanceRawValue: String
+	let storedAt: Date
+}
+
+actor ReleaseNotesPersistentCache {
+	private let directoryURL: URL
+	private let lifetime: TimeInterval
+	private let maximumEntryCount: Int
+	private let maximumStoredBytes: Int
+
+	init(
+		directoryURL: URL? = nil,
+		lifetime: TimeInterval = 30 * 24 * 60 * 60,
+		maximumEntryCount: Int = 256,
+		maximumStoredBytes: Int = 32 * 1_024 * 1_024
+	) {
+		let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+			?? FileManager.default.temporaryDirectory
+		self.directoryURL = directoryURL
+			?? cachesDirectory.appendingPathComponent("com.max-langer.Latest/ReleaseNotes-v1", isDirectory: true)
+		self.lifetime = lifetime
+		self.maximumEntryCount = maximumEntryCount
+		self.maximumStoredBytes = maximumStoredBytes
+	}
+
+	func payload(forKey key: String) -> ReleaseNotesPersistentPayload? {
+		let fileURL = fileURL(forKey: key)
+		guard let data = try? Data(contentsOf: fileURL),
+			  let payload = try? PropertyListDecoder().decode(ReleaseNotesPersistentPayload.self, from: data),
+			  Date().timeIntervalSince(payload.storedAt) < lifetime else {
+			try? FileManager.default.removeItem(at: fileURL)
+			return nil
+		}
+		return payload
+	}
+
+	func store(_ payload: ReleaseNotesPersistentPayload, forKey key: String) {
+		guard payload.richTextData.count <= maximumStoredBytes else { return }
+		do {
+			try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+			let data = try PropertyListEncoder().encode(payload)
+			try data.write(to: fileURL(forKey: key), options: .atomic)
+			trimToLimits()
+		} catch {
+			releaseNotesLogger.debug("Unable to persist rendered release notes: \(error.localizedDescription, privacy: .public)")
+		}
+	}
+
+	@MainActor
+	static func payload(from releaseNotes: ResolvedReleaseNotes) -> ReleaseNotesPersistentPayload? {
+		guard let richTextData = try? releaseNotes.content.data(
+			from: NSRange(location: 0, length: releaseNotes.content.length),
+			documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+		) else {
+			return nil
+		}
+		return ReleaseNotesPersistentPayload(
+			richTextData: richTextData,
+			qualityRawValue: releaseNotes.quality.rawValue,
+			provenanceRawValue: releaseNotes.provenance.rawValue,
+			storedAt: Date()
+		)
+	}
+
+	@MainActor
+	static func resolvedReleaseNotes(from payload: ReleaseNotesPersistentPayload) -> ResolvedReleaseNotes? {
+		guard let quality = ReleaseNotesQuality(rawValue: payload.qualityRawValue),
+			  let provenance = ReleaseNotesProvenance(rawValue: payload.provenanceRawValue),
+			  let content = try? NSAttributedString(
+				data: payload.richTextData,
+				options: [.documentType: NSAttributedString.DocumentType.rtf],
+				documentAttributes: nil
+			  ) else {
+			return nil
+		}
+		return ResolvedReleaseNotes(content: content, quality: quality, provenance: provenance)
+	}
+
+	private func fileURL(forKey key: String) -> URL {
+		directoryURL.appendingPathComponent(ReleaseNotesStableDigest.hex(of: Data(key.utf8)) + ".plist")
+	}
+
+	private func trimToLimits() {
+		let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey]
+		guard var files = try? FileManager.default.contentsOfDirectory(
+			at: directoryURL,
+			includingPropertiesForKeys: Array(keys),
+			options: [.skipsHiddenFiles]
+		) else { return }
+
+		files.sort {
+			let lhs = try? $0.resourceValues(forKeys: keys).contentModificationDate
+			let rhs = try? $1.resourceValues(forKeys: keys).contentModificationDate
+			return (lhs ?? .distantPast) < (rhs ?? .distantPast)
+		}
+		var totalBytes = files.reduce(0) { partialResult, url in
+			partialResult + ((try? url.resourceValues(forKeys: keys).fileSize) ?? 0)
+		}
+		while files.count > maximumEntryCount || totalBytes > maximumStoredBytes {
+			let oldest = files.removeFirst()
+			totalBytes -= (try? oldest.resourceValues(forKeys: keys).fileSize) ?? 0
+			try? FileManager.default.removeItem(at: oldest)
 		}
 	}
 }
@@ -1362,11 +1518,16 @@ enum ReleaseNotesMarkup {
 	static func usesSourceSpecificTextExtraction(for url: URL) -> Bool {
 		guard let host = url.host?.lowercased() else { return false }
 		return host.contains("chromereleases.googleblog.com") ||
+			host.contains("navicat.com") ||
 			host.contains("zed.dev") ||
 			host.contains("zoom.com")
 	}
 
 	static func relevantChangelogText(fromHTML html: String, version: String?, pageURL: URL, allowFirstSectionFallback: Bool) -> String? {
+		if let relevantText = Self.navicatMacReleaseText(fromHTML: html, version: version, pageURL: pageURL) {
+			return relevantText
+		}
+
 		if let relevantText = Self.zedReleaseText(fromHTML: html, version: version, pageURL: pageURL) {
 			return relevantText
 		}
@@ -1390,6 +1551,48 @@ enum ReleaseNotesMarkup {
 		}
 
 		return relevantText
+	}
+
+	static func navicatMacReleaseText(fromHTML html: String, version: String?, pageURL: URL) -> String? {
+		guard pageURL.host?.localizedCaseInsensitiveContains("navicat.com") == true,
+			  let text = Self.plainText(fromHTML: html) else {
+			return nil
+		}
+
+		let candidates = Self.versionCandidates(from: version)
+		guard !candidates.isEmpty else { return nil }
+		let lines = text.components(separatedBy: .newlines).compactMap { line -> String? in
+			let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+			return trimmedLine.isEmpty ? nil : trimmedLine
+		}
+
+		guard let startIndex = lines.firstIndex(where: { line in
+			line.localizedCaseInsensitiveContains("(macOS)") &&
+				line.localizedCaseInsensitiveContains("version") &&
+				candidates.contains(where: { line.localizedCaseInsensitiveContains($0) })
+		}) else {
+			return nil
+		}
+
+		var endIndex = lines.endIndex
+		for index in (startIndex + 1)..<lines.endIndex {
+			let line = lines[index]
+			let isPlatformReleaseHeading = line.localizedCaseInsensitiveContains("version") &&
+				(line.localizedCaseInsensitiveContains("(Windows)") ||
+				 line.localizedCaseInsensitiveContains("(macOS)") ||
+				 line.localizedCaseInsensitiveContains("(Linux)"))
+			if isPlatformReleaseHeading {
+				endIndex = index
+				break
+			}
+		}
+
+		let releaseText = lines[startIndex..<endIndex].joined(separator: "\n")
+		guard Self.isUsefulReleaseNotesText(releaseText, relevantVersion: version) else {
+			return nil
+		}
+
+		return releaseText
 	}
 
 	static func chromeDesktopReleaseText(fromHTML html: String, version: String?, pageURL: URL) -> String? {

@@ -32,6 +32,10 @@
 	<string>Copyright © 2026 Max Langer. All rights reserved.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>ReleaseNotesCatalogPublicKey</key>
+	<string>$(LATEST_RELEASE_NOTES_CATALOG_PUBLIC_KEY)</string>
+	<key>ReleaseNotesCatalogURL</key>
+	<string>$(LATEST_RELEASE_NOTES_CATALOG_URL)</string>
 	<key>SUFeedURL</key>
 	<string>https://max.codes/latest/update.xml</string>
 	<key>SUPublicDSAKeyFile</key>

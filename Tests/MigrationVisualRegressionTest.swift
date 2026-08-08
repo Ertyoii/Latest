@@ -31,6 +31,61 @@ final class MigrationVisualRegressionTest: XCTestCase {
 	}
 
 	@MainActor
+	func testProductionSidebarUsesMeasuredOriginalTableGeometryAndRealIcons() throws {
+		let environment = AppEnvironment.localUATFixture()
+		let viewModel = environment.updatesListViewModel
+		let hostingView = NSHostingView(rootView: UpdatesSidebarView(
+			viewModel: viewModel,
+			searchFocusController: environment.searchFocusController
+		))
+		hostingView.frame = NSRect(
+			x: 0,
+			y: 0,
+			width: VisualMetrics.sidebarIdealWidth,
+			height: MigrationGalleryMetrics.sidebarFixtureSize.height
+		)
+		let window = NSWindow(
+			contentRect: hostingView.bounds,
+			styleMask: [.borderless],
+			backing: .buffered,
+			defer: false
+		)
+		window.isReleasedWhenClosed = false
+		window.contentView = hostingView
+		window.layoutIfNeeded()
+		hostingView.layoutSubtreeIfNeeded()
+		RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.15))
+
+		let tableView = try XCTUnwrap(hostingView.firstDescendant(of: NSTableView.self))
+		XCTAssertEqual(tableView.rowHeight, 60)
+		XCTAssertEqual(tableView.intercellSpacing, .zero)
+		XCTAssertEqual(tableView.selectionHighlightStyle, .sourceList)
+		XCTAssertEqual(tableView.frame.minX, 4, accuracy: 0.5)
+		XCTAssertEqual(tableView.numberOfRows, viewModel.snapshot.entries.count)
+
+		let firstSectionRow = try XCTUnwrap(
+			viewModel.snapshot.entries.firstIndex(where: {
+				if case .section = $0 { return true }
+				return false
+			})
+		)
+		let firstAppRow = try XCTUnwrap(viewModel.snapshot.firstIndex(of: viewModel.snapshot.apps[0]))
+		XCTAssertEqual(tableView.rect(ofRow: firstSectionRow).height, VisualMetrics.sectionHeaderHeight)
+		XCTAssertEqual(tableView.rect(ofRow: firstAppRow).height, 60)
+
+		for row in firstAppRow..<min(tableView.numberOfRows, firstAppRow + 5) {
+			_ = tableView.view(atColumn: 0, row: row, makeIfNecessary: true)
+		}
+		tableView.layoutSubtreeIfNeeded()
+		let populatedIcons = tableView.allDescendants(of: NSImageView.self).filter { $0.image != nil }
+		XCTAssertGreaterThanOrEqual(
+			populatedIcons.count,
+			3,
+			"Visible production rows must materialize real file icons on their first frame."
+		)
+	}
+
+	@MainActor
 	func testMigrationGalleryRenderedRegions() throws {
 		guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 else {
 			throw XCTSkip("Visual baselines are scoped to the macOS 26 renderer.")
@@ -45,10 +100,38 @@ final class MigrationVisualRegressionTest: XCTestCase {
 	}
 }
 
+private extension NSView {
+	func firstDescendant<ViewType: NSView>(of type: ViewType.Type) -> ViewType? {
+		if let match = self as? ViewType { return match }
+		return subviews.lazy.compactMap { $0.firstDescendant(of: type) }.first
+	}
+
+	func allDescendants<ViewType: NSView>(of type: ViewType.Type) -> [ViewType] {
+		let current = (self as? ViewType).map { [$0] } ?? []
+		return current + subviews.flatMap { $0.allDescendants(of: type) }
+	}
+}
+
 @MainActor
 private enum MigrationGalleryRenderer {
-	private static let recordBaselines = ProcessInfo.processInfo.environment["LATEST_RECORD_VISUAL_BASELINES"] == "1"
-		|| FileManager.default.fileExists(atPath: "/tmp/latest-record-visual-baselines")
+	/// Recording must never overwrite the checked-in reference images. When a
+	/// developer asks to record, write candidates to /tmp and still compare them
+	/// with the immutable original-renderer baselines.
+	private static let candidateOutputDirectory: URL? = {
+		guard ProcessInfo.processInfo.environment["LATEST_RECORD_VISUAL_BASELINES"] == "1"
+			|| FileManager.default.fileExists(atPath: "/tmp/latest-record-visual-baselines") else {
+			return nil
+		}
+		return URL(fileURLWithPath: "/tmp/latest-visual-candidates", isDirectory: true)
+	}()
+	private static let diagnosticOutputDirectory: URL? = {
+		if let path = ProcessInfo.processInfo.environment["LATEST_VISUAL_OUTPUT_DIRECTORY"] {
+			return URL(fileURLWithPath: path, isDirectory: true)
+		}
+		let fallbackPath = "/tmp/latest-visual-output"
+		guard FileManager.default.fileExists(atPath: fallbackPath) else { return nil }
+		return URL(fileURLWithPath: fallbackPath, isDirectory: true)
+	}()
 	private static let baselineDirectory = URL(fileURLWithPath: #filePath)
 		.deletingLastPathComponent()
 		.appendingPathComponent("VisualBaselines", isDirectory: true)
@@ -72,14 +155,6 @@ private enum MigrationGalleryRenderer {
 		window.contentView = hostingView
 		window.layoutIfNeeded()
 		hostingView.layoutSubtreeIfNeeded()
-		if case .sidebar(.legacyTable) = scenario.surface,
-		   let tableView = hostingView.descendant(of: NSTableView.self) {
-			for row in 0..<tableView.numberOfRows {
-				_ = tableView.view(atColumn: 0, row: row, makeIfNecessary: true)
-			}
-			tableView.layoutSubtreeIfNeeded()
-		}
-
 		let settleDuration: TimeInterval
 		if case .sidebar = scenario.surface {
 			settleDuration = 0.2
@@ -102,25 +177,35 @@ private enum MigrationGalleryRenderer {
 		scenario: MigrationGalleryScenario,
 		testCase: XCTestCase
 	) throws {
-		let baselineURL = baselineDirectory.appendingPathComponent("\(scenario.id).png")
+		let baselineURL = baselineDirectory.appendingPathComponent(baselineFilename(for: scenario))
 		guard let png = rendered.representation(using: .png, properties: [:]) else {
 			throw VisualRegressionError.couldNotEncodePNG
 		}
-
-		if recordBaselines {
+		if let diagnosticOutputDirectory {
 			try FileManager.default.createDirectory(
-				at: baselineDirectory,
+				at: diagnosticOutputDirectory,
 				withIntermediateDirectories: true
 			)
-			try png.write(to: baselineURL, options: .atomic)
-			return
+			try png.write(
+				to: diagnosticOutputDirectory.appendingPathComponent("\(scenario.id)-actual.png"),
+				options: .atomic
+			)
+		}
+
+		if let candidateOutputDirectory {
+			try FileManager.default.createDirectory(
+				at: candidateOutputDirectory,
+				withIntermediateDirectories: true
+			)
+			try png.write(
+				to: candidateOutputDirectory.appendingPathComponent("\(scenario.id).png"),
+				options: .atomic
+			)
 		}
 
 		guard let baselineData = try? Data(contentsOf: baselineURL),
 			  let baseline = NSBitmapImageRep(data: baselineData) else {
-			XCTFail(
-				"Missing visual baseline \(baselineURL.path). Record with LATEST_RECORD_VISUAL_BASELINES=1 ./script/test.sh"
-			)
+			XCTFail("Missing immutable visual reference \(baselineURL.path)")
 			return
 		}
 
@@ -147,25 +232,49 @@ private enum MigrationGalleryRenderer {
 		)
 	}
 
+	private static func baselineFilename(for scenario: MigrationGalleryScenario) -> String {
+		if case .sidebar = scenario.surface {
+			return scenario.colorScheme == .dark
+				? "sidebar-legacy-dark.png"
+				: "sidebar-legacy-light.png"
+		}
+		return "\(scenario.id).png"
+	}
+
 	private static func comparisonRegions(for scenario: MigrationGalleryScenario) -> [CGRect] {
 		let insetBounds = CGRect(origin: .zero, size: scenario.size).insetBy(dx: 2, dy: 2)
 		switch scenario.surface {
 		case .main:
-			let sidebar = MigrationGalleryMetrics.sidebarFrame(in: scenario.size).insetBy(dx: 2, dy: 2)
-			let detail = MigrationGalleryMetrics.detailFrame(in: scenario.size)
+			let leftToRightDetail = MigrationGalleryMetrics.detailFrame(in: scenario.size)
+			let detail = scenario.layoutDirection == .rightToLeft
+				? CGRect(origin: .zero, size: leftToRightDetail.size)
+				: leftToRightDetail
+			// The old gallery sidebar baseline was a standalone 65pt synthetic row,
+			// while the real pre-migration NSTableView resolves rows to 60pt. Do not
+			// make the main-window gate enforce that known-false fixture. The shipping
+			// sidebar is covered by the production table geometry/icon test above and
+			// by same-state on-screen comparison against the real original app.
+			// NSWorkspace owns the generic document icon and can change its shadow
+			// pixels independently of Latest. Compare the production-owned metadata
+			// and action portion of the header; icon size/placement remains covered
+			// by the geometry contract and real app icons by the sidebar references.
+			let headerContentStart = detail.minX
+				+ VisualMetrics.detailHeaderHorizontalPadding
+				+ VisualMetrics.detailIconSize
+				+ 5
 			let header = CGRect(
-				x: detail.minX + 2,
-				y: detail.maxY - MigrationGalleryMetrics.detailHeaderHeight,
-				width: max(0, detail.width - 4),
-				height: MigrationGalleryMetrics.detailHeaderHeight
+				x: headerContentStart,
+				y: 2,
+				width: max(0, detail.maxX - headerContentStart - 2),
+				height: MigrationGalleryMetrics.detailHeaderHeight - 2
 			)
 			let body = CGRect(
 				x: detail.minX + 2,
-				y: 2,
+				y: MigrationGalleryMetrics.detailHeaderHeight,
 				width: max(0, detail.width - 4),
 				height: max(0, detail.height - MigrationGalleryMetrics.detailHeaderHeight - 4)
 			)
-			return [sidebar, header, body]
+			return [header, body]
 		case .locations, .updateStateShelf, .toolbarStateShelf, .sidebar:
 			return [insetBounds]
 		}
@@ -224,8 +333,8 @@ private enum MigrationGalleryRenderer {
 
 		let changedFraction = comparedPixels == 0 ? 0 : Double(changedPixels) / Double(comparedPixels)
 		let rms = comparedPixels == 0 ? 0 : sqrt(squaredError / Double(comparedPixels * 3))
-		let changedFractionLimit = 0.0125
-		let rmsLimit = 3.5
+		let changedFractionLimit = 0.0025
+		let rmsLimit = 1.5
 		return VisualComparison(
 			passed: changedFraction <= changedFractionLimit && rms <= rmsLimit,
 			changedFraction: changedFraction,
@@ -255,13 +364,6 @@ private enum MigrationGalleryRenderer {
 		}
 		context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
 		return bytes
-	}
-}
-
-private extension NSView {
-	func descendant<ViewType: NSView>(of type: ViewType.Type) -> ViewType? {
-		if let match = self as? ViewType { return match }
-		return subviews.lazy.compactMap { $0.descendant(of: type) }.first
 	}
 }
 

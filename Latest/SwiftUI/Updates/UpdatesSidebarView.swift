@@ -29,7 +29,7 @@ struct UpdatesSidebarView: View {
 	var body: some View {
 		ZStack(alignment: .top) {
 			switch implementation {
-			case .legacyTable:
+			case .appKitTable:
 				UpdatesTableBridge(
 					viewModel: viewModel,
 					showsSupportStatusOverride: showsSupportStatusOverride
@@ -47,11 +47,11 @@ struct UpdatesSidebarView: View {
 	}
 }
 
-/// The AppKit table remains the shipping renderer until the native List
-/// candidate matches its population and scroll performance. Developers can
-/// opt into the candidate without changing user defaults.
+/// The measured AppKit table remains the shipping renderer until the native
+/// candidate matches its layout, interaction, and performance contract.
+/// Developers can opt into that candidate without changing user defaults.
 enum SidebarImplementation: String, CaseIterable {
-	case legacyTable = "legacy"
+	case appKitTable = "appkit"
 	case nativeList = "native"
 
 	static let environmentKey = "LATEST_SIDEBAR_IMPLEMENTATION"
@@ -64,7 +64,7 @@ enum SidebarImplementation: String, CaseIterable {
 
 	static func resolve(
 		environmentValue: String?,
-		fallback: Self = .legacyTable
+		fallback: Self = .appKitTable
 	) -> Self {
 		if let environmentValue, let implementation = Self(rawValue: environmentValue) {
 			return implementation
@@ -85,7 +85,8 @@ struct UpdatesSidebarHeaderView: View {
 		)
 		.frame(height: 28)
 		.padding(.top, -1)
-		.padding(.horizontal, 20)
+		.padding(.leading, 24)
+		.padding(.trailing, 20)
 		.frame(maxWidth: .infinity, minHeight: 39, maxHeight: 39, alignment: .top)
 	}
 }

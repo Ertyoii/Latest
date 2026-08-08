@@ -9,6 +9,10 @@
 import AppKit
 import SwiftUI
 
+private enum AppKitTableGeometry {
+	static let leadingOffset: CGFloat = 4
+}
+
 /// Capability bridge retained because the native SwiftUI List candidate misses
 /// the sidebar's population and scroll performance gates. SwiftUI still owns
 /// feature state, search, and composition around this table renderer.
@@ -37,7 +41,10 @@ struct UpdatesTableBridge: NSViewRepresentable {
 		tableView.rowHeight = VisualMetrics.appRowHeight
 		tableView.usesAutomaticRowHeights = false
 		tableView.intercellSpacing = .zero
-		tableView.style = .sourceList
+		// The original table used the source-list selection treatment without
+		// opting the whole table into source-list indentation. Applying `.sourceList`
+		// here shifts every cell horizontally on macOS 26.
+		tableView.selectionHighlightStyle = .sourceList
 		tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
 		tableView.allowsColumnReordering = false
 		tableView.allowsColumnResizing = false
@@ -61,7 +68,7 @@ struct UpdatesTableBridge: NSViewRepresentable {
 		scrollView.automaticallyAdjustsContentInsets = false
 		scrollView.drawsBackground = false
 		scrollView.contentView.drawsBackground = false
-		scrollView.contentInsets = NSEdgeInsets(top: 35, left: 0, bottom: 0, right: 0)
+		scrollView.contentInsets = NSEdgeInsets(top: 33, left: 0, bottom: 0, right: 0)
 		scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: VisualMetrics.scrollBottomInset, right: 0)
 		scrollView.documentView = tableView
 
@@ -185,8 +192,12 @@ struct UpdatesTableBridge: NSViewRepresentable {
 			let width = scrollView.contentSize.width
 			guard width > 0 else { return }
 
-			if abs(tableView.frame.width - width) > 0.5 || tableView.frame.origin.x != 0 {
-				tableView.setFrameOrigin(NSPoint(x: 0, y: tableView.frame.origin.y))
+			if abs(tableView.frame.width - width) > 0.5
+				|| tableView.frame.origin.x != AppKitTableGeometry.leadingOffset {
+				tableView.setFrameOrigin(NSPoint(
+					x: AppKitTableGeometry.leadingOffset,
+					y: tableView.frame.origin.y
+				))
 				tableView.setFrameSize(NSSize(width: width, height: tableView.frame.height))
 			}
 
@@ -222,7 +233,8 @@ struct UpdatesTableBridge: NSViewRepresentable {
 				return NoDrawingGroupRowView()
 			}
 
-			return CustomSelectionRowView()
+			// Preserve the original NSTableView source-list selection geometry.
+			return nil
 		}
 
 		func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -231,16 +243,16 @@ struct UpdatesTableBridge: NSViewRepresentable {
 			switch entries[row] {
 			case .section(let section):
 				let identifier = NSUserInterfaceItemIdentifier("LatestSwiftUISectionCell")
-				let view = tableView.makeView(withIdentifier: identifier, owner: self) as? LegacyUpdateSectionHeaderContentView
-					?? LegacyUpdateSectionHeaderContentView()
+				let view = tableView.makeView(withIdentifier: identifier, owner: self) as? AppKitUpdateSectionHeaderContentView
+					?? AppKitUpdateSectionHeaderContentView()
 				view.identifier = identifier
 				view.update(section: section)
 				return view
 
 			case .app(let app):
 				let identifier = NSUserInterfaceItemIdentifier("LatestSwiftUIUpdateCell")
-				let view = tableView.makeView(withIdentifier: identifier, owner: self) as? LegacyUpdateRowContentView
-					?? LegacyUpdateRowContentView()
+				let view = tableView.makeView(withIdentifier: identifier, owner: self) as? AppKitUpdateRowContentView
+					?? AppKitUpdateRowContentView()
 				view.identifier = identifier
 				view.onSelect = { [weak self] in
 					self?.viewModel.select(app)
@@ -248,7 +260,6 @@ struct UpdatesTableBridge: NSViewRepresentable {
 				view.update(
 					app: app,
 					isSelected: selectedIdentifier == app.identifier,
-					drawsSelectionBackground: true,
 					filterQuery: filterQuery,
 					dateFormatter: Self.dateFormatter,
 					showsSupportStatusOverride: showsSupportStatusOverride
@@ -355,11 +366,10 @@ struct UpdatesTableBridge: NSViewRepresentable {
 			guard let tableView else { return }
 			for row in Set(rows) {
 				guard row >= 0, row < entries.count, case .app(let app) = entries[row] else { continue }
-				guard let view = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? LegacyUpdateRowContentView else { continue }
+				guard let view = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? AppKitUpdateRowContentView else { continue }
 				view.update(
 					app: app,
 					isSelected: selectedIdentifier == app.identifier,
-					drawsSelectionBackground: true,
 					filterQuery: filterQuery,
 					dateFormatter: Self.dateFormatter,
 					showsSupportStatusOverride: showsSupportStatusOverride
@@ -574,7 +584,7 @@ private final class SwiftUIUpdateTableView: NSTableView {
 	}
 
 	override func setFrameOrigin(_ newOrigin: NSPoint) {
-		super.setFrameOrigin(NSPoint(x: 0, y: newOrigin.y))
+		super.setFrameOrigin(NSPoint(x: AppKitTableGeometry.leadingOffset, y: newOrigin.y))
 	}
 
 	override func mouseDown(with event: NSEvent) {
@@ -594,8 +604,8 @@ private final class SwiftUIUpdateTableView: NSTableView {
 		if width > 0, abs(frame.width - width) > 0.5 {
 			setFrameSize(NSSize(width: width, height: frame.height))
 		}
-		if frame.origin.x != 0 {
-			setFrameOrigin(NSPoint(x: 0, y: frame.origin.y))
+		if frame.origin.x != AppKitTableGeometry.leadingOffset {
+			setFrameOrigin(NSPoint(x: AppKitTableGeometry.leadingOffset, y: frame.origin.y))
 		}
 		if scrollView.contentView.bounds.origin.x != 0 {
 			scrollView.contentView.scroll(to: NSPoint(x: 0, y: scrollView.contentView.bounds.origin.y))
@@ -606,10 +616,6 @@ private final class SwiftUIUpdateTableView: NSTableView {
 
 private final class NoDrawingGroupRowView: NSTableRowView {
 	override func drawBackground(in dirtyRect: NSRect) {}
-}
-
-private final class CustomSelectionRowView: NSTableRowView {
-	override func drawSelection(in dirtyRect: NSRect) {}
 }
 
 private final class LockedHorizontalScrollView: NSScrollView {

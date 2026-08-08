@@ -90,6 +90,42 @@ final class AppDataStoreTest: XCTestCase {
 
 
 final class AppDirectoryTest: XCTestCase {
+	func testProcessWideCollectionCoordinatorCoalescesSameDirectory() {
+		let collectionStarted = DispatchSemaphore(value: 0)
+		let allowCollectionToFinish = DispatchSemaphore(value: 0)
+		let waiterJoined = DispatchSemaphore(value: 0)
+		let invocationCount = Mutex(0)
+		let coordinator = BundleCollectionCoordinator(
+			collector: { _ in
+				invocationCount.withLock { $0 += 1 }
+				collectionStarted.signal()
+				allowCollectionToFinish.wait()
+				return []
+			},
+			waiterDidJoin: {
+				waiterJoined.signal()
+			}
+		)
+		let directoryURL = FileManager.default.temporaryDirectory
+			.appendingPathComponent(UUID().uuidString, isDirectory: true)
+		let callersFinished = expectation(description: "Coalesced callers finished")
+		callersFinished.expectedFulfillmentCount = 2
+
+		DispatchQueue.global(qos: .userInitiated).async {
+			_ = coordinator.collectBundles(at: directoryURL)
+			callersFinished.fulfill()
+		}
+
+		XCTAssertEqual(collectionStarted.wait(timeout: .now() + 1), .success)
+		DispatchQueue.global(qos: .userInitiated).async {
+			_ = coordinator.collectBundles(at: directoryURL)
+			callersFinished.fulfill()
+		}
+		XCTAssertEqual(waiterJoined.wait(timeout: .now() + 1), .success)
+		allowCollectionToFinish.signal()
+		wait(for: [callersFinished], timeout: 2)
+		XCTAssertEqual(invocationCount.withLock { $0 }, 1)
+	}
 
 	func testRefreshRecollectsBundleVersionFromDisk() throws {
 		let directoryURL = FileManager.default.temporaryDirectory

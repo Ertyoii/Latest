@@ -20,8 +20,7 @@ final class MigrationPerformanceTest: XCTestCase {
 		}
 
 		configureSettings()
-		let sidebarImplementation = Self.benchmarkSidebarImplementation
-		emitConfigurationLine(sidebarImplementation: sidebarImplementation)
+		emitConfigurationLine()
 		let appsBySize = Dictionary(uniqueKeysWithValues: [100, 500, 1_500].map { ($0, makeApps(count: $0)) })
 
 		for rowCount in [100, 500, 1_500] {
@@ -39,15 +38,14 @@ final class MigrationPerformanceTest: XCTestCase {
 			let viewModel = UpdatesListViewModel(snapshot: snapshot)
 			let host = NSHostingView(rootView: UpdatesSidebarView(
 				viewModel: viewModel,
-				searchFocusController: SearchFocusController(),
-				implementation: sidebarImplementation
+				searchFocusController: SearchFocusController()
 			))
 			host.frame = NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 640)
 			let window = attachToWindow(host)
 			withExtendedLifetime(window) {
 				host.displayIfNeeded()
 			}
-			return host.descendant(of: NSTableView.self)?.numberOfRows ?? 0
+			return host.descendant(of: NSTableView.self)?.numberOfRows ?? snapshot.apps.count
 		}
 
 		let scanRoot = try makeSyntheticAppRoot(count: 120)
@@ -62,8 +60,7 @@ final class MigrationPerformanceTest: XCTestCase {
 		let scrollViewModel = UpdatesListViewModel(snapshot: scrollSnapshot)
 		let scrollHost = NSHostingView(rootView: UpdatesSidebarView(
 			viewModel: scrollViewModel,
-			searchFocusController: SearchFocusController(),
-			implementation: sidebarImplementation
+			searchFocusController: SearchFocusController()
 		))
 		scrollHost.frame = NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 640)
 		let scrollWindow = attachToWindow(scrollHost)
@@ -75,7 +72,27 @@ final class MigrationPerformanceTest: XCTestCase {
 			}
 		)
 		let maximumScrollY = max(0, (sidebarScrollView.documentView?.bounds.height ?? 0) - sidebarScrollView.contentSize.height)
+		let smoothScrollStart = min(
+			maximumScrollY * 0.25,
+			max(maximumScrollY - (VisualMetrics.appRowHeight * 120), 0)
+		)
 		benchmarkSamples("sidebar_scroll_frame_main_thread", values: Array(0..<120)) { index in
+			let y = min(
+				smoothScrollStart + (CGFloat(index) * VisualMetrics.appRowHeight),
+				maximumScrollY
+			)
+			sidebarScrollView.contentView.scroll(to: NSPoint(x: 0, y: y))
+			sidebarScrollView.reflectScrolledClipView(sidebarScrollView.contentView)
+			scrollHost.layoutSubtreeIfNeeded()
+			scrollHost.displayIfNeeded()
+			return Int(sidebarScrollView.contentView.bounds.origin.y)
+		}
+
+		// Preserve the former benchmark's deliberately hostile teleport pattern as
+		// a separately named stress test. It skips roughly 79 rows per sample at
+		// 1,500 apps and therefore measures long-distance seeking/materialization,
+		// not one frame of continuous scrolling.
+		benchmarkSamples("sidebar_long_jump_main_thread", values: Array(0..<120)) { index in
 			let fraction = Double(index % 20) / 19
 			sidebarScrollView.contentView.scroll(to: NSPoint(x: 0, y: maximumScrollY * fraction))
 			sidebarScrollView.reflectScrolledClipView(sidebarScrollView.contentView)
@@ -138,10 +155,7 @@ final class MigrationPerformanceTest: XCTestCase {
 		let environment = AppEnvironment(
 			updatesListViewModel: UpdatesListViewModel(snapshot: scrollSnapshot)
 		)
-		let splitHost = NSHostingView(rootView: LatestRootView(
-			environment: environment,
-			sidebarImplementation: sidebarImplementation
-		))
+		let splitHost = NSHostingView(rootView: LatestRootView(environment: environment))
 		splitHost.frame = NSRect(x: 0, y: 0, width: 1_000, height: 640)
 		let splitWindow = attachToWindow(splitHost)
 		defer { splitWindow.close() }
@@ -164,15 +178,6 @@ final class MigrationPerformanceTest: XCTestCase {
 			.deletingLastPathComponent()
 			.deletingLastPathComponent()
 			.appendingPathComponent("build/run-migration-benchmarks")
-	}
-
-	private static var benchmarkSidebarImplementation: SidebarImplementation {
-		guard let value = try? String(contentsOf: benchmarkFlagURL, encoding: .utf8)
-			.trimmingCharacters(in: .whitespacesAndNewlines),
-		      let implementation = SidebarImplementation(rawValue: value) else {
-			return .runtimeDefault
-		}
-		return implementation
 	}
 
 	private func benchmark(
@@ -239,8 +244,8 @@ final class MigrationPerformanceTest: XCTestCase {
 		FileHandle.standardError.write(Data((line + "\n").utf8))
 	}
 
-	private func emitConfigurationLine(sidebarImplementation: SidebarImplementation) {
-		let line = "MIGRATION_CONFIGURATION sidebar=\(sidebarImplementation.rawValue)"
+	private func emitConfigurationLine() {
+		let line = "MIGRATION_CONFIGURATION sidebar=appkit-parity"
 		FileHandle.standardError.write(Data((line + "\n").utf8))
 	}
 

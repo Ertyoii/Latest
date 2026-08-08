@@ -253,8 +253,6 @@
 		508D4E692FBC000000000001 /* AppDataStoreTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataStoreTest.swift; sourceTree = "<group>"; };
 		508D4E6F2FC100000000001 /* ComplexityBenchmarkTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComplexityBenchmarkTest.swift; sourceTree = "<group>"; };
 		508D4E6B2FC000000000001 /* UpdateQueueTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateQueueTest.swift; sourceTree = "<group>"; };
-		5094821C27C19E4A00EC6B6B /* CFBundle_Private.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CFBundle_Private.h; sourceTree = "<group>"; };
-		5094823327C19F5800EC6B6B /* Latest Bridging_Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Latest Bridging_Header.h"; sourceTree = "<group>"; };
 		509512101FF362A1003D2D7F /* Version.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Version.swift; sourceTree = "<group>"; };
 		509512111FF362A1003D2D7F /* Update.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Update.swift; sourceTree = "<group>"; };
 		5095121F1FF36301003D2D7F /* Bundle.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Bundle.swift; sourceTree = "<group>"; };
@@ -679,7 +677,6 @@
 			isa = PBXGroup;
 			children = (
 				506A8F6622EC14CC00C755AF /* LatestError.swift */,
-				5094821C27C19E4A00EC6B6B /* CFBundle_Private.h */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -692,7 +689,6 @@
 				50290E781E53EB6A00133E3D /* Assets.xcassets */,
 				50290E7D1E53EB6A00133E3D /* Info.plist */,
 				502217992804BB330043366B /* InfoPlist.strings */,
-				5094823327C19F5800EC6B6B /* Latest Bridging_Header.h */,
 				501EA98C1EB1BD8B00D05821 /* Localizable.stringsdict */,
 				501EA9841EB1BA4400D05821 /* Localizable.strings */,
 				50C8C85B208A0EE9004FF5D5 /* dsa_pub.pem */,
@@ -1099,9 +1095,9 @@
 				51F100032FD0000000000001 /* SidebarInteractionPolicy.swift in Sources */,
 				51F1000B2FD0000000000001 /* NativeUpdatesSidebarView.swift in Sources */,
 				51F1000C2FD0000000000001 /* UpdatesTableBridge.swift in Sources */,
-				51F100052FD0000000000001 /* MigrationTelemetry.swift in Sources */,
 				51A0010F2FC3000000000001 /* UpdateSectionHeaderView.swift in Sources */,
 				51A001102FC3000000000001 /* UpdateRowView.swift in Sources */,
+				51F100052FD0000000000001 /* MigrationTelemetry.swift in Sources */,
 				51A001112FC3000000000001 /* UpdatesSidebarView.swift in Sources */,
 				51A001142FC3000000000001 /* ReleaseNotesDetailView.swift in Sources */,
 				51F100072FD0000000000001 /* ReleaseNotesDetailViewModel.swift in Sources */,
@@ -1490,13 +1486,14 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.48;
+				LATEST_RELEASE_NOTES_CATALOG_PUBLIC_KEY = "";
+				LATEST_RELEASE_NOTES_CATALOG_URL = "";
+				MARKETING_VERSION = 0.49;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/Frameworks/CommerceKit $(SRCROOT)/Frameworks/StoreFoundation";
-				SWIFT_OBJC_BRIDGING_HEADER = "Latest/Resources/Latest Bridging_Header.h";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
@@ -1531,13 +1528,14 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.48;
+				LATEST_RELEASE_NOTES_CATALOG_PUBLIC_KEY = "";
+				LATEST_RELEASE_NOTES_CATALOG_URL = "";
+				MARKETING_VERSION = 0.49;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/Frameworks/CommerceKit $(SRCROOT)/Frameworks/StoreFoundation";
-				SWIFT_OBJC_BRIDGING_HEADER = "Latest/Resources/Latest Bridging_Header.h";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;

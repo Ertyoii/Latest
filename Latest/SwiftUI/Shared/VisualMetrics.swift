@@ -10,7 +10,10 @@ import CoreGraphics
 
 @MainActor
 enum VisualMetrics {
-	static let appRowHeight: CGFloat = 65
+	/// The original AppKit table resolves its prototype rows to 60 points at
+	/// runtime. Keep the production list on that measured cadence; the former
+	/// 65-point synthetic fixture made every following row drift farther down.
+	static let appRowHeight: CGFloat = 60
 	static let sectionHeaderHeight: CGFloat = 27
 	static let listTopInset: CGFloat = 36
 	static let scrollBottomInset: CGFloat = 10

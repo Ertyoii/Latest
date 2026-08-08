@@ -48,12 +48,20 @@ else
   pass "test-only MigrationGallery is absent from the Release executable"
 fi
 
+if rg -q 'LATEST_LOCAL_UAT_FIXTURE|Latest-UAT-' < <(strings "$EXECUTABLE_PATH"); then
+	fail "debug-only local UAT fixture is present in the Release executable"
+else
+	pass "debug-only local UAT fixture is absent from the Release executable"
+fi
+
 allowed_bridges=(
-  "Latest/SwiftUI/ReleaseNotes/SelectableReleaseNotesTextView.swift"
-  "Latest/SwiftUI/ReleaseNotes/UpdateActionView.swift"
-  "Latest/SwiftUI/Shared/WindowAccessor.swift"
-  "Latest/SwiftUI/Updates/SearchFieldRepresentable.swift"
-  "Latest/SwiftUI/Updates/UpdatesTableBridge.swift"
+	"Latest/SwiftUI/Shared/WindowAccessor.swift"
+	"Latest/SwiftUI/Updates/SearchFieldRepresentable.swift"
+	"Latest/SwiftUI/Updates/UpdatesTableBridge.swift"
+	"Latest/SwiftUI/Updates/UpdateRowView.swift"
+	"Latest/SwiftUI/Updates/UpdateSectionHeaderView.swift"
+	"Latest/SwiftUI/ReleaseNotes/SelectableReleaseNotesTextView.swift"
+	"Latest/SwiftUI/ReleaseNotes/UpdateActionView.swift"
 )
 
 bridge_files=()
@@ -89,7 +97,23 @@ fi
 if rg -q 'NSGlassEffectView' "$ROOT_DIR/Latest" --glob '*.swift'; then
   fail "private Liquid Glass view-tree coupling is present"
 else
-  pass "no private Liquid Glass view-tree coupling"
+	pass "no private Liquid Glass view-tree coupling"
+fi
+
+if rg -q '_CFBundleFlushBundleCaches' < <(strings "$EXECUTABLE_PATH"); then
+	fail "removed private bundle-cache hook remains in the Release executable"
+else
+	pass "removed private bundle-cache hook is absent"
+fi
+
+private_framework_files=()
+while IFS= read -r private_framework_file; do
+	private_framework_files+=("${private_framework_file#"$ROOT_DIR/"}")
+done < <(rg -l '^import (CommerceKit|StoreFoundation)$' "$ROOT_DIR/Latest" --glob '*.swift' | sort)
+if ((${#private_framework_files[@]} == 1)) && [[ "${private_framework_files[0]}" == "Latest/Model/Updater/App Store/AppStoreUpdateOperation.swift" ]]; then
+	pass "private App Store updater frameworks remain isolated to one capability boundary"
+else
+	fail "private App Store updater framework imports escaped their reviewed boundary"
 fi
 
 exit "$failed"

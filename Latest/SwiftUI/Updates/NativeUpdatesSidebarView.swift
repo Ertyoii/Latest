@@ -234,7 +234,7 @@ private struct NativeUpdateRow: View {
 		self.isSelected = isSelected
 		self.progressState = progressState
 		self.showsSupportStatusOverride = showsSupportStatusOverride
-		_icon = State(initialValue: IconCache.shared.cachedIcon(for: app))
+		_icon = State(initialValue: IconCache.shared.iconImmediately(for: app))
 	}
 
 	var body: some View {
