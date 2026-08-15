@@ -186,7 +186,7 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 	}
 
 	@MainActor
-	func testAppKitSidebarUsesSystemSelectedTextColors() throws {
+	func testAppKitSidebarTextColorsFollowSelectionEmphasis() throws {
 		let row = AppKitUpdateRowContentView(
 			frame: NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: VisualMetrics.appRowHeight)
 		)
@@ -196,15 +196,26 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 		let app = makeApp(name: "Discord", version: "0.0.398", remoteVersion: "0.0.399")
 
 		row.update(app: app, isSelected: true, filterQuery: nil, dateFormatter: dateFormatter)
+		row.backgroundStyle = .emphasized
 
 		let fields = row.descendantTextFields()
 		let nameField = try XCTUnwrap(fields.first(where: { $0.stringValue == "Discord" }))
-		let titleColor = try XCTUnwrap(
+		let activeTitleColor = try XCTUnwrap(
 			nameField.attributedStringValue.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
 		)
-		XCTAssertEqual(titleColor, .alternateSelectedControlTextColor)
+		XCTAssertEqual(activeTitleColor, .alternateSelectedControlTextColor)
 		for field in fields where field !== nameField {
 			XCTAssertEqual(field.textColor, .alternateSelectedControlTextColor)
+		}
+
+		row.backgroundStyle = .normal
+
+		let inactiveTitleColor = try XCTUnwrap(
+			nameField.attributedStringValue.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+		)
+		XCTAssertEqual(inactiveTitleColor, .labelColor)
+		for field in fields where field !== nameField {
+			XCTAssertEqual(field.textColor, .secondaryLabelColor)
 		}
 	}
 

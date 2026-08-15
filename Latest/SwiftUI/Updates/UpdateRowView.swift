@@ -36,6 +36,13 @@ final class AppKitUpdateRowContentView: NSTableCellView {
 	private var representedIdentifier: App.Bundle.Identifier?
 	private var observedIdentifier: App.Bundle.Identifier?
 	private var updateStateTask: Task<Void, Never>?
+	private var displaysAsSelected = false
+
+	override var backgroundStyle: NSView.BackgroundStyle {
+		didSet {
+			updateTextColors()
+		}
+	}
 
 	override init(frame frameRect: NSRect) {
 		super.init(frame: frameRect)
@@ -58,7 +65,7 @@ final class AppKitUpdateRowContentView: NSTableCellView {
 		dateFormatter: DateFormatter,
 		showsSupportStatusOverride: Bool? = nil
 	) {
-		updateTitle(for: app, filterQuery: filterQuery, isSelected: isSelected)
+		updateTitle(for: app, filterQuery: filterQuery)
 
 		if let versionInformation = app.localizedVersionInformation {
 			currentVersionField.stringValue = versionInformation.current
@@ -173,10 +180,9 @@ final class AppKitUpdateRowContentView: NSTableCellView {
 		])
 	}
 
-	private func updateTitle(for app: App, filterQuery: String?, isSelected: Bool) {
+	private func updateTitle(for app: App, filterQuery: String?) {
 		let title = NSMutableAttributedString(attributedString: app.highlightedName(for: filterQuery))
 		title.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .semibold), range: NSRange(location: 0, length: title.length))
-		title.addAttribute(.foregroundColor, value: isSelected ? NSColor.alternateSelectedControlTextColor : NSColor.labelColor, range: NSRange(location: 0, length: title.length))
 		nameField.attributedStringValue = title
 	}
 
@@ -207,8 +213,21 @@ final class AppKitUpdateRowContentView: NSTableCellView {
 	}
 
 	private func updateSelection(_ isSelected: Bool) {
+		displaysAsSelected = isSelected
 		separator.isHidden = isSelected
-		let textColor: NSColor = isSelected ? .alternateSelectedControlTextColor : .secondaryLabelColor
+		updateTextColors()
+	}
+
+	private func updateTextColors() {
+		// AppKit changes a selected row from emphasized to normal when focus leaves the table.
+		let usesActiveSelectionColors = displaysAsSelected && backgroundStyle == .emphasized
+		let titleColor: NSColor = usesActiveSelectionColors ? .alternateSelectedControlTextColor : .labelColor
+		let textColor: NSColor = usesActiveSelectionColors ? .alternateSelectedControlTextColor : .secondaryLabelColor
+		let title = NSMutableAttributedString(attributedString: nameField.attributedStringValue)
+		if title.length > 0 {
+			title.addAttribute(.foregroundColor, value: titleColor, range: NSRange(location: 0, length: title.length))
+			nameField.attributedStringValue = title
+		}
 		currentVersionField.textColor = textColor
 		newVersionField.textColor = textColor
 		dateField.textColor = textColor
