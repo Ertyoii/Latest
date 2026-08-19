@@ -44,6 +44,27 @@ final class AppDataStoreTest: XCTestCase {
 		XCTAssertEqual(refreshedApp.remoteVersion, remoteVersion)
 	}
 
+	func testSingleBundleRefreshClearsAvailableStateWhenInstalledVersionCatchesUp() {
+		let store = AppDataStore()
+		let appURL = URL(fileURLWithPath: "/Applications/Updated-\(UUID().uuidString).app", isDirectory: true)
+		let initialBundle = makeBundle(versionNumber: "1.0", at: appURL)
+		let remoteVersion = Version(versionNumber: "2.0", buildNumber: nil)
+
+		_ = store.set(appBundles: [initialBundle])
+		let availableApp = store.set(
+			.success(makeUpdate(for: initialBundle, remoteVersion: remoteVersion)),
+			for: initialBundle
+		)
+		XCTAssertTrue(availableApp.updateAvailable)
+
+		let installedBundle = makeBundle(versionNumber: "2.0", at: appURL)
+		let installedApp = store.set(appBundle: installedBundle)
+
+		XCTAssertEqual(installedApp.version, remoteVersion)
+		XCTAssertEqual(installedApp.remoteVersion, remoteVersion)
+		XCTAssertFalse(installedApp.updateAvailable)
+	}
+
 	func testIgnoredIdentifiersAreCachedAndPersistedWithAppState() throws {
 		let suiteName = "AppDataStoreTest.\(UUID().uuidString)"
 		let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

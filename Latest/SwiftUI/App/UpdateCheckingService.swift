@@ -19,6 +19,7 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
 	@Published private(set) var isIndeterminate = false
 	@Published private(set) var checkedApps = 0
 	@Published private(set) var totalApps = 0
+	private var currentCheckingGeneration: Int?
 	private var activeCheckingBatches = 0
 
 	var progressFraction: Double? {
@@ -80,10 +81,22 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
 		isIndeterminate = true
 		checkedApps = 0
 		totalApps = 0
+		currentCheckingGeneration = nil
 		activeCheckingBatches = 0
 	}
 
-	func updateChecker(_ updateChecker: UpdateCheckCoordinator, didStartCheckingApps numberOfApps: Int) {
+	func updateChecker(
+		_ updateChecker: UpdateCheckCoordinator,
+		didStartCheckingApps numberOfApps: Int,
+		generation: Int
+	) {
+		if currentCheckingGeneration != generation {
+			currentCheckingGeneration = generation
+			activeCheckingBatches = 0
+			checkedApps = 0
+			totalApps = 0
+		}
+
 		let isFirstBatch = activeCheckingBatches == 0
 		activeCheckingBatches += 1
 		isRunning = true
@@ -100,9 +113,11 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
 		checkedApps += 1
 	}
 
-	func updateCheckerDidFinishCheckingForUpdates(_ updateChecker: UpdateCheckCoordinator) {
+	func updateCheckerDidFinishCheckingForUpdates(_ updateChecker: UpdateCheckCoordinator, generation: Int) {
+		guard currentCheckingGeneration == generation else { return }
 		activeCheckingBatches = max(0, activeCheckingBatches - 1)
 		guard activeCheckingBatches == 0 else { return }
+		currentCheckingGeneration = nil
 		isRunning = false
 		isIndeterminate = false
 		MigrationTelemetry.shared.scanFinished(appCount: totalApps)

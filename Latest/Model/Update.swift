@@ -100,10 +100,9 @@ extension App {
 		/// Returns a sanitized update for the given app bundle.
 		func sanitized(for bundle: App.Bundle) -> Update {
 			let version = remoteVersion.sanitize(with: bundle.version)
-			guard version != remoteVersion else { return self }
+			guard version != remoteVersion || app !== bundle else { return self }
 			
-			// Modify just the remote version
-			return Update(app: app, remoteVersion: version, minimumOSVersion: minimumOSVersion, source: source, date: date, releaseNotes: releaseNotes, updateAction: updateAction)
+			return Update(app: bundle, remoteVersion: version, minimumOSVersion: minimumOSVersion, source: source, date: date, releaseNotes: releaseNotes, updateAction: updateAction)
 		}
 		
 		

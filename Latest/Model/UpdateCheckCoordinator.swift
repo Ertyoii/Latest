@@ -27,14 +27,19 @@ protocol UpdateCheckProgressReporting : AnyObject {
 	/**
 	The process of checking apps for updates has started
 	- parameter numberOfApps: The number of apps that will be checked
+	- parameter generation: The check generation that owns this batch
 	*/
-	func updateChecker(_ updateChecker: UpdateCheckCoordinator, didStartCheckingApps numberOfApps: Int)
+	func updateChecker(
+		_ updateChecker: UpdateCheckCoordinator,
+		didStartCheckingApps numberOfApps: Int,
+		generation: Int
+	)
 
 	/// Indicates that a single app has been checked.
 	func updateChecker(_ updateChecker: UpdateCheckCoordinator, didCheckApp: App)
 
 	/// Called after the update checker finished checking for updates.
-	func updateCheckerDidFinishCheckingForUpdates(_ updateChecker: UpdateCheckCoordinator)
+	func updateCheckerDidFinishCheckingForUpdates(_ updateChecker: UpdateCheckCoordinator, generation: Int)
 
 }
 
@@ -206,7 +211,11 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 	) async {
 		await MainActor.run {
 			guard self.updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
-			self.progressDelegate?.updateChecker(self, didStartCheckingApps: bundles.count)
+			self.progressDelegate?.updateChecker(
+				self,
+				didStartCheckingApps: bundles.count,
+				generation: generation
+			)
 		}
 
 		let execution = await updateCheckExecutor.run(bundles, collectResults: false, onCompletion: { [weak self] (indexedResult: IndexedUpdateCheckResult<App.Update>) in
@@ -229,7 +238,7 @@ class UpdateCheckCoordinator: @unchecked Sendable {
 		)
 		await MainActor.run {
 			guard self.updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
-			self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self)
+			self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self, generation: generation)
 		}
 	}
 
