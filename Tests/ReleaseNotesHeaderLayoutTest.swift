@@ -98,6 +98,158 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 	}
 
 	@MainActor
+	func testSidebarGlassAccessorConfiguresOnlyItsNearestGlassAncestor() {
+		XCTAssertEqual(
+			VisualMetrics.sidebarGlassCornerRadius,
+			VisualMetrics.mainWindowCornerRadius - VisualMetrics.sidebarGlassInset
+		)
+		let outerGlass = NSGlassEffectView()
+		outerGlass.cornerRadius = 7
+		let innerGlass = NSGlassEffectView()
+		innerGlass.cornerRadius = 8
+		let container = NSView()
+		let accessor = SidebarGlassGeometryConfigurationView(
+			cornerRadius: VisualMetrics.sidebarGlassCornerRadius,
+			leadingLayoutInset: VisualMetrics.sidebarGlassLeadingLayoutInset
+		)
+
+		outerGlass.addSubview(innerGlass)
+		innerGlass.addSubview(container)
+		container.addSubview(accessor)
+
+		XCTAssertTrue(accessor.configureNearestGlassAncestor())
+		XCTAssertEqual(innerGlass.cornerRadius, VisualMetrics.sidebarGlassCornerRadius)
+		XCTAssertEqual(outerGlass.cornerRadius, 7, "The accessor must not alter unrelated glass ancestors.")
+	}
+
+	@MainActor
+	func testSidebarGlassAccessorCompensatesTheWindowFacingLeadingInset() {
+		let wrapper = NSView(frame: NSRect(x: 0, y: 0, width: 316, height: 548))
+		let glass = NSGlassEffectView()
+		glass.translatesAutoresizingMaskIntoConstraints = false
+		wrapper.addSubview(glass)
+
+		let leading = glass.leadingAnchor.constraint(
+			equalTo: wrapper.leadingAnchor,
+			constant: VisualMetrics.sidebarGlassInset
+		)
+		let trailing = glass.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor)
+		let equalBreadth = wrapper.widthAnchor.constraint(
+			equalTo: glass.widthAnchor,
+			constant: VisualMetrics.sidebarGlassInset
+		)
+		equalBreadth.priority = NSLayoutConstraint.Priority(999.99)
+		NSLayoutConstraint.activate([leading, trailing, equalBreadth])
+
+		let accessor = SidebarGlassGeometryConfigurationView(
+			cornerRadius: VisualMetrics.sidebarGlassCornerRadius,
+			leadingLayoutInset: VisualMetrics.sidebarGlassLeadingLayoutInset
+		)
+		glass.contentView = accessor
+
+		XCTAssertTrue(accessor.configureNearestGlassAncestor())
+		XCTAssertEqual(leading.constant, VisualMetrics.sidebarGlassLeadingLayoutInset)
+		XCTAssertEqual(equalBreadth.constant, VisualMetrics.sidebarGlassLeadingLayoutInset)
+		XCTAssertEqual(trailing.constant, 0)
+	}
+
+	@MainActor
+	func testSidebarGlassAccessorDoesNothingOutsideAGlassSurface() {
+		let container = NSView()
+		let accessor = SidebarGlassGeometryConfigurationView(
+			cornerRadius: VisualMetrics.sidebarGlassCornerRadius,
+			leadingLayoutInset: VisualMetrics.sidebarGlassLeadingLayoutInset
+		)
+		container.addSubview(accessor)
+
+		XCTAssertFalse(accessor.configureNearestGlassAncestor())
+	}
+
+	@MainActor
+	func testProductionSidebarGlassUsesWindowConcentricRadius() throws {
+		let environment = AppEnvironment.localUATFixture()
+		let hostingView = NSHostingView(rootView: LatestRootView(environment: environment))
+		hostingView.frame = NSRect(
+			x: 0,
+			y: 0,
+			width: VisualMetrics.mainWindowDefaultWidth,
+			height: VisualMetrics.mainWindowDefaultHeight
+		)
+		let window = NSWindow(
+			contentRect: hostingView.bounds,
+			styleMask: [.titled, .closable, .resizable],
+			backing: .buffered,
+			defer: false
+		)
+		window.isReleasedWhenClosed = false
+		window.contentView = hostingView
+		defer { window.close() }
+
+		window.orderFront(nil)
+		window.layoutIfNeeded()
+		hostingView.layoutSubtreeIfNeeded()
+		RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.15))
+
+		let sidebarGlass = try XCTUnwrap(
+			hostingView.descendantGlassEffects().first(where: {
+				abs(
+					$0.bounds.width -
+						(VisualMetrics.sidebarIdealWidth - VisualMetrics.sidebarGlassLeadingCompensation)
+				) < 0.5
+					&& $0.bounds.height >= VisualMetrics.mainWindowMinHeight
+			})
+		)
+		let glassRectInWindow = sidebarGlass.convert(sidebarGlass.bounds, to: nil)
+		let contentBounds = try XCTUnwrap(window.contentView).bounds
+		let leadingInset = glassRectInWindow.minX - contentBounds.minX
+		let visibleLeadingInset = leadingInset - VisualMetrics.sidebarGlassLeadingCompensation
+		let bottomInset = glassRectInWindow.minY - contentBounds.minY
+		let topInset = contentBounds.maxY - glassRectInWindow.maxY
+
+		XCTAssertEqual(leadingInset, VisualMetrics.sidebarGlassLeadingLayoutInset, accuracy: 0.5)
+		XCTAssertEqual(visibleLeadingInset, VisualMetrics.sidebarGlassInset, accuracy: 0.5)
+		XCTAssertEqual(bottomInset, VisualMetrics.sidebarGlassInset, accuracy: 0.5)
+		XCTAssertEqual(topInset, VisualMetrics.sidebarGlassInset, accuracy: 0.5)
+		XCTAssertEqual(sidebarGlass.cornerRadius, VisualMetrics.sidebarGlassCornerRadius)
+		XCTAssertEqual(
+			visibleLeadingInset + sidebarGlass.cornerRadius,
+			VisualMetrics.mainWindowCornerRadius,
+			accuracy: 0.5
+		)
+		XCTAssertEqual(
+			bottomInset + sidebarGlass.cornerRadius,
+			VisualMetrics.mainWindowCornerRadius,
+			accuracy: 0.5
+		)
+		XCTAssertEqual(
+			topInset + sidebarGlass.cornerRadius,
+			VisualMetrics.mainWindowCornerRadius,
+			accuracy: 0.5
+		)
+
+		window.setContentSize(NSSize(width: 900, height: 640))
+		window.layoutIfNeeded()
+		hostingView.layoutSubtreeIfNeeded()
+		RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.15))
+		window.layoutIfNeeded()
+		hostingView.layoutSubtreeIfNeeded()
+
+		let resizedGlassRect = sidebarGlass.convert(sidebarGlass.bounds, to: nil)
+		let resizedContentBounds = try XCTUnwrap(window.contentView).bounds
+		XCTAssertEqual(
+			resizedGlassRect.minX - resizedContentBounds.minX,
+			VisualMetrics.sidebarGlassLeadingLayoutInset,
+			accuracy: 0.5
+		)
+		XCTAssertEqual(
+			resizedGlassRect.minY - resizedContentBounds.minY,
+			VisualMetrics.sidebarGlassInset,
+			accuracy: 0.5
+		)
+		XCTAssertEqual(sidebarGlass.cornerRadius, VisualMetrics.sidebarGlassCornerRadius)
+	}
+
+	@MainActor
 	func testSwiftUIRefreshToolbarButtonRunsActionAndExposesAccessibilityContract() {
 		var invocationCount = 0
 		let button = RefreshToolbarButton(isEnabled: true) {
@@ -219,6 +371,16 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 		}
 	}
 
+	@MainActor
+	func testSidebarSelectionStaysNeutralWhenWindowBecomesKey() {
+		let row = StableSelectionTableRowView()
+		row.isSelected = true
+		row.isEmphasized = true
+
+		XCTAssertTrue(row.isSelected)
+		XCTAssertFalse(row.isEmphasized)
+	}
+
 	private func makeApp(
 		name: String,
 		version: String,
@@ -261,6 +423,13 @@ private final class UpdateCheckingCommandSpy: UpdateCheckingCommandHandling {
 }
 
 private extension NSView {
+	func descendantGlassEffects() -> [NSGlassEffectView] {
+		subviews.flatMap { view -> [NSGlassEffectView] in
+			let current = (view as? NSGlassEffectView).map { [$0] } ?? []
+			return current + view.descendantGlassEffects()
+		}
+	}
+
 	func descendantTextFields() -> [NSTextField] {
 		subviews.flatMap { view -> [NSTextField] in
 			let current = (view as? NSTextField).map { [$0] } ?? []

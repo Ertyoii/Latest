@@ -37,9 +37,9 @@ final class SettingsViewModel: ObservableObject {
 			switch self {
 			case .general:
 				// SwiftUI's native preferences toolbar is six points shorter than the
-				// former NSToolbar host. Preserve the previous 440 × 309 window frame
-				// without moving the fixed 219-point General content.
-				CGSize(width: 440, height: 225)
+				// former NSToolbar host. Keep that six-point allowance while making
+				// room for the native appearance selector.
+				CGSize(width: 440, height: 255)
 			case .locations:
 				CGSize(width: 440, height: 296)
 			}

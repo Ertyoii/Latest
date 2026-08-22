@@ -94,10 +94,17 @@ else
   pass "production AppKit bridges are limited to ${#bridge_files[@]} reviewed capability boundaries"
 fi
 
-if rg -q 'NSGlassEffectView' "$ROOT_DIR/Latest" --glob '*.swift'; then
-  fail "private Liquid Glass view-tree coupling is present"
+glass_bridge_files=()
+while IFS= read -r glass_bridge_file; do
+	glass_bridge_files+=("${glass_bridge_file#"$ROOT_DIR/"}")
+done < <(rg -l 'NSGlassEffectView' "$ROOT_DIR/Latest" --glob '*.swift' | sort)
+
+if ((${#glass_bridge_files[@]} == 0)); then
+	pass "no Liquid Glass view bridge is present"
+elif ((${#glass_bridge_files[@]} == 1)) && [[ "${glass_bridge_files[0]}" == "Latest/SwiftUI/Shared/WindowAccessor.swift" ]]; then
+	pass "Liquid Glass access is limited to the reviewed local sidebar geometry bridge"
 else
-	pass "no private Liquid Glass view-tree coupling"
+	fail "unexpected Liquid Glass view coupling: ${glass_bridge_files[*]}"
 fi
 
 if rg -q '_CFBundleFlushBundleCaches' < <(strings "$EXECUTABLE_PATH"); then

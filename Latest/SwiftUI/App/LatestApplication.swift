@@ -31,9 +31,54 @@ final class AppUpdateController: ObservableObject {
 	}
 }
 
+enum ApplicationAppearance: String, CaseIterable, Identifiable {
+	case system
+	case light
+	case dark
+
+	static let storageKey = "applicationAppearance"
+
+	var id: String { rawValue }
+
+	var title: String {
+		switch self {
+		case .system:
+			"System"
+		case .light:
+			"Light"
+		case .dark:
+			"Dark"
+		}
+	}
+
+	var appKitAppearanceName: NSAppearance.Name? {
+		switch self {
+		case .system:
+			nil
+		case .light:
+			.aqua
+		case .dark:
+			.darkAqua
+		}
+	}
+
+	@MainActor
+	func apply(to application: NSApplication) {
+		guard application.appearance?.name != appKitAppearanceName else { return }
+		application.appearance = appKitAppearanceName.flatMap(NSAppearance.init(named:))
+	}
+
+	static func resolve(_ rawValue: String) -> Self {
+		Self(rawValue: rawValue) ?? .system
+	}
+}
+
 struct LatestApplication: SwiftUI.App {
 	@NSApplicationDelegateAdaptor(ApplicationLifecycleDelegate.self)
 	private var lifecycleDelegate
+
+	@AppStorage(ApplicationAppearance.storageKey)
+	private var appearanceRawValue = ApplicationAppearance.system.rawValue
 
 	@StateObject private var environment: AppEnvironment
 	@StateObject private var appUpdateController = AppUpdateController()
@@ -53,6 +98,7 @@ struct LatestApplication: SwiftUI.App {
 	var body: some Scene {
 		Window("Latest", id: "main") {
 			LatestRootView(environment: environment)
+				.modifier(ApplicationAppearanceModifier(appearance: appearance))
 				.frame(
 					minWidth: VisualMetrics.mainWindowMinWidth,
 					minHeight: VisualMetrics.mainWindowMinHeight
@@ -83,7 +129,26 @@ struct LatestApplication: SwiftUI.App {
 
 		Settings {
 			SettingsRootView()
+				.modifier(ApplicationAppearanceModifier(appearance: appearance))
 		}
+	}
+
+	private var appearance: ApplicationAppearance {
+		ApplicationAppearance.resolve(appearanceRawValue)
+	}
+}
+
+private struct ApplicationAppearanceModifier: ViewModifier {
+	let appearance: ApplicationAppearance
+
+	func body(content: Content) -> some View {
+		content
+			.onAppear {
+				appearance.apply(to: NSApplication.shared)
+			}
+			.onChange(of: appearance) { _, newAppearance in
+				newAppearance.apply(to: NSApplication.shared)
+			}
 	}
 }
 

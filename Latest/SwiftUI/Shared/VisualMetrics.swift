@@ -26,8 +26,16 @@ enum VisualMetrics {
 
 	static let sidebarMinWidth: CGFloat = 300
 	static let sidebarIdealWidth: CGFloat = 308
+	/// System Settings uses a 28pt outer curve and an 8pt visible inset, yielding
+	/// a concentric 20pt sidebar curve.
+	static let mainWindowCornerRadius: CGFloat = 28
 	static let sidebarGlassInset: CGFloat = 8
-	static let sidebarGlassCornerRadius: CGFloat = 20
+	/// SwiftUI's window theme reserves 4pt before the content's leading edge,
+	/// while the top and bottom content edges align with the visible window.
+	/// Compensate in layout so the glass is visibly inset 8pt on every outer edge.
+	static let sidebarGlassLeadingCompensation: CGFloat = 4
+	static let sidebarGlassLeadingLayoutInset = sidebarGlassInset + sidebarGlassLeadingCompensation
+	static let sidebarGlassCornerRadius = mainWindowCornerRadius - sidebarGlassInset
 	static let detailMinWidth: CGFloat = 460
 
 	static let appIconSize: CGFloat = 50

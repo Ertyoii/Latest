@@ -44,6 +44,14 @@ struct UpdatesSidebarView: View {
 
 			UpdatesSidebarHeaderView(viewModel: viewModel, searchFocusController: searchFocusController)
 		}
+		.background {
+			SidebarGlassGeometryAccessor(
+				cornerRadius: VisualMetrics.sidebarGlassCornerRadius,
+				leadingLayoutInset: VisualMetrics.sidebarGlassLeadingLayoutInset
+			)
+				.allowsHitTesting(false)
+				.accessibilityHidden(true)
+		}
 	}
 }
 

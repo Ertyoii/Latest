@@ -18,7 +18,7 @@ struct SettingsRootView: View {
 	var body: some View {
 		TabView(selection: $viewModel.selectedTab) {
 			GeneralSettingsView(viewModel: viewModel)
-				.frame(width: 440, height: 225, alignment: .topLeading)
+				.frame(width: 440, height: 255, alignment: .topLeading)
 				.tabItem {
 					Label(SettingsViewModel.Tab.general.title, systemImage: SettingsViewModel.Tab.general.systemImageName)
 				}

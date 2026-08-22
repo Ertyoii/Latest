@@ -10,74 +10,110 @@ import SwiftUI
 
 struct GeneralSettingsView: View {
 	@ObservedObject var viewModel: SettingsViewModel
+	@AppStorage(ApplicationAppearance.storageKey)
+	private var appearanceRawValue = ApplicationAppearance.system.rawValue
 
 	var body: some View {
-		ZStack(alignment: .topLeading) {
-			settingsGrid
-				.frame(width: 400, height: 120, alignment: .topLeading)
-				.offset(x: 20, y: 20)
+		VStack(alignment: .leading, spacing: 0) {
+			settingsForm
 
+			Spacer(minLength: 16)
 			if viewModel.showsInstallHelperBanner {
 				installHelperBanner
-					.frame(width: 400, height: 59, alignment: .topLeading)
-					.offset(x: 20, y: 150)
 			}
 		}
-		.frame(width: 440, height: 219, alignment: .topLeading)
+		.padding(.horizontal, 20)
+		.padding(.top, 20)
+		.padding(.bottom, 16)
+		.frame(width: 440, height: 249, alignment: .topLeading)
 		.onAppear {
 			viewModel.refreshInstallHelperAvailability()
 		}
 	}
 
-	private var settingsGrid: some View {
-		ZStack(alignment: .topLeading) {
-			Text("Include:")
-				.font(.body)
-				.frame(width: 52, height: 16, alignment: .trailing)
-				.offset(x: -2, y: 0)
+	private var settingsForm: some View {
+		Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 16) {
+			GridRow {
+				formLabel("Appearance:")
 
-			Toggle("Apps with limited support", isOn: limitedSupportBinding)
-				.toggleStyle(.checkbox)
-				.frame(width: 346, height: 16, alignment: .leading)
-				.offset(x: 54, y: 0)
+				appearancePicker
+			}
 
-			Text("List apps with limited support. Update information may be outdated or inaccurate, and updates cannot be performed directly in Latest.")
-				.font(.caption)
-				.foregroundStyle(.secondary)
-				.fixedSize(horizontal: false, vertical: true)
-				.frame(width: 330, height: 56, alignment: .topLeading)
-				.offset(x: 72, y: 22)
+			GridRow(alignment: .top) {
+				formLabel("Include:")
+					.padding(.top, 1)
 
-			Toggle("Unsupported apps", isOn: unsupportedAppsBinding)
-				.toggleStyle(.checkbox)
-				.frame(width: 346, height: 16, alignment: .leading)
-				.offset(x: 54, y: 84)
+				VStack(alignment: .leading, spacing: 14) {
+					preferenceOption(
+						title: "Apps with limited support",
+						description: "List apps with limited support. Update information may be outdated or inaccurate, and updates cannot be performed directly in Latest.",
+						isOn: limitedSupportBinding
+					)
 
-			Text("Show apps without any available update information.")
-				.font(.caption)
-				.foregroundStyle(.secondary)
-				.frame(width: 330, height: 14, alignment: .topLeading)
-				.offset(x: 72, y: 106)
+					preferenceOption(
+						title: "Unsupported apps",
+						description: "Show apps without any available update information.",
+						isOn: unsupportedAppsBinding
+					)
+				}
+				.frame(maxWidth: .infinity, alignment: .leading)
+			}
 		}
 	}
 
-	private var installHelperBanner: some View {
-		ZStack(alignment: .topLeading) {
-			Divider()
-				.frame(width: 400)
-				.offset(y: 10)
-
-			Text("Enable a helper program to update App Store apps within Latest.")
-				.font(.body)
-				.textSelection(.enabled)
-				.frame(width: 319, height: 30, alignment: .leading)
-				.offset(x: -2, y: 19)
-
-			Button("Enable") {
-				viewModel.registerInstallHelper()
+	private var appearancePicker: some View {
+		Picker("Appearance", selection: $appearanceRawValue) {
+			ForEach(ApplicationAppearance.allCases) { appearance in
+				Text(appearance.title)
+					.tag(appearance.rawValue)
 			}
-			.frame(width: 65, height: 30)
-			.offset(x: 335, y: 19)
+		}
+		.labelsHidden()
+		.pickerStyle(.segmented)
+		.frame(width: 220, height: 24)
+		.padding(.leading, 8)
+		.accessibilityIdentifier("settings.appearance")
+	}
+
+	private var installHelperBanner: some View {
+		VStack(alignment: .leading, spacing: 12) {
+			Divider()
+
+			HStack(spacing: 12) {
+				Text("Enable a helper program to update App Store apps within Latest.")
+					.font(.body)
+					.textSelection(.enabled)
+					.fixedSize(horizontal: false, vertical: true)
+
+				Spacer(minLength: 8)
+
+				Button("Enable") {
+					viewModel.registerInstallHelper()
+				}
+				.frame(width: 65)
+			}
+		}
+	}
+
+	private func formLabel(_ title: String) -> some View {
+		Text(title)
+			.font(.body)
+			.frame(width: 80, alignment: .trailing)
+	}
+
+	private func preferenceOption(
+		title: String,
+		description: String,
+		isOn: Binding<Bool>
+	) -> some View {
+		VStack(alignment: .leading, spacing: 4) {
+			Toggle(title, isOn: isOn)
+				.toggleStyle(.checkbox)
+
+			Text(description)
+				.font(.caption)
+				.foregroundStyle(.secondary)
+				.fixedSize(horizontal: false, vertical: true)
 		}
 	}
 

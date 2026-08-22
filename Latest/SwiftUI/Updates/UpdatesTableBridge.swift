@@ -13,6 +13,17 @@ private enum AppKitTableGeometry {
 	static let leadingOffset: CGFloat = 4
 }
 
+/// Keeps the selected application visually stable when focus moves between the
+/// main and Settings windows. The source-list selection geometry remains
+/// system-owned, but it always uses the neutral, unemphasized treatment.
+@MainActor
+final class StableSelectionTableRowView: NSTableRowView {
+	override var isEmphasized: Bool {
+		get { false }
+		set { super.isEmphasized = false }
+	}
+}
+
 /// Capability bridge retained because the native SwiftUI List candidate misses
 /// the sidebar's population and scroll performance gates. SwiftUI still owns
 /// feature state, search, and composition around this table renderer.
@@ -233,8 +244,9 @@ struct UpdatesTableBridge: NSViewRepresentable {
 				return NoDrawingGroupRowView()
 			}
 
-			// Preserve the original NSTableView source-list selection geometry.
-			return nil
+			// Preserve the native source-list geometry without flashing the accent
+			// color as focus moves between the main and Settings windows.
+			return StableSelectionTableRowView()
 		}
 
 		func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {

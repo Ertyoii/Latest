@@ -12,6 +12,33 @@ import XCTest
 @testable import Latest
 
 final class MigrationInteractionContractTest: XCTestCase {
+	func testApplicationAppearanceResolvesStoredPreference() {
+		XCTAssertNil(ApplicationAppearance.system.appKitAppearanceName)
+		XCTAssertEqual(ApplicationAppearance.light.appKitAppearanceName, .aqua)
+		XCTAssertEqual(ApplicationAppearance.dark.appKitAppearanceName, .darkAqua)
+		XCTAssertEqual(ApplicationAppearance.resolve("dark"), .dark)
+		XCTAssertEqual(ApplicationAppearance.resolve("invalid"), .system)
+		XCTAssertEqual(ApplicationAppearance.allCases.map(\.title), ["System", "Light", "Dark"])
+	}
+
+	@MainActor
+	func testApplicationAppearanceCanReturnFromDarkToSystem() {
+		let application = NSApplication.shared
+		let originalAppearance = application.appearance
+		defer { application.appearance = originalAppearance }
+
+		ApplicationAppearance.dark.apply(to: application)
+		XCTAssertEqual(application.appearance?.name, .darkAqua)
+
+		ApplicationAppearance.system.apply(to: application)
+		XCTAssertNil(application.appearance)
+	}
+
+	@MainActor
+	func testGeneralSettingsContentMakesRoomForAppearanceSelector() {
+		XCTAssertEqual(SettingsViewModel.Tab.general.contentSize, CGSize(width: 440, height: 255))
+	}
+
 	func testShippingSidebarDefaultsToMeasuredAppKitBoundary() {
 		XCTAssertEqual(SidebarImplementation.resolve(environmentValue: nil), .appKitTable)
 		XCTAssertEqual(SidebarImplementation.resolve(environmentValue: "appkit"), .appKitTable)
