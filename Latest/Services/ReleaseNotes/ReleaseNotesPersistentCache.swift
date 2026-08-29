@@ -1,0 +1,126 @@
+//
+//  ReleaseNotesPersistentCache.swift
+//  Latest
+//
+//  Structural split from the original implementation.
+//
+
+import AppKit
+import CryptoKit
+import Foundation
+import OSLog
+
+enum ReleaseNotesStableDigest {
+	static func hex(of data: Data) -> String {
+		SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+	}
+}
+
+struct ReleaseNotesPersistentPayload: Codable, Sendable {
+	let richTextData: Data
+	let qualityRawValue: Int
+	let provenanceRawValue: String
+	let storedAt: Date
+}
+
+actor ReleaseNotesPersistentCache {
+	private let directoryURL: URL
+	private let lifetime: TimeInterval
+	private let maximumEntryCount: Int
+	private let maximumStoredBytes: Int
+
+	init(
+		directoryURL: URL? = nil,
+		lifetime: TimeInterval = 30 * 24 * 60 * 60,
+		maximumEntryCount: Int = 256,
+		maximumStoredBytes: Int = 32 * 1_024 * 1_024
+	) {
+		let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+			?? FileManager.default.temporaryDirectory
+		self.directoryURL = directoryURL
+			?? cachesDirectory.appendingPathComponent("com.max-langer.Latest/ReleaseNotes-v1", isDirectory: true)
+		self.lifetime = lifetime
+		self.maximumEntryCount = maximumEntryCount
+		self.maximumStoredBytes = maximumStoredBytes
+	}
+
+	func payload(forKey key: String) -> ReleaseNotesPersistentPayload? {
+		let fileURL = fileURL(forKey: key)
+		guard let data = try? Data(contentsOf: fileURL),
+			  let payload = try? PropertyListDecoder().decode(ReleaseNotesPersistentPayload.self, from: data),
+			  Date().timeIntervalSince(payload.storedAt) < lifetime else {
+			try? FileManager.default.removeItem(at: fileURL)
+			return nil
+		}
+		return payload
+	}
+
+	func store(_ payload: ReleaseNotesPersistentPayload, forKey key: String) {
+		guard payload.richTextData.count <= maximumStoredBytes else { return }
+		do {
+			try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+			let data = try PropertyListEncoder().encode(payload)
+			try data.write(to: fileURL(forKey: key), options: .atomic)
+			trimToLimits()
+		} catch {
+			releaseNotesLogger.debug("Unable to persist rendered release notes: \(error.localizedDescription, privacy: .public)")
+		}
+	}
+
+	@MainActor
+	static func payload(from releaseNotes: ResolvedReleaseNotes) -> ReleaseNotesPersistentPayload? {
+		guard let richTextData = try? releaseNotes.content.data(
+			from: NSRange(location: 0, length: releaseNotes.content.length),
+			documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+		) else {
+			return nil
+		}
+		return ReleaseNotesPersistentPayload(
+			richTextData: richTextData,
+			qualityRawValue: releaseNotes.quality.rawValue,
+			provenanceRawValue: releaseNotes.provenance.rawValue,
+			storedAt: Date()
+		)
+	}
+
+	@MainActor
+	static func resolvedReleaseNotes(from payload: ReleaseNotesPersistentPayload) -> ResolvedReleaseNotes? {
+		guard let quality = ReleaseNotesQuality(rawValue: payload.qualityRawValue),
+			  let provenance = ReleaseNotesProvenance(rawValue: payload.provenanceRawValue),
+			  let content = try? NSAttributedString(
+				data: payload.richTextData,
+				options: [.documentType: NSAttributedString.DocumentType.rtf],
+				documentAttributes: nil
+			  ) else {
+			return nil
+		}
+		return ResolvedReleaseNotes(content: content, quality: quality, provenance: provenance)
+	}
+
+	private func fileURL(forKey key: String) -> URL {
+		directoryURL.appendingPathComponent(ReleaseNotesStableDigest.hex(of: Data(key.utf8)) + ".plist")
+	}
+
+	private func trimToLimits() {
+		let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey]
+		guard var files = try? FileManager.default.contentsOfDirectory(
+			at: directoryURL,
+			includingPropertiesForKeys: Array(keys),
+			options: [.skipsHiddenFiles]
+		) else { return }
+
+		files.sort {
+			let lhs = try? $0.resourceValues(forKeys: keys).contentModificationDate
+			let rhs = try? $1.resourceValues(forKeys: keys).contentModificationDate
+			return (lhs ?? .distantPast) < (rhs ?? .distantPast)
+		}
+		var totalBytes = files.reduce(0) { partialResult, url in
+			partialResult + ((try? url.resourceValues(forKeys: keys).fileSize) ?? 0)
+		}
+		while files.count > maximumEntryCount || totalBytes > maximumStoredBytes {
+			let oldest = files.removeFirst()
+			totalBytes -= (try? oldest.resourceValues(forKeys: keys).fileSize) ?? 0
+			try? FileManager.default.removeItem(at: oldest)
+		}
+	}
+}

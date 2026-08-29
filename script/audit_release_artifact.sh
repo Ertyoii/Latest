@@ -55,13 +55,11 @@ else
 fi
 
 allowed_bridges=(
-	"Latest/SwiftUI/Shared/WindowAccessor.swift"
-	"Latest/SwiftUI/Updates/SearchFieldRepresentable.swift"
-	"Latest/SwiftUI/Updates/UpdatesTableBridge.swift"
-	"Latest/SwiftUI/Updates/UpdateRowView.swift"
-	"Latest/SwiftUI/Updates/UpdateSectionHeaderView.swift"
-	"Latest/SwiftUI/ReleaseNotes/SelectableReleaseNotesTextView.swift"
-	"Latest/SwiftUI/ReleaseNotes/UpdateActionView.swift"
+	"Latest/Features/ReleaseNotes/UpdateActionView.swift"
+	"Latest/Platform/AppKit/SearchFieldRepresentable.swift"
+	"Latest/Platform/AppKit/SelectableReleaseNotesTextView.swift"
+	"Latest/Platform/AppKit/UpdatesTableBridge.swift"
+	"Latest/Platform/AppKit/WindowAccessor.swift"
 )
 
 bridge_files=()
@@ -101,7 +99,7 @@ done < <(rg -l 'NSGlassEffectView' "$ROOT_DIR/Latest" --glob '*.swift' | sort)
 
 if ((${#glass_bridge_files[@]} == 0)); then
 	pass "no Liquid Glass view bridge is present"
-elif ((${#glass_bridge_files[@]} == 1)) && [[ "${glass_bridge_files[0]}" == "Latest/SwiftUI/Shared/WindowAccessor.swift" ]]; then
+elif ((${#glass_bridge_files[@]} == 1)) && [[ "${glass_bridge_files[0]}" == "Latest/Platform/AppKit/WindowAccessor.swift" ]]; then
 	pass "Liquid Glass access is limited to the reviewed local sidebar geometry bridge"
 else
 	fail "unexpected Liquid Glass view coupling: ${glass_bridge_files[*]}"
@@ -117,7 +115,7 @@ private_framework_files=()
 while IFS= read -r private_framework_file; do
 	private_framework_files+=("${private_framework_file#"$ROOT_DIR/"}")
 done < <(rg -l '^import (CommerceKit|StoreFoundation)$' "$ROOT_DIR/Latest" --glob '*.swift' | sort)
-if ((${#private_framework_files[@]} == 1)) && [[ "${private_framework_files[0]}" == "Latest/Model/Updater/App Store/AppStoreUpdateOperation.swift" ]]; then
+if ((${#private_framework_files[@]} == 1)) && [[ "${private_framework_files[0]}" == "Latest/Platform/AppStore/AppStoreUpdateOperation.swift" ]]; then
 	pass "private App Store updater frameworks remain isolated to one capability boundary"
 else
 	fail "private App Store updater framework imports escaped their reviewed boundary"

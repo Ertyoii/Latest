@@ -13,6 +13,8 @@ RESULT_BUNDLE="$BUILD_DIR/Latest-Tests-$(date +%Y%m%d-%H%M%S).xcresult"
 
 mkdir -p "$BUILD_DIR" "$MODULE_CACHE"
 
+"$ROOT_DIR/script/check_structure.sh"
+
 xcodebuild \
   -project "$ROOT_DIR/$PROJECT" \
   -scheme "$SCHEME" \
@@ -20,6 +22,8 @@ xcodebuild \
   -destination 'platform=macOS' \
   -derivedDataPath "$DERIVED_DATA" \
   -resultBundlePath "$RESULT_BUNDLE" \
+  -disableAutomaticPackageResolution \
+  -onlyUsePackageVersionsFromResolvedFile \
   CLANG_MODULE_CACHE_PATH="$MODULE_CACHE" \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \

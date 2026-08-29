@@ -58,8 +58,15 @@ case "$MODE" in
     sleep 2
     pgrep -x "$APP_NAME" >/dev/null
     ;;
+  --uat|uat)
+    # UAT must exercise the same discovery and update-checking services as the
+    # shipping app. Deterministic fixtures remain test-only.
+    open_app
+    sleep 4
+    pgrep -x "$APP_NAME" >/dev/null
+    ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
+    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--uat]" >&2
     exit 2
     ;;
 esac
