@@ -186,19 +186,20 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 		defer { window.close() }
 
 		window.orderFront(nil)
-		window.layoutIfNeeded()
-		hostingView.layoutSubtreeIfNeeded()
-		RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.15))
-
 		let sidebarGlass = try XCTUnwrap(
-			hostingView.descendantGlassEffects().first(where: {
-				$0.containsDescendant(of: SidebarGlassGeometryConfigurationView.self) &&
-					abs(
-					$0.bounds.width -
-						(VisualMetrics.sidebarIdealWidth - VisualMetrics.sidebarGlassLeadingCompensation)
-				) < 0.5
-					&& $0.bounds.height >= VisualMetrics.mainWindowMinHeight
-			})
+			waitForValue {
+				window.layoutIfNeeded()
+				hostingView.layoutSubtreeIfNeeded()
+				return hostingView.descendantGlassEffects().first(where: {
+					$0.containsDescendant(of: SidebarGlassGeometryConfigurationView.self) &&
+						abs(
+							$0.bounds.width -
+								(VisualMetrics.sidebarIdealWidth - VisualMetrics.sidebarGlassLeadingCompensation)
+						) < 0.5 &&
+						$0.bounds.height >= VisualMetrics.mainWindowMinHeight &&
+						$0.cornerRadius == VisualMetrics.sidebarGlassCornerRadius
+				})
+			}
 		)
 		let glassRectInWindow = sidebarGlass.convert(sidebarGlass.bounds, to: nil)
 		let contentBounds = try XCTUnwrap(window.contentView).bounds
@@ -229,11 +230,17 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 		)
 
 		window.setContentSize(NSSize(width: 900, height: 640))
-		window.layoutIfNeeded()
-		hostingView.layoutSubtreeIfNeeded()
-		RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.15))
-		window.layoutIfNeeded()
-		hostingView.layoutSubtreeIfNeeded()
+		XCTAssertTrue(waitForCondition {
+			window.layoutIfNeeded()
+			hostingView.layoutSubtreeIfNeeded()
+			let glassRect = sidebarGlass.convert(sidebarGlass.bounds, to: nil)
+			guard let contentBounds = window.contentView?.bounds else { return false }
+			return abs(
+				glassRect.minX - contentBounds.minX - VisualMetrics.sidebarGlassLeadingLayoutInset
+			) < 0.5 &&
+				abs(glassRect.minY - contentBounds.minY - VisualMetrics.sidebarGlassInset) < 0.5 &&
+				sidebarGlass.cornerRadius == VisualMetrics.sidebarGlassCornerRadius
+		})
 
 		let resizedGlassRect = sidebarGlass.convert(sidebarGlass.bounds, to: nil)
 		let resizedContentBounds = try XCTUnwrap(window.contentView).bounds
@@ -406,6 +413,34 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 			updateAction: updateAction
 		)
 		return Latest.App(bundle: bundle, update: .success(update), isIgnored: false)
+	}
+
+	@MainActor
+	private func waitForValue<Value>(
+		timeout: TimeInterval = 1,
+		pollInterval: TimeInterval = 0.01,
+		_ value: () -> Value?
+	) -> Value? {
+		let deadline = Date(timeIntervalSinceNow: timeout)
+		repeat {
+			if let value = value() {
+				return value
+			}
+			RunLoop.main.run(until: min(deadline, Date(timeIntervalSinceNow: pollInterval)))
+		} while Date() < deadline
+
+		return value()
+	}
+
+	@MainActor
+	private func waitForCondition(
+		timeout: TimeInterval = 1,
+		pollInterval: TimeInterval = 0.01,
+		_ condition: () -> Bool
+	) -> Bool {
+		waitForValue(timeout: timeout, pollInterval: pollInterval) {
+			condition() ? true : nil
+		} ?? false
 	}
 }
 

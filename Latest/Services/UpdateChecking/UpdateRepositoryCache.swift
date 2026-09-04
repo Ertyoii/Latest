@@ -8,8 +8,15 @@
 
 import CryptoKit
 import Foundation
+import Synchronization
 
-final class UpdateRepositoryCache: @unchecked Sendable {
+final class UpdateRepositoryCache: Sendable {
+	/// UserDefaults is thread-safe, but Foundation does not declare it Sendable.
+	/// Every access is serialized by the owning mutex.
+	private struct UserDefaultsDependency: @unchecked Sendable {
+		let value: UserDefaults
+	}
+
 	struct Validators: Equatable, Sendable {
 		let eTag: String?
 		let lastModified: String?
@@ -18,17 +25,15 @@ final class UpdateRepositoryCache: @unchecked Sendable {
 	/// Duration after which the cache will be invalidated. (1 hour in seconds)
 	private static let cacheInvalidationDuration: Double = 1 * 60 * 60
 
-	init(cacheURL: URL?, userDefaultsKey: String, fileManager: FileManager = .default, userDefaults: UserDefaults = .standard) {
+	init(cacheURL: URL?, userDefaultsKey: String, userDefaults: UserDefaults = .standard) {
 		self.cacheURL = cacheURL
 		self.userDefaultsKey = userDefaultsKey
-		self.fileManager = fileManager
-		self.userDefaults = userDefaults
+		self.userDefaults = Mutex(UserDefaultsDependency(value: userDefaults))
 	}
 
 	private let cacheURL: URL?
 	private let userDefaultsKey: String
-	private let fileManager: FileManager
-	private let userDefaults: UserDefaults
+	private let userDefaults: Mutex<UserDefaultsDependency>
 
 	func cachedData(allowExpired: Bool = false) -> Data? {
 		guard (allowExpired || isCacheValid), let cacheURL else {
@@ -41,28 +46,37 @@ final class UpdateRepositoryCache: @unchecked Sendable {
 	func store(_ data: Data, response: HTTPURLResponse? = nil) {
 		guard let cacheURL else { return }
 
-		do {
-			try fileManager.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-			try data.write(to: cacheURL, options: .atomic)
-			markFresh()
-			if let response {
-				userDefaults.set(response.value(forHTTPHeaderField: "ETag"), forKey: eTagKey)
-				userDefaults.set(response.value(forHTTPHeaderField: "Last-Modified"), forKey: lastModifiedKey)
+		userDefaults.withLock { userDefaults in
+			do {
+				try FileManager.default.createDirectory(
+					at: cacheURL.deletingLastPathComponent(),
+					withIntermediateDirectories: true
+				)
+				try data.write(to: cacheURL, options: .atomic)
+				userDefaults.value.set(Date.timeIntervalSinceReferenceDate, forKey: userDefaultsKey)
+				if let response {
+					userDefaults.value.set(response.value(forHTTPHeaderField: "ETag"), forKey: eTagKey)
+					userDefaults.value.set(response.value(forHTTPHeaderField: "Last-Modified"), forKey: lastModifiedKey)
+				}
+			} catch {
+				try? FileManager.default.removeItem(at: cacheURL)
 			}
-		} catch {
-			try? fileManager.removeItem(at: cacheURL)
 		}
 	}
 
 	var validators: Validators {
-		Validators(
-			eTag: userDefaults.string(forKey: eTagKey),
-			lastModified: userDefaults.string(forKey: lastModifiedKey)
-		)
+		userDefaults.withLock { userDefaults in
+			Validators(
+				eTag: userDefaults.value.string(forKey: eTagKey),
+				lastModified: userDefaults.value.string(forKey: lastModifiedKey)
+			)
+		}
 	}
 
 	func markFresh() {
-		userDefaults.set(Date.timeIntervalSinceReferenceDate, forKey: userDefaultsKey)
+		userDefaults.withLock { userDefaults in
+			userDefaults.value.set(Date.timeIntervalSinceReferenceDate, forKey: userDefaultsKey)
+		}
 	}
 
 	private var eTagKey: String {
@@ -74,8 +88,11 @@ final class UpdateRepositoryCache: @unchecked Sendable {
 	}
 
 	private var isCacheValid: Bool {
-		let timeInterval = userDefaults.double(forKey: userDefaultsKey) as TimeInterval
-		return timeInterval > 0 && timeInterval.distance(to: Date.timeIntervalSinceReferenceDate) < Self.cacheInvalidationDuration
+		userDefaults.withLock { userDefaults in
+			let timeInterval = userDefaults.value.double(forKey: userDefaultsKey) as TimeInterval
+			return timeInterval > 0 &&
+				timeInterval.distance(to: Date.timeIntervalSinceReferenceDate) < Self.cacheInvalidationDuration
+		}
 	}
 
 }
@@ -112,13 +129,11 @@ struct UpdateRepositoryCompactIndex: Codable, Sendable {
 	}
 }
 
-final class UpdateRepositoryCompactIndexCache: @unchecked Sendable {
+final class UpdateRepositoryCompactIndexCache: Sendable {
 	private let cacheURL: URL?
-	private let fileManager: FileManager
 
-	init(cacheURL: URL?, fileManager: FileManager = .default) {
+	init(cacheURL: URL?) {
 		self.cacheURL = cacheURL
-		self.fileManager = fileManager
 	}
 
 	func load(matching sourceData: Data) -> UpdateRepositoryCompactIndex? {
@@ -137,13 +152,13 @@ final class UpdateRepositoryCompactIndexCache: @unchecked Sendable {
 			let encoder = PropertyListEncoder()
 			encoder.outputFormat = .binary
 			let data = try encoder.encode(index)
-			try fileManager.createDirectory(
+			try FileManager.default.createDirectory(
 				at: cacheURL.deletingLastPathComponent(),
 				withIntermediateDirectories: true
 			)
 			try data.write(to: cacheURL, options: .atomic)
 		} catch {
-			try? fileManager.removeItem(at: cacheURL)
+			try? FileManager.default.removeItem(at: cacheURL)
 		}
 	}
 }

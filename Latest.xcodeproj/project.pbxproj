@@ -125,6 +125,12 @@
 		52B001062FE0000000000001 /* BundleCollectorTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B000062FE0000000000001 /* BundleCollectorTest.swift */; };
 		52B001072FE0000000000001 /* ReleaseNotesPipelineTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B000072FE0000000000001 /* ReleaseNotesPipelineTest.swift */; };
 		52A001092FE0000000000001 /* ReleaseNotesSourceExtractors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000092FE0000000000001 /* ReleaseNotesSourceExtractors.swift */; };
+		52F001012FE2000000000001 /* AppPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000012FE2000000000001 /* AppPresentation.swift */; };
+		52F001022FE2000000000001 /* ReleaseNotesProviderSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000022FE2000000000001 /* ReleaseNotesProviderSupport.swift */; };
+		52F001032FE2000000000001 /* UpdatesTableSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000032FE2000000000001 /* UpdatesTableSupport.swift */; };
+		52F001042FE2000000000001 /* ReleaseNotesSourceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000042FE2000000000001 /* ReleaseNotesSourceCatalog.swift */; };
+		52F001052FE2000000000001 /* ElectronReleaseNotesSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000052FE2000000000001 /* ElectronReleaseNotesSource.swift */; };
+		52F001062FE2000000000001 /* ReleaseNotesMarkup+Rendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000062FE2000000000001 /* ReleaseNotesMarkup+Rendering.swift */; };
 		52E001012FE1000000000001 /* ApplicationWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52E000012FE1000000000001 /* ApplicationWorkspace.swift */; };
 		52E001022FE1000000000001 /* AppStoreUpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52E000022FE1000000000001 /* AppStoreUpdateService.swift */; };
 		52E001032FE1000000000001 /* InstallHelperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52E000032FE1000000000001 /* InstallHelperService.swift */; };
@@ -422,6 +428,12 @@
 		52B000062FE0000000000001 /* BundleCollectorTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/AppDiscovery/BundleCollectorTest.swift"; sourceTree = SOURCE_ROOT; };
 		52B000072FE0000000000001 /* ReleaseNotesPipelineTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/ReleaseNotes/ReleaseNotesPipelineTest.swift"; sourceTree = SOURCE_ROOT; };
 		52A000092FE0000000000001 /* ReleaseNotesSourceExtractors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Services/ReleaseNotes/ReleaseNotesSourceExtractors.swift"; sourceTree = SOURCE_ROOT; };
+		52F000012FE2000000000001 /* AppPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Support/Presentation/AppPresentation.swift"; sourceTree = SOURCE_ROOT; };
+		52F000022FE2000000000001 /* ReleaseNotesProviderSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Services/ReleaseNotes/ReleaseNotesProviderSupport.swift"; sourceTree = SOURCE_ROOT; };
+		52F000032FE2000000000001 /* UpdatesTableSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Platform/AppKit/UpdatesTableSupport.swift"; sourceTree = SOURCE_ROOT; };
+		52F000042FE2000000000001 /* ReleaseNotesSourceCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Services/ReleaseNotes/ReleaseNotesSourceCatalog.swift"; sourceTree = SOURCE_ROOT; };
+		52F000052FE2000000000001 /* ElectronReleaseNotesSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Services/ReleaseNotes/ElectronReleaseNotesSource.swift"; sourceTree = SOURCE_ROOT; };
+		52F000062FE2000000000001 /* ReleaseNotesMarkup+Rendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Services/ReleaseNotes/ReleaseNotesMarkup+Rendering.swift"; sourceTree = SOURCE_ROOT; };
 		52E000012FE1000000000001 /* ApplicationWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Platform/AppKit/ApplicationWorkspace.swift"; sourceTree = SOURCE_ROOT; };
 		52E000022FE1000000000001 /* AppStoreUpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Platform/AppStore/AppStoreUpdateService.swift"; sourceTree = SOURCE_ROOT; };
 		52E000032FE1000000000001 /* InstallHelperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Platform/InstallHelper/InstallHelperService.swift"; sourceTree = SOURCE_ROOT; };
@@ -1014,12 +1026,16 @@
 			isa = PBXGroup;
 			children = (
 				51E000022FC8000000000001 /* ReleaseNotesCatalog.swift */,
+				52F000042FE2000000000001 /* ReleaseNotesSourceCatalog.swift */,
+				52F000052FE2000000000001 /* ElectronReleaseNotesSource.swift */,
 				52A000032FE0000000000001 /* ReleaseNotesMarkup.swift */,
+				52F000062FE2000000000001 /* ReleaseNotesMarkup+Rendering.swift */,
 				52A000092FE0000000000001 /* ReleaseNotesSourceExtractors.swift */,
 				52A000012FE0000000000001 /* ReleaseNotesMemoryCache.swift */,
 				51E000002FC8000000000001 /* ReleaseNotesPipeline.swift */,
 				52A000022FE0000000000001 /* ReleaseNotesPersistentCache.swift */,
 				50A8D2B227D2B063004DBA05 /* ReleaseNotesProvider.swift */,
+				52F000022FE2000000000001 /* ReleaseNotesProviderSupport.swift */,
 				50BEF14B2AC2CB110052C417 /* WebContentLoader.swift */,
 			);
 			name = ReleaseNotes;
@@ -1059,6 +1075,7 @@
 				508323E1257824A9000BBA13 /* UpdateButton.swift */,
 				508323E2257824AA000BBA13 /* UpdateButtonCell.swift */,
 				51F1001B2FD0000000000001 /* UpdatesTableBridge.swift */,
+				52F000032FE2000000000001 /* UpdatesTableSupport.swift */,
 				51A000082FC3000000000001 /* WindowAccessor.swift */,
 			);
 			name = AppKit;
@@ -1108,6 +1125,7 @@
 		52C000122FE0000000000001 /* Support */ = {
 			isa = PBXGroup;
 			children = (
+				52F000012FE2000000000001 /* AppPresentation.swift */,
 				52A000052FE0000000000001 /* ApplicationAppearance.swift */,
 				50737558278B0A7400F371D8 /* AppListSettings.swift */,
 				509C4ABB2AD1FFCC00E9C2E1 /* FailableDecodable.swift */,
@@ -1492,6 +1510,12 @@
 				52A001022FE0000000000001 /* ReleaseNotesPersistentCache.swift in Sources */,
 				52A001032FE0000000000001 /* ReleaseNotesMarkup.swift in Sources */,
 				52A001092FE0000000000001 /* ReleaseNotesSourceExtractors.swift in Sources */,
+				52F001012FE2000000000001 /* AppPresentation.swift in Sources */,
+				52F001022FE2000000000001 /* ReleaseNotesProviderSupport.swift in Sources */,
+				52F001032FE2000000000001 /* UpdatesTableSupport.swift in Sources */,
+				52F001042FE2000000000001 /* ReleaseNotesSourceCatalog.swift in Sources */,
+				52F001052FE2000000000001 /* ElectronReleaseNotesSource.swift in Sources */,
+				52F001062FE2000000000001 /* ReleaseNotesMarkup+Rendering.swift in Sources */,
 				52E001012FE1000000000001 /* ApplicationWorkspace.swift in Sources */,
 				52E001022FE1000000000001 /* AppStoreUpdateService.swift in Sources */,
 				52E001032FE1000000000001 /* InstallHelperService.swift in Sources */,
@@ -1848,7 +1872,7 @@
 				);
 				LATEST_RELEASE_NOTES_CATALOG_PUBLIC_KEY = "";
 				LATEST_RELEASE_NOTES_CATALOG_URL = "";
-				MARKETING_VERSION = 0.53;
+				MARKETING_VERSION = 0.54;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1890,7 +1914,7 @@
 				);
 				LATEST_RELEASE_NOTES_CATALOG_PUBLIC_KEY = "";
 				LATEST_RELEASE_NOTES_CATALOG_URL = "";
-				MARKETING_VERSION = 0.53;
+				MARKETING_VERSION = 0.54;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

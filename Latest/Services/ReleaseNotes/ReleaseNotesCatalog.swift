@@ -8,6 +8,7 @@
 
 import CryptoKit
 import Foundation
+import Synchronization
 
 struct ReleaseNotesSourceDefinition: Codable, Equatable, Sendable {
 	enum Kind: String, Codable, Sendable {
@@ -516,7 +517,7 @@ struct SignedReleaseNotesCatalogClient: Sendable {
 	}
 }
 
-final class ReleaseNotesCatalogDiskCache: @unchecked Sendable {
+final class ReleaseNotesCatalogDiskCache: Sendable {
 	struct Record: Codable, Equatable, Sendable {
 		let envelopeData: Data
 		let eTag: String?
@@ -524,24 +525,22 @@ final class ReleaseNotesCatalogDiskCache: @unchecked Sendable {
 	}
 
 	private let url: URL?
-	private let fileManager: FileManager
-	private let lock = NSLock()
+	private let lock = Mutex(())
 
-	init(url: URL?, fileManager: FileManager = .default) {
+	init(url: URL?) {
 		self.url = url
-		self.fileManager = fileManager
 	}
 
-	static func live(fileManager: FileManager = .default, bundleIdentifier: String? = Bundle.main.bundleIdentifier) -> ReleaseNotesCatalogDiskCache {
-		let url = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first?
+	static func live(bundleIdentifier: String? = Bundle.main.bundleIdentifier) -> ReleaseNotesCatalogDiskCache {
+		let url = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
 			.appendingPathComponent(bundleIdentifier ?? "com.max-langer.Latest", isDirectory: true)
 			.appendingPathComponent("ReleaseNotesCatalog", isDirectory: false)
 			.appendingPathExtension("plist")
-		return ReleaseNotesCatalogDiskCache(url: url, fileManager: fileManager)
+		return ReleaseNotesCatalogDiskCache(url: url)
 	}
 
 	func load() -> Record? {
-		lock.withLock {
+		lock.withLock { _ in
 			guard let url,
 			      let data = try? Data(contentsOf: url),
 			      let record = try? PropertyListDecoder().decode(Record.self, from: data) else {
@@ -552,16 +551,16 @@ final class ReleaseNotesCatalogDiskCache: @unchecked Sendable {
 	}
 
 	func store(_ record: Record) {
-		lock.withLock {
+		lock.withLock { _ in
 			guard let url else { return }
 			do {
 				let encoder = PropertyListEncoder()
 				encoder.outputFormat = .binary
 				let data = try encoder.encode(record)
-				try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+				try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
 				try data.write(to: url, options: .atomic)
 			} catch {
-				try? fileManager.removeItem(at: url)
+				try? FileManager.default.removeItem(at: url)
 			}
 		}
 	}

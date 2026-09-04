@@ -48,6 +48,11 @@ if rg -n 'NSWorkspace\.shared\.(open|activateFileViewer)|NSApplication\.shared' 
   exit 1
 fi
 
+if rg -n '^import (AppKit|Cocoa|SwiftUI)$' Latest/Domain; then
+  echo "Domain source imports a presentation framework" >&2
+  exit 1
+fi
+
 if rg -n 'LOCAL_.*FIXTURE|localUATFixture' Latest/App/LatestApplication.swift; then
   echo "The runnable app must not replace live discovery with a local fixture" >&2
   exit 1
