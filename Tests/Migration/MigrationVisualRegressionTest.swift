@@ -169,9 +169,23 @@ private enum MigrationGalleryRenderer {
 		window.layoutIfNeeded()
 		hostingView.layoutSubtreeIfNeeded()
 
-		guard let bitmap = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else {
+		// References are Retina captures. Hosted runners have a 1x display,
+		// so allocate the reference scale independently of the attached screen.
+		guard let bitmap = NSBitmapImageRep(
+			bitmapDataPlanes: nil,
+			pixelsWide: Int(scenario.size.width * 2),
+			pixelsHigh: Int(scenario.size.height * 2),
+			bitsPerSample: 8,
+			samplesPerPixel: 4,
+			hasAlpha: true,
+			isPlanar: false,
+			colorSpaceName: .deviceRGB,
+			bytesPerRow: 0,
+			bitsPerPixel: 0
+		) else {
 			throw VisualRegressionError.couldNotCreateBitmap
 		}
+		bitmap.size = scenario.size
 		hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
 		return bitmap
 	}
