@@ -41,8 +41,16 @@ jobs:
             -onlyUsePackageVersionsFromResolvedFile
           git diff --exit-code -- Latest.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
+      - name: Render immutable original on this runner
+        run: ./script/prepare_ci_visual_reference.sh
+
       - name: Run structure, behavior, and visual gates
         run: ./script/test.sh
+
+      - name: Require exact pixels against original app
+        run: |
+          swiftc -O script/report_visual_parity.swift -o /tmp/latest-visual-parity
+          /tmp/latest-visual-parity build/ci-visual-reference /tmp/latest-visual-output --require-exact
 
       - name: Preserve test results and visual diagnostics
         if: always()
@@ -52,6 +60,7 @@ jobs:
           path: |
             build/*.xcresult
             build/production-visuals/*.png
+            build/ci-visual-reference/*.png
             /tmp/latest-visual-output/*.png
           if-no-files-found: warn
           retention-days: 14

@@ -195,7 +195,12 @@ private enum MigrationGalleryRenderer {
 		scenario: MigrationGalleryScenario,
 		testCase: XCTestCase
 	) throws {
-		let baselineURL = baselineDirectory.appendingPathComponent(baselineFilename(for: scenario))
+		let runnerReferences = baselineDirectory.deletingLastPathComponent()
+			.deletingLastPathComponent().deletingLastPathComponent()
+			.appendingPathComponent("build/ci-visual-reference", isDirectory: true)
+		let baselineURL = FileManager.default.fileExists(atPath: runnerReferences.path)
+			? runnerReferences.appendingPathComponent("\(scenario.id)-actual.png")
+			: baselineDirectory.appendingPathComponent(baselineFilename(for: scenario))
 		guard let png = rendered.representation(using: .png, properties: [:]) else {
 			throw VisualRegressionError.couldNotEncodePNG
 		}
