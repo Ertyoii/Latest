@@ -24,15 +24,18 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
 	private let coordinator: any UpdateCheckCoordinating
 	private let appStoreUpdateService: any AppStoreUpdateServicing
 	private let workspace: any ApplicationWorkspace
+	private let updating: any AppUpdating
 
 	init(
 		coordinator: any UpdateCheckCoordinating = UpdateCheckCoordinator.shared,
 		appStoreUpdateService: any AppStoreUpdateServicing = LiveAppStoreUpdateService.shared,
-		workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared
+		workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared,
+		updating: any AppUpdating = AppUpdateService.shared
 	) {
 		self.coordinator = coordinator
 		self.appStoreUpdateService = appStoreUpdateService
 		self.workspace = workspace
+		self.updating = updating
 	}
 
 	var progressFraction: Double? {
@@ -82,8 +85,8 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
 		}
 
 		apps.forEach { app in
-			if !app.isUpdating {
-				app.performUpdate(isBulkUpdate: true)
+			if !updating.isUpdating(app) {
+				updating.update(app, isBulkUpdate: true)
 			}
 		}
 	}

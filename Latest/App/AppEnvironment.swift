@@ -23,6 +23,7 @@ final class AppEnvironment: ObservableObject {
 		settings: any AppListSettingsProviding = AppListSettings.shared,
 		coordinator: any UpdateCheckCoordinating = UpdateCheckCoordinator.shared,
 		workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared,
+		updating: any AppUpdating = AppUpdateService.shared,
 		appStoreUpdateService: any AppStoreUpdateServicing = LiveAppStoreUpdateService.shared,
 		installHelperService: any InstallHelperServicing = LiveInstallHelperService.shared,
 		directoryStoreFactory: @escaping SettingsViewModel.DirectoryStoreFactory = { AppDirectoryStore(updateHandler: $0) },
@@ -33,12 +34,14 @@ final class AppEnvironment: ObservableObject {
 		let updateCheckingService = updateCheckingService ?? UpdateCheckingService(
 			coordinator: coordinator,
 			appStoreUpdateService: appStoreUpdateService,
-			workspace: workspace
+			workspace: workspace,
+			updating: updating
 		)
 		let updatesListViewModel = updatesListViewModel ?? UpdatesListViewModel(
 			settings: settings,
 			appProvider: coordinator.appProvider,
-			workspace: workspace
+			workspace: workspace,
+			updating: updating
 		)
 		let settingsViewModel = settingsViewModel ?? SettingsViewModel(
 			settings: settings,

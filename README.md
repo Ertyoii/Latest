@@ -26,7 +26,9 @@ After that, run `brew install --cask latest` to install the current version of L
 
 ### Build from Source
 
-**To build Latest, Xcode 11 and Swift 5 is required.**
+**Requires macOS 26 or later and Xcode 26.6. The project uses Swift 6 with complete concurrency checking.**
+
+Install `ripgrep` (`brew install ripgrep`) for the repository checks. Run `./script/test.sh` for architecture, behavior, and visual regression tests. Swift packages are pinned in `Package.resolved`. See [Architecture](docs/ARCHITECTURE.md) for dependency boundaries and verification.
 
 You can build Latest directly on your machine. To do that, you have to download the source code by cloning the repository: `git clone --recurse-submodules git@github.com:mangerlahn/Latest.git`.
 

@@ -57,7 +57,7 @@ final class AppCommands {
 
 	var canUpdateSelectedApp: Bool {
 		guard let selectedApp else { return false }
-		return selectedApp.updateAvailable && !selectedApp.isUpdating
+		return selectedApp.updateAvailable && !updatesListViewModel.updating.isUpdating(selectedApp)
 	}
 
 	var canOpenSelectedApp: Bool {

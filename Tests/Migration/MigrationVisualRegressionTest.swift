@@ -396,3 +396,119 @@ private enum VisualRegressionError: LocalizedError {
 		}
 	}
 }
+
+/// Captures the shipping composition, including its NSTableView sidebar, rather
+/// than just the migration gallery. A same-machine reference directory enables
+/// strict full-frame comparison without accepting any changed RGBA pixels.
+final class ProductionVisualParityTest: XCTestCase {
+    @MainActor
+    func testProductionWindowStates() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let output = root.appendingPathComponent("build/production-visuals", isDirectory: true)
+        let reference = root.appendingPathComponent("build/production-visual-reference", isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let comparesReference = FileManager.default.fileExists(atPath: reference.path)
+        for dark in [false, true] {
+            for state in ["initial", "selection", "search", "downloading"] {
+                let suite = "ProductionVisualParity.\(UUID().uuidString)"
+                let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+                defer { defaults.removePersistentDomain(forName: suite) }
+                let settings = AppListSettings(userDefaults: defaults)
+                let apps = LocalUATFixture.apps
+                let model = UpdatesListViewModel(
+                    snapshot: AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings),
+                    settings: settings
+                )
+                model.select(apps[0])
+                if state == "selection" { model.select(apps[3]) }
+                if state == "search" { model.setSearchQuery("Notes") }
+                var operation: UpdateOperation?
+                if state == "downloading" {
+                    let started = expectation(description: "Visual fixture operation started")
+                    let updating = ProductionCaptureOperation(app: apps[0], started: started)
+                    UpdateQueue.shared.addOperation(updating)
+                    wait(for: [started], timeout: 2)
+                    updating.progressState = .downloading(loadedSize: 25_000_000, totalSize: 100_000_000)
+                    operation = updating
+                }
+                defer {
+                    operation?.finish()
+                }
+                let environment = AppEnvironment(settings: settings, updatesListViewModel: model)
+                let view = NSHostingView(rootView: LatestRootView(environment: environment)
+                    .environment(\.colorScheme, dark ? .dark : .light)
+                    .environment(\.locale, Locale(identifier: "en_US")))
+                let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 768, height: 516),
+                                      styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false
+                window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                window.contentView = view
+                window.orderFront(nil)
+                defer { window.close() }
+                window.layoutIfNeeded()
+                view.layoutSubtreeIfNeeded()
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.4))
+                window.layoutIfNeeded()
+                view.layoutSubtreeIfNeeded()
+                let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                let name = "production-\(state)-\(dark ? "dark" : "light").png"
+                try record(bitmap, name: name, output: output, reference: reference, comparesReference: comparesReference)
+
+                // NSHostingView's cache omits the material-composited sidebar.
+                // Capture the real table directly as a second complete surface.
+                let table = try XCTUnwrap(view.firstDescendant(of: NSTableView.self))
+                XCTAssertGreaterThan(table.numberOfRows, 0, "Sidebar fixture must contain real rows")
+                for row in 0..<min(table.numberOfRows, 8) {
+                    _ = table.view(atColumn: 0, row: row, makeIfNecessary: true)
+                }
+                table.layoutSubtreeIfNeeded()
+                XCTAssertFalse(table.allDescendants(of: NSImageView.self).filter { $0.image != nil }.isEmpty)
+                let bounds = table.visibleRect
+                XCTAssertGreaterThan(bounds.width, 0)
+                XCTAssertGreaterThan(bounds.height, 0)
+                let sidebar = try XCTUnwrap(table.bitmapImageRepForCachingDisplay(in: bounds))
+                table.cacheDisplay(in: bounds, to: sidebar)
+                try record(sidebar, name: "sidebar-\(state)-\(dark ? "dark" : "light").png",
+                           output: output, reference: reference, comparesReference: comparesReference)
+            }
+        }
+    }
+
+    private func record(_ bitmap: NSBitmapImageRep, name: String, output: URL, reference: URL, comparesReference: Bool) throws {
+        let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        try png.write(to: output.appendingPathComponent(name), options: .atomic)
+        if comparesReference {
+            let baseline = try XCTUnwrap(NSBitmapImageRep(data: Data(contentsOf: reference.appendingPathComponent(name))))
+            XCTAssertEqual(bitmap.pixelsWide, baseline.pixelsWide, name)
+            XCTAssertEqual(bitmap.pixelsHigh, baseline.pixelsHigh, name)
+            XCTAssertTrue(try rgba(bitmap) == rgba(baseline), "Every pixel must match: \(name)")
+        }
+    }
+
+    private func rgba(_ bitmap: NSBitmapImageRep) throws -> Data {
+        let image = try XCTUnwrap(bitmap.cgImage)
+        var data = Data(count: bitmap.pixelsWide * bitmap.pixelsHigh * 4)
+        try data.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(data: bytes.baseAddress,
+                width: bitmap.pixelsWide, height: bitmap.pixelsHigh, bitsPerComponent: 8,
+                bytesPerRow: bitmap.pixelsWide * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: bitmap.pixelsWide, height: bitmap.pixelsHigh))
+        }
+        return data
+    }
+}
+
+private final class ProductionCaptureOperation: UpdateOperation, @unchecked Sendable {
+    private let started: XCTestExpectation
+    init(app: Latest.App, started: XCTestExpectation) {
+        self.started = started
+        super.init(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+    }
+    override func execute() {
+        super.execute()
+        started.fulfill()
+    }
+}

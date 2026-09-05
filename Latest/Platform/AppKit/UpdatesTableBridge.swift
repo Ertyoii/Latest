@@ -236,7 +236,7 @@ struct UpdatesTableBridge: NSViewRepresentable {
 		}
 
 		func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
-			SidebarInteractionPolicy(entries: entries).isSelectable(row: row)
+			SidebarInteractionPolicy(entries: entries, updating: viewModel.updating).isSelectable(row: row)
 		}
 
 		func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
@@ -274,7 +274,8 @@ struct UpdatesTableBridge: NSViewRepresentable {
 					isSelected: selectedIdentifier == app.identifier,
 					filterQuery: filterQuery,
 					dateFormatter: Self.dateFormatter,
-					showsSupportStatusOverride: showsSupportStatusOverride
+					showsSupportStatusOverride: showsSupportStatusOverride,
+					updating: viewModel.updating
 				)
 				return view
 			}
@@ -297,7 +298,7 @@ struct UpdatesTableBridge: NSViewRepresentable {
 		}
 
 		func tableView(_ tableView: NSTableView, rowActionsForRow row: Int, edge: NSTableView.RowActionEdge) -> [NSTableViewRowAction] {
-			let policy = SidebarInteractionPolicy(entries: entries)
+			let policy = SidebarInteractionPolicy(entries: entries, updating: viewModel.updating)
 			guard let app = policy.app(at: row) else { return [] }
 
 			if edge == .trailing {
@@ -342,7 +343,7 @@ struct UpdatesTableBridge: NSViewRepresentable {
 		}
 
 		private func isSectionHeader(at row: Int) -> Bool {
-			SidebarInteractionPolicy(entries: entries).isSectionHeader(row: row)
+			SidebarInteractionPolicy(entries: entries, updating: viewModel.updating).isSectionHeader(row: row)
 		}
 
 		private func syncSelection() {
@@ -384,7 +385,8 @@ struct UpdatesTableBridge: NSViewRepresentable {
 					isSelected: selectedIdentifier == app.identifier,
 					filterQuery: filterQuery,
 					dateFormatter: Self.dateFormatter,
-					showsSupportStatusOverride: showsSupportStatusOverride
+					showsSupportStatusOverride: showsSupportStatusOverride,
+					updating: viewModel.updating
 				)
 			}
 		}

@@ -276,3 +276,27 @@ private final class AppDirectoryCollectionProbe: Sendable {
 		return []
 	}
 }
+
+extension AppDataStoreTest {
+    func testConcurrentSnapshotsAndMutationsPreserveEveryApp() {
+        let store = AppDataStore()
+        let bundles = (0..<200).map { index in
+            makeBundle(versionNumber: "1.0", at: URL(fileURLWithPath: "/tmp/Concurrent-\(index).app"))
+        }
+        DispatchQueue.concurrentPerform(iterations: bundles.count) { index in
+            _ = store.set(appBundle: bundles[index])
+            _ = store.apps
+            _ = store.updatableApps
+        }
+        XCTAssertEqual(Set(store.apps.map(\.identifier)), Set(bundles.map(\.identifier)))
+    }
+
+    func testCountPredicateCanReadStoreWithoutDeadlocking() {
+        let store = AppDataStore()
+        let bundle = makeBundle(versionNumber: "1.0", at: URL(fileURLWithPath: "/tmp/Reentrant.app"))
+        _ = store.set(.success(makeUpdate(for: bundle, remoteVersion: Version(versionNumber: "2.0", buildNumber: nil))), for: bundle)
+        XCTAssertEqual(store.countOfAvailableUpdates { app in
+            store.apps.contains(app)
+        }, 1)
+    }
+}

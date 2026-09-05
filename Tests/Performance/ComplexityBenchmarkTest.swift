@@ -249,6 +249,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
 		URL(fileURLWithPath: #filePath)
 			.deletingLastPathComponent()
 			.deletingLastPathComponent()
+			.deletingLastPathComponent()
 			.appendingPathComponent("build/run-complexity-benchmarks", isDirectory: false)
 	}
 

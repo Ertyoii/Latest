@@ -28,7 +28,8 @@ struct ReleaseNotesDetailView: View {
 		ReleaseNotesDetailSurface(
 			app: detailViewModel.app,
 			contentState: detailViewModel.contentState,
-			showsSupportStatus: showsSupportStatus
+			showsSupportStatus: showsSupportStatus,
+			updating: updatesViewModel.updating
 		)
 		.task(id: selectionKey) {
 			detailViewModel.display(updatesViewModel.selectedApp)
@@ -48,11 +49,12 @@ struct ReleaseNotesDetailSurface: View {
 	let app: App?
 	let contentState: ReleaseNotesDetailContentState
 	var showsSupportStatus = true
+	var updating: any AppUpdating = AppUpdateService.shared
 
 	var body: some View {
 		VStack(spacing: 0) {
 			if let app {
-				ReleaseNotesHeaderView(app: app, showsSupportStatus: showsSupportStatus)
+				ReleaseNotesHeaderView(app: app, showsSupportStatus: showsSupportStatus, updating: updating)
 			}
 			content
 		}
@@ -80,6 +82,7 @@ struct ReleaseNotesDetailSurface: View {
 struct ReleaseNotesHeaderView: View {
 	let app: App
 	var showsSupportStatus = true
+	var updating: any AppUpdating = AppUpdateService.shared
 	@State private var icon: NSImage?
 
 	var body: some View {
@@ -121,7 +124,7 @@ struct ReleaseNotesHeaderView: View {
 			.offset(y: VisualMetrics.detailMetadataVerticalOffset)
 			.layoutPriority(1)
 
-			UpdateActionView(app: app)
+			UpdateActionView(app: app, updating: updating)
 				.id(app.identifier)
 		}
 		.padding(.horizontal, VisualMetrics.detailHeaderHorizontalPadding)

@@ -177,6 +177,7 @@ final class MigrationPerformanceTest: XCTestCase {
 		URL(fileURLWithPath: #filePath)
 			.deletingLastPathComponent()
 			.deletingLastPathComponent()
+			.deletingLastPathComponent()
 			.appendingPathComponent("build/run-migration-benchmarks")
 	}
 

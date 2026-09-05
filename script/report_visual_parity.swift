@@ -13,6 +13,7 @@ private struct Comparison {
 
 private enum ParityError: Error, CustomStringConvertible {
 	case invalidArguments
+	case pixelsDiffer
 	case noImages(URL)
 	case missingActual(URL)
 	case unreadableImage(URL)
@@ -22,7 +23,9 @@ private enum ParityError: Error, CustomStringConvertible {
 	var description: String {
 		switch self {
 		case .invalidArguments:
-			"usage: report_visual_parity.swift BASELINE_DIRECTORY ACTUAL_DIRECTORY"
+			"usage: report_visual_parity.swift BASELINE_DIRECTORY ACTUAL_DIRECTORY [--require-exact]"
+		case .pixelsDiffer:
+			"Pixel differences found in strict comparison"
 		case .noImages(let directory):
 			"No PNG references found in \(directory.path)"
 		case .missingActual(let url):
@@ -108,7 +111,9 @@ private func compare(reference: URL, actual: URL) throws -> Comparison {
 }
 
 do {
-	guard CommandLine.arguments.count == 3 else { throw ParityError.invalidArguments }
+	let arguments = CommandLine.arguments
+	guard arguments.count == 3 || (arguments.count == 4 && arguments[3] == "--require-exact") else { throw ParityError.invalidArguments }
+	let requiresExact = arguments.count == 4
 	let referenceDirectory = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
 	let actualDirectory = URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true)
 	let references = try FileManager.default.contentsOfDirectory(
@@ -123,7 +128,7 @@ do {
 	var exactImages = 0
 	for reference in references {
 		let actual = actualDirectory.appendingPathComponent(reference.lastPathComponent)
-		guard FileManager.default.fileExists(atPath: actual.path) else { continue }
+		guard FileManager.default.fileExists(atPath: actual.path) else { throw ParityError.missingActual(actual) }
 		let result = try compare(reference: reference, actual: actual)
 		let exactPercent = Double(result.exactChangedPixels) / Double(result.pixelCount) * 100
 		let tolerancePercent = Double(result.toleranceChangedPixels) / Double(result.pixelCount) * 100
@@ -143,6 +148,7 @@ do {
 
 	guard comparedImages > 0 else { throw ParityError.noImages(actualDirectory) }
 	print("Compared \(comparedImages) image pairs; \(exactImages) were byte-for-byte pixel identical after RGBA decoding.")
+	if requiresExact && exactImages != comparedImages { throw ParityError.pixelsDiffer }
 } catch {
 	FileHandle.standardError.write(Data("\(error)\n".utf8))
 	exit(1)

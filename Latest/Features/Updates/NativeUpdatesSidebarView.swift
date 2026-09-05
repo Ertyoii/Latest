@@ -23,7 +23,7 @@ struct NativeUpdatesList: View {
 		self.viewModel = viewModel
 		self.showsSupportStatusOverride = showsSupportStatusOverride
 		_listSelection = State(initialValue: viewModel.selectedApp?.identifier)
-		_updateStates = StateObject(wrappedValue: SidebarUpdateStateStore(apps: viewModel.snapshot.apps))
+		_updateStates = StateObject(wrappedValue: SidebarUpdateStateStore(apps: viewModel.snapshot.apps, updating: viewModel.updating))
 	}
 
 	var body: some View {
@@ -36,7 +36,8 @@ struct NativeUpdatesList: View {
 							filterQuery: viewModel.snapshot.filterQuery,
 							isSelected: viewModel.selectedApp?.identifier == app.identifier,
 							progressState: updateStates.state(for: app.identifier),
-							showsSupportStatusOverride: showsSupportStatusOverride
+							showsSupportStatusOverride: showsSupportStatusOverride,
+							updating: viewModel.updating
 						)
 						.tag(app.identifier)
 						.listRowInsets(EdgeInsets())
@@ -63,7 +64,7 @@ struct NativeUpdatesList: View {
 							.tint(.gray)
 						}
 						.swipeActions(edge: .trailing, allowsFullSwipe: false) {
-							if app.updateAvailable && !app.isUpdating {
+							if app.updateAvailable && !viewModel.updating.isUpdating(app) {
 								Button {
 									viewModel.update(app)
 								} label: {
@@ -113,7 +114,7 @@ struct NativeUpdatesList: View {
 
 	@ViewBuilder
 	private func contextMenu(for app: App) -> some View {
-		if app.updateAvailable && !app.isUpdating {
+		if app.updateAvailable && !viewModel.updating.isUpdating(app) {
 			Button {
 				viewModel.update(app)
 			} label: {
@@ -217,22 +218,25 @@ private struct NativeUpdateRow: View {
 	let app: App
 	let filterQuery: String?
 	let isSelected: Bool
-	let progressState: UpdateOperation.ProgressState
+	let progressState: UpdateProgressState
 	let showsSupportStatusOverride: Bool?
 
+	private let updating: any AppUpdating
 	@State private var icon: NSImage?
 
 	init(
 		app: App,
 		filterQuery: String?,
 		isSelected: Bool,
-		progressState: UpdateOperation.ProgressState,
-		showsSupportStatusOverride: Bool?
+		progressState: UpdateProgressState,
+		showsSupportStatusOverride: Bool?,
+		updating: any AppUpdating
 	) {
 		self.app = app
 		self.filterQuery = filterQuery
 		self.isSelected = isSelected
 		self.progressState = progressState
+		self.updating = updating
 		self.showsSupportStatusOverride = showsSupportStatusOverride
 		_icon = State(initialValue: IconCache.shared.iconImmediately(for: app))
 	}
@@ -284,7 +288,8 @@ private struct NativeUpdateRow: View {
 						progressState: progressState
 					),
 					showsSupportStatus: showsSupportStatusOverride
-						?? true
+						?? true,
+					updating: updating
 				)
 				.frame(width: 59, height: 18, alignment: .trailing)
 			}
@@ -354,16 +359,18 @@ private struct NativeHighlightedAppName: View {
 
 @MainActor
 private final class SidebarUpdateStateStore: ObservableObject {
-	private var states = [App.Bundle.Identifier: UpdateOperation.ProgressState]()
+	private var states = [App.Bundle.Identifier: UpdateProgressState]()
 	private var observationTask: Task<Void, Never>?
 
-	init(apps: [App]) {
+	private let updating: any AppUpdating
+
+	init(apps: [App], updating: any AppUpdating) {
+		self.updating = updating
 		refresh(apps: apps, publishesChange: false)
-		let changes = UpdateQueue.shared.stateChanges()
+		let changes = updating.stateChanges()
 		observationTask = Task { [weak self] in
-			guard let self else { return }
 			for await change in changes {
-				guard !Task.isCancelled else { break }
+				guard !Task.isCancelled, let self else { break }
 				if case .none = change.state {
 					self.states.removeValue(forKey: change.identifier)
 				} else {
@@ -374,7 +381,7 @@ private final class SidebarUpdateStateStore: ObservableObject {
 		}
 	}
 
-	func state(for identifier: App.Bundle.Identifier) -> UpdateOperation.ProgressState {
+	func state(for identifier: App.Bundle.Identifier) -> UpdateProgressState {
 		states[identifier] ?? .none
 	}
 
@@ -385,7 +392,7 @@ private final class SidebarUpdateStateStore: ObservableObject {
 	private func refresh(apps: [App], publishesChange: Bool) {
 		let identifiers = Set(apps.map(\.identifier))
 		states = Dictionary(uniqueKeysWithValues: identifiers.compactMap { identifier in
-			let state = UpdateQueue.shared.state(for: identifier)
+			let state = updating.state(for: identifier)
 			if case .none = state { return nil }
 			return (identifier, state)
 		})

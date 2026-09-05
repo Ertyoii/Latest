@@ -31,6 +31,7 @@ struct SidebarInteractionPolicy {
 	}
 
 	let entries: [AppListSnapshot.Entry]
+	var updating: any AppUpdating = AppUpdateService.shared
 
 	func isSelectable(row: Int) -> Bool {
 		app(at: row) != nil
@@ -87,13 +88,13 @@ struct SidebarInteractionPolicy {
 		case .leading:
 			return [.open, .revealInFinder]
 		case .trailing:
-			return app.updateAvailable && !app.isUpdating ? [.update] : []
+			return app.updateAvailable && !updating.isUpdating(app) ? [.update] : []
 		}
 	}
 
 	func contextActions(for app: App) -> [Action] {
 		var actions: [Action] = []
-		if app.updateAvailable && !app.isUpdating {
+		if app.updateAvailable && !updating.isUpdating(app) {
 			actions.append(.update)
 		}
 		actions.append(app.isIgnored ? .unignore : .ignore)

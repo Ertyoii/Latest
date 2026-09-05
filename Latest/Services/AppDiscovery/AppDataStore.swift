@@ -1,217 +1,123 @@
-//
-//  AppCollection.swift
-//  Latest
-//
-//  Created by Max Langer on 15.08.18.
-//  Copyright © 2018 Max Langer. All rights reserved.
-//
-
 import Foundation
+import Synchronization
 
-/// An interface for objects providing apps.
 protocol AppProviding {
-
-	/// Returns a list of apps with available updates that can be updated from within Latest.
 	var updatableApps: [App] { get }
-
-	/// Returns the number of apps with updates available.
 	func countOfAvailableUpdates(where condition: (App) -> Bool) -> Int
-
-	/// A bounded stream that immediately yields the current collection and then future changes.
 	@MainActor func updates() -> AsyncStream<[App]>
-
-	/// Sets the ignored state for the given app.
 	func setIgnoredState(_ ignored: Bool, for app: App)
-
 }
 
-/// The collection handling app bundles alongside there update representations.
-class AppDataStore: AppProviding, @unchecked Sendable {
+/// All collection/index/preference mutations share one mutex. Snapshots leave the
+/// lock before caller predicates or main-actor observers run.
+final class AppDataStore: AppProviding, Sendable {
+	// Foundation documents UserDefaults as thread-safe but does not declare it
+	// Sendable. Only this adapter crosses that boundary; accesses use state's mutex.
+	private struct Preferences: @unchecked Sendable {
+		let value: UserDefaults
+	}
+	private struct State: Sendable {
+		var apps = Set<App>()
+		var appsByIdentifier = [App.Bundle.Identifier: App]()
+		var ignoredAppIdentifiers: Set<String>
+		let preferences: Preferences
 
-	/// The queue on which updates to the collection are being performed.
-	private var updateQueue = DispatchQueue(label: "DataStoreQueue")
+		mutating func update(_ app: App) {
+			if let old = appsByIdentifier[app.identifier] { apps.remove(old) }
+			apps.insert(app)
+			appsByIdentifier[app.identifier] = app
+		}
+	}
 
-	private let updateSchedulingQueue = DispatchQueue(label: "AppDataStoreUpdateSchedulingQueue")
-
-	private var scheduledUpdateWorkItem: DispatchWorkItem?
-
+	private let state: Mutex<State>
+	private let scheduledUpdate = Mutex<DispatchWorkItem?>(nil)
+	private let schedulingQueue = DispatchQueue(label: "AppDataStoreUpdateSchedulingQueue")
 	private static let updateCoalescingInterval: TimeInterval = 0.15
-
-	private let userDefaults: UserDefaults
-	private var ignoredAppIdentifiers: Set<String>
-
-	init(userDefaults: UserDefaults = .standard) {
-		self.userDefaults = userDefaults
-		self.ignoredAppIdentifiers = Set((userDefaults.array(forKey: Self.IgnoredAppsKey) as? [String]) ?? [])
-	}
-
-
-	// MARK: - Delegate Scheduling
-
-	/// Schedules an filter update and notifies observers of the updated app list
-	private func scheduleFilterUpdate() {
-		updateSchedulingQueue.async { [weak self] in
-			guard let self else { return }
-
-			self.scheduledUpdateWorkItem?.cancel()
-
-			let workItem = DispatchWorkItem { [weak self] in
-				guard let self else { return }
-
-				let apps = self.updateQueue.sync {
-					Array(self.apps)
-				}
-				self.notifyObservers(apps)
-			}
-			self.scheduledUpdateWorkItem = workItem
-
-			self.updateSchedulingQueue.asyncAfter(deadline: .now() + Self.updateCoalescingInterval, execute: workItem)
-		}
-	}
-
-
-	// MARK: - App Providing
-
-	/// The collection holding all apps that have been found.
-	private(set) var apps = Set<App>()
-
-	/// Apps indexed by their bundle URL identifier.
-	private var appsByIdentifier = [App.Bundle.Identifier: App]()
-
-	private func rebuildAppIndex() {
-		self.appsByIdentifier = apps.reduce(into: [App.Bundle.Identifier: App]()) { appsByIdentifier, app in
-			appsByIdentifier[app.identifier] = appsByIdentifier[app.identifier] ?? app
-		}
-	}
-
-	private func replaceApps(_ apps: Set<App>) {
-		self.apps = apps
-		self.rebuildAppIndex()
-		self.scheduleFilterUpdate()
-	}
-
-	/// A subset of apps that can be updated. Ignored apps are not part of this list.
-	var updatableApps: [App] {
-		updateQueue.sync {
-			return self.apps.filter({ $0.updateAvailable && $0.usesBuiltInUpdater && !$0.isIgnored })
-		}
-	}
-
-	/// The cached count of apps with updates available
-	func countOfAvailableUpdates(where condition: (App) -> Bool) -> Int {
-		updateQueue.sync {
-			return self.apps.reduce(into: 0) { count, app in
-				if app.updateAvailable && !app.isIgnored && condition(app) {
-					count += 1
-				}
-			}
-		}
-	}
-
-	/// Updates the store with the given set of app bundles.
-	///
-	/// It returns a set with matching app objects, containing the given bundles with their associated updates.
-	func set(appBundles: Set<App.Bundle>) -> Set<App> {
-		self.updateQueue.sync {
-			let oldApps = self.apps
-			let oldAppsByIdentifier = self.appsByIdentifier
-
-			let apps = Set(appBundles.map({ bundle in
-				if let app = oldAppsByIdentifier[bundle.identifier] {
-					return app.with(bundle: bundle)
-				}
-
-				return App(bundle: bundle, update: nil, isIgnored: self.isIdentifierIgnored(bundle.bundleIdentifier))
-			}))
-			self.replaceApps(apps)
-
-			return self.apps.subtracting(oldApps)
-		}
-	}
-
-	/// Updates the store with one app bundle while preserving the rest of the collection.
-	func set(appBundle bundle: App.Bundle) -> App {
-		self.updateQueue.sync {
-			let app: App
-			if let oldApp = self.app(withIdentifier: bundle.identifier) {
-				app = oldApp.with(bundle: bundle)
-			} else {
-				app = App(bundle: bundle, update: nil, isIgnored: self.isIdentifierIgnored(bundle.bundleIdentifier))
-			}
-
-			self.update(app)
-
-			return app
-		}
-	}
-
-	/// Sets the given update for the given bundle and returns the combined object.
-	func set(_ update: Result<App.Update, Error>?, for bundle: App.Bundle) -> App {
-		self.updateQueue.sync {
-			let isIgnored = self.app(withIdentifier: bundle.identifier)?.isIgnored ?? self.isIdentifierIgnored(bundle.bundleIdentifier)
-			let app = App(bundle: bundle, update: update, isIgnored: isIgnored)
-			self.update(app)
-
-			return app
-		}
-	}
-
-	/// Replaces an existing app entry in the data store with the given one.
-	private func update(_ app: App) {
-		if let oldApp = self.app(withIdentifier: app.identifier) {
-			self.apps.remove(oldApp)
-		}
-
-		self.apps.insert(app)
-		self.appsByIdentifier[app.identifier] = app
-		self.scheduleFilterUpdate()
-	}
-
-	private func app(withIdentifier identifier: App.Bundle.Identifier) -> App? {
-		self.appsByIdentifier[identifier]
-	}
-
-
-	// MARK: - Ignoring Apps
-
-	/// The key for storing a list of ignored apps.
-	private static let IgnoredAppsKey = "IgnoredAppsKey"
-
-	/// Returns whether the given identifier is marked as ignored.
-	private func isIdentifierIgnored(_ identifier: String) -> Bool {
-		return self.ignoredAppIdentifiers.contains(identifier)
-	}
-
-	/// Sets the ignored state of the given app.
-	func setIgnoredState(_ ignored: Bool, for app: App) {
-		updateQueue.sync {
-			if ignored {
-				self.ignoredAppIdentifiers.insert(app.bundleIdentifier)
-			} else {
-				self.ignoredAppIdentifiers.remove(app.bundleIdentifier)
-			}
-
-			self.userDefaults.set(Array(self.ignoredAppIdentifiers), forKey: Self.IgnoredAppsKey)
-			self.update(app.with(ignoredState: ignored))
-		}
-	}
-
-
-	// MARK: - State Updates
-
+	private static let ignoredAppsKey = "IgnoredAppsKey"
 	@MainActor private let updateStreams = MainActorAsyncStreamRegistry<[App]>()
 
-	@MainActor
-	func updates() -> AsyncStream<[App]> {
-		let apps = updateQueue.sync { Array(self.apps) }
-		return updateStreams.stream(initialValue: apps)
+	init(userDefaults: UserDefaults = .standard) {
+		state = Mutex(State(
+			ignoredAppIdentifiers: Set(userDefaults.stringArray(forKey: Self.ignoredAppsKey) ?? []),
+			preferences: Preferences(value: userDefaults)
+		))
 	}
 
-	/// Notifies observers about state changes.
-	private func notifyObservers(_ apps: [App]) {
-		Task { @MainActor in
-			self.updateStreams.yield(apps)
+	var apps: Set<App> { state.withLock { $0.apps } }
+	var updatableApps: [App] {
+		apps.filter { $0.updateAvailable && $0.usesBuiltInUpdater && !$0.isIgnored }
+	}
+	func countOfAvailableUpdates(where condition: (App) -> Bool) -> Int {
+		apps.reduce(into: 0) { count, app in
+			if app.updateAvailable && !app.isIgnored && condition(app) { count += 1 }
 		}
 	}
 
+	func set(appBundles: Set<App.Bundle>) -> Set<App> {
+		let added = state.withLock { state in
+			let oldApps = state.apps
+			let apps = Set(appBundles.map { bundle in
+				state.appsByIdentifier[bundle.identifier]?.with(bundle: bundle)
+					?? App(bundle: bundle, update: nil, isIgnored: state.ignoredAppIdentifiers.contains(bundle.bundleIdentifier))
+			})
+			state.apps = apps
+			state.appsByIdentifier = apps.reduce(into: [:]) { index, app in
+				index[app.identifier] = index[app.identifier] ?? app
+			}
+			return apps.subtracting(oldApps)
+		}
+		scheduleFilterUpdate()
+		return added
+	}
+
+	func set(appBundle bundle: App.Bundle) -> App {
+		let app = state.withLock { state in
+			let app = state.appsByIdentifier[bundle.identifier]?.with(bundle: bundle)
+				?? App(bundle: bundle, update: nil, isIgnored: state.ignoredAppIdentifiers.contains(bundle.bundleIdentifier))
+			state.update(app)
+			return app
+		}
+		scheduleFilterUpdate()
+		return app
+	}
+
+	func set(_ update: Result<App.Update, Error>?, for bundle: App.Bundle) -> App {
+		let app = state.withLock { state in
+			let ignored = state.appsByIdentifier[bundle.identifier]?.isIgnored
+				?? state.ignoredAppIdentifiers.contains(bundle.bundleIdentifier)
+			let app = App(bundle: bundle, update: update, isIgnored: ignored)
+			state.update(app)
+			return app
+		}
+		scheduleFilterUpdate()
+		return app
+	}
+
+	func setIgnoredState(_ ignored: Bool, for app: App) {
+		state.withLock { state in
+			if ignored { state.ignoredAppIdentifiers.insert(app.bundleIdentifier) }
+			else { state.ignoredAppIdentifiers.remove(app.bundleIdentifier) }
+			state.preferences.value.set(Array(state.ignoredAppIdentifiers), forKey: Self.ignoredAppsKey)
+			state.update(app.with(ignoredState: ignored))
+		}
+		scheduleFilterUpdate()
+	}
+
+	@MainActor func updates() -> AsyncStream<[App]> {
+		updateStreams.stream(initialValue: Array(apps))
+	}
+
+	private func scheduleFilterUpdate() {
+		scheduledUpdate.withLock { scheduled in
+			scheduled?.cancel()
+			let work = DispatchWorkItem { [weak self] in
+				Task { @MainActor [weak self] in
+					guard let self else { return }
+					self.updateStreams.yield(Array(self.apps))
+				}
+			}
+			scheduled = work
+			schedulingQueue.asyncAfter(deadline: .now() + Self.updateCoalescingInterval, execute: work)
+		}
+	}
 }

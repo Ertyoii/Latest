@@ -4,6 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# Fail before checks: commands in conditionals/process substitutions can fail
+# without triggering set -e, otherwise a missing rg silently bypasses the gate.
+for tool in rg xcrun plutil; do
+  command -v "$tool" >/dev/null || { echo "Missing required tool: $tool" >&2; exit 1; }
+done
+
 required_roots=(
   Latest/App
   Latest/Features
@@ -58,6 +64,26 @@ if rg -n 'LOCAL_.*FIXTURE|localUATFixture' Latest/App/LatestApplication.swift; t
   exit 1
 fi
 
+# Compile Domain by itself. This catches any service or feature dependency,
+# including extension-mediated dependencies that an import regex cannot detect.
+domain_sources=()
+while IFS= read -r source; do domain_sources+=("$source"); done < <(rg --files Latest/Domain -g '*.swift')
+mkdir -p build/DomainModuleCache
+xcrun swiftc -typecheck -parse-as-library -module-name LatestDomain \
+  -swift-version 6 -strict-concurrency=complete -target "$(uname -m)-apple-macos26.0" \
+  -module-cache-path "$ROOT_DIR/build/DomainModuleCache" "${domain_sources[@]}"
+
+if rg -n '\b(UpdateQueue|UpdateOperation)\b' Latest/Features Latest/App; then
+  echo "Features must use the injected AppUpdating boundary" >&2
+  exit 1
+fi
+
+resolved="Latest.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+[[ -f "$resolved" ]] || { echo "Missing pinned Swift package resolution: $resolved" >&2; exit 1; }
+if git check-ignore -q "$resolved"; then
+  echo "Package.resolved must be available to fresh checkouts, not ignored" >&2
+  exit 1
+fi
 plutil -lint Latest.xcodeproj/project.pbxproj >/dev/null
 git diff --check
 

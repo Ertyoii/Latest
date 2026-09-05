@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Synchronization
 
 extension Notification.Name {
 	static let latestUpdateOperationDidFinish = Notification.Name("LatestUpdateOperationDidFinish")
@@ -15,32 +16,7 @@ extension Notification.Name {
 /// The abstract update operation used for updating apps.
 class UpdateOperation: StatefulOperation, @unchecked Sendable {
 
-	/// Encapsulates different states that may be active during the update process.
-	enum ProgressState: @unchecked Sendable {
-		/// No update is occurring at the moment.
-		case none
-
-		/// The update is currently waiting to be executed. This may happen due to external constraints like the Mac App Store update queue.
-		case pending
-
-		/// The download is currently initializing. This may be fetching update information from a server.
-		case initializing
-
-		/// The new version is currently downloading. Loaded size defines the already downloaded bytes. Total size defines the final size of the download.
-		case downloading(loadedSize: Int64, totalSize: Int64)
-
-		/// The update is being extracted. The extraction progress is given.
-		case extracting(progress: Double)
-
-		/// The update is currently installing.
-		case installing
-
-		/// An error occurred during updating.
-		case error(Error)
-
-		/// The update is currently being cancelled.
-		case cancelling
-	}
+	typealias ProgressState = UpdateProgressState
 
 	/// The app that is updated by this operation.
 	let bundleIdentifier: String
@@ -52,18 +28,30 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
 
 	private var didPostCompletionNotification = false
 
-	/// The handler forwarding the current progress state.
-	var progressHandler: UpdateQueue.ProgressHandler? {
-		didSet {
-			// Notify immediately
-			self.progressHandler?(self.appIdentifier)
+	private struct Progress: Sendable {
+		var state: ProgressState = .pending
+		var handler: (@Sendable (App.Bundle.Identifier) -> Void)?
+	}
+	private let progress = Mutex(Progress())
+
+	/// OperationQueue requires unchecked inheritance. The mutable progress and
+	/// handler are protected together; notifications always run outside the lock.
+	var progressHandler: (@Sendable (App.Bundle.Identifier) -> Void)? {
+		get { progress.withLock { $0.handler } }
+		set {
+			progress.withLock { $0.handler = newValue }
+			newValue?(appIdentifier)
 		}
 	}
 
-		/// The current update state.
-	var progressState: UpdateOperation.ProgressState = .pending {
-		didSet {
-			self.progressHandler?(self.appIdentifier)
+	var progressState: ProgressState {
+		get { progress.withLock { $0.state } }
+		set {
+			let handler = progress.withLock { progress in
+				progress.state = newValue
+				return progress.handler
+			}
+			handler?(appIdentifier)
 		}
 	}
 

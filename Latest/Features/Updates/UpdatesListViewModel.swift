@@ -24,16 +24,19 @@ final class UpdatesListViewModel: ObservableObject {
 	private let settings: any AppListSettingsProviding
 	private let appProvider: any AppProviding
 	private let workspace: any ApplicationWorkspace
+	let updating: any AppUpdating
 
 	init(
 		snapshot: AppListSnapshot? = nil,
 		settings: any AppListSettingsProviding = AppListSettings.shared,
 		appProvider: any AppProviding = UpdateCheckCoordinator.shared.appProvider,
-		workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared
+		workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared,
+		updating: any AppUpdating = AppUpdateService.shared
 	) {
 		self.settings = settings
 		self.appProvider = appProvider
 		self.workspace = workspace
+		self.updating = updating
 		self.snapshot = snapshot ?? AppListSnapshot(
 			withApps: [],
 			filterQuery: nil,
@@ -98,7 +101,7 @@ final class UpdatesListViewModel: ObservableObject {
 	}
 
 	func update(_ app: App) {
-		app.performUpdate()
+		updating.update(app)
 	}
 
 	func open(_ app: App) {

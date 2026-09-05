@@ -25,7 +25,7 @@ private let updateRepositorySignposter = OSSignposter(
 /// A storage that fetches update information from an online source.
 ///
 /// Can be asked for update version information for a given application bundle.
-class UpdateRepository: @unchecked Sendable {
+final class UpdateRepository: Sendable {
 	private static let locallyExcludedBundleIdentifiers: Set<String> = [
 		// OpenAI's Codex desktop app was renamed to ChatGPT but remains a separate
 		// product from the consumer ChatGPT cask. Name-only matching would assign
@@ -36,7 +36,7 @@ class UpdateRepository: @unchecked Sendable {
 	private static let reusableRepositories = UpdateRepositoryReuseCache()
 
 	/// Queue on which requests will be handled.
-	private var queue = DispatchQueue(label: "repositoryQueue")
+	private let queue = DispatchQueue(label: "repositoryQueue")
 
 	private let dataSource = RemoteDataSource()
 
@@ -46,10 +46,16 @@ class UpdateRepository: @unchecked Sendable {
 
 	fileprivate let createdAt = Date.timeIntervalSinceReferenceDate
 
-	private var finalizeHandler: (@Sendable (UpdateRepository, Bool) -> Void)?
+	private struct State {
+		var finalizeHandler: (@Sendable (UpdateRepository, Bool) -> Void)?
+		var pendingRequests: [@Sendable () -> Void]? = []
+		var entryMatcher = EntryMatcher(entries: [], unsupportedBundleIdentifiers: [])
+		var loadedURLTypes = Set<RemoteURL>()
+	}
+	private let state: Mutex<State>
 
 	fileprivate init(finalizeHandler: (@Sendable (UpdateRepository, Bool) -> Void)? = nil) {
-		self.finalizeHandler = finalizeHandler
+		self.state = Mutex(State(finalizeHandler: finalizeHandler))
 
 		fetchCompletedGroup.enter()
 		fetchCompletedGroup.notify(queue: .main) { [weak self] in
@@ -79,11 +85,12 @@ class UpdateRepository: @unchecked Sendable {
 		queue.async { [weak self] in
 			guard let self else { return }
 
-			if self.pendingRequests != nil {
-				self.pendingRequests?.append(checkApp)
-			} else {
-				checkApp()
+			let queued = self.state.withLock { state in
+				guard state.pendingRequests != nil else { return false }
+				state.pendingRequests?.append(checkApp)
+				return true
 			}
+			if !queued { checkApp() }
 		}
 	}
 
@@ -107,45 +114,32 @@ class UpdateRepository: @unchecked Sendable {
 		}
 	}
 
-	/// A list of requests being performed while the repository was still fetching data.
-	///
-	/// It also acts as a flag for whether initialization finished. The array is initialized when the repository is created. It will be set to nil once `finalize()` is being called.
-	private var pendingRequests: [@Sendable () -> Void]? = []
-
-	/// Matches app bundles against loaded repository entries.
-	private var entryMatcher = EntryMatcher(entries: [], unsupportedBundleIdentifiers: [])
-
-	private var loadedURLTypes = Set<RemoteURL>()
-
 	/// Sets the given entries and performs pending requests.
 	private func finalize() {
 		queue.async { [weak self] in
 			guard let self else { return }
-			guard let pendingRequests else {
-				fatalError("Finalize must only be called once!")
+			let completed = self.state.withLock { state in
+				let requests = state.pendingRequests
+				state.pendingRequests = nil
+				let handler = state.finalizeHandler
+				state.finalizeHandler = nil
+				return (requests, handler, state.loadedURLTypes)
 			}
-
-			// Perform any pending requests
-			pendingRequests.forEach { request in
-				request()
+			guard let requests = completed.0 else {
+				assertionFailure("Finalize must only be called once")
+				return
 			}
-
-			// Mark repository as loaded.
-			self.pendingRequests = nil
-
-			let isReusable = self.loadedURLTypes == Set(RemoteURL.allCases)
-			updateRepositoryLogger.info(
-				"Finalized update repository. loadedURLTypes=\(self.loadedURLTypes.count, privacy: .public) reusable=\(isReusable, privacy: .public)"
-			)
-			let finalizeHandler = self.finalizeHandler
-			self.finalizeHandler = nil
-			finalizeHandler?(self, isReusable)
+			// Callbacks can reenter the repository; never execute them under its mutex.
+			requests.forEach { $0() }
+			let isReusable = completed.2 == Set(RemoteURL.allCases)
+			updateRepositoryLogger.info("Finalized update repository. loadedURLTypes=\(completed.2.count, privacy: .public) reusable=\(isReusable, privacy: .public)")
+			completed.1?(self, isReusable)
 		}
 	}
 
 	/// Returns a repository entry for the given name, if available.
 	private func entry(for bundle: App.Bundle) -> Entry? {
-		entryMatcher.entry(for: bundle)
+		state.withLock { $0.entryMatcher.entry(for: bundle) }
 	}
 
 	static func preferredEntry(from possibleEntries: [Entry], for bundleIdentifier: String) -> Entry? {
@@ -177,7 +171,7 @@ class UpdateRepository: @unchecked Sendable {
 						return
 					}
 
-					self.loadedURLTypes.insert(urlType)
+					self.state.withLock { _ = $0.loadedURLTypes.insert(urlType) }
 					updateRepositoryLogger.info("Loaded repository source \(urlType.rawValue, privacy: .public)")
 
 					switch urlType {
@@ -222,24 +216,24 @@ class UpdateRepository: @unchecked Sendable {
 				))
 				usedCompactIndex = false
 			}
-			entryMatcher.update(entries: appEntries)
+			state.withLock { $0.entryMatcher.update(entries: appEntries) }
 			let duration = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
 			updateRepositoryLogger.info(
 				"Loaded \(sourceEntryCount, privacy: .public) casks and indexed \(appEntries.count, privacy: .public) app entries in \(duration, privacy: .public) ms compact=\(usedCompactIndex, privacy: .public)"
 			)
 		} catch {
-			entryMatcher.update(entries: [])
+			state.withLock { $0.entryMatcher.update(entries: []) }
 			updateRepositoryLogger.error("Failed to decode repository catalog: \(error.localizedDescription, privacy: .public)")
 		}
 	}
 
 	private func loadUnsupportedApps(from data: Data) {
 		guard let propertyList = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String] else {
-			entryMatcher.update(unsupportedBundleIdentifiers: [])
+			state.withLock { $0.entryMatcher.update(unsupportedBundleIdentifiers: []) }
 			return
 		}
 
-		entryMatcher.update(unsupportedBundleIdentifiers: Set(propertyList))
+		state.withLock { $0.entryMatcher.update(unsupportedBundleIdentifiers: Set(propertyList)) }
 	}
 
 

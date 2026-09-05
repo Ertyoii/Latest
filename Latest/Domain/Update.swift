@@ -58,11 +58,6 @@ extension App {
 			return updateAvailable
 		}
 		
-		/// Whether the app is currently being updated.
-		var isUpdating: Bool {
-			return UpdateQueue.shared.contains(self.app.identifier)
-		}
-		
 		/// Whether the update is performed using a built in updater.
 		var usesBuiltInUpdater: Bool {
 			externalUpdaterName == nil || source == .appStore
@@ -73,27 +68,6 @@ extension App {
 			if case .external(let label, _) = updateAction { label } else { nil }
 		}
 
-		
-		// MARK: - Actions
-				
-		/// Updates the app.
-		func perform(isBulkUpdate: Bool) {
-			guard !self.isUpdating else {
-				return
-			}
-			
-			guard self.updateAvailable else {
-				return
-			}
-			
-			self.updateAction.perform(with: self.app, isBulkUpdate: isBulkUpdate)
-		}
-		
-		/// Cancels the scheduled update for this app.
-		func cancelUpdate() {
-			UpdateQueue.shared.cancelUpdate(for: self.app.identifier)
-		}
-		
 		
 		// MARK: - Sanitization
 		

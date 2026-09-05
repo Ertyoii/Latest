@@ -142,11 +142,6 @@ extension App {
 		return self.update?.updateAvailable ?? false
 	}
 	
-	/// Whether the app is currently being updated.
-	var isUpdating: Bool {
-		return self.update?.isUpdating ?? false
-	}
-	
 	/// Whether the update is performed using a built in updater.
 	var usesBuiltInUpdater: Bool {
 		return self.update?.usesBuiltInUpdater ?? false
@@ -159,15 +154,9 @@ extension App {
 		return self.update?.externalUpdaterName
 	}
 	
-	/// Performs the update action associated with the app.
-	func performUpdate(isBulkUpdate: Bool = false) {
-		self.update?.perform(isBulkUpdate: isBulkUpdate)
-	}
-	
-	/// Cancels the ongoing app update.
-	func cancelUpdate() {
-		self.update?.cancelUpdate()
-	}
+	/// The source-provided action, executed by the updating service.
+	var updateAction: Update.Action? { update?.updateAction }
+
 	
 }
 

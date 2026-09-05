@@ -24,6 +24,7 @@ final class AppKitUpdateRowContentView: NSTableCellView {
 	}
 
 	var onSelect: (() -> Void)?
+	private var updating: any AppUpdating = AppUpdateService.shared
 
 	private let iconView = NSImageView()
 	private let nameField = NSTextField(labelWithString: "")
@@ -63,8 +64,15 @@ final class AppKitUpdateRowContentView: NSTableCellView {
 		isSelected: Bool,
 		filterQuery: String?,
 		dateFormatter: DateFormatter,
-		showsSupportStatusOverride: Bool? = nil
+		showsSupportStatusOverride: Bool? = nil,
+		updating: any AppUpdating = AppUpdateService.shared
 	) {
+		if self.updating !== updating {
+			updateStateTask?.cancel()
+			observedIdentifier = nil
+		}
+		self.updating = updating
+		updateButton.updating = updating
 		updateTitle(for: app, filterQuery: filterQuery)
 
 		if let versionInformation = app.localizedVersionInformation {
@@ -200,7 +208,7 @@ final class AppKitUpdateRowContentView: NSTableCellView {
 		}
 		let showSupportState = self.showsSupportStatusOverride
 			?? true
-		let isUpdating = switch UpdateQueue.shared.state(for: app.identifier) {
+		let isUpdating = switch updating.state(for: app.identifier) {
 		case .none, .error: false
 		default: true
 		}
@@ -237,9 +245,9 @@ final class AppKitUpdateRowContentView: NSTableCellView {
 		guard observedIdentifier != app.identifier else { return }
 		updateStateTask?.cancel()
 		observedIdentifier = app.identifier
-		updateStateTask = Task { [weak self, weak app] in
+		updateStateTask = Task { [weak self, weak app, updating] in
 			guard let app else { return }
-			for await _ in UpdateQueue.shared.states(for: app.identifier) {
+			for await _ in updating.states(for: app.identifier) {
 				guard !Task.isCancelled, let self else { break }
 				self.updateSupportState(for: app)
 			}

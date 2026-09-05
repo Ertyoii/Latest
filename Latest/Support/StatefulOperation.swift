@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Synchronization
 
 /// An convenience operation adding state to Operations.
 class StatefulOperation: Operation, @unchecked Sendable {
@@ -112,10 +113,11 @@ class StatefulOperation: Operation, @unchecked Sendable {
     }
     
     /// The error raised during execution
-    private(set) var error: Error?
+    private let storedError = Mutex<Error?>(nil)
+    var error: Error? { storedError.withLock { $0 } }
     
     func finish(with error: Error) {
-        self.error = error
+        storedError.withLock { $0 = error }
         self.finish()
     }
     

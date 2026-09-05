@@ -38,7 +38,7 @@ final class SidebarTableMenuController: NSObject, NSMenuDelegate, NSMenuItemVali
 		switch action {
 		case #selector(updateApp(_:)):
 			menuItem.title = SidebarUpdateActionTitle.text(for: app)
-			return app.updateAvailable && !app.isUpdating
+			return app.updateAvailable && !viewModel.updating.isUpdating(app)
 		case #selector(openApp(_:)), #selector(revealInFinder(_:)):
 			return true
 		case #selector(ignoreApp(_:)):
@@ -122,7 +122,7 @@ final class SidebarTableMenuController: NSObject, NSMenuDelegate, NSMenuItemVali
 			return app
 		}
 		guard let tableView else { return nil }
-		return SidebarInteractionPolicy(entries: entries).targetApp(
+		return SidebarInteractionPolicy(entries: entries, updating: viewModel.updating).targetApp(
 			clickedRow: tableView.clickedRow,
 			selectedRow: tableView.selectedRow
 		)

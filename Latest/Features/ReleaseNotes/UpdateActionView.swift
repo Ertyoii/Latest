@@ -18,7 +18,7 @@ enum UpdateActionPresentation: Equatable {
 	case progress(fraction: Double, status: String)
 	case failed(String)
 
-	static func make(for app: App, progressState: UpdateOperation.ProgressState) -> Self {
+	static func make(for app: App, progressState: UpdateProgressState) -> Self {
 		switch progressState {
 		case .none:
 			return app.updateAvailable ? .update : .open
@@ -88,22 +88,24 @@ final class UpdateActionViewModel: ObservableObject {
 
 	private var observationTask: Task<Void, Never>?
 	private let workspace: any ApplicationWorkspace
+	private let updating: any AppUpdating
 
 	init(
 		app: App,
-		workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared
+		workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared,
+		updating: any AppUpdating = AppUpdateService.shared
 	) {
 		self.app = app
 		self.workspace = workspace
-		let feed = UpdateQueue.shared.stateChanges(for: app.identifier)
+		self.updating = updating
+		let feed = updating.stateChanges(for: app.identifier)
 		_presentation = Published(initialValue: .make(
 			for: app,
 			progressState: feed.current
 		))
 		observationTask = Task { [weak self] in
-			guard let self else { return }
 			for await state in feed.changes {
-				guard !Task.isCancelled else { break }
+				guard !Task.isCancelled, let self else { break }
 				self.presentation = .make(for: app, progressState: state)
 			}
 		}
@@ -116,11 +118,11 @@ final class UpdateActionViewModel: ObservableObject {
 	func performAction() {
 		switch presentation {
 		case .update:
-			app.performUpdate()
+			updating.update(app)
 		case .open:
 			workspace.openApplication(at: app.fileURL)
 		case .progress:
-			app.cancelUpdate()
+			updating.cancel(app)
 		case .failed(let description):
 			presentedError = PresentedError(description: description)
 		case .waiting:
@@ -129,7 +131,7 @@ final class UpdateActionViewModel: ObservableObject {
 	}
 
 	func retry() {
-		app.performUpdate()
+		updating.update(app)
 	}
 }
 
@@ -138,9 +140,10 @@ struct UpdateActionView: View {
 
 	init(
 		app: App,
-		workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared
+		workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared,
+		updating: any AppUpdating = AppUpdateService.shared
 	) {
-		_viewModel = StateObject(wrappedValue: UpdateActionViewModel(app: app, workspace: workspace))
+		_viewModel = StateObject(wrappedValue: UpdateActionViewModel(app: app, workspace: workspace, updating: updating))
 	}
 
 	var body: some View {
@@ -492,6 +495,7 @@ struct SidebarUpdateStatus: View {
 	let presentation: UpdateActionPresentation
 	let showsSupportStatus: Bool
 	var indicatorColor: Color = .accentColor
+	var updating: any AppUpdating = AppUpdateService.shared
 
 	@ViewBuilder
 	var body: some View {
@@ -504,7 +508,7 @@ struct SidebarUpdateStatus: View {
 				.accessibilityLabel(status)
 		case .progress(let fraction, let status):
 			Button {
-				app.cancelUpdate()
+				updating.cancel(app)
 			} label: {
 				ZStack {
 					Circle()

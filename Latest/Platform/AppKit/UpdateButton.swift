@@ -55,20 +55,31 @@ class UpdateButton: NSButton {
 	/// Whether an action button such as "Open" or "Update" should be displayed
 	@IBInspectable var showActionButton: Bool = true
 	
+	var updating: any AppUpdating = AppUpdateService.shared {
+		willSet {
+			guard updating !== newValue, let app else { return }
+			updating.removeObserver(self, for: app.identifier)
+		}
+		didSet {
+			guard updating !== oldValue, let app else { return }
+			updating.addObserver(self, to: app.identifier) { [weak self] in self?.updateInterface(with: $0) }
+		}
+	}
+
 	/// The app for which update progress should be displayed.
 	var app: App? {
 		willSet {
 			guard app?.identifier != newValue?.identifier else { return }
 
 			if let app {
-				UpdateQueue.shared.removeObserver(self, for: app.identifier)
+				updating.removeObserver(self, for: app.identifier)
 			}
 		}
 		
 		didSet {
 			guard app?.identifier != oldValue?.identifier else {
 				if let app {
-					updateInterface(with: UpdateQueue.shared.state(for: app.identifier))
+					updateInterface(with: updating.state(for: app.identifier))
 				} else {
 					isHidden = true
 				}
@@ -76,7 +87,7 @@ class UpdateButton: NSButton {
 			}
 
 			if let app {
-				UpdateQueue.shared.addObserver(self, to: app.identifier) { [weak self] progress in
+				updating.addObserver(self, to: app.identifier) { [weak self] progress in
 					self?.updateInterface(with: progress)
 				}
 			} else {
@@ -123,7 +134,7 @@ class UpdateButton: NSButton {
 	
 	deinit {
 		if let app = self.app {
-			UpdateQueue.shared.removeObserver(self, for: app.identifier)
+			updating.removeObserver(self, for: app.identifier)
 		}
 	}
 
@@ -228,13 +239,13 @@ class UpdateButton: NSButton {
 	@objc func performAction(_ sender: UpdateButton) {
 		switch self.interfaceState {
 		case .update:
-			self.app?.performUpdate()
+			if let app = self.app { self.updating.update(app) }
 		case .open:
 			if let app {
 				MacApplicationWorkspace.shared.openApplication(at: app.fileURL)
 			}
 		case .progress:
-			self.app?.cancelUpdate()
+			if let app = self.app { self.updating.cancel(app) }
 		case .error:
 			self.presentErrorModally()
 			
@@ -265,7 +276,7 @@ private extension UpdateButton {
 			self.alert(for: error).beginSheetModal(for: window) { (response) in
 				switch ErrorAlertResponse(rawValue: response.rawValue) {
 				case .retry:
-					self.app?.performUpdate()
+					if let app = self.app { self.updating.update(app) }
 				case .cancel, .none:
 					()
 				}

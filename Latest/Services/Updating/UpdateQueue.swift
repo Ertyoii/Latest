@@ -10,13 +10,11 @@ import Foundation
 
 /// The queue where update operations are scheduled on.
 class UpdateQueue: OperationQueue, @unchecked Sendable {
-	struct StateChange: @unchecked Sendable {
-		let identifier: App.Bundle.Identifier
-		let state: UpdateOperation.ProgressState
-	}
+	typealias StateChange = AppUpdateStateChange
+
 	
 	// MARK: - Initialization
-	private override init() {
+	override init() {
 		super.init()
 		
 		self.maxConcurrentOperationCount = 3
@@ -31,9 +29,6 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 	
 	
 	// MARK: - Public Methods
-	
-	/// The handler forwarding the current progress state.
-	typealias ProgressHandler = (_: App.Bundle.Identifier) -> Void
 	
 	/// Cancels the update operation for the given app.
 	func cancelUpdate(for identifier: App.Bundle.Identifier) {
@@ -71,18 +66,18 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 			self?.removeIndexedOperation(operation)
 		}
 
-		super.addOperation(op)
-
 		operation.progressHandler = { [weak self] identifier in
 			self?.notifyObservers(for: identifier)
 		}
+
+		super.addOperation(op)
 	}
 	
 	
 	// MARK: - Observer Handling
 	
 	/// The handler for notifying observers about changes to the update state.
-	typealias ObserverHandler = @MainActor (_: UpdateOperation.ProgressState) -> Void
+	typealias ObserverHandler = UpdateStateObserver
 
 	/// A mapping of observers associated with apps.
 	@MainActor private var observers = [App.Bundle.Identifier: MainActorObserverRegistry<UpdateOperation.ProgressState>]()
