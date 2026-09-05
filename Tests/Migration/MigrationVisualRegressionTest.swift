@@ -93,10 +93,11 @@ final class MigrationVisualRegressionTest: XCTestCase {
 		}
 
 		for scenario in MigrationGalleryScenario.regressionCases {
-			try XCTContext.runActivity(named: scenario.id) { _ in
-				let rendered = try MigrationGalleryRenderer.render(scenario)
-				try MigrationGalleryRenderer.assertMatchesBaseline(rendered, scenario: scenario, testCase: self)
-			}
+			// Keep capture outside XCTContext activities: Xcode 26.6 on the hosted
+			// runner can fail activity teardown with InvalidTransition (idle ->
+			// failed(deinit)). Assertions and attachments already name the scenario.
+			let rendered = try MigrationGalleryRenderer.render(scenario)
+			try MigrationGalleryRenderer.assertMatchesBaseline(rendered, scenario: scenario, testCase: self)
 		}
 	}
 }
