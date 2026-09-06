@@ -10,195 +10,207 @@ import Cocoa
 
 /// The cell handling the drawing for the Update Button.
 class UpdateButtonCell: NSButtonCell {
-	
-	/// Defines possible button types this cell can draw.
-	enum ContentType {
-		/// No button shape is rendered at all.
-		case none
-		
-		/// The button is rendered in a pill-shaped manner.
-		case button
-		
-		/// A indeterminate activity indicator will be rendered.
-		case indeterminate
-		
-		/// Draws a circular progress including a cancel button.
-		case progress
-	}
-	
-	/// The type of button that should be drawn.
-	var contentType: ContentType = .button {
-		didSet {
-			self.displayLink?.invalidate()
-			
-			// Start a display link that continuously updates the activity indicator
-			if self.contentType == .indeterminate {
-				self.startDisplayLink(withDuration: nil)
-			} else {
-				self.displayLink = nil
-			}
-		}
-	}
-	
-	/// The display link animating the view.
-	private var displayLink: DisplayLink?
-	
-	/// A reference to the view holding the cell.
-	private var view: UpdateButton {
-		return self.controlView as! UpdateButton
-	}
-	
-	/// Convenience for accessing the tint of the button.
-	private static let tintColor: NSColor = UpdateButton.Style.tintColor
-	
-	/// The progress to be rendered when `.progress` is set as the content type. Animates the transition.
-	private var _oldUpdateProgress: Double = 0.0
-	var updateProgress: Double = 0.0 {
-		didSet {
-			guard case .progress = self.contentType else {
-				return
-			}
-			
-			self._oldUpdateProgress = oldValue
-			self.startDisplayLink(withDuration: 0.2)
-		}
-	}
-	
-	private func startDisplayLink(withDuration duration: Double?) {
-		displayLink?.invalidate()
-		displayLink = DisplayLink(duration: duration, callback: { [weak self] frame in
-			self?.view.needsDisplay = true
-		})
-		displayLink?.start()
-	}
-	
-	
-	// MARK: - Interface Updates
-	
-	override func highlight(_ flag: Bool, withFrame cellFrame: NSRect, in controlView: NSView) {
-		super.highlight(flag, withFrame: cellFrame, in: controlView)
-		
-		// On mouseDown, make the background slightly darker
-		self.view.animator().backgroundColor = flag ? UpdateButton.Style.highlightedBackgroundColor : UpdateButton.Style.backgroundColor
-	}
-	
-	
-	// MARK: - Drawing
-	
-	override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
-		switch self.contentType {
-		case .none:
-			return
-		case .button:
-			self.drawButtonBackground(withFrame: cellFrame)
-		case .indeterminate:
-			self.drawIndeterminateActivityIndicator(withFrame: cellFrame)
-		case .progress:
-			self.drawProgressIndicator(withFrame: cellFrame, controlView: controlView)
-		}
-		
-		super.drawInterior(withFrame: cellFrame, in: controlView)
-	}
-	
-	override func drawTitle(_ title: NSAttributedString, withFrame frame: NSRect, in controlView: NSView) -> NSRect {
-		let string = NSMutableAttributedString(attributedString: title)
-		let range = NSMakeRange(0, string.length)
-		
-		// Adjust the styling of the button
-		string.addAttribute(.foregroundColor, value: Self.tintColor, range: range)
-		string.addAttribute(.font, value: NSFont.systemFont(ofSize: self.font!.pointSize - 1, weight: .medium), range: range)
-		
-		// Slightly shift frame to account for adjusted font size
-		var adjustedFrame = frame
-		adjustedFrame.origin.y -= 1
-				
-		return super.drawTitle(string, withFrame: adjustedFrame, in: controlView)
-	}
-	
-	override func drawImage(_ image: NSImage, withFrame frame: NSRect, in controlView: NSView) {
-		// Adjust the position
-		var adjustedFrame = frame
-		adjustedFrame.origin.y -= 1
-		
-		super.drawImage(image, withFrame: adjustedFrame, in: controlView)
-	}
-	
-	private func drawButtonBackground(withFrame frame: NSRect) {
-		let radius = frame.height / 2.0
-		let path = NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius)
-		
-		self.view.backgroundColor.setFill()
-		path.fill()
-	}
-	
-	private func drawIndeterminateActivityIndicator(withFrame frame: NSRect) {
-		guard var progress = self.displayLink?.progress else {
-			assertionFailure("No display link set to draw with")
-			return
-		}
-		
-		let radius = frame.height * 0.4
-		let center = CGPoint(x: frame.midX, y: frame.midY)
-				
-		let path = NSBezierPath()
-		progress = progress.truncatingRemainder(dividingBy: 360) * 6
-		path.appendArc(withCenter: center, radius: radius, startAngle: CGFloat(progress), endAngle: CGFloat(progress) + 270)
-				
-		path.lineCapStyle = .round
-		path.lineWidth = 2.5
-		
-		self.indicatorColor(for: NSColor.tertiaryLabelColor).setStroke()
-		path.stroke()
-	}
-	
-	private func drawProgressIndicator(withFrame frame: NSRect, controlView: NSView) {
-		let radius = frame.height * 0.4
-		let center = CGPoint(x: frame.midX, y: frame.midY)
-		
-		// Draw background circle
-		NSColor.tertiaryLabelColor.setStroke()
-		let alignedRect = controlView.backingAlignedRect(NSInsetRect(NSRect(origin: center, size: .zero), -radius, -radius), options: .alignAllEdgesOutward)
-		var path = NSBezierPath(ovalIn: alignedRect)
-		path.lineWidth = 2.5
-		path.stroke()
-		
-		// Draw pause blocks
-		self.indicatorColor(for: Self.tintColor).set()
-		renderPauseBar(offset: -2, from: center, in: controlView)
-		renderPauseBar(offset: 2, from: center, in: controlView)
-		
-		var progress = self.updateProgress
-		if let animationProgress = self.displayLink?.progress {
-			progress = self._oldUpdateProgress + ((self.updateProgress - self._oldUpdateProgress) * animationProgress)
-		}
-		
-		guard progress > 0 else {
-			return
-		}
-		
-		
-		// Draw the progress bar
-		let start: CGFloat = 270
-		let end = start + CGFloat(360 * progress)
-		
-		path = NSBezierPath()
-		path.appendArc(withCenter: center, radius: radius, startAngle: start, endAngle: end)
-				
-		path.lineCapStyle = .round
-		path.lineWidth = 2.5
-		
-		path.stroke()
-	}
-		
-	private func indicatorColor(for color: NSColor) -> NSColor {
-		let tintColor: NSColor = (self.backgroundStyle == .emphasized ? .alternateSelectedControlTextColor : color)
-		return (self.isHighlighted ? tintColor.withSystemEffect(.pressed) : tintColor)
-	}
-	
-	private func renderPauseBar(offset: CGFloat, from center: CGPoint, in controlView: NSView) {
-		let pauseBar = NSInsetRect(NSRect(origin: center, size: .zero), -1, -4)
-		let alignedRect = controlView.backingAlignedRect(pauseBar.offsetBy(dx: offset, dy: 0), options: .alignAllEdgesOutward)
-		NSBezierPath(roundedRect: alignedRect, xRadius: 1, yRadius: 1).fill()
-	}
-	
+
+  /// Defines possible button types this cell can draw.
+  enum ContentType {
+    /// No button shape is rendered at all.
+    case none
+
+    /// The button is rendered in a pill-shaped manner.
+    case button
+
+    /// A indeterminate activity indicator will be rendered.
+    case indeterminate
+
+    /// Draws a circular progress including a cancel button.
+    case progress
+  }
+
+  /// The type of button that should be drawn.
+  var contentType: ContentType = .button {
+    didSet {
+      self.displayLink?.invalidate()
+
+      // Start a display link that continuously updates the activity indicator
+      if self.contentType == .indeterminate {
+        self.startDisplayLink(withDuration: nil)
+      } else {
+        self.displayLink = nil
+      }
+    }
+  }
+
+  /// The display link animating the view.
+  private var displayLink: DisplayLink?
+
+  /// A reference to the view holding the cell.
+  private var view: UpdateButton {
+    return self.controlView as! UpdateButton
+  }
+
+  /// Convenience for accessing the tint of the button.
+  private static let tintColor: NSColor = UpdateButton.Style.tintColor
+
+  /// The progress to be rendered when `.progress` is set as the content type. Animates the transition.
+  private var _oldUpdateProgress: Double = 0.0
+  var updateProgress: Double = 0.0 {
+    didSet {
+      guard case .progress = self.contentType else {
+        return
+      }
+
+      self._oldUpdateProgress = oldValue
+      self.startDisplayLink(withDuration: 0.2)
+    }
+  }
+
+  private func startDisplayLink(withDuration duration: Double?) {
+    displayLink?.invalidate()
+    displayLink = DisplayLink(
+      duration: duration,
+      callback: { [weak self] frame in
+        self?.view.needsDisplay = true
+      })
+    displayLink?.start()
+  }
+
+  // MARK: - Interface Updates
+
+  override func highlight(_ flag: Bool, withFrame cellFrame: NSRect, in controlView: NSView) {
+    super.highlight(flag, withFrame: cellFrame, in: controlView)
+
+    // On mouseDown, make the background slightly darker
+    self.view.animator().backgroundColor =
+      flag ? UpdateButton.Style.highlightedBackgroundColor : UpdateButton.Style.backgroundColor
+  }
+
+  // MARK: - Drawing
+
+  override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
+    switch self.contentType {
+    case .none:
+      return
+    case .button:
+      self.drawButtonBackground(withFrame: cellFrame)
+    case .indeterminate:
+      self.drawIndeterminateActivityIndicator(withFrame: cellFrame)
+    case .progress:
+      self.drawProgressIndicator(withFrame: cellFrame, controlView: controlView)
+    }
+
+    super.drawInterior(withFrame: cellFrame, in: controlView)
+  }
+
+  override func drawTitle(
+    _ title: NSAttributedString, withFrame frame: NSRect, in controlView: NSView
+  ) -> NSRect {
+    let string = NSMutableAttributedString(attributedString: title)
+    let range = NSMakeRange(0, string.length)
+
+    // Adjust the styling of the button
+    string.addAttribute(.foregroundColor, value: Self.tintColor, range: range)
+    string.addAttribute(
+      .font, value: NSFont.systemFont(ofSize: self.font!.pointSize - 1, weight: .medium),
+      range: range)
+
+    // Slightly shift frame to account for adjusted font size
+    var adjustedFrame = frame
+    adjustedFrame.origin.y -= 1
+
+    return super.drawTitle(string, withFrame: adjustedFrame, in: controlView)
+  }
+
+  override func drawImage(_ image: NSImage, withFrame frame: NSRect, in controlView: NSView) {
+    // Adjust the position
+    var adjustedFrame = frame
+    adjustedFrame.origin.y -= 1
+
+    super.drawImage(image, withFrame: adjustedFrame, in: controlView)
+  }
+
+  private func drawButtonBackground(withFrame frame: NSRect) {
+    let radius = frame.height / 2.0
+    let path = NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius)
+
+    self.view.backgroundColor.setFill()
+    path.fill()
+  }
+
+  private func drawIndeterminateActivityIndicator(withFrame frame: NSRect) {
+    guard var progress = self.displayLink?.progress else {
+      assertionFailure("No display link set to draw with")
+      return
+    }
+
+    let radius = frame.height * 0.4
+    let center = CGPoint(x: frame.midX, y: frame.midY)
+
+    let path = NSBezierPath()
+    progress = progress.truncatingRemainder(dividingBy: 360) * 6
+    path.appendArc(
+      withCenter: center, radius: radius, startAngle: CGFloat(progress),
+      endAngle: CGFloat(progress) + 270)
+
+    path.lineCapStyle = .round
+    path.lineWidth = 2.5
+
+    self.indicatorColor(for: NSColor.tertiaryLabelColor).setStroke()
+    path.stroke()
+  }
+
+  private func drawProgressIndicator(withFrame frame: NSRect, controlView: NSView) {
+    let radius = frame.height * 0.4
+    let center = CGPoint(x: frame.midX, y: frame.midY)
+
+    // Draw background circle
+    NSColor.tertiaryLabelColor.setStroke()
+    let alignedRect = controlView.backingAlignedRect(
+      NSInsetRect(NSRect(origin: center, size: .zero), -radius, -radius),
+      options: .alignAllEdgesOutward)
+    var path = NSBezierPath(ovalIn: alignedRect)
+    path.lineWidth = 2.5
+    path.stroke()
+
+    // Draw pause blocks
+    self.indicatorColor(for: Self.tintColor).set()
+    renderPauseBar(offset: -2, from: center, in: controlView)
+    renderPauseBar(offset: 2, from: center, in: controlView)
+
+    var progress = self.updateProgress
+    if let animationProgress = self.displayLink?.progress {
+      progress =
+        self._oldUpdateProgress
+        + ((self.updateProgress - self._oldUpdateProgress) * animationProgress)
+    }
+
+    guard progress > 0 else {
+      return
+    }
+
+    // Draw the progress bar
+    let start: CGFloat = 270
+    let end = start + CGFloat(360 * progress)
+
+    path = NSBezierPath()
+    path.appendArc(withCenter: center, radius: radius, startAngle: start, endAngle: end)
+
+    path.lineCapStyle = .round
+    path.lineWidth = 2.5
+
+    path.stroke()
+  }
+
+  private func indicatorColor(for color: NSColor) -> NSColor {
+    let tintColor: NSColor =
+      (self.backgroundStyle == .emphasized ? .alternateSelectedControlTextColor : color)
+    return (self.isHighlighted ? tintColor.withSystemEffect(.pressed) : tintColor)
+  }
+
+  private func renderPauseBar(offset: CGFloat, from center: CGPoint, in controlView: NSView) {
+    let pauseBar = NSInsetRect(NSRect(origin: center, size: .zero), -1, -4)
+    let alignedRect = controlView.backingAlignedRect(
+      pauseBar.offsetBy(dx: offset, dy: 0), options: .alignAllEdgesOutward)
+    NSBezierPath(roundedRect: alignedRect, xRadius: 1, yRadius: 1).fill()
+  }
+
 }

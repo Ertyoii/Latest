@@ -10,124 +10,129 @@ import AppKit
 import Combine
 
 struct ReleaseNotesMessage: Equatable {
-	let title: String?
-	let description: String
+  let title: String?
+  let description: String
 
-	init(error: Error) {
-		if let localizedError = error as? LocalizedError,
-		   let failureReason = localizedError.failureReason {
-			title = localizedError.localizedDescription
-			description = failureReason
-		} else {
-			title = nil
-			description = error.localizedDescription
-		}
-	}
+  init(error: Error) {
+    if let localizedError = error as? LocalizedError,
+      let failureReason = localizedError.failureReason
+    {
+      title = localizedError.localizedDescription
+      description = failureReason
+    } else {
+      title = nil
+      description = error.localizedDescription
+    }
+  }
 
-	static let noSelection = ReleaseNotesMessage(
-		title: NSLocalizedString(
-			"NoAppSelectedTitle",
-			comment: "Title of release notes empty state"
-		),
-		description: NSLocalizedString(
-			"NoAppSelectedDescription",
-			comment: "Description of release notes empty state"
-		)
-	)
+  static let noSelection = ReleaseNotesMessage(
+    title: NSLocalizedString(
+      "NoAppSelectedTitle",
+      comment: "Title of release notes empty state"
+    ),
+    description: NSLocalizedString(
+      "NoAppSelectedDescription",
+      comment: "Description of release notes empty state"
+    )
+  )
 
-	init(title: String?, description: String) {
-		self.title = title
-		self.description = description
-	}
+  init(title: String?, description: String) {
+    self.title = title
+    self.description = description
+  }
 }
 
 enum ReleaseNotesDetailContentState {
-	case message(ReleaseNotesMessage)
-	case loading
-	case text(NSAttributedString)
+  case message(ReleaseNotesMessage)
+  case loading
+  case text(NSAttributedString)
 }
 
 @MainActor
 protocol ReleaseNotesProviding: AnyObject {
-	func releaseNotes(
-		for app: App,
-		with completion: @escaping ReleaseNotesProvider.Completion
-	)
+  func releaseNotes(
+    for app: App,
+    with completion: @escaping ReleaseNotesProvider.Completion
+  )
 }
 
 extension ReleaseNotesProvider: ReleaseNotesProviding {}
 
 @MainActor
 final class ReleaseNotesDetailViewModel: ObservableObject {
-	@Published private(set) var app: App?
-	@Published private(set) var contentState: ReleaseNotesDetailContentState = .message(.noSelection)
+  @Published private(set) var app: App?
+  @Published private(set) var contentState: ReleaseNotesDetailContentState = .message(.noSelection)
 
-	private let releaseNotesProvider: ReleaseNotesProviding
-	private var loadingTask: Task<Void, Never>?
-	private var displayRequestID = UUID()
-	private var displayedKey: String?
+  private let releaseNotesProvider: ReleaseNotesProviding
+  private var loadingTask: Task<Void, Never>?
+  private var displayRequestID = UUID()
+  private var displayedKey: String?
 
-	init(releaseNotesProvider: ReleaseNotesProviding = ReleaseNotesProvider()) {
-		self.releaseNotesProvider = releaseNotesProvider
-	}
+  init(releaseNotesProvider: ReleaseNotesProviding = ReleaseNotesProvider()) {
+    self.releaseNotesProvider = releaseNotesProvider
+  }
 
-	deinit {
-		loadingTask?.cancel()
-	}
+  deinit {
+    loadingTask?.cancel()
+  }
 
-	func display(_ app: App?) {
-		let nextKey = app.map(Self.displayKey(for:))
-		guard nextKey != displayedKey else { return }
-		displayedKey = nextKey
+  func display(_ app: App?) {
+    let nextKey = app.map(Self.displayKey(for:))
+    guard nextKey != displayedKey else { return }
+    displayedKey = nextKey
 
-		displayRequestID = UUID()
-		let requestID = displayRequestID
-		loadingTask?.cancel()
-		loadingTask = nil
-		self.app = app
-		MigrationTelemetry.shared.detailCommitted()
+    displayRequestID = UUID()
+    let requestID = displayRequestID
+    loadingTask?.cancel()
+    loadingTask = nil
+    self.app = app
+    MigrationTelemetry.shared.detailCommitted()
 
-		guard let app else {
-			contentState = .message(.noSelection)
-			return
-		}
+    guard let app else {
+      contentState = .message(.noSelection)
+      return
+    }
 
-		loadingTask = Task { [weak self] in
-			try? await Task.sleep(for: .milliseconds(200))
-			guard !Task.isCancelled,
-			      let self,
-			      self.displayRequestID == requestID else { return }
-			self.contentState = .loading
-		}
+    loadingTask = Task { [weak self] in
+      try? await Task.sleep(for: .milliseconds(200))
+      guard !Task.isCancelled,
+        let self,
+        self.displayRequestID == requestID
+      else { return }
+      self.contentState = .loading
+    }
 
-		releaseNotesProvider.releaseNotes(for: app) { [weak self] result in
-			guard let self,
-			      self.displayRequestID == requestID,
-			      self.app?.identifier == app.identifier else { return }
-			self.loadingTask?.cancel()
-			self.loadingTask = nil
+    releaseNotesProvider.releaseNotes(for: app) { [weak self] result in
+      guard let self,
+        self.displayRequestID == requestID,
+        self.app?.identifier == app.identifier
+      else { return }
+      self.loadingTask?.cancel()
+      self.loadingTask = nil
 
-			switch result {
-			case .success(let text) where !text.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty:
-				self.contentState = .text(text)
-			case .success:
-				self.contentState = .message(ReleaseNotesMessage(error: LatestError.releaseNotesUnavailable))
-			case .failure(let error):
-				self.contentState = .message(ReleaseNotesMessage(error: error))
-			}
-		}
-	}
+      switch result {
+      case .success(let text)
+      where !text.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty:
+        self.contentState = .text(text)
+      case .success:
+        self.contentState = .message(
+          ReleaseNotesMessage(error: LatestError.releaseNotesUnavailable))
+      case .failure(let error):
+        self.contentState = .message(ReleaseNotesMessage(error: error))
+      }
+    }
+  }
 
-	static func displayKey(for app: App) -> String {
-		let latestUpdateDate = app.latestUpdateDate?.timeIntervalSinceReferenceDate ?? -1
-		let version = app.localizedVersionInformation?.combined(includeNew: app.updateAvailable) ?? ""
-		return [
-			app.identifier.absoluteString,
-			version,
-			String(latestUpdateDate),
-			app.externalUpdaterName ?? "",
-			app.source.supportState.compactLabel,
-			String(ReleaseNotesSourceCatalog.revision)
-		].joined(separator: "|")
-	}
+  static func displayKey(for app: App) -> String {
+    let latestUpdateDate = app.latestUpdateDate?.timeIntervalSinceReferenceDate ?? -1
+    let version = app.localizedVersionInformation?.combined(includeNew: app.updateAvailable) ?? ""
+    return [
+      app.identifier.absoluteString,
+      version,
+      String(latestUpdateDate),
+      app.externalUpdaterName ?? "",
+      app.source.supportState.compactLabel,
+      String(ReleaseNotesSourceCatalog.revision),
+    ].joined(separator: "|")
+  }
 }

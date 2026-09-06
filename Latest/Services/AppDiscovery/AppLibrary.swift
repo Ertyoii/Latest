@@ -10,161 +10,159 @@ import Foundation
 import OSLog
 
 private let appLibraryLogger = Logger(
-	subsystem: Foundation.Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
-	category: "AppDiscovery"
+  subsystem: Foundation.Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+  category: "AppDiscovery"
 )
 
 /// Observes the local collection of apps and notifies its owner of changes.
 class AppLibrary: @unchecked Sendable {
 
-	/// The handler to be called when apps change locally.
-	typealias UpdateHandler = ([App.Bundle]) -> Void
-	let updateHandler: UpdateHandler
+  /// The handler to be called when apps change locally.
+  typealias UpdateHandler = ([App.Bundle]) -> Void
+  let updateHandler: UpdateHandler
 
-	/// The handler to be called when a full reload completed.
-	typealias ReloadHandler = @Sendable ([App.Bundle]) -> Void
+  /// The handler to be called when a full reload completed.
+  typealias ReloadHandler = @Sendable ([App.Bundle]) -> Void
 
-	/// A list of all application bundles that are available locally.
-	var bundles: [App.Bundle] {
-		stateQueue.sync {
-			currentBundles()
-		}
-	}
+  /// A list of all application bundles that are available locally.
+  var bundles: [App.Bundle] {
+    stateQueue.sync {
+      currentBundles()
+    }
+  }
 
-	private var directories = [URL: AppDirectory]()
+  private var directories = [URL: AppDirectory]()
 
-	/// Initializes the library with the given handler for updates.
-	init(handler: @escaping UpdateHandler) {
-		self.updateHandler = handler
-	}
+  /// Initializes the library with the given handler for updates.
+  init(handler: @escaping UpdateHandler) {
+    self.updateHandler = handler
+  }
 
-	private let stateQueue = DispatchQueue(label: "AppLibraryStateQueue")
+  private let stateQueue = DispatchQueue(label: "AppLibraryStateQueue")
 
-	private var scheduledUpdateWorkItem: DispatchWorkItem?
+  private var scheduledUpdateWorkItem: DispatchWorkItem?
 
-	private static let updateCoalescingInterval: TimeInterval = 0.5
+  private static let updateCoalescingInterval: TimeInterval = 0.5
 
+  // MARK: - Actions
 
-	// MARK: - Actions
+  /// Starts the update checking process
+  func startQuery() {
+    stateQueue.async { [weak self] in
+      guard let self else { return }
+      self.setupDirectoryObservers()
+    }
+  }
 
-	/// Starts the update checking process
-	func startQuery() {
-		stateQueue.async { [weak self] in
-			guard let self else { return }
-			self.setupDirectoryObservers()
-		}
-	}
+  /// Forces all observed directories to be read from disk again.
+  func reload(handler: @escaping ReloadHandler) {
+    stateQueue.async { [weak self] in
+      guard let self else { return }
+      self.setupDirectoryObservers()
+      self.refreshDirectories(handler: handler)
+    }
+  }
 
-	/// Forces all observed directories to be read from disk again.
-	func reload(handler: @escaping ReloadHandler) {
-		stateQueue.async { [weak self] in
-			guard let self else { return }
-			self.setupDirectoryObservers()
-			self.refreshDirectories(handler: handler)
-		}
-	}
+  private func setupDirectoryObservers() {
+    // Use a dispatch group for the initial setup to get contents for all directories before gathering apps
+    let isInitialSetup = self.directories.isEmpty
+    let dispatchGroup = isInitialSetup ? DispatchGroup() : nil
+    appLibraryLogger.info(
+      "Preparing app directory observers. initial=\(isInitialSetup, privacy: .public)")
 
-	private func setupDirectoryObservers() {
-		// Use a dispatch group for the initial setup to get contents for all directories before gathering apps
-		let isInitialSetup = self.directories.isEmpty
-		let dispatchGroup = isInitialSetup ? DispatchGroup() : nil
-		appLibraryLogger.info("Preparing app directory observers. initial=\(isInitialSetup, privacy: .public)")
+    // Setup directories
+    let observedDirectories: [(URL, AppDirectory)] = directoryStore.URLs.compactMap { url in
+      // Skip unreachable directories
+      guard directoryStore.isReachable(url) else { return nil }
 
-		// Setup directories
-		let observedDirectories: [(URL, AppDirectory)] = directoryStore.URLs.compactMap { url in
-			// Skip unreachable directories
-			guard directoryStore.isReachable(url) else { return nil }
+      // Reuse existing directory observations if possible
+      if let directory = directories[url] {
+        return (url, directory)
+      }
 
-			// Reuse existing directory observations if possible
-			if let directory = directories[url] {
-				return (url, directory)
-			}
+      let directory: AppDirectory
+      let updateHandler: AppDirectory.UpdateHandler = { [weak self] in
+        // Schedule update and coalesce bursts of file-system events.
+        self?.scheduleUpdate()
+      }
 
-			let directory: AppDirectory
-			let updateHandler: AppDirectory.UpdateHandler = { [weak self] in
-				// Schedule update and coalesce bursts of file-system events.
-				self?.scheduleUpdate()
-			}
+      if isInitialSetup {
+        dispatchGroup?.enter()
+        directory = AppDirectory(
+          url: url,
+          notifyOnInitialCollection: false,
+          initialCollectionCompletion: {
+            dispatchGroup?.leave()
+          },
+          updateHandler: updateHandler
+        )
+      } else {
+        directory = AppDirectory(url: url, updateHandler: updateHandler)
+      }
 
-			if isInitialSetup {
-				dispatchGroup?.enter()
-				directory = AppDirectory(
-					url: url,
-					notifyOnInitialCollection: false,
-					initialCollectionCompletion: {
-						dispatchGroup?.leave()
-					},
-					updateHandler: updateHandler
-				)
-			} else {
-				directory = AppDirectory(url: url, updateHandler: updateHandler)
-			}
+      return (url, directory)
+    }
+    directories = Dictionary(uniqueKeysWithValues: observedDirectories)
+    appLibraryLogger.info("Observing \(self.directories.count, privacy: .public) app directories")
 
-			return (url, directory)
-		}
-		directories = Dictionary(uniqueKeysWithValues: observedDirectories)
-		appLibraryLogger.info("Observing \(self.directories.count, privacy: .public) app directories")
+    dispatchGroup?.notify(queue: stateQueue) {
+      // Call update immediately. Using the scheduler delays the update.
+      self.performUpdate()
+    }
+  }
 
-		dispatchGroup?.notify(queue: stateQueue) {
-			// Call update immediately. Using the scheduler delays the update.
-			self.performUpdate()
-		}
-	}
+  private func performUpdate() {
+    let bundles = currentBundles()
+    appLibraryLogger.info("Publishing \(bundles.count, privacy: .public) discovered apps")
+    updateHandler(bundles)
+  }
 
-	private func performUpdate() {
-		let bundles = currentBundles()
-		appLibraryLogger.info("Publishing \(bundles.count, privacy: .public) discovered apps")
-		updateHandler(bundles)
-	}
+  private func refreshDirectories(handler: @escaping ReloadHandler) {
+    let directories = Array(self.directories.values)
+    appLibraryLogger.info("Refreshing \(directories.count, privacy: .public) app directories")
 
-	private func refreshDirectories(handler: @escaping ReloadHandler) {
-		let directories = Array(self.directories.values)
-		appLibraryLogger.info("Refreshing \(directories.count, privacy: .public) app directories")
+    Task { [weak self] in
+      await withTaskGroup(of: Void.self) { group in
+        for directory in directories {
+          group.addTask {
+            await directory.refreshBundles()
+          }
+        }
+      }
 
-		Task { [weak self] in
-			await withTaskGroup(of: Void.self) { group in
-				for directory in directories {
-					group.addTask {
-						await directory.refreshBundles()
-					}
-				}
-			}
+      guard let self else { return }
+      let bundles = self.stateQueue.sync { self.currentBundles() }
+      handler(bundles)
+    }
+  }
 
-			guard let self else { return }
-			let bundles = self.stateQueue.sync { self.currentBundles() }
-			handler(bundles)
-		}
-	}
+  private func scheduleUpdate() {
+    stateQueue.async { [weak self] in
+      guard let self else { return }
+      self.scheduleUpdateOnStateQueue()
+    }
+  }
 
-	private func scheduleUpdate() {
-		stateQueue.async { [weak self] in
-			guard let self else { return }
-			self.scheduleUpdateOnStateQueue()
-		}
-	}
+  private func scheduleUpdateOnStateQueue() {
+    self.scheduledUpdateWorkItem?.cancel()
 
-	private func scheduleUpdateOnStateQueue() {
-		self.scheduledUpdateWorkItem?.cancel()
+    let workItem = DispatchWorkItem { [weak self] in
+      self?.performUpdate()
+    }
+    self.scheduledUpdateWorkItem = workItem
 
-		let workItem = DispatchWorkItem { [weak self] in
-			self?.performUpdate()
-		}
-		self.scheduledUpdateWorkItem = workItem
+    self.stateQueue.asyncAfter(deadline: .now() + Self.updateCoalescingInterval, execute: workItem)
+  }
 
-		self.stateQueue.asyncAfter(deadline: .now() + Self.updateCoalescingInterval, execute: workItem)
-	}
+  private func currentBundles() -> [App.Bundle] {
+    directories.flatMap { $0.value.bundles }
+  }
 
-	private func currentBundles() -> [App.Bundle] {
-		directories.flatMap { $0.value.bundles }
-	}
+  // MARK: - Directory Handling
 
-
-
-	// MARK: - Directory Handling
-
-	/// The store handling application directories.
-	private lazy var directoryStore = {
-		AppDirectoryStore(updateHandler: self.startQuery)
-	}()
+  /// The store handling application directories.
+  private lazy var directoryStore = {
+    AppDirectoryStore(updateHandler: self.startQuery)
+  }()
 
 }

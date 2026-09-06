@@ -10,20 +10,23 @@ import Foundation
 import os
 
 /// Code signing requirement for the main app: only Latest may connect to this daemon.
-private let appCodeSigningRequirement = "identifier \"com.max-langer.Latest\" and certificate leaf[subject.OU] = \"VFABJ5RE5Q\""
+private let appCodeSigningRequirement =
+  "identifier \"com.max-langer.Latest\" and certificate leaf[subject.OU] = \"VFABJ5RE5Q\""
 
 class ServiceDelegate: NSObject, NSXPCListenerDelegate {
-	/// This method is where the NSXPCListener configures, accepts, and resumes a new incoming NSXPCConnection.
-	func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
-		newConnection.setCodeSigningRequirement(appCodeSigningRequirement)
-		newConnection.exportedInterface = NSXPCInterface(with: UpdateInstallerProtocol.self)
+  /// This method is where the NSXPCListener configures, accepts, and resumes a new incoming NSXPCConnection.
+  func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection)
+    -> Bool
+  {
+    newConnection.setCodeSigningRequirement(appCodeSigningRequirement)
+    newConnection.exportedInterface = NSXPCInterface(with: UpdateInstallerProtocol.self)
 
-		let exportedObject = UpdateInstaller()
-		newConnection.exportedObject = exportedObject
-		newConnection.resume()
-		
-		return true
-	}
+    let exportedObject = UpdateInstaller()
+    newConnection.exportedObject = exportedObject
+    newConnection.resume()
+
+    return true
+  }
 }
 
 // Create the delegate for the service.
@@ -36,4 +39,3 @@ listener.resume()
 
 // Keep the main run loop running
 RunLoop.current.run()
-

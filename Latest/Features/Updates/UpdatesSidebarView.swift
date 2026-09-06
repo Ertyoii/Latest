@@ -9,52 +9,53 @@
 import SwiftUI
 
 struct UpdatesSidebarView: View {
-	@ObservedObject var viewModel: UpdatesListViewModel
-	@ObservedObject var searchFocusController: SearchFocusController
-	let showsSupportStatusOverride: Bool?
+  @ObservedObject var viewModel: UpdatesListViewModel
+  @ObservedObject var searchFocusController: SearchFocusController
+  let showsSupportStatusOverride: Bool?
 
-	init(
-		viewModel: UpdatesListViewModel,
-		searchFocusController: SearchFocusController,
-		showsSupportStatusOverride: Bool? = nil
-	) {
-		self.viewModel = viewModel
-		self.searchFocusController = searchFocusController
-		self.showsSupportStatusOverride = showsSupportStatusOverride
-	}
+  init(
+    viewModel: UpdatesListViewModel,
+    searchFocusController: SearchFocusController,
+    showsSupportStatusOverride: Bool? = nil
+  ) {
+    self.viewModel = viewModel
+    self.searchFocusController = searchFocusController
+    self.showsSupportStatusOverride = showsSupportStatusOverride
+  }
 
-	var body: some View {
-		ZStack(alignment: .top) {
+  var body: some View {
+    ZStack(alignment: .top) {
 
-			UpdatesTableBridge(viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride)
+      UpdatesTableBridge(
+        viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride)
 
-			UpdatesSidebarHeaderView(viewModel: viewModel, searchFocusController: searchFocusController)
-		}
-		.background {
-			SidebarGlassGeometryAccessor(
-				cornerRadius: VisualMetrics.sidebarGlassCornerRadius,
-				leadingLayoutInset: VisualMetrics.sidebarGlassLeadingLayoutInset
-			)
-				.allowsHitTesting(false)
-				.accessibilityHidden(true)
-		}
-	}
+      UpdatesSidebarHeaderView(viewModel: viewModel, searchFocusController: searchFocusController)
+    }
+    .background {
+      SidebarGlassGeometryAccessor(
+        cornerRadius: VisualMetrics.sidebarGlassCornerRadius,
+        leadingLayoutInset: VisualMetrics.sidebarGlassLeadingLayoutInset
+      )
+      .allowsHitTesting(false)
+      .accessibilityHidden(true)
+    }
+  }
 }
 
 struct UpdatesSidebarHeaderView: View {
-	@ObservedObject var viewModel: UpdatesListViewModel
-	@ObservedObject var searchFocusController: SearchFocusController
+  @ObservedObject var viewModel: UpdatesListViewModel
+  @ObservedObject var searchFocusController: SearchFocusController
 
-	var body: some View {
-		SearchFieldRepresentable(
-			text: $viewModel.searchQuery,
-			focusController: searchFocusController,
-			onTextChanged: viewModel.setSearchQuery
-		)
-		.frame(height: 28)
-		.padding(.top, -1)
-		.padding(.leading, 24)
-		.padding(.trailing, 20)
-		.frame(maxWidth: .infinity, minHeight: 39, maxHeight: 39, alignment: .top)
-	}
+  var body: some View {
+    SearchFieldRepresentable(
+      text: $viewModel.searchQuery,
+      focusController: searchFocusController,
+      onTextChanged: viewModel.setSearchQuery
+    )
+    .frame(height: 28)
+    .padding(.top, -1)
+    .padding(.leading, 24)
+    .padding(.trailing, 20)
+    .frame(maxWidth: .infinity, minHeight: 39, maxHeight: 39, alignment: .top)
+  }
 }

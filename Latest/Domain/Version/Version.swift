@@ -8,428 +8,430 @@
 
 import Foundation
 
-/**
- A Version represents a single version of an app. It contains both the version number and the build number to uniquely
- identify an app (in theory).
- Comparisons of versions results in an actual comparison. I.E. 1.4.2 > 1.3.5
- Also, if the two versions are the same, or the strings are not parsable, the build numbers get compared.
- This class is very much work in progress and needs some deep thoughts on edge cases and a more clever implementation
- */
-struct Version : Hashable, Comparable, Sendable {
+/// A Version represents a single version of an app. It contains both the version number and the build number to uniquely
+/// identify an app (in theory).
+/// Comparisons of versions results in an actual comparison. I.E. 1.4.2 > 1.3.5
+/// Also, if the two versions are the same, or the strings are not parsable, the build numbers get compared.
+/// This class is very much work in progress and needs some deep thoughts on edge cases and a more clever implementation
+struct Version: Hashable, Comparable, Sendable {
 
-	/// The version number itself
-	let versionNumber : String?
+  /// The version number itself
+  let versionNumber: String?
 
-	/// The build number itself
-	let buildNumber : String?
+  /// The build number itself
+  let buildNumber: String?
 
-	private let versionNumberComponents: [Segment]?
-	private let buildNumberComponents: [Segment]?
-	private let versionNumberSingleNumber: Int?
-	private let buildNumberSingleNumber: Int?
-	private let hasParsedContent: Bool
+  private let versionNumberComponents: [Segment]?
+  private let buildNumberComponents: [Segment]?
+  private let versionNumberSingleNumber: Int?
+  private let buildNumberSingleNumber: Int?
+  private let hasParsedContent: Bool
 
-	init(versionNumber: String?, buildNumber: String?) {
-		self.versionNumber = versionNumber
-		self.buildNumber = buildNumber
+  init(versionNumber: String?, buildNumber: String?) {
+    self.versionNumber = versionNumber
+    self.buildNumber = buildNumber
 
-		let versionNumberComponents = versionNumber?.components()
-		let buildNumberComponents = buildNumber?.components()
-		self.versionNumberComponents = versionNumberComponents
-		self.buildNumberComponents = buildNumberComponents
-		self.versionNumberSingleNumber = Self.singleNumber(in: versionNumberComponents)
-		self.buildNumberSingleNumber = Self.singleNumber(in: buildNumberComponents)
-		self.hasParsedContent = Self.hasParsedContent(in: versionNumberComponents)
-			|| Self.hasParsedContent(in: buildNumberComponents)
-	}
+    let versionNumberComponents = versionNumber?.components()
+    let buildNumberComponents = buildNumber?.components()
+    self.versionNumberComponents = versionNumberComponents
+    self.buildNumberComponents = buildNumberComponents
+    self.versionNumberSingleNumber = Self.singleNumber(in: versionNumberComponents)
+    self.buildNumberSingleNumber = Self.singleNumber(in: buildNumberComponents)
+    self.hasParsedContent =
+      Self.hasParsedContent(in: versionNumberComponents)
+      || Self.hasParsedContent(in: buildNumberComponents)
+  }
 
-	/// Flag whether both version number and build number are unavailable
-	var isEmpty: Bool {
-		!hasParsedContent
-	}
+  /// Flag whether both version number and build number are unavailable
+  var isEmpty: Bool {
+    !hasParsedContent
+  }
 
+  // MARK: - Comparisons
 
-	// MARK: - Comparisons
+  static func == (lhs: Version, rhs: Version) -> Bool {
+    compare(lhs, rhs) == .equal
+  }
 
-	static func ==(lhs: Version, rhs: Version) -> Bool {
-		compare(lhs, rhs) == .equal
-	}
+  static func < (lhs: Version, rhs: Version) -> Bool {
+    compare(lhs, rhs) == .older
+  }
 
-	static func <(lhs: Version, rhs: Version) -> Bool {
-		compare(lhs, rhs) == .older
-	}
+  static func > (lhs: Version, rhs: Version) -> Bool {
+    compare(lhs, rhs) == .newer
+  }
 
-	static func >(lhs: Version, rhs: Version) -> Bool {
-		compare(lhs, rhs) == .newer
-	}
+  // MARK: - Hashing
 
+  func hash(into hasher: inout Hasher) {
+    guard !isEmpty else {
+      hasher.combine("Version.empty")
+      return
+    }
 
-	// MARK: - Hashing
+    hasher.combine(versionNumber)
+    hasher.combine(buildNumber)
+  }
 
-	func hash(into hasher: inout Hasher) {
-		guard !isEmpty else {
-			hasher.combine("Version.empty")
-			return
-		}
+  // MARK: - Private
 
-		hasher.combine(versionNumber)
-		hasher.combine(buildNumber)
-	}
+  /// An enum describing the result of an comparison.
+  private enum CheckingResult {
+    case older, newer, equal, undefined
+  }
 
+  /// Performs the actual check. This version checker is adopted by the Sparkle Framework and slightly adapted.
+  private static func compare(_ lhs: Version, _ rhs: Version) -> CheckingResult {
+    if lhs.isEmpty && rhs.isEmpty {
+      return .equal
+    }
 
-	// MARK: - Private
+    var c1: [Segment]?
+    var c2: [Segment]?
+    var singleNumber1: Int?
+    var singleNumber2: Int?
 
-	/// An enum describing the result of an comparison.
-	private enum CheckingResult {
-		case older, newer, equal, undefined
-	}
+    // Only allow build number checks if build- and version number actually differ
+    let allowBuildNumberCheck = lhs.buildNumber != lhs.versionNumber
+    if allowBuildNumberCheck, lhs.buildNumber != nil, rhs.buildNumber != nil {
+      c1 = lhs.buildNumberComponents
+      c2 = rhs.buildNumberComponents
+      singleNumber1 = lhs.buildNumberSingleNumber
+      singleNumber2 = rhs.buildNumberSingleNumber
+    } else {
+      c1 = lhs.versionNumberComponents
+      c2 = rhs.versionNumberComponents
+      singleNumber1 = lhs.versionNumberSingleNumber
+      singleNumber2 = rhs.versionNumberSingleNumber
+    }
 
-	/// Performs the actual check. This version checker is adopted by the Sparkle Framework and slightly adapted.
-	private static func compare(_ lhs: Version, _ rhs: Version) -> CheckingResult {
-		if lhs.isEmpty && rhs.isEmpty {
-			return .equal
-		}
+    guard let c1, let c2 else {
+      return .undefined
+    }
 
-		var c1: [Segment]?
-		var c2: [Segment]?
-		var singleNumber1: Int?
-		var singleNumber2: Int?
+    if let singleNumber1, let singleNumber2 {
+      if singleNumber1 > singleNumber2 {
+        return .newer
+      } else if singleNumber2 > singleNumber1 {
+        return .older
+      }
 
-		// Only allow build number checks if build- and version number actually differ
-		let allowBuildNumberCheck = lhs.buildNumber != lhs.versionNumber
-		if allowBuildNumberCheck, lhs.buildNumber != nil, rhs.buildNumber != nil {
-			c1 = lhs.buildNumberComponents
-			c2 = rhs.buildNumberComponents
-			singleNumber1 = lhs.buildNumberSingleNumber
-			singleNumber2 = rhs.buildNumberSingleNumber
-		} else {
-			c1 = lhs.versionNumberComponents
-			c2 = rhs.versionNumberComponents
-			singleNumber1 = lhs.versionNumberSingleNumber
-			singleNumber2 = rhs.versionNumberSingleNumber
-		}
+      return .equal
+    }
 
-		guard let c1, let c2 else {
-			return .undefined
-		}
+    let count1 = c1.count
+    let count2 = c2.count
+    for i in 0..<min(count1, count2) {
+      guard case .component(let component1) = c1[i], case .component(let component2) = c2[i] else {
+        continue
+      }
 
-		if let singleNumber1, let singleNumber2 {
-			if singleNumber1 > singleNumber2 {
-				return .newer
-			} else if singleNumber2 > singleNumber1 {
-				return .older
-			}
+      let atomsCount1 = component1.count
+      let atomsCount2 = component2.count
+      for i in 0..<min(atomsCount1, atomsCount2) {
+        let component1 = component1[i]
+        let component2 = component2[i]
 
-			return .equal
-		}
+        // Compare numbers
+        if case .number(let value1) = component1, case .number(let value2) = component2 {
+          if value1 > value2 {
+            return .newer  // Think "1.3" vs "1.2"
+          } else if value2 > value1 {
+            return .older  // Think "1.2" vs "1.3"
+          }
+        }
 
-		let count1 = c1.count
-		let count2 = c2.count
-		for i in 0..<min(count1, count2) {
-			guard case .component(let component1) = c1[i], case .component(let component2) = c2[i] else { continue }
+        // Compare letters
+        else if case .string(let value1) = component1, case .string(let value2) = component2 {
+          switch value1.compare(value2) {
+          case .orderedAscending:
+            return .older  // Think "1.2A" vs "1.2B"
+          case .orderedDescending:
+            return .newer  // Think "1.2B" vs "1.2A"
+          default: ()
+          }
+        }
 
-			let atomsCount1 = component1.count
-			let atomsCount2 = component2.count
-			for i in 0..<min(atomsCount1, atomsCount2) {
-				let component1 = component1[i]
-				let component2 = component2[i]
+        // Not the same type? Now we have to do some validity checking
+        else if case .string(_) = component1 {
+          return .older  // Think "1.2A" vs "1.2.2"
+        }
 
-				// Compare numbers
-				if case .number(let value1) = component1, case .number(let value2) = component2 {
-					if value1 > value2 {
-						return .newer // Think "1.3" vs "1.2"
-					} else if value2 > value1 {
-						return .older // Think "1.2" vs "1.3"
-					}
-				}
+        else if case .string(_) = component2 {
+          return .newer  // Think "1.2.3" vs "1.2A"
+        }
 
-				// Compare letters
-				else if case .string(let value1) = component1, case .string(let value2) = component2 {
-					switch value1.compare(value2) {
-					case .orderedAscending:
-						return .older // Think "1.2A" vs "1.2B"
-					case .orderedDescending:
-						return .newer // Think "1.2B" vs "1.2A"
-					default: ()
-					}
-				}
+        // One is a number and the other is a period. The period is invalid
+        else if case .number(_) = component1 {
+          return .older  // Think "1.2.." vs "1.2.0"
+        }
 
+        else if case .number(_) = component2 {
+          return .newer  // Think "1.2.3" vs "1.2.."
+        }
+      }
+    }
 
-				// Not the same type? Now we have to do some validity checking
-				else if case .string(_) = component1 {
-					return .older // Think "1.2A" vs "1.2.2"
-				}
+    // The versions are equal up to the point where they both still have parts
+    // Lets check to see if one is larger than the other
+    if count1 != count2 {
+      let l = count1 > count2
+      let longerComponents = (l ? c1 : c2)[(l ? count2 : count1)...]
+      guard let atoms = firstComponentAtoms(in: longerComponents) else {
+        return .equal  // Think "1.2" vs "1.2."
+      }
 
-				else if case .string(_) = component2 {
-					return .newer // Think "1.2.3" vs "1.2A"
-				}
+      if case .number(let number) = atoms.first {
+        if number == 0 {
+          return .equal  // Think "1.2" vs "1.2.0"
+        }
 
+        return l ? .newer : .older  // Think "1.2" vs "1.2.2"
+      }
 
-				// One is a number and the other is a period. The period is invalid
-				else if case .number(_) = component1 {
-					return .older // Think "1.2.." vs "1.2.0"
-				}
+      return l ? .older : .newer  // Think "1.2" vs "1.2A"
+    }
 
-				else if case .number(_) = component2 {
-					return .newer // Think "1.2.3" vs "1.2.."
-				}
-			}
-		}
+    return .equal  // Think "1.2" vs "1.2"
+  }
 
-		// The versions are equal up to the point where they both still have parts
-		// Lets check to see if one is larger than the other
-		if count1 != count2 {
-			let l = count1 > count2
-			let longerComponents = (l ? c1 : c2)[(l ? count2 : count1)...]
-			guard let atoms = firstComponentAtoms(in: longerComponents) else {
-				return .equal // Think "1.2" vs "1.2."
-			}
+  private static func firstComponentAtoms(in segments: ArraySlice<Segment>) -> [Segment.Atom]? {
+    for case .component(let atoms) in segments {
+      return atoms
+    }
 
-			if case .number(let number) = atoms.first {
-				if number == 0 {
-					return .equal // Think "1.2" vs "1.2.0"
-				}
+    return nil
+  }
 
-				return l ? .newer : .older // Think "1.2" vs "1.2.2"
-			}
+  private static func hasParsedContent(in segments: [Segment]?) -> Bool {
+    segments?.contains { segment in
+      guard case .component(let atoms) = segment else { return false }
+      return !atoms.isEmpty
+    } ?? false
+  }
 
-			return l ? .older : .newer // Think "1.2" vs "1.2A"
-		}
+  private static func singleNumber(in segments: [Segment]?) -> Int? {
+    guard let segments, segments.count == 1,
+      case .component(let atoms) = segments[0],
+      atoms.count == 1,
+      case .number(let value) = atoms[0]
+    else {
+      return nil
+    }
 
-		return .equal // Think "1.2" vs "1.2"
-	}
-
-	private static func firstComponentAtoms(in segments: ArraySlice<Segment>) -> [Segment.Atom]? {
-		for case .component(let atoms) in segments {
-			return atoms
-		}
-
-		return nil
-	}
-
-	private static func hasParsedContent(in segments: [Segment]?) -> Bool {
-		segments?.contains { segment in
-			guard case .component(let atoms) = segment else { return false }
-			return !atoms.isEmpty
-		} ?? false
-	}
-
-	private static func singleNumber(in segments: [Segment]?) -> Int? {
-		guard let segments, segments.count == 1,
-			  case .component(let atoms) = segments[0],
-			  atoms.count == 1,
-			  case .number(let value) = atoms[0]
-		else {
-			return nil
-		}
-
-		return value
-	}
+    return value
+  }
 }
 
 extension Version: CustomDebugStringConvertible {
-	var debugDescription: String {
-		return "Version: \(versionNumber ?? "None"), Build: \(buildNumber ?? "None")"
-	}
+  var debugDescription: String {
+    return "Version: \(versionNumber ?? "None"), Build: \(buildNumber ?? "None")"
+  }
 }
 
 /// An extension helping the version checking
-fileprivate extension String {
+extension String {
 
-	/**
-	 Returns the components of an version number.
-	 Components are grouped by Character type, so "12.3" returns [("12", .number), (".", .separator), ("3", .number)]
-	 */
-	func components() -> [Version.Segment] {
-		let scanner = Scanner(string: self)
+  /**
+   Returns the components of an version number.
+   Components are grouped by Character type, so "12.3" returns [("12", .number), (".", .separator), ("3", .number)]
+   */
+  fileprivate func components() -> [Version.Segment] {
+    let scanner = Scanner(string: self)
 
-		var components = [Version.Segment]()
-		var currentAtoms = [Version.Segment.Atom]()
+    var components = [Version.Segment]()
+    var currentAtoms = [Version.Segment.Atom]()
 
-		while !scanner.isAtEnd {
-			var number: Int = 0
+    while !scanner.isAtEnd {
+      var number: Int = 0
 
-			// Try to scan number
-			if scanner.scanInt(&number) {
-				currentAtoms.append(.number(value: number))
-			}
+      // Try to scan number
+      if scanner.scanInt(&number) {
+        currentAtoms.append(.number(value: number))
+      }
 
-			// Try to scan separator
-			else if let string = scanner.scanCharacters(from: .separators) {
-				components.append(.component(atoms: currentAtoms))
-				components.append(.separator(character: string as String))
+      // Try to scan separator
+      else if let string = scanner.scanCharacters(from: .separators) {
+        components.append(.component(atoms: currentAtoms))
+        components.append(.separator(character: string as String))
 
-				currentAtoms.removeAll()
-			}
+        currentAtoms.removeAll()
+      }
 
-			// Try to scan anything else
-			else if let string = scanner.scanCharacters(from: .letters) {
-				currentAtoms.append(.string(value: string as String))
-			}
+      // Try to scan anything else
+      else if let string = scanner.scanCharacters(from: .letters) {
+        currentAtoms.append(.string(value: string as String))
+      }
 
-			else {
-				fatalError("Unable to parse version string: \(self)")
-			}
-		}
+      else {
+        fatalError("Unable to parse version string: \(self)")
+      }
+    }
 
-		if !currentAtoms.isEmpty {
-			components.append(.component(atoms: currentAtoms))
-		}
+    if !currentAtoms.isEmpty {
+      components.append(.component(atoms: currentAtoms))
+    }
 
-		return components
-	}
+    return components
+  }
 }
 
-fileprivate extension CharacterSet {
+extension CharacterSet {
 
-	/// Contains all delimiters used by a version string
-	static let separators = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
+  /// Contains all delimiters used by a version string
+  fileprivate static let separators = CharacterSet.whitespacesAndNewlines.union(
+    .punctuationCharacters)
 
-	/// Contains any characters but separators and digits
-	static let letters = CharacterSet.separators.union(.decimalDigits).inverted
+  /// Contains any characters but separators and digits
+  fileprivate static let letters = CharacterSet.separators.union(.decimalDigits).inverted
 
 }
 
 // Defining the type of a character
-fileprivate extension Version {
-	enum Segment: Equatable, Sendable {
+extension Version {
+  fileprivate enum Segment: Equatable, Sendable {
 
-		enum Atom: Equatable, Sendable {
-			case number(value: Int) // 0..9
-			case string(value: String) // Everything else
+    enum Atom: Equatable, Sendable {
+      case number(value: Int)  // 0..9
+      case string(value: String)  // Everything else
 
-			func isSameType(_ other: Atom) -> Bool {
-				switch (self, other) {
-				case (.number(_), .number(_)),
-					(.string(_), .string(_)):
-					return true
-				default:
-					return false
-				}
-			}
-		}
+      func isSameType(_ other: Atom) -> Bool {
+        switch (self, other) {
+        case (.number(_), .number(_)),
+          (.string(_), .string(_)):
+          return true
+        default:
+          return false
+        }
+      }
+    }
 
-		case separator(character: String) // Newlines, punctuation..
-		case component(atoms: [Atom]) // [123, A]
+    case separator(character: String)  // Newlines, punctuation..
+    case component(atoms: [Atom])  // [123, A]
 
-		var plainComponent: String? {
-			guard case .component(let atoms) = self else {
-				return nil
-			}
+    var plainComponent: String? {
+      guard case .component(let atoms) = self else {
+        return nil
+      }
 
-			return atoms.map { atom in
-				switch atom {
-				case .number(let value):
-					return "\(value)"
-				case .string(let value):
-					return value
-				}
-			}.joined()
-		}
+      return atoms.map { atom in
+        switch atom {
+        case .number(let value):
+          return "\(value)"
+        case .string(let value):
+          return value
+        }
+      }.joined()
+    }
 
-		func isSameType(_ other: Segment) -> Bool {
-			switch (self, other) {
-			case (.separator, .separator),
-				(.component(_), .component(_)):
-				return true
-			default:
-				return false
-			}
-		}
+    func isSameType(_ other: Segment) -> Bool {
+      switch (self, other) {
+      case (.separator, .separator),
+        (.component(_), .component(_)):
+        return true
+      default:
+        return false
+      }
+    }
 
-	}
+  }
 
 }
 
 extension Array where Element == Version.Segment {
-	func joined() -> String? {
-		let string = self.map { segment in
-			switch segment {
-			case .separator(let character):
-				character
-			case .component(_):
-				segment.plainComponent!
-			}
-		}.joined()
+  func joined() -> String? {
+    let string = self.map { segment in
+      switch segment {
+      case .separator(let character):
+        character
+      case .component(_):
+        segment.plainComponent!
+      }
+    }.joined()
 
-		return string.isEmpty ? nil : string
-	}
+    return string.isEmpty ? nil : string
+  }
 }
-
 
 // MARK: - Version Sanitization
 
 extension Version {
 
-	func sanitize(with appVersion: Version) -> Version {
-		// The last component of the version number is actually the build number. (Can only be detected for equal build numbers. Avoids false positives)
-		// App: 1.2 (40)
-		// Remote: 1.2.40
-		if buildNumber == nil, var components = versionNumberComponents, let lastRemoteComponent = components.last?.plainComponent, lastRemoteComponent == appVersion.buildNumber {
-			// Remove build number segment from version number and store it separately.
-			let buildNumber = components.removeLast()
+  func sanitize(with appVersion: Version) -> Version {
+    // The last component of the version number is actually the build number. (Can only be detected for equal build numbers. Avoids false positives)
+    // App: 1.2 (40)
+    // Remote: 1.2.40
+    if buildNumber == nil, var components = versionNumberComponents,
+      let lastRemoteComponent = components.last?.plainComponent,
+      lastRemoteComponent == appVersion.buildNumber
+    {
+      // Remove build number segment from version number and store it separately.
+      let buildNumber = components.removeLast()
 
-			// Remove separator as well.
-			if !components.isEmpty {
-				components.removeLast()
-			}
+      // Remove separator as well.
+      if !components.isEmpty {
+        components.removeLast()
+      }
 
-			return Version(versionNumber: components.joined(), buildNumber: buildNumber.plainComponent)
-		}
+      return Version(versionNumber: components.joined(), buildNumber: buildNumber.plainComponent)
+    }
 
-		// The entire version number equals the app versions build number. We assume version number by default, but that may not be the case.
-		if let versionNumber, versionNumber == appVersion.buildNumber {
-			// Switch to build number.
-			return Version(versionNumber: nil, buildNumber: versionNumber)
-		}
+    // The entire version number equals the app versions build number. We assume version number by default, but that may not be the case.
+    if let versionNumber, versionNumber == appVersion.buildNumber {
+      // Switch to build number.
+      return Version(versionNumber: nil, buildNumber: versionNumber)
+    }
 
-		//
-		if appVersion.buildNumber == appVersion.versionNumber, var components = versionNumberComponents, components.last?.plainComponent != nil, components.count == 7 {
-			components.removeLast()
-			components.removeLast()
+    //
+    if appVersion.buildNumber == appVersion.versionNumber, var components = versionNumberComponents,
+      components.last?.plainComponent != nil, components.count == 7
+    {
+      components.removeLast()
+      components.removeLast()
 
-			if components.joined() == appVersion.buildNumber {
-				return Version(versionNumber: components.joined(), buildNumber: buildNumber)
-			}
-		}
+      if components.joined() == appVersion.buildNumber {
+        return Version(versionNumber: components.joined(), buildNumber: buildNumber)
+      }
+    }
 
-		// Nothing changed
-		return self
-	}
+    // Nothing changed
+    return self
+  }
 
 }
-
 
 // MARK: -
 
 extension OperatingSystemVersion {
 
-	init(string: String) throws {
-		let components = string.components().flatMap({ component in
-			switch component {
-			case .component(let atoms):
-				return atoms.compactMap { atom in
-					switch atom {
-					case .number(let value):
-						return value
-					default:
-						return nil
-					}
-				}
-			default:
-				return []
-			}
-		})
-		guard !components.isEmpty else { throw OperatingSystemVersionError.parsingError(version: string) }
+  init(string: String) throws {
+    let components = string.components().flatMap({ component in
+      switch component {
+      case .component(let atoms):
+        return atoms.compactMap { atom in
+          switch atom {
+          case .number(let value):
+            return value
+          default:
+            return nil
+          }
+        }
+      default:
+        return []
+      }
+    })
+    guard !components.isEmpty else {
+      throw OperatingSystemVersionError.parsingError(version: string)
+    }
 
-		let major = components[0]
-		let minor = components.count > 1 ? components[1] : 0
-		let patch = components.count > 2 ? components[2] : 0
-		self.init(majorVersion: major, minorVersion: minor, patchVersion: patch)
-	}
+    let major = components[0]
+    let minor = components.count > 1 ? components[1] : 0
+    let patch = components.count > 2 ? components[2] : 0
+    self.init(majorVersion: major, minorVersion: minor, patchVersion: patch)
+  }
 
-	enum OperatingSystemVersionError: Error {
-		case parsingError(version: String)
-	}
+  enum OperatingSystemVersionError: Error {
+    case parsingError(version: String)
+  }
 
 }

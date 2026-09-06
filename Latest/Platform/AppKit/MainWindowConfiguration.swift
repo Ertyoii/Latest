@@ -11,7 +11,7 @@ import AppKit
 /// split-view and Liquid Glass surfaces are deliberately left untouched.
 @MainActor
 enum MainWindowConfiguration {
-	static func apply(to window: NSWindow) {
-		window.titlebarSeparatorStyle = .none
-	}
+  static func apply(to window: NSWindow) {
+    window.titlebarSeparatorStyle = .none
+  }
 }

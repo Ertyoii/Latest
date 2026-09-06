@@ -14,517 +14,551 @@ import Synchronization
 private let UpdateDateKey = "UpdateDateKey"
 
 private let updateRepositoryLogger = Logger(
-	subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
-	category: "Repository"
+  subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+  category: "Repository"
 )
 private let updateRepositorySignposter = OSSignposter(
-	subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
-	category: "RepositoryPerformance"
+  subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+  category: "RepositoryPerformance"
 )
 
 /// A storage that fetches update information from an online source.
 ///
 /// Can be asked for update version information for a given application bundle.
 final class UpdateRepository: Sendable {
-	private static let locallyExcludedBundleIdentifiers: Set<String> = [
-		// OpenAI's Codex desktop app was renamed to ChatGPT but remains a separate
-		// product from the consumer ChatGPT cask. Name-only matching would assign
-		// com.openai.codex the unrelated chatgpt Homebrew version.
-		"com.openai.codex"
-	]
+  private static let locallyExcludedBundleIdentifiers: Set<String> = [
+    // OpenAI's Codex desktop app was renamed to ChatGPT but remains a separate
+    // product from the consumer ChatGPT cask. Name-only matching would assign
+    // com.openai.codex the unrelated chatgpt Homebrew version.
+    "com.openai.codex"
+  ]
 
-	private static let reusableRepositories = UpdateRepositoryReuseCache()
+  private static let reusableRepositories = UpdateRepositoryReuseCache()
 
-	/// Queue on which requests will be handled.
-	private let queue = DispatchQueue(label: "repositoryQueue")
+  /// Queue on which requests will be handled.
+  private let queue = DispatchQueue(label: "repositoryQueue")
 
-	private let dataSource = RemoteDataSource()
+  private let dataSource = RemoteDataSource()
 
-	// MARK: - Init
+  // MARK: - Init
 
-	let fetchCompletedGroup = DispatchGroup()
+  let fetchCompletedGroup = DispatchGroup()
 
-	fileprivate let createdAt = Date.timeIntervalSinceReferenceDate
+  fileprivate let createdAt = Date.timeIntervalSinceReferenceDate
 
-	private struct State {
-		var finalizeHandler: (@Sendable (UpdateRepository, Bool) -> Void)?
-		var pendingRequests: [@Sendable () -> Void]? = []
-		var entryMatcher = EntryMatcher(entries: [], unsupportedBundleIdentifiers: [])
-		var loadedURLTypes = Set<RemoteURL>()
-	}
-	private let state: Mutex<State>
+  private struct State {
+    var finalizeHandler: (@Sendable (UpdateRepository, Bool) -> Void)?
+    var pendingRequests: [@Sendable () -> Void]? = []
+    var entryMatcher = EntryMatcher(entries: [], unsupportedBundleIdentifiers: [])
+    var loadedURLTypes = Set<RemoteURL>()
+  }
+  private let state: Mutex<State>
 
-	fileprivate init(finalizeHandler: (@Sendable (UpdateRepository, Bool) -> Void)? = nil) {
-		self.state = Mutex(State(finalizeHandler: finalizeHandler))
+  fileprivate init(finalizeHandler: (@Sendable (UpdateRepository, Bool) -> Void)? = nil) {
+    self.state = Mutex(State(finalizeHandler: finalizeHandler))
 
-		fetchCompletedGroup.enter()
-		fetchCompletedGroup.notify(queue: .main) { [weak self] in
-			self?.finalize()
-		}
-	}
+    fetchCompletedGroup.enter()
+    fetchCompletedGroup.notify(queue: .main) { [weak self] in
+      self?.finalize()
+    }
+  }
 
-	/// Returns a new repository with up to date update information.
-	static func newRepository() -> UpdateRepository {
-		reusableRepositories.repository()
-	}
+  /// Returns a new repository with up to date update information.
+  static func newRepository() -> UpdateRepository {
+    reusableRepositories.repository()
+  }
 
+  // MARK: - Accessors
 
-	// MARK: - Accessors
+  /// Returns update information for the given bundle.
+  func updateInfo(
+    for bundle: App.Bundle,
+    handler:
+      @escaping @Sendable (
+        _ bundle: App.Bundle, _ version: Version?, _ minimumOSVersion: OperatingSystemVersion?,
+        _ releaseNotes: App.Update.ReleaseNotes?
+      ) -> Void
+  ) {
+    let checkApp: @Sendable () -> Void = { [weak self] in
+      guard let self, let entry = self.entry(for: bundle) else {
+        handler(bundle, nil, nil, nil)
+        return
+      }
+      return handler(bundle, entry.version, entry.minimumOSVersion, entry.releaseNotes)
+    }
 
-	/// Returns update information for the given bundle.
-	func updateInfo(for bundle: App.Bundle, handler: @escaping @Sendable (_ bundle: App.Bundle, _ version: Version?, _ minimumOSVersion: OperatingSystemVersion?, _ releaseNotes: App.Update.ReleaseNotes?) -> Void) {
-		let checkApp: @Sendable () -> Void = { [weak self] in
-			guard let self, let entry = self.entry(for: bundle) else {
-				handler(bundle, nil, nil, nil)
-				return
-			}
-			return handler(bundle, entry.version, entry.minimumOSVersion, entry.releaseNotes)
-		}
+    /// Entries are still being fetched, add the request to the queue.
+    queue.async { [weak self] in
+      guard let self else { return }
 
-		/// Entries are still being fetched, add the request to the queue.
-		queue.async { [weak self] in
-			guard let self else { return }
+      let queued = self.state.withLock { state in
+        guard state.pendingRequests != nil else { return false }
+        state.pendingRequests?.append(checkApp)
+        return true
+      }
+      if !queued { checkApp() }
+    }
+  }
 
-			let queued = self.state.withLock { state in
-				guard state.pendingRequests != nil else { return false }
-				state.pendingRequests?.append(checkApp)
-				return true
-			}
-			if !queued { checkApp() }
-		}
-	}
+  struct UpdateInfo: Sendable {
+    let bundle: App.Bundle
+    let version: Version?
+    let minimumOSVersion: OperatingSystemVersion?
+    let releaseNotes: App.Update.ReleaseNotes?
+  }
 
-	struct UpdateInfo: Sendable {
-		let bundle: App.Bundle
-		let version: Version?
-		let minimumOSVersion: OperatingSystemVersion?
-		let releaseNotes: App.Update.ReleaseNotes?
-	}
+  func updateInfo(for bundle: App.Bundle) async -> UpdateInfo {
+    await withCheckedContinuation { continuation in
+      updateInfo(for: bundle) { bundle, version, minimumOSVersion, releaseNotes in
+        continuation.resume(
+          returning: UpdateInfo(
+            bundle: bundle,
+            version: version,
+            minimumOSVersion: minimumOSVersion,
+            releaseNotes: releaseNotes
+          ))
+      }
+    }
+  }
 
-	func updateInfo(for bundle: App.Bundle) async -> UpdateInfo {
-		await withCheckedContinuation { continuation in
-			updateInfo(for: bundle) { bundle, version, minimumOSVersion, releaseNotes in
-				continuation.resume(returning: UpdateInfo(
-					bundle: bundle,
-					version: version,
-					minimumOSVersion: minimumOSVersion,
-					releaseNotes: releaseNotes
-				))
-			}
-		}
-	}
+  /// Sets the given entries and performs pending requests.
+  private func finalize() {
+    queue.async { [weak self] in
+      guard let self else { return }
+      let completed = self.state.withLock { state in
+        let requests = state.pendingRequests
+        state.pendingRequests = nil
+        let handler = state.finalizeHandler
+        state.finalizeHandler = nil
+        return (requests, handler, state.loadedURLTypes)
+      }
+      guard let requests = completed.0 else {
+        assertionFailure("Finalize must only be called once")
+        return
+      }
+      // Callbacks can reenter the repository; never execute them under its mutex.
+      requests.forEach { $0() }
+      let isReusable = completed.2 == Set(RemoteURL.allCases)
+      updateRepositoryLogger.info(
+        "Finalized update repository. loadedURLTypes=\(completed.2.count, privacy: .public) reusable=\(isReusable, privacy: .public)"
+      )
+      completed.1?(self, isReusable)
+    }
+  }
 
-	/// Sets the given entries and performs pending requests.
-	private func finalize() {
-		queue.async { [weak self] in
-			guard let self else { return }
-			let completed = self.state.withLock { state in
-				let requests = state.pendingRequests
-				state.pendingRequests = nil
-				let handler = state.finalizeHandler
-				state.finalizeHandler = nil
-				return (requests, handler, state.loadedURLTypes)
-			}
-			guard let requests = completed.0 else {
-				assertionFailure("Finalize must only be called once")
-				return
-			}
-			// Callbacks can reenter the repository; never execute them under its mutex.
-			requests.forEach { $0() }
-			let isReusable = completed.2 == Set(RemoteURL.allCases)
-			updateRepositoryLogger.info("Finalized update repository. loadedURLTypes=\(completed.2.count, privacy: .public) reusable=\(isReusable, privacy: .public)")
-			completed.1?(self, isReusable)
-		}
-	}
+  /// Returns a repository entry for the given name, if available.
+  private func entry(for bundle: App.Bundle) -> Entry? {
+    state.withLock { $0.entryMatcher.entry(for: bundle) }
+  }
 
-	/// Returns a repository entry for the given name, if available.
-	private func entry(for bundle: App.Bundle) -> Entry? {
-		state.withLock { $0.entryMatcher.entry(for: bundle) }
-	}
+  static func preferredEntry(from possibleEntries: [Entry], for bundleIdentifier: String) -> Entry?
+  {
+    EntryMatcher.preferredEntry(from: possibleEntries, for: bundleIdentifier)
+  }
 
-	static func preferredEntry(from possibleEntries: [Entry], for bundleIdentifier: String) -> Entry? {
-		EntryMatcher.preferredEntry(from: possibleEntries, for: bundleIdentifier)
-	}
+  static func isLocallyExcludedFromHomebrewMatching(_ bundleIdentifier: String) -> Bool {
+    locallyExcludedBundleIdentifiers.contains(bundleIdentifier)
+  }
 
-	static func isLocallyExcludedFromHomebrewMatching(_ bundleIdentifier: String) -> Bool {
-		locallyExcludedBundleIdentifiers.contains(bundleIdentifier)
-	}
+  // MARK: - Cache Handling
 
+  /// Loads the repository data.
+  fileprivate func load() {
+    updateRepositoryLogger.info("Loading update repository sources")
+    RemoteURL.allCases.forEach { urlType in
+      self.fetchCompletedGroup.enter()
 
-	// MARK: - Cache Handling
+      dataSource.load(urlType) { [weak self] data in
+        guard let self else { return }
 
-	/// Loads the repository data.
-	fileprivate func load() {
-		updateRepositoryLogger.info("Loading update repository sources")
-		RemoteURL.allCases.forEach { urlType in
-			self.fetchCompletedGroup.enter()
+        self.queue.async {
+          defer {
+            self.fetchCompletedGroup.leave()
+          }
+          guard let data else {
+            updateRepositoryLogger.info(
+              "Repository source \(urlType.rawValue, privacy: .public) returned no data")
+            return
+          }
 
-			dataSource.load(urlType) { [weak self] data in
-				guard let self else { return }
+          self.state.withLock { _ = $0.loadedURLTypes.insert(urlType) }
+          updateRepositoryLogger.info(
+            "Loaded repository source \(urlType.rawValue, privacy: .public)")
 
-				self.queue.async {
-					defer {
-						self.fetchCompletedGroup.leave()
-					}
-					guard let data else {
-						updateRepositoryLogger.info("Repository source \(urlType.rawValue, privacy: .public) returned no data")
-						return
-					}
+          switch urlType {
+          case .repository:
+            self.parse(data)
+          case .unsupportedApps:
+            self.loadUnsupportedApps(from: data)
+          }
+        }
+      }
+    }
+  }
 
-					self.state.withLock { _ = $0.loadedURLTypes.insert(urlType) }
-					updateRepositoryLogger.info("Loaded repository source \(urlType.rawValue, privacy: .public)")
+  /// Parses the given repository data and finishes loading.
+  private func parse(_ repositoryData: Data) {
+    let signpostID = updateRepositorySignposter.makeSignpostID()
+    let interval = updateRepositorySignposter.beginInterval(
+      "Decode Repository Catalog", id: signpostID)
+    let start = DispatchTime.now().uptimeNanoseconds
+    defer {
+      updateRepositorySignposter.endInterval("Decode Repository Catalog", interval)
+    }
 
-					switch urlType {
-					case .repository:
-						self.parse(data)
-					case .unsupportedApps:
-						self.loadUnsupportedApps(from: data)
-					}
-				}
-			}
-		}
-	}
+    do {
+      let compactCache = UpdateRepositoryCompactIndexCache(
+        cacheURL: RemoteURL.repository.compactIndexCacheURL
+      )
+      let sourceEntryCount: Int
+      let appEntries: [Entry]
+      let usedCompactIndex: Bool
+      if let compactIndex = compactCache.load(matching: repositoryData) {
+        sourceEntryCount = compactIndex.sourceEntryCount
+        appEntries = compactIndex.entries
+        usedCompactIndex = true
+      } else {
+        let entries = try JSONDecoder().decode([Entry].self, from: repositoryData)
+        sourceEntryCount = entries.count
+        appEntries = entries.filter { !$0.names.isEmpty }
+        compactCache.store(
+          UpdateRepositoryCompactIndex(
+            sourceData: repositoryData,
+            sourceEntryCount: sourceEntryCount,
+            entries: appEntries
+          ))
+        usedCompactIndex = false
+      }
+      state.withLock { $0.entryMatcher.update(entries: appEntries) }
+      let duration = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
+      updateRepositoryLogger.info(
+        "Loaded \(sourceEntryCount, privacy: .public) casks and indexed \(appEntries.count, privacy: .public) app entries in \(duration, privacy: .public) ms compact=\(usedCompactIndex, privacy: .public)"
+      )
+    } catch {
+      state.withLock { $0.entryMatcher.update(entries: []) }
+      updateRepositoryLogger.error(
+        "Failed to decode repository catalog: \(error.localizedDescription, privacy: .public)")
+    }
+  }
 
-	/// Parses the given repository data and finishes loading.
-	private func parse(_ repositoryData: Data) {
-		let signpostID = updateRepositorySignposter.makeSignpostID()
-		let interval = updateRepositorySignposter.beginInterval("Decode Repository Catalog", id: signpostID)
-		let start = DispatchTime.now().uptimeNanoseconds
-		defer {
-			updateRepositorySignposter.endInterval("Decode Repository Catalog", interval)
-		}
+  private func loadUnsupportedApps(from data: Data) {
+    guard
+      let propertyList = try? PropertyListSerialization.propertyList(from: data, format: nil)
+        as? [String]
+    else {
+      state.withLock { $0.entryMatcher.update(unsupportedBundleIdentifiers: []) }
+      return
+    }
 
-		do {
-			let compactCache = UpdateRepositoryCompactIndexCache(
-				cacheURL: RemoteURL.repository.compactIndexCacheURL
-			)
-			let sourceEntryCount: Int
-			let appEntries: [Entry]
-			let usedCompactIndex: Bool
-			if let compactIndex = compactCache.load(matching: repositoryData) {
-				sourceEntryCount = compactIndex.sourceEntryCount
-				appEntries = compactIndex.entries
-				usedCompactIndex = true
-			} else {
-				let entries = try JSONDecoder().decode([Entry].self, from: repositoryData)
-				sourceEntryCount = entries.count
-				appEntries = entries.filter { !$0.names.isEmpty }
-				compactCache.store(UpdateRepositoryCompactIndex(
-					sourceData: repositoryData,
-					sourceEntryCount: sourceEntryCount,
-					entries: appEntries
-				))
-				usedCompactIndex = false
-			}
-			state.withLock { $0.entryMatcher.update(entries: appEntries) }
-			let duration = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
-			updateRepositoryLogger.info(
-				"Loaded \(sourceEntryCount, privacy: .public) casks and indexed \(appEntries.count, privacy: .public) app entries in \(duration, privacy: .public) ms compact=\(usedCompactIndex, privacy: .public)"
-			)
-		} catch {
-			state.withLock { $0.entryMatcher.update(entries: []) }
-			updateRepositoryLogger.error("Failed to decode repository catalog: \(error.localizedDescription, privacy: .public)")
-		}
-	}
+    state.withLock { $0.entryMatcher.update(unsupportedBundleIdentifiers: Set(propertyList)) }
+  }
 
-	private func loadUnsupportedApps(from data: Data) {
-		guard let propertyList = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String] else {
-			state.withLock { $0.entryMatcher.update(unsupportedBundleIdentifiers: []) }
-			return
-		}
+  // MARK: - Repository URL
 
-		state.withLock { $0.entryMatcher.update(unsupportedBundleIdentifiers: Set(propertyList)) }
-	}
+  fileprivate enum RemoteURL: String, CaseIterable {
 
+    /// The URL update information is being fetched from.
+    case repository = "RepositoryCache"
 
-	// MARK: - Repository URL
+    /// Duration after which the cache will be invalidated. (1 hour in seconds)
+    case unsupportedApps = "UnsupportedApps"
 
-	fileprivate enum RemoteURL: String, CaseIterable {
+    /// The actual remote URL the information can be fetched from.
+    var url: URL? {
+      let urlString =
+        switch self {
+        case .repository:
+          "https://formulae.brew.sh/api/cask.json"
+        case .unsupportedApps:
+          "https://raw.githubusercontent.com/mangerlahn/Latest/main/Latest/Resources/ExcludedAppIdentifiers.plist"
+        }
 
-		/// The URL update information is being fetched from.
-		case repository = "RepositoryCache"
+      return URL(string: urlString)
+    }
 
-		/// Duration after which the cache will be invalidated. (1 hour in seconds)
-		case unsupportedApps = "UnsupportedApps"
+    /// The URL where the cached data will be stored.
+    var cacheURL: URL? {
+      let name = rawValue
+      let pathExtension =
+        switch self {
+        case .repository:
+          "json"
+        case .unsupportedApps:
+          "plist"
+        }
 
-		/// The actual remote URL the information can be fetched from.
-		var url: URL? {
-			let urlString = switch self {
-			case .repository:
-				"https://formulae.brew.sh/api/cask.json"
-			case .unsupportedApps:
-				"https://raw.githubusercontent.com/mangerlahn/Latest/main/Latest/Resources/ExcludedAppIdentifiers.plist"
-			}
+      return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+        .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.max-langer.Latest")
+        .appendingPathComponent(name).appendingPathExtension(pathExtension)
+    }
 
-			return URL(string: urlString)
-		}
+    var compactIndexCacheURL: URL? {
+      guard self == .repository else { return nil }
+      return cacheURL?
+        .deletingLastPathComponent()
+        .appendingPathComponent("RepositoryCompactIndex", isDirectory: false)
+        .appendingPathExtension("plist")
+    }
 
-		/// The URL where the cached data will be stored.
-		var cacheURL: URL? {
-			let name = rawValue
-			let pathExtension = switch self {
-			case .repository:
-				"json"
-			case .unsupportedApps:
-				"plist"
-			}
+    /// Possible fallback data within the binary if the remote content could not be fetched.
+    var fallbackData: Data? {
+      switch self {
+      case .repository:
+        return nil
+      case .unsupportedApps:
+        guard
+          let fallbackURL = Bundle.main.url(
+            forResource: "ExcludedAppIdentifiers", withExtension: "plist")
+        else {
+          return nil
+        }
 
-			return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-				.appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.max-langer.Latest")
-				.appendingPathComponent(name).appendingPathExtension(pathExtension)
-		}
+        return try? Data(contentsOf: fallbackURL)
+      }
+    }
 
-		var compactIndexCacheURL: URL? {
-			guard self == .repository else { return nil }
-			return cacheURL?
-				.deletingLastPathComponent()
-				.appendingPathComponent("RepositoryCompactIndex", isDirectory: false)
-				.appendingPathExtension("plist")
-		}
+    /// The user defaults key used for storing the cache access information.
+    var userDefaultsKey: String {
+      rawValue + UpdateDateKey
+    }
 
-		/// Possible fallback data within the binary if the remote content could not be fetched.
-		var fallbackData: Data? {
-			switch self {
-			case .repository:
-				return nil
-			case .unsupportedApps:
-				guard let fallbackURL = Bundle.main.url(forResource: "ExcludedAppIdentifiers", withExtension: "plist") else {
-					return nil
-				}
+    func isValidPayload(_ data: Data) -> Bool {
+      guard !data.isEmpty else { return false }
+      switch self {
+      case .repository:
+        return data.firstNonWhitespaceByte == 0x5B
+      case .unsupportedApps:
+        return (try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String])
+          != nil
+      }
+    }
 
-				return try? Data(contentsOf: fallbackURL)
-			}
-		}
-
-		/// The user defaults key used for storing the cache access information.
-		var userDefaultsKey: String {
-			rawValue + UpdateDateKey
-		}
-
-		func isValidPayload(_ data: Data) -> Bool {
-			guard !data.isEmpty else { return false }
-			switch self {
-			case .repository:
-				return data.firstNonWhitespaceByte == 0x5B
-			case .unsupportedApps:
-				return (try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String]) != nil
-			}
-		}
-
-	}
+  }
 
 }
 
 private final class UpdateRepositoryReuseCache: Sendable {
-	private struct State: Sendable {
-		var reusableRepository: UpdateRepository?
-		var repositoryCreatedAt: TimeInterval = 0
-	}
+  private struct State: Sendable {
+    var reusableRepository: UpdateRepository?
+    var repositoryCreatedAt: TimeInterval = 0
+  }
 
-	private static let reuseDuration: TimeInterval = 60 * 60
+  private static let reuseDuration: TimeInterval = 60 * 60
 
-	private let state = Mutex(State())
+  private let state = Mutex(State())
 
-	func repository() -> UpdateRepository {
-		if let repository = cachedRepository() {
-			return repository
-		}
+  func repository() -> UpdateRepository {
+    if let repository = cachedRepository() {
+      return repository
+    }
 
-		let repository = UpdateRepository { [weak self] repository, isReusable in
-			self?.store(repository, isReusable: isReusable)
-		}
-		repository.load()
-		repository.fetchCompletedGroup.leave()
+    let repository = UpdateRepository { [weak self] repository, isReusable in
+      self?.store(repository, isReusable: isReusable)
+    }
+    repository.load()
+    repository.fetchCompletedGroup.leave()
 
-		return repository
-	}
+    return repository
+  }
 
-	private func cachedRepository() -> UpdateRepository? {
-		state.withLock { state in
-			guard let reusableRepository = state.reusableRepository else { return nil }
+  private func cachedRepository() -> UpdateRepository? {
+    state.withLock { state in
+      guard let reusableRepository = state.reusableRepository else { return nil }
 
-			let age = state.repositoryCreatedAt.distance(to: Date.timeIntervalSinceReferenceDate)
-			return age < Self.reuseDuration ? reusableRepository : nil
-		}
-	}
+      let age = state.repositoryCreatedAt.distance(to: Date.timeIntervalSinceReferenceDate)
+      return age < Self.reuseDuration ? reusableRepository : nil
+    }
+  }
 
-	private func store(_ repository: UpdateRepository, isReusable: Bool) {
-		guard isReusable else { return }
+  private func store(_ repository: UpdateRepository, isReusable: Bool) {
+    guard isReusable else { return }
 
-		state.withLock { state in
-			guard repository.createdAt >= state.repositoryCreatedAt else { return }
+    state.withLock { state in
+      guard repository.createdAt >= state.repositoryCreatedAt else { return }
 
-			state.reusableRepository = repository
-			state.repositoryCreatedAt = repository.createdAt
-		}
-	}
+      state.reusableRepository = repository
+      state.repositoryCreatedAt = repository.createdAt
+    }
+  }
 
 }
 
 private struct EntryMatcher {
 
-	private var entriesByName: [String: [UpdateRepository.Entry]]
-	private var unsupportedBundleIdentifiers: Set<String>
+  private var entriesByName: [String: [UpdateRepository.Entry]]
+  private var unsupportedBundleIdentifiers: Set<String>
 
-	init(entries: [UpdateRepository.Entry], unsupportedBundleIdentifiers: Set<String>) {
-		self.entriesByName = Self.entriesByName(entries)
-		self.unsupportedBundleIdentifiers = unsupportedBundleIdentifiers
-	}
+  init(entries: [UpdateRepository.Entry], unsupportedBundleIdentifiers: Set<String>) {
+    self.entriesByName = Self.entriesByName(entries)
+    self.unsupportedBundleIdentifiers = unsupportedBundleIdentifiers
+  }
 
-	mutating func update(entries: [UpdateRepository.Entry]) {
-		self.entriesByName = Self.entriesByName(entries)
-	}
+  mutating func update(entries: [UpdateRepository.Entry]) {
+    self.entriesByName = Self.entriesByName(entries)
+  }
 
-	mutating func update(unsupportedBundleIdentifiers: Set<String>) {
-		self.unsupportedBundleIdentifiers = unsupportedBundleIdentifiers
-	}
+  mutating func update(unsupportedBundleIdentifiers: Set<String>) {
+    self.unsupportedBundleIdentifiers = unsupportedBundleIdentifiers
+  }
 
-	func entry(for bundle: App.Bundle) -> UpdateRepository.Entry? {
-		// Don't return an entry for unsupported apps.
-		guard !UpdateRepository.isLocallyExcludedFromHomebrewMatching(bundle.bundleIdentifier),
-		      !unsupportedBundleIdentifiers.contains(bundle.bundleIdentifier) else { return nil }
+  func entry(for bundle: App.Bundle) -> UpdateRepository.Entry? {
+    // Don't return an entry for unsupported apps.
+    guard !UpdateRepository.isLocallyExcludedFromHomebrewMatching(bundle.bundleIdentifier),
+      !unsupportedBundleIdentifiers.contains(bundle.bundleIdentifier)
+    else { return nil }
 
-		// Finding the correct entry is not trivial as there is no bundle identifier stored in an entry. We have a list of app names (could be ambiguous) and a list of bundle identifier guesses.
-		// However, both app names and bundle identifiers may occur in more than one entry:
-		// - App Names: Might occur multiple times for similar apps (Telegram.app for Desktop vs. Telegram.app for Mac)
-		// - Bundle Identifiers: Might occur multiple times for apps in bundles (com.microsoft.word in Word.app and Office bundle)
-		//
-		// Strategy: Find all entries that point to the given app name. If only one entry comes up, return that. Otherwise, try to match bundle identifiers to narrow it down.
-		let name = bundle.fileURL.lastPathComponent.lowercased()
-		let possibleEntries = (entriesByName[name] ?? []).filter {
-			!$0.requiresBundleIdentifierMatch || $0.bundleIdentifiers.contains(bundle.bundleIdentifier)
-		}
+    // Finding the correct entry is not trivial as there is no bundle identifier stored in an entry. We have a list of app names (could be ambiguous) and a list of bundle identifier guesses.
+    // However, both app names and bundle identifiers may occur in more than one entry:
+    // - App Names: Might occur multiple times for similar apps (Telegram.app for Desktop vs. Telegram.app for Mac)
+    // - Bundle Identifiers: Might occur multiple times for apps in bundles (com.microsoft.word in Word.app and Office bundle)
+    //
+    // Strategy: Find all entries that point to the given app name. If only one entry comes up, return that. Otherwise, try to match bundle identifiers to narrow it down.
+    let name = bundle.fileURL.lastPathComponent.lowercased()
+    let possibleEntries = (entriesByName[name] ?? []).filter {
+      !$0.requiresBundleIdentifierMatch || $0.bundleIdentifiers.contains(bundle.bundleIdentifier)
+    }
 
-		return Self.preferredEntry(from: possibleEntries, for: bundle.bundleIdentifier)
-	}
+    return Self.preferredEntry(from: possibleEntries, for: bundle.bundleIdentifier)
+  }
 
-	static func preferredEntry(from possibleEntries: [UpdateRepository.Entry], for bundleIdentifier: String) -> UpdateRepository.Entry? {
-		guard !possibleEntries.isEmpty else { return nil }
-		if possibleEntries.count == 1 {
-			return possibleEntries.first
-		}
+  static func preferredEntry(
+    from possibleEntries: [UpdateRepository.Entry], for bundleIdentifier: String
+  ) -> UpdateRepository.Entry? {
+    guard !possibleEntries.isEmpty else { return nil }
+    if possibleEntries.count == 1 {
+      return possibleEntries.first
+    }
 
-		var matchingIdentifierEntries = [UpdateRepository.Entry]()
-		matchingIdentifierEntries.reserveCapacity(possibleEntries.count)
-		for entry in possibleEntries where entry.bundleIdentifiers.contains(bundleIdentifier) {
-			matchingIdentifierEntries.append(entry)
-		}
-		if matchingIdentifierEntries.count == 1 {
-			return matchingIdentifierEntries.first
-		}
+    var matchingIdentifierEntries = [UpdateRepository.Entry]()
+    matchingIdentifierEntries.reserveCapacity(possibleEntries.count)
+    for entry in possibleEntries where entry.bundleIdentifiers.contains(bundleIdentifier) {
+      matchingIdentifierEntries.append(entry)
+    }
+    if matchingIdentifierEntries.count == 1 {
+      return matchingIdentifierEntries.first
+    }
 
-		let narrowedEntries = matchingIdentifierEntries.isEmpty ? possibleEntries : matchingIdentifierEntries
-		var stableEntries = [UpdateRepository.Entry]()
-		stableEntries.reserveCapacity(narrowedEntries.count)
-		for entry in narrowedEntries where entry.isStableRelease {
-			stableEntries.append(entry)
-		}
-		if stableEntries.count == 1 {
-			return stableEntries.first
-		}
+    let narrowedEntries =
+      matchingIdentifierEntries.isEmpty ? possibleEntries : matchingIdentifierEntries
+    var stableEntries = [UpdateRepository.Entry]()
+    stableEntries.reserveCapacity(narrowedEntries.count)
+    for entry in narrowedEntries where entry.isStableRelease {
+      stableEntries.append(entry)
+    }
+    if stableEntries.count == 1 {
+      return stableEntries.first
+    }
 
-		return uniqueShortestTokenEntry(in: stableEntries)
-	}
+    return uniqueShortestTokenEntry(in: stableEntries)
+  }
 
-	private static func entriesByName(_ entries: [UpdateRepository.Entry]) -> [String: [UpdateRepository.Entry]] {
-		entries.reduce(into: [String: [UpdateRepository.Entry]]()) { entriesByName, entry in
-			for name in entry.names {
-				entriesByName[name.lowercased(), default: []].append(entry)
-			}
-		}
-	}
+  private static func entriesByName(_ entries: [UpdateRepository.Entry]) -> [String:
+    [UpdateRepository.Entry]]
+  {
+    entries.reduce(into: [String: [UpdateRepository.Entry]]()) { entriesByName, entry in
+      for name in entry.names {
+        entriesByName[name.lowercased(), default: []].append(entry)
+      }
+    }
+  }
 
-	private static func uniqueShortestTokenEntry(in entries: [UpdateRepository.Entry]) -> UpdateRepository.Entry? {
-		var shortestEntry: UpdateRepository.Entry?
-		var shortestTokenLength: Int?
-		var shortestTokenLengthHasTie = false
+  private static func uniqueShortestTokenEntry(in entries: [UpdateRepository.Entry])
+    -> UpdateRepository.Entry?
+  {
+    var shortestEntry: UpdateRepository.Entry?
+    var shortestTokenLength: Int?
+    var shortestTokenLengthHasTie = false
 
-		for entry in entries {
-			let tokenLength = entry.token.count
-			guard let currentShortestTokenLength = shortestTokenLength else {
-				shortestEntry = entry
-				shortestTokenLength = tokenLength
-				continue
-			}
+    for entry in entries {
+      let tokenLength = entry.token.count
+      guard let currentShortestTokenLength = shortestTokenLength else {
+        shortestEntry = entry
+        shortestTokenLength = tokenLength
+        continue
+      }
 
-			if tokenLength == currentShortestTokenLength {
-				shortestTokenLengthHasTie = true
-			} else if tokenLength < currentShortestTokenLength {
-				shortestEntry = entry
-				shortestTokenLength = tokenLength
-				shortestTokenLengthHasTie = false
-			}
-		}
+      if tokenLength == currentShortestTokenLength {
+        shortestTokenLengthHasTie = true
+      } else if tokenLength < currentShortestTokenLength {
+        shortestEntry = entry
+        shortestTokenLength = tokenLength
+        shortestTokenLengthHasTie = false
+      }
+    }
 
-		return shortestTokenLengthHasTie ? nil : shortestEntry
-	}
+    return shortestTokenLengthHasTie ? nil : shortestEntry
+  }
 
 }
 
 private final class RemoteDataSource: Sendable {
-	private let session: URLSession
+  private let session: URLSession
 
-	init(session: URLSession = .shared) {
-		self.session = session
-	}
+  init(session: URLSession = .shared) {
+    self.session = session
+  }
 
-	func load(_ urlType: UpdateRepository.RemoteURL, completion: @escaping @Sendable (Data?) -> Void) {
-		let cache = UpdateRepositoryCache(cacheURL: urlType.cacheURL, userDefaultsKey: urlType.userDefaultsKey)
-		if let data = cache.cachedData(), urlType.isValidPayload(data) {
-			completion(data)
-			return
-		}
+  func load(_ urlType: UpdateRepository.RemoteURL, completion: @escaping @Sendable (Data?) -> Void)
+  {
+    let cache = UpdateRepositoryCache(
+      cacheURL: urlType.cacheURL, userDefaultsKey: urlType.userDefaultsKey)
+    if let data = cache.cachedData(), urlType.isValidPayload(data) {
+      completion(data)
+      return
+    }
 
-		guard let url = urlType.url else {
-			completion(nil)
-			return
-		}
+    guard let url = urlType.url else {
+      completion(nil)
+      return
+    }
 
-		let staleData = cache.cachedData(allowExpired: true).flatMap { data in
-			urlType.isValidPayload(data) ? data : nil
-		}
-		var request = URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData, timeoutInterval: 20)
-		let validators = cache.validators
-		if let eTag = validators.eTag {
-			request.setValue(eTag, forHTTPHeaderField: "If-None-Match")
-		}
-		if let lastModified = validators.lastModified {
-			request.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since")
-		}
+    let staleData = cache.cachedData(allowExpired: true).flatMap { data in
+      urlType.isValidPayload(data) ? data : nil
+    }
+    var request = URLRequest(
+      url: url, cachePolicy: .reloadRevalidatingCacheData, timeoutInterval: 20)
+    let validators = cache.validators
+    if let eTag = validators.eTag {
+      request.setValue(eTag, forHTTPHeaderField: "If-None-Match")
+    }
+    if let lastModified = validators.lastModified {
+      request.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since")
+    }
 
-		let task = session.dataTask(with: request) { data, response, _ in
-			if let response = response as? HTTPURLResponse {
-				if response.statusCode == 304, let staleData {
-					cache.markFresh()
-					completion(staleData)
-					return
-				}
+    let task = session.dataTask(with: request) { data, response, _ in
+      if let response = response as? HTTPURLResponse {
+        if response.statusCode == 304, let staleData {
+          cache.markFresh()
+          completion(staleData)
+          return
+        }
 
-				if (200..<300).contains(response.statusCode),
-				   let data,
-				   urlType.isValidPayload(data) {
-					cache.store(data, response: response)
-					completion(data)
-					return
-				}
-			}
+        if (200..<300).contains(response.statusCode),
+          let data,
+          urlType.isValidPayload(data)
+        {
+          cache.store(data, response: response)
+          completion(data)
+          return
+        }
+      }
 
-			completion(staleData ?? urlType.fallbackData)
-		}
-		task.resume()
-	}
+      completion(staleData ?? urlType.fallbackData)
+    }
+    task.resume()
+  }
 
 }
 
-private extension Data {
-	var firstNonWhitespaceByte: UInt8? {
-		first { byte in
-			switch byte {
-			case 0x09, 0x0A, 0x0D, 0x20:
-				false
-			default:
-				true
-			}
-		}
-	}
+extension Data {
+  fileprivate var firstNonWhitespaceByte: UInt8? {
+    first { byte in
+      switch byte {
+      case 0x09, 0x0A, 0x0D, 0x20:
+        false
+      default:
+        true
+      }
+    }
+  }
 }

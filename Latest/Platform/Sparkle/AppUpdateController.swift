@@ -10,13 +10,13 @@ import Sparkle
 
 @MainActor
 final class AppUpdateController: ObservableObject {
-	private let updaterController = SPUStandardUpdaterController(
-		startingUpdater: true,
-		updaterDelegate: nil,
-		userDriverDelegate: nil
-	)
+  private let updaterController = SPUStandardUpdaterController(
+    startingUpdater: true,
+    updaterDelegate: nil,
+    userDriverDelegate: nil
+  )
 
-	func checkForAppUpdates() {
-		updaterController.checkForUpdates(nil)
-	}
+  func checkForAppUpdates() {
+    updaterController.checkForUpdates(nil)
+  }
 }

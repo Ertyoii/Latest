@@ -12,305 +12,329 @@ import Cocoa
 @MainActor
 class UpdateButton: NSButton {
 
-	enum Style {
-		static let backgroundColor = #colorLiteral(red: 0.9488552213, green: 0.9487094283, blue: 0.9693081975, alpha: 1)
-		static let highlightedBackgroundColor = #colorLiteral(red: 0.7995074391, green: 0.8113409281, blue: 0.8403512836, alpha: 1)
-		static let tintColor = NSColor.controlAccentColor
-	}
+  enum Style {
+    static let backgroundColor = #colorLiteral(
+      red: 0.9488552213, green: 0.9487094283, blue: 0.9693081975, alpha: 1)
+    static let highlightedBackgroundColor = #colorLiteral(
+      red: 0.7995074391, green: 0.8113409281, blue: 0.8403512836, alpha: 1)
+    static let tintColor = NSColor.controlAccentColor
+  }
 
-	/// Internal state that represents the current display mode
-	private enum InterfaceState {
-		/// No update progress should be shown.
-		case none
-		
-		/// A state where the update button should be shown.
-		case update
-		
-		/// A state where the open button should be shown.
-		case open
-		
-		/// A progress bar should be shown.
-		case progress
-		
-		/// An indeterminate progress should be shown.
-		case indeterminate
-		
-		/// An error should be shown.
-		case error
-		
-		var contentType: UpdateButtonCell.ContentType {
-			switch self {
-			case .none:
-				return .none
-			case .update, .open, .error:
-				return .button
-			case .progress:
-				return .progress
-			case .indeterminate:
-				return .indeterminate
-			}
-		}
-	}
-	
-	/// Whether an action button such as "Open" or "Update" should be displayed
-	@IBInspectable var showActionButton: Bool = true
-	
-	var updating: any AppUpdating = AppUpdateService.shared {
-		willSet {
-			guard updating !== newValue, let app else { return }
-			updating.removeObserver(self, for: app.identifier)
-		}
-		didSet {
-			guard updating !== oldValue, let app else { return }
-			updating.addObserver(self, to: app.identifier) { [weak self] in self?.updateInterface(with: $0) }
-		}
-	}
+  /// Internal state that represents the current display mode
+  private enum InterfaceState {
+    /// No update progress should be shown.
+    case none
 
-	/// The app for which update progress should be displayed.
-	var app: App? {
-		willSet {
-			guard app?.identifier != newValue?.identifier else { return }
+    /// A state where the update button should be shown.
+    case update
 
-			if let app {
-				updating.removeObserver(self, for: app.identifier)
-			}
-		}
-		
-		didSet {
-			guard app?.identifier != oldValue?.identifier else {
-				if let app {
-					updateInterface(with: updating.state(for: app.identifier))
-				} else {
-					isHidden = true
-				}
-				return
-			}
+    /// A state where the open button should be shown.
+    case open
 
-			if let app {
-				updating.addObserver(self, to: app.identifier) { [weak self] progress in
-					self?.updateInterface(with: progress)
-				}
-			} else {
-				self.isHidden = true
-			}
-		}
-	}
-	
-	/// The cell handling the drawing for this button.
-	var contentCell: UpdateButtonCell {
-		return self.cell as! UpdateButtonCell
-	}
+    /// A progress bar should be shown.
+    case progress
 
-	/// The background color for this button. Animatable.
-	@objc dynamic var backgroundColor: NSColor = Style.backgroundColor {
-		didSet {
-			self.needsDisplay = true
-		}
-	}
+    /// An indeterminate progress should be shown.
+    case indeterminate
 
-	/// Temporary reference to the last occurred error.
-	private var error: Error?
+    /// An error should be shown.
+    case error
 
-	private static let byteFormatter: ByteCountFormatter = {
-		let formatter = ByteCountFormatter()
-		formatter.countStyle = .file
-		return formatter
-	}()
-	
-	
-	// MARK: - Initialization
-	
-	override func awakeFromNib() {
-		super.awakeFromNib()
+    var contentType: UpdateButtonCell.ContentType {
+      switch self {
+      case .none:
+        return .none
+      case .update, .open, .error:
+        return .button
+      case .progress:
+        return .progress
+      case .indeterminate:
+        return .indeterminate
+      }
+    }
+  }
 
-		Task { @MainActor in
-			self.target = self
-			self.action = #selector(performAction(_:))
+  /// Whether an action button such as "Open" or "Update" should be displayed
+  @IBInspectable var showActionButton: Bool = true
 
-			self.isBordered = false
-			self.contentTintColor = Style.tintColor
-		}
-	}
-	
-	deinit {
-		if let app = self.app {
-			updating.removeObserver(self, for: app.identifier)
-		}
-	}
+  var updating: any AppUpdating = AppUpdateService.shared {
+    willSet {
+      guard updating !== newValue, let app else { return }
+      updating.removeObserver(self, for: app.identifier)
+    }
+    didSet {
+      guard updating !== oldValue, let app else { return }
+      updating.addObserver(self, to: app.identifier) { [weak self] in
+        self?.updateInterface(with: $0)
+      }
+    }
+  }
 
-	
-	// MARK: - Interface Updates
-	
-	override var intrinsicContentSize: NSSize {
-		var size = super.intrinsicContentSize
-		
-		if (self.title.count > 0) {
-			size.height = 21
-			size.width += 12
-		} else {
-			size.height = 31
-			size.width = size.height
-		}
-		
-		return size
-	}
-		
-	/// Updates the UI state with the given progress definition.
-	private func updateInterface(with state: UpdateOperation.ProgressState) {
-		switch state {
-		case .none:
-			if let app = self.app, self.showActionButton {
-				self.updateInterfaceVisibility(with: app.updateAvailable ? .update : .open)
-			} else {
-				self.updateInterfaceVisibility(with: .none)
-			}
-		
-		case .pending:
-			self.updateInterfaceVisibility(with: .indeterminate)
-			self.toolTip = NSLocalizedString("WaitingUpdateStatus", comment: "Update progress state of waiting to start an update")
-		
-		case .initializing:
-			self.updateInterfaceVisibility(with: .indeterminate)
-			self.toolTip = NSLocalizedString("InitializingUpdateStatus", comment: "Update progress state of initializing an update")
-		
-		case .downloading(let loadedSize, let totalSize):
-			self.updateInterfaceVisibility(with: .progress)
-			
-			// Downloading goes to 75% of the progress
-			self.contentCell.updateProgress = (Double(loadedSize) / Double(totalSize)) * 0.75
-			
-			let formatString = NSLocalizedString("DownloadingUpdateStatus", comment: "Update progress state of downloading an update. The first %@ stands for the already downloaded bytes, the second one for the total amount of bytes. One expected output would be 'Downloading 3 MB of 21 MB'")
-			self.toolTip = String.localizedStringWithFormat(formatString, Self.byteFormatter.string(fromByteCount: loadedSize), Self.byteFormatter.string(fromByteCount: totalSize))
-		
-		case .extracting(let progress):
-			self.updateInterfaceVisibility(with: .progress)
-			
-			// Extracting goes to 95%
-			self.contentCell.updateProgress = 0.75 + (progress * 0.25)
-			self.toolTip = NSLocalizedString("ExtractingUpdateStatus", comment: "Update progress state of extracting the downloaded update")
-		
-		case .installing:
-			self.updateInterfaceVisibility(with: .indeterminate)
-			self.toolTip = NSLocalizedString("InstallingUpdateStatus", comment: "Update progress state of installing an update")
-		
-		case .error(let error):
-			self.updateInterfaceVisibility(with: self.showActionButton ? .error : .none)
-			self.error = error
-		
-		case .cancelling:
-			self.updateInterfaceVisibility(with: .indeterminate)
-			self.toolTip = NSLocalizedString("CancellingUpdateStatus", comment: "Update progress state of cancelling an update")
-		}
-	}
-	
-	/// Updates the visibility of single views with the given state.
-	private var interfaceState: InterfaceState = .none
-	private func updateInterfaceVisibility(with state: InterfaceState) {
-		self.isHidden = (state == .none)
+  /// The app for which update progress should be displayed.
+  var app: App? {
+    willSet {
+      guard app?.identifier != newValue?.identifier else { return }
 
-		// Nothing to update
-		guard self.interfaceState != state || self.contentCell.contentType != state.contentType else {
-			return
-		}
-		
-		self.interfaceState = state
-		self.contentCell.contentType = state.contentType
-		
-		var title: String?
-		var image: NSImage?
-		switch state {
-		case .update:
-			title = NSLocalizedString("UpdateAction", comment: "Action to update a given app.")
-		case .open:
-			title = NSLocalizedString("OpenAction", comment: "Action to open a given app.")
-		case .error:
-			image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: NSLocalizedString("ErrorButtonAccessibilityTitle", comment: "Description of button that opens an error dialogue."))
-		default:
-			()
-		}
-		
-		self.title = title ?? ""
-		self.image = image
-	}
-	
-	
-	// MARK: - Actions
-	
-	@objc func performAction(_ sender: UpdateButton) {
-		switch self.interfaceState {
-		case .update:
-			if let app = self.app { self.updating.update(app) }
-		case .open:
-			if let app {
-				MacApplicationWorkspace.shared.openApplication(at: app.fileURL)
-			}
-		case .progress:
-			if let app = self.app { self.updating.cancel(app) }
-		case .error:
-			self.presentErrorModally()
-			
-		// Do nothing in the other states
-		default:
-			()
-		}
-	}
-	
+      if let app {
+        updating.removeObserver(self, for: app.identifier)
+      }
+    }
+
+    didSet {
+      guard app?.identifier != oldValue?.identifier else {
+        if let app {
+          updateInterface(with: updating.state(for: app.identifier))
+        } else {
+          isHidden = true
+        }
+        return
+      }
+
+      if let app {
+        updating.addObserver(self, to: app.identifier) { [weak self] progress in
+          self?.updateInterface(with: progress)
+        }
+      } else {
+        self.isHidden = true
+      }
+    }
+  }
+
+  /// The cell handling the drawing for this button.
+  var contentCell: UpdateButtonCell {
+    return self.cell as! UpdateButtonCell
+  }
+
+  /// The background color for this button. Animatable.
+  @objc dynamic var backgroundColor: NSColor = Style.backgroundColor {
+    didSet {
+      self.needsDisplay = true
+    }
+  }
+
+  /// Temporary reference to the last occurred error.
+  private var error: Error?
+
+  private static let byteFormatter: ByteCountFormatter = {
+    let formatter = ByteCountFormatter()
+    formatter.countStyle = .file
+    return formatter
+  }()
+
+  // MARK: - Initialization
+
+  override func awakeFromNib() {
+    super.awakeFromNib()
+
+    Task { @MainActor in
+      self.target = self
+      self.action = #selector(performAction(_:))
+
+      self.isBordered = false
+      self.contentTintColor = Style.tintColor
+    }
+  }
+
+  deinit {
+    if let app = self.app {
+      updating.removeObserver(self, for: app.identifier)
+    }
+  }
+
+  // MARK: - Interface Updates
+
+  override var intrinsicContentSize: NSSize {
+    var size = super.intrinsicContentSize
+
+    if self.title.count > 0 {
+      size.height = 21
+      size.width += 12
+    } else {
+      size.height = 31
+      size.width = size.height
+    }
+
+    return size
+  }
+
+  /// Updates the UI state with the given progress definition.
+  private func updateInterface(with state: UpdateOperation.ProgressState) {
+    switch state {
+    case .none:
+      if let app = self.app, self.showActionButton {
+        self.updateInterfaceVisibility(with: app.updateAvailable ? .update : .open)
+      } else {
+        self.updateInterfaceVisibility(with: .none)
+      }
+
+    case .pending:
+      self.updateInterfaceVisibility(with: .indeterminate)
+      self.toolTip = NSLocalizedString(
+        "WaitingUpdateStatus", comment: "Update progress state of waiting to start an update")
+
+    case .initializing:
+      self.updateInterfaceVisibility(with: .indeterminate)
+      self.toolTip = NSLocalizedString(
+        "InitializingUpdateStatus", comment: "Update progress state of initializing an update")
+
+    case .downloading(let loadedSize, let totalSize):
+      self.updateInterfaceVisibility(with: .progress)
+
+      // Downloading goes to 75% of the progress
+      self.contentCell.updateProgress = (Double(loadedSize) / Double(totalSize)) * 0.75
+
+      let formatString = NSLocalizedString(
+        "DownloadingUpdateStatus",
+        comment:
+          "Update progress state of downloading an update. The first %@ stands for the already downloaded bytes, the second one for the total amount of bytes. One expected output would be 'Downloading 3 MB of 21 MB'"
+      )
+      self.toolTip = String.localizedStringWithFormat(
+        formatString, Self.byteFormatter.string(fromByteCount: loadedSize),
+        Self.byteFormatter.string(fromByteCount: totalSize))
+
+    case .extracting(let progress):
+      self.updateInterfaceVisibility(with: .progress)
+
+      // Extracting goes to 95%
+      self.contentCell.updateProgress = 0.75 + (progress * 0.25)
+      self.toolTip = NSLocalizedString(
+        "ExtractingUpdateStatus",
+        comment: "Update progress state of extracting the downloaded update")
+
+    case .installing:
+      self.updateInterfaceVisibility(with: .indeterminate)
+      self.toolTip = NSLocalizedString(
+        "InstallingUpdateStatus", comment: "Update progress state of installing an update")
+
+    case .error(let error):
+      self.updateInterfaceVisibility(with: self.showActionButton ? .error : .none)
+      self.error = error
+
+    case .cancelling:
+      self.updateInterfaceVisibility(with: .indeterminate)
+      self.toolTip = NSLocalizedString(
+        "CancellingUpdateStatus", comment: "Update progress state of cancelling an update")
+    }
+  }
+
+  /// Updates the visibility of single views with the given state.
+  private var interfaceState: InterfaceState = .none
+  private func updateInterfaceVisibility(with state: InterfaceState) {
+    self.isHidden = (state == .none)
+
+    // Nothing to update
+    guard self.interfaceState != state || self.contentCell.contentType != state.contentType else {
+      return
+    }
+
+    self.interfaceState = state
+    self.contentCell.contentType = state.contentType
+
+    var title: String?
+    var image: NSImage?
+    switch state {
+    case .update:
+      title = NSLocalizedString("UpdateAction", comment: "Action to update a given app.")
+    case .open:
+      title = NSLocalizedString("OpenAction", comment: "Action to open a given app.")
+    case .error:
+      image = NSImage(
+        systemSymbolName: "exclamationmark.triangle.fill",
+        accessibilityDescription: NSLocalizedString(
+          "ErrorButtonAccessibilityTitle",
+          comment: "Description of button that opens an error dialogue."))
+    default:
+      ()
+    }
+
+    self.title = title ?? ""
+    self.image = image
+  }
+
+  // MARK: - Actions
+
+  @objc func performAction(_ sender: UpdateButton) {
+    switch self.interfaceState {
+    case .update:
+      if let app = self.app { self.updating.update(app) }
+    case .open:
+      if let app {
+        MacApplicationWorkspace.shared.openApplication(at: app.fileURL)
+      }
+    case .progress:
+      if let app = self.app { self.updating.cancel(app) }
+    case .error:
+      self.presentErrorModally()
+
+    // Do nothing in the other states
+    default:
+      ()
+    }
+  }
+
 }
 
 // MARK: - Error Handling
 
-private extension UpdateButton {
-	
-	/// Responses to error alerts shown to the user.
-	enum ErrorAlertResponse: Int {
-		/// The update operation should be rescheduled.
-		case retry = 1000
-		
-		/// No further action is required.
-		case cancel = 1001
-	}
-	
-	/// Presents the stored error as modal alert.
-	private func presentErrorModally() {
-		if let error = self.error, let window = self.window {
-			self.alert(for: error).beginSheetModal(for: window) { (response) in
-				switch ErrorAlertResponse(rawValue: response.rawValue) {
-				case .retry:
-					if let app = self.app { self.updating.update(app) }
-				case .cancel, .none:
-					()
-				}
-			}
-		}
-	}
-	
-	/// Configures and returns an alert for the given error.
-	private func alert(for error: Error) -> NSAlert {
-		let alert = NSAlert()
-		alert.alertStyle = .informational
-		
-		let message = NSLocalizedString("UpdateErrorAlertTitle", comment: "Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app.")
-		alert.messageText = String.localizedStringWithFormat(message, self.app!.name)
-		
-		alert.informativeText = error.localizedDescription
-		
-		alert.addButton(withTitle: NSLocalizedString("RetryAction", comment: "Button to retry an update in an error dialogue"))
-		alert.addButton(withTitle: NSLocalizedString("CancelAction", comment: "Cancel button in an update dialogue"))
-		
-		return alert
-	}
-	
+extension UpdateButton {
+
+  /// Responses to error alerts shown to the user.
+  fileprivate enum ErrorAlertResponse: Int {
+    /// The update operation should be rescheduled.
+    case retry = 1000
+
+    /// No further action is required.
+    case cancel = 1001
+  }
+
+  /// Presents the stored error as modal alert.
+  private func presentErrorModally() {
+    if let error = self.error, let window = self.window {
+      self.alert(for: error).beginSheetModal(for: window) { (response) in
+        switch ErrorAlertResponse(rawValue: response.rawValue) {
+        case .retry:
+          if let app = self.app { self.updating.update(app) }
+        case .cancel, .none:
+          ()
+        }
+      }
+    }
+  }
+
+  /// Configures and returns an alert for the given error.
+  private func alert(for error: Error) -> NSAlert {
+    let alert = NSAlert()
+    alert.alertStyle = .informational
+
+    let message = NSLocalizedString(
+      "UpdateErrorAlertTitle",
+      comment:
+        "Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app."
+    )
+    alert.messageText = String.localizedStringWithFormat(message, self.app!.name)
+
+    alert.informativeText = error.localizedDescription
+
+    alert.addButton(
+      withTitle: NSLocalizedString(
+        "RetryAction", comment: "Button to retry an update in an error dialogue"))
+    alert.addButton(
+      withTitle: NSLocalizedString("CancelAction", comment: "Cancel button in an update dialogue"))
+
+    return alert
+  }
+
 }
 
 // MARK: - Animator Proxy
 extension UpdateButton {
-	override func animation(forKey key: NSAnimatablePropertyKey) -> Any? {
-		switch key {
-		case "backgroundColor":
-			return CABasicAnimation()
-			
-		default:
-			return super.animation(forKey: key)
-		}
-	}
+  override func animation(forKey key: NSAnimatablePropertyKey) -> Any? {
+    switch key {
+    case "backgroundColor":
+      return CABasicAnimation()
+
+    default:
+      return super.animation(forKey: key)
+    }
+  }
 }

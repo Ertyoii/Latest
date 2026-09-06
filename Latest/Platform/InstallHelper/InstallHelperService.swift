@@ -9,22 +9,22 @@ import Foundation
 
 @MainActor
 protocol InstallHelperServicing: AnyObject {
-	func verifyAvailability() throws
-	func register() throws
+  func verifyAvailability() throws
+  func register() throws
 }
 
 @MainActor
 final class LiveInstallHelperService: InstallHelperServicing {
-	static let shared = LiveInstallHelperService()
+  static let shared = LiveInstallHelperService()
 
-	private init() {}
+  private init() {}
 
-	func verifyAvailability() throws {
-		try InstallHelper.verifyAvailability()
-	}
+  func verifyAvailability() throws {
+    try InstallHelper.verifyAvailability()
+  }
 
-	func register() throws {
-		AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
-		try InstallHelper.installHelper()
-	}
+  func register() throws {
+    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
+    try InstallHelper.installHelper()
+  }
 }

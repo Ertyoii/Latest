@@ -9,125 +9,139 @@ import AppKit
 
 extension App {
 
-	/// Returns an attributed string that highlights a given search query within this app's name.
-	func highlightedName(for query: String?) -> NSAttributedString {
-		let attributedName = NSMutableAttributedString(string: name)
+  /// Returns an attributed string that highlights a given search query within this app's name.
+  func highlightedName(for query: String?) -> NSAttributedString {
+    let attributedName = NSMutableAttributedString(string: name)
 
-		if let query, let selectedRange = name.range(of: query, options: .caseInsensitive) {
-			attributedName.addAttribute(
-				.foregroundColor,
-				value: NSColor(resource: .fadedSearchText),
-				range: NSRange(name.startIndex..<name.endIndex, in: name)
-			)
-			attributedName.removeAttribute(.foregroundColor, range: NSRange(selectedRange, in: name))
-		}
+    if let query, let selectedRange = name.range(of: query, options: .caseInsensitive) {
+      attributedName.addAttribute(
+        .foregroundColor,
+        value: NSColor(resource: .fadedSearchText),
+        range: NSRange(name.startIndex..<name.endIndex, in: name)
+      )
+      attributedName.removeAttribute(.foregroundColor, range: NSRange(selectedRange, in: name))
+    }
 
-		return attributedName
-	}
+    return attributedName
+  }
 
-	/// Localized version information suitable for display in the interface.
-	struct DisplayableVersionInformation {
-		private(set) var rawCurrent: String
-		private(set) var rawNew: String?
+  /// Localized version information suitable for display in the interface.
+  struct DisplayableVersionInformation {
+    private(set) var rawCurrent: String
+    private(set) var rawNew: String?
 
-		var current: String {
-			String(
-				format: NSLocalizedString(
-					"LocalVersionFormat",
-					comment: "The current version of a locally installed app. The placeholder %@ is the version number."
-				),
-				rawCurrent
-			)
-		}
+    var current: String {
+      String(
+        format: NSLocalizedString(
+          "LocalVersionFormat",
+          comment:
+            "The current version of a locally installed app. The placeholder %@ is the version number."
+        ),
+        rawCurrent
+      )
+    }
 
-		var new: String? {
-			rawNew.map { version in
-				String(
-					format: NSLocalizedString(
-						"RemoteVersionFormat",
-						comment: "The most recent version available for an app. The placeholder %@ is the version number."
-					),
-					version
-				)
-			}
-		}
+    var new: String? {
+      rawNew.map { version in
+        String(
+          format: NSLocalizedString(
+            "RemoteVersionFormat",
+            comment:
+              "The most recent version available for an app. The placeholder %@ is the version number."
+          ),
+          version
+        )
+      }
+    }
 
-		func combined(includeNew: Bool) -> String {
-			if let rawNew, includeNew, rawCurrent != rawNew {
-				return String(
-					format: NSLocalizedString(
-						"CombinedVersionFormat",
-						comment: "The current and available version numbers. The first placeholder is current; the second is available."
-					),
-					rawCurrent,
-					rawNew
-				)
-			}
+    func combined(includeNew: Bool) -> String {
+      if let rawNew, includeNew, rawCurrent != rawNew {
+        return String(
+          format: NSLocalizedString(
+            "CombinedVersionFormat",
+            comment:
+              "The current and available version numbers. The first placeholder is current; the second is available."
+          ),
+          rawCurrent,
+          rawNew
+        )
+      }
 
-			return String(
-				format: NSLocalizedString(
-					"SingleCombinedVersionFormat",
-					comment: "The current version number."
-				),
-				rawCurrent
-			)
-		}
-	}
+      return String(
+        format: NSLocalizedString(
+          "SingleCombinedVersionFormat",
+          comment: "The current version number."
+        ),
+        rawCurrent
+      )
+    }
+  }
 
-	var localizedVersionInformation: DisplayableVersionInformation? {
-		let currentVersion = version
-		let newVersion = remoteVersion
-		var information: DisplayableVersionInformation?
+  var localizedVersionInformation: DisplayableVersionInformation? {
+    let currentVersion = version
+    let newVersion = remoteVersion
+    var information: DisplayableVersionInformation?
 
-		if let current = currentVersion.versionNumber, let new = newVersion?.versionNumber {
-			information = DisplayableVersionInformation(rawCurrent: current, rawNew: new)
+    if let current = currentVersion.versionNumber, let new = newVersion?.versionNumber {
+      information = DisplayableVersionInformation(rawCurrent: current, rawNew: new)
 
-			if updateAvailable,
-			   current == new,
-			   let currentBuild = currentVersion.buildNumber,
-			   let newBuild = newVersion?.buildNumber {
-				information = DisplayableVersionInformation(
-					rawCurrent: "\(current) (\(currentBuild))",
-					rawNew: "\(new) (\(newBuild))"
-				)
-			}
-		} else if let current = currentVersion.buildNumber, let new = newVersion?.buildNumber {
-			information = DisplayableVersionInformation(rawCurrent: current, rawNew: new)
-		} else if let current = currentVersion.versionNumber ?? currentVersion.buildNumber {
-			information = DisplayableVersionInformation(rawCurrent: current, rawNew: nil)
-		}
+      if updateAvailable,
+        current == new,
+        let currentBuild = currentVersion.buildNumber,
+        let newBuild = newVersion?.buildNumber
+      {
+        information = DisplayableVersionInformation(
+          rawCurrent: "\(current) (\(currentBuild))",
+          rawNew: "\(new) (\(newBuild))"
+        )
+      }
+    } else if let current = currentVersion.buildNumber, let new = newVersion?.buildNumber {
+      information = DisplayableVersionInformation(rawCurrent: current, rawNew: new)
+    } else if let current = currentVersion.versionNumber ?? currentVersion.buildNumber {
+      information = DisplayableVersionInformation(rawCurrent: current, rawNew: nil)
+    }
 
-		return information
-	}
+    return information
+  }
 
 }
 
 extension App.Source.SupportState {
 
-	var statusImage: NSImage {
-		let name = switch self {
-		case .full: NSImage.statusAvailableName
-		case .limited: NSImage.statusPartiallyAvailableName
-		case .none: NSImage.statusUnavailableName
-		}
+  var statusImage: NSImage {
+    let name =
+      switch self {
+      case .full: NSImage.statusAvailableName
+      case .limited: NSImage.statusPartiallyAvailableName
+      case .none: NSImage.statusUnavailableName
+      }
 
-		return NSImage(named: name)!
-	}
+    return NSImage(named: name)!
+  }
 
-	var label: String {
-		switch self {
-		case .full: NSLocalizedString("SupportedLabel", comment: "A label for apps fully supported by Latest.")
-		case .limited: NSLocalizedString("LimitedSupportLabel", comment: "A label for apps partially supported by Latest.")
-		case .none: NSLocalizedString("UnsupportedLabel", comment: "A label for apps not supported by Latest.")
-		}
-	}
+  var label: String {
+    switch self {
+    case .full:
+      NSLocalizedString("SupportedLabel", comment: "A label for apps fully supported by Latest.")
+    case .limited:
+      NSLocalizedString(
+        "LimitedSupportLabel", comment: "A label for apps partially supported by Latest.")
+    case .none:
+      NSLocalizedString("UnsupportedLabel", comment: "A label for apps not supported by Latest.")
+    }
+  }
 
-	var compactLabel: String {
-		switch self {
-		case .full: NSLocalizedString("SupportedCompactLabel", comment: "A compact label for fully supported apps.")
-		case .limited: NSLocalizedString("LimitedSupportCompactLabel", comment: "A compact label for partially supported apps.")
-		case .none: NSLocalizedString("UnsupportedCompactLabel", comment: "A compact label for unsupported apps.")
-		}
-	}
+  var compactLabel: String {
+    switch self {
+    case .full:
+      NSLocalizedString(
+        "SupportedCompactLabel", comment: "A compact label for fully supported apps.")
+    case .limited:
+      NSLocalizedString(
+        "LimitedSupportCompactLabel", comment: "A compact label for partially supported apps.")
+    case .none:
+      NSLocalizedString("UnsupportedCompactLabel", comment: "A compact label for unsupported apps.")
+    }
+  }
 
 }

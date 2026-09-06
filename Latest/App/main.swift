@@ -10,12 +10,11 @@ import Foundation
 import SwiftUI
 
 enum ApplicationRuntime {
-	static var isRunningUnitTests: Bool {
-		let environment = ProcessInfo.processInfo.environment
-		return environment["XCTestConfigurationFilePath"] != nil ||
-			environment["XCTestBundlePath"] != nil ||
-			NSClassFromString("XCTestCase") != nil
-	}
+  static var isRunningUnitTests: Bool {
+    let environment = ProcessInfo.processInfo.environment
+    return environment["XCTestConfigurationFilePath"] != nil
+      || environment["XCTestBundlePath"] != nil || NSClassFromString("XCTestCase") != nil
+  }
 }
 
 /// The unit-test bundle is linked into the application executable. Launching the
@@ -24,15 +23,15 @@ enum ApplicationRuntime {
 /// A settings-only scene keeps the AppKit test host alive without starting any
 /// production service or opening a window.
 private struct LatestUnitTestHostApplication: SwiftUI.App {
-	var body: some Scene {
-		Settings {
-			EmptyView()
-		}
-	}
+  var body: some Scene {
+    Settings {
+      EmptyView()
+    }
+  }
 }
 
 if ApplicationRuntime.isRunningUnitTests {
-	LatestUnitTestHostApplication.main()
+  LatestUnitTestHostApplication.main()
 } else {
-	LatestApplication.main()
+  LatestApplication.main()
 }

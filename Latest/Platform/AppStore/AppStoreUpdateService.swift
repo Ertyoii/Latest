@@ -9,21 +9,21 @@ import Foundation
 
 @MainActor
 protocol AppStoreUpdateServicing: AnyObject {
-	var alwaysUsesManualUpdates: Bool { get }
-	func prepareForUpdates() throws(InstallHelperError)
+  var alwaysUsesManualUpdates: Bool { get }
+  func prepareForUpdates() throws(InstallHelperError)
 }
 
 @MainActor
 final class LiveAppStoreUpdateService: AppStoreUpdateServicing {
-	static let shared = LiveAppStoreUpdateService()
+  static let shared = LiveAppStoreUpdateService()
 
-	private init() {}
+  private init() {}
 
-	var alwaysUsesManualUpdates: Bool {
-		AppStoreUpdateSettings.alwaysPerformManualUpdates.active
-	}
+  var alwaysUsesManualUpdates: Bool {
+    AppStoreUpdateSettings.alwaysPerformManualUpdates.active
+  }
 
-	func prepareForUpdates() throws(InstallHelperError) {
-		try AppStoreUpdater.prepareForUpdates()
-	}
+  func prepareForUpdates() throws(InstallHelperError) {
+    try AppStoreUpdater.prepareForUpdates()
+  }
 }

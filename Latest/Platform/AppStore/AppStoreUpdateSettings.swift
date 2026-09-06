@@ -10,12 +10,12 @@ import Foundation
 
 /// Collection of settings around app store updates
 enum AppStoreUpdateSettings: String {
-	/// Whether app store updates should always be performed manually.
-	case alwaysPerformManualUpdates = "AlwaysPerformManualUpdates"
-	
-	/// Whether the setting is active.
-	var active: Bool {
-		get { UserDefaults.standard.bool(forKey: rawValue) }
-		nonmutating set { UserDefaults.standard.set(newValue, forKey: rawValue) }
-	}
+  /// Whether app store updates should always be performed manually.
+  case alwaysPerformManualUpdates = "AlwaysPerformManualUpdates"
+
+  /// Whether the setting is active.
+  var active: Bool {
+    get { UserDefaults.standard.bool(forKey: rawValue) }
+    nonmutating set { UserDefaults.standard.set(newValue, forKey: rawValue) }
+  }
 }

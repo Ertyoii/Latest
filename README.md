@@ -32,6 +32,19 @@ Dependencies are assembled in `AppEnvironment`. Features use the `AppUpdating` b
 
 Sparkle is pinned through Swift Package Manager. `Frameworks/CommerceKit` and `Frameworks/StoreFoundation` are required for App Store integration.
 
+`UpdateInstaller` is a separate privileged helper target that installs App Store update packages and writes their receipts. The main app communicates with it over XPC. `Frameworks` contains headers and module maps for the macOS App Store frameworks; both folders are required by the current implementation.
+
+## Swift formatting
+
+Use the Swift toolchain's `swift-format` through Xcode (`xcrun swift-format`). The checked-in `.swift-format` records the defaults from version 6.3.0: two-space indentation, a 100-column line-length target, sorted imports, and trailing commas in multiline collections. Multiline string contents are not reflowed.
+
+```sh
+./script/format.sh         # Format all tracked project Swift files
+./script/format.sh --check # Verify formatting without changing files
+```
+
+The scope includes the app, tests, installer helper, and Swift scripts. Generated files and downloaded dependencies are excluded. The check compares formatter output; broader naming and refactoring lint rules are separate from formatting. Use the same Xcode toolchain for reproducible results.
+
 ## License
 
 See [LICENSE.md](LICENSE.md).

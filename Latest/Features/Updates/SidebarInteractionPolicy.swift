@@ -12,66 +12,66 @@ import Foundation
 /// view makes row selection and swipe availability directly testable.
 @MainActor
 struct SidebarInteractionPolicy {
-	enum SwipeEdge {
-		case leading
-		case trailing
-	}
+  enum SwipeEdge {
+    case leading
+    case trailing
+  }
 
-	enum Action: Equatable {
-		case update
-		case open
-		case revealInFinder
-	}
+  enum Action: Equatable {
+    case update
+    case open
+    case revealInFinder
+  }
 
-	let entries: [AppListSnapshot.Entry]
-	var updating: any AppUpdating = AppUpdateService.shared
+  let entries: [AppListSnapshot.Entry]
+  var updating: any AppUpdating = AppUpdateService.shared
 
-	func isSelectable(row: Int) -> Bool {
-		app(at: row) != nil
-	}
+  func isSelectable(row: Int) -> Bool {
+    app(at: row) != nil
+  }
 
-	func isSectionHeader(row: Int) -> Bool {
-		guard entries.indices.contains(row) else { return false }
-		if case .section = entries[row] {
-			return true
-		}
-		return false
-	}
+  func isSectionHeader(row: Int) -> Bool {
+    guard entries.indices.contains(row) else { return false }
+    if case .section = entries[row] {
+      return true
+    }
+    return false
+  }
 
-	func app(at row: Int) -> App? {
-		guard entries.indices.contains(row), case .app(let app) = entries[row] else {
-			return nil
-		}
-		return app
-	}
+  func app(at row: Int) -> App? {
+    guard entries.indices.contains(row), case .app(let app) = entries[row] else {
+      return nil
+    }
+    return app
+  }
 
-	func targetApp(clickedRow: Int, selectedRow: Int) -> App? {
-		if let clickedApp = app(at: clickedRow) {
-			return clickedApp
-		}
-		return app(at: selectedRow)
-	}
+  func targetApp(clickedRow: Int, selectedRow: Int) -> App? {
+    if let clickedApp = app(at: clickedRow) {
+      return clickedApp
+    }
+    return app(at: selectedRow)
+  }
 
-	func swipeActions(for row: Int, edge: SwipeEdge) -> [Action] {
-		guard let app = app(at: row) else { return [] }
-		switch edge {
-		case .leading:
-			return [.open, .revealInFinder]
-		case .trailing:
-			return app.updateAvailable && !updating.isUpdating(app) ? [.update] : []
-		}
-	}
+  func swipeActions(for row: Int, edge: SwipeEdge) -> [Action] {
+    guard let app = app(at: row) else { return [] }
+    switch edge {
+    case .leading:
+      return [.open, .revealInFinder]
+    case .trailing:
+      return app.updateAvailable && !updating.isUpdating(app) ? [.update] : []
+    }
+  }
 
-	static func accessibilityLabel(for app: App, dateFormatter: DateFormatter) -> String {
-		var components = [app.name]
-		if let version = app.localizedVersionInformation?.combined(includeNew: app.updateAvailable) {
-			components.append(version)
-		}
-		components.append(dateFormatter.string(from: app.updateDate))
-		components.append(app.source.supportState.label)
-		if app.updateAvailable {
-			components.append(NSLocalizedString("UpdateAction", comment: "Action to update a given app."))
-		}
-		return components.joined(separator: ", ")
-	}
+  static func accessibilityLabel(for app: App, dateFormatter: DateFormatter) -> String {
+    var components = [app.name]
+    if let version = app.localizedVersionInformation?.combined(includeNew: app.updateAvailable) {
+      components.append(version)
+    }
+    components.append(dateFormatter.string(from: app.updateDate))
+    components.append(app.source.supportState.label)
+    if app.updateAvailable {
+      components.append(NSLocalizedString("UpdateAction", comment: "Action to update a given app."))
+    }
+    return components.joined(separator: ", ")
+  }
 }
