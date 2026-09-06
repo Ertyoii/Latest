@@ -1,83 +1,37 @@
 # Latest
 
-This fork maintains Latest Dev for macOS 26+. The download and donation links below refer to the upstream Latest project; build this fork from source to use its changes.
+A macOS utility that finds updates for App Store, Sparkle, and Homebrew applications. This fork targets macOS 26+ and is built from source.
 
-[![Translation status][image-1]][1]
+![Latest](latest.png)
 
-This is Latest, a small utility app for the Mac. Latest is a free and open-source app for macOS that checks if all your apps are up to date. Get a quick overview of which apps changed and what changed and update them right away. Latest currently supports apps downloaded from the Mac App Store and apps that use Sparkle for updates, which covers most of the apps on the market.
+## Build
 
-Latest is developed in my free time, so occasional updates may happen. Take a look at the [Issues][2] section to see what's coming. If you have an idea for a new feature, or encounter any bugs, feel free to open a new issue.
-I am thankful for contributions. Check out the section below for more information.
-
-![Latest][image-2]
-
-## Installation
-
-There are multiple ways to install the app.
-
-### Download the App
-
-The easiest way to install Latest is to [download][3] the latest release as an app. You unzip the download by double-clicking on it (if that does not happen automatically) and then move the `Latest.app` into the `Applications` folder.
-
-If you would like to check out earlier versions, head over to the [Releases][4] page to browse the history of Latest.
-
-### Homebrew Cask
-
-Latest can also be installed via [Homebrew Cask][5]. If you have not installed Homebrew, follow the simple instructions [here][6].
-After that, run `brew install --cask latest` to install the current version of Latest.
-
-### Build from Source
-
-**Requires macOS 26 or later and Xcode 26.6. The project uses Swift 6 with complete concurrency checking.**
-
-Install `ripgrep` (`brew install ripgrep`) for the repository checks. Run `./script/test.sh` for architecture, behavior, and visual regression tests. Swift packages are pinned in `Package.resolved`. See [Architecture](docs/ARCHITECTURE.md) for dependency boundaries and verification.
-
-You can build Latest directly on your machine. To do that, you have to download the source code by cloning the repository: `git clone https://github.com/Ertyoii/Latest.git`.
-
-There are no Git submodules. Sparkle is resolved through Swift Package Manager using the checked-in `Latest.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`.
-
-Open `Latest.xcodeproj` and select the `Latest` scheme, or run `./script/build_and_run.sh` to build and launch Latest Dev. The Codex Run action uses that same script.
-
-For editors using xcode-build-server, generate the machine-specific configuration locally after installing that tool:
+Requires macOS 26, Xcode 26.6, and `ripgrep`.
 
 ```sh
-xcode-build-server config -project Latest.xcodeproj -scheme Latest --build_root "$PWD/build/DerivedData"
+brew install ripgrep
+./script/build_and_run.sh
 ```
 
-`buildServer.json` is ignored because it contains local executable and build paths.
+Open `Latest.xcodeproj` and use the `Latest` scheme to work in Xcode. Run all architecture, behavior, performance, and visual checks with:
 
-## Contribution
+```sh
+./script/test.sh
+```
 
-I am thankful for all contributions to the project. You can contribute typo-fixes, translations, code and of course suggestions, wishes, and bug reports.
+## Architecture
 
-### Translations
+- `Latest/App`: application assembly and lifecycle
+- `Latest/Features`: SwiftUI presentation and feature state
+- `Latest/Domain`: framework-independent models and version rules
+- `Latest/Services`: discovery, update orchestration, and release notes
+- `Latest/Platform`: AppKit, App Store, Sparkle, and install-helper integrations
+- `Latest/Support`: shared infrastructure and presentation helpers
 
-The text used in Latest is hosted by the kind people over at [Weblate][7]. If you would like to add a new language, or improve an existing one, [here][8] is your starting point.
+Dependencies are assembled in `AppEnvironment`. Features use the `AppUpdating` boundary instead of update queue implementations. The shipping sidebar is `UpdatesTableBridge`; its AppKit behavior and geometry are intentional.
 
-[![Translation status][image-3]][9]
+Sparkle is pinned through Swift Package Manager. `Frameworks/CommerceKit` and `Frameworks/StoreFoundation` are required for App Store integration.
 
-### Code
+## License
 
-Take a look at the [Issues][10] section to see what you can do. If you have your own idea, and it does not appear in the issues list, please add it first. I don't think that I would reject any pull request, but it is useful to know about your idea earlier. Imagine two people have the same idea at the same time and both put a lot of work into that just to find out that someone else has made the same when it's too late.  
-
-I would like to assign every issue to the person working on that particular thing, so if you would like to implement something, leave a small note in the issue. I will assign the issue to you and it's yours.
-
-## Donation
-
-As mentioned above, Latest is free for you to use. I work on the app in my spare time. If you would like to support the development by donating, you can do so [here][11].
-
-[1]:	https://hosted.weblate.org/engage/latest/
-[2]:	https://github.com/mangerlahn/latest/issues
-[3]:	https://max.codes/latest/Latest.zip
-[4]:	https://github.com/mangerlahn/Latest/releases
-[5]:	https://github.com/Homebrew/homebrew-cask
-[6]:	https://brew.sh
-[7]:	https://weblate.org/
-[8]:	https://hosted.weblate.org/engage/latest/
-[9]:	https://hosted.weblate.org/engage/latest/
-[10]:	https://github.com/mangerlahn/latest/issues
-[11]:	https://max.codes/latest/donate
-
-[image-1]:	https://hosted.weblate.org/widgets/latest/-/svg-badge.svg
-[image-2]:	./latest.png
-[image-3]:	https://hosted.weblate.org/widgets/latest/-/multi-auto.svg
+See [LICENSE.md](LICENSE.md).

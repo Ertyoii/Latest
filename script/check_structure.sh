@@ -41,6 +41,13 @@ for root in "${legacy_roots[@]}"; do
   fi
 done
 
+while IFS= read -r -d '' file; do
+  if [[ -f "$file" ]] && [[ ! -s "$file" ]]; then
+    echo "Tracked file is empty: $file" >&2
+    exit 1
+  fi
+done < <(git ls-files -z)
+
 while IFS= read -r source; do
   line_count="$(wc -l < "$source" | tr -d ' ')"
   if (( line_count > 1500 )); then
