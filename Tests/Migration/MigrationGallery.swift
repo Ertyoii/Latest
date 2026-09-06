@@ -374,9 +374,9 @@ private struct MigrationDetailFixture: View {
       version: Version(versionNumber: "3.12.17", buildNumber: nil),
       name: "Cursor",
       bundleIdentifier: "com.example.cursor",
-      // Use the test host's real local bundle so NSWorkspace resolves the same
-      // icon in the historical and candidate renderers on every CI runner.
-      fileURL: Bundle.main.bundleURL,
+      // Both renderers must resolve the exact same file, not their separately
+      // compiled host bundles (whose NSWorkspace icon representations differ).
+      fileURL: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app"),
       source: .homebrew
     )
     return App(bundle: bundle, update: nil, isIgnored: false)

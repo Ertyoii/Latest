@@ -57,7 +57,9 @@ if replacements != 1:
 project.write_text(project_text)
 (reference / lock).write_text(json.dumps(candidate_lock, indent=2) + "\n")
 PYTHON
-mkdir -p /tmp/latest-visual-output
+# Never let a missing capture pass by reusing a previous run's PNG.
+mkdir -p /tmp/latest-visual-output "$ROOT_DIR/build/ci-visual-reference"
+rm -f /tmp/latest-visual-output/*-actual.png "$ROOT_DIR/build/ci-visual-reference/"*-actual.png
 xcodebuild -project "$REFERENCE_ROOT/Latest.xcodeproj" -scheme Latest \
   -configuration Debug -destination 'platform=macOS' \
   -derivedDataPath "$REFERENCE_ROOT/build/DerivedData" \
@@ -72,3 +74,6 @@ import sys
 images = list(Path(sys.argv[1]).glob("*-actual.png"))
 assert len(images) == 14, f"Expected 14 original-app captures, got {len(images)}"
 PYTHON
+
+# Candidate rendering must produce every image itself.
+rm -f /tmp/latest-visual-output/*-actual.png

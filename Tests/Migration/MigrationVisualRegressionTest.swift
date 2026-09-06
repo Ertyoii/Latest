@@ -92,7 +92,7 @@ final class MigrationVisualRegressionTest: XCTestCase {
   }
 
   @MainActor
-  func testMigrationGalleryRenderedRegions() throws {
+  func testMigrationGalleryRenderedRegions() async throws {
     guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 else {
       throw XCTSkip("Visual baselines are scoped to the macOS 26 renderer.")
     }
@@ -101,7 +101,7 @@ final class MigrationVisualRegressionTest: XCTestCase {
       // Keep capture outside XCTContext activities: Xcode 26.6 on the hosted
       // runner can fail activity teardown with InvalidTransition (idle ->
       // failed(deinit)). Assertions and attachments already name the scenario.
-      let rendered = try MigrationGalleryRenderer.render(scenario)
+      let rendered = try await MigrationGalleryRenderer.render(scenario)
       try MigrationGalleryRenderer.assertMatchesBaseline(
         rendered, scenario: scenario, testCase: self)
     }
@@ -148,7 +148,7 @@ private enum MigrationGalleryRenderer {
     .appendingPathComponent("VisualBaselines", isDirectory: true)
     .appendingPathComponent("macos-26", isDirectory: true)
 
-  static func render(_ scenario: MigrationGalleryScenario) throws -> NSBitmapImageRep {
+  static func render(_ scenario: MigrationGalleryScenario) async throws -> NSBitmapImageRep {
     let rootView = MigrationGalleryView(scenario: scenario)
     let hostingView = NSHostingView(rootView: rootView)
     hostingView.frame = CGRect(origin: .zero, size: scenario.size)
@@ -167,17 +167,34 @@ private enum MigrationGalleryRenderer {
     defer { window.close() }
     window.layoutIfNeeded()
     hostingView.layoutSubtreeIfNeeded()
-    RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-    window.layoutIfNeeded()
-    hostingView.layoutSubtreeIfNeeded()
+    // Suspend the main actor so SwiftUI .task work (including the header icon)
+    // can run. Pumping RunLoop from a synchronous test does not provide that
+    // scheduling boundary. Require consecutive settled frames, not one timed
+    // screenshot, and fail rather than silently recording an unsettled view.
+    var previousPixels: [UInt8]?
+    var stableFrames = 0
+    for _ in 0..<100 {
+      try await Task.sleep(for: .milliseconds(50))
+      window.layoutIfNeeded()
+      hostingView.layoutSubtreeIfNeeded()
+      let bitmap = try capture(hostingView, size: scenario.size)
+      let pixels = try rgbaBytes(from: bitmap)
+      stableFrames = pixels == previousPixels ? stableFrames + 1 : 0
+      if stableFrames >= 5 { return bitmap }
+      previousPixels = pixels
+    }
+    throw VisualRegressionError.didNotSettle(scenario.id)
+  }
+
+  private static func capture(_ hostingView: NSView, size: CGSize) throws -> NSBitmapImageRep {
 
     // References are Retina captures. Hosted runners have a 1x display,
     // so allocate the reference scale independently of the attached screen.
     guard
       let bitmap = NSBitmapImageRep(
         bitmapDataPlanes: nil,
-        pixelsWide: Int(scenario.size.width * 2),
-        pixelsHigh: Int(scenario.size.height * 2),
+        pixelsWide: Int(size.width * 2),
+        pixelsHigh: Int(size.height * 2),
         bitsPerSample: 8,
         samplesPerPixel: 4,
         hasAlpha: true,
@@ -189,7 +206,7 @@ private enum MigrationGalleryRenderer {
     else {
       throw VisualRegressionError.couldNotCreateBitmap
     }
-    bitmap.size = scenario.size
+    bitmap.size = size
     hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
     return bitmap
   }
@@ -405,6 +422,7 @@ private struct VisualComparison {
 }
 
 private enum VisualRegressionError: LocalizedError {
+  case didNotSettle(String)
   case couldNotCreateBitmap
   case couldNotEncodePNG
   case couldNotReadPixels
@@ -412,6 +430,8 @@ private enum VisualRegressionError: LocalizedError {
 
   var errorDescription: String? {
     switch self {
+    case .didNotSettle(let scenario):
+      "Visual fixture did not settle: \(scenario)"
     case .couldNotCreateBitmap:
       "Could not create a bitmap for the migration gallery."
     case .couldNotEncodePNG:
