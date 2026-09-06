@@ -10,6 +10,8 @@ trap 'git -C "$ROOT_DIR" worktree remove --force "$REFERENCE_ROOT"' EXIT
 git -C "$ROOT_DIR" worktree add --detach "$REFERENCE_ROOT" "$REFERENCE_COMMIT"
 python3 - "$ROOT_DIR" "$REFERENCE_ROOT" <<'PYTHON'
 from pathlib import Path
+import json
+import re
 import sys
 root, reference = map(Path, sys.argv[1:])
 # The gallery is test harness code too. Copy its active scenarios so retired
@@ -24,7 +26,29 @@ source = source.replace("\t\tguard let baselineData =", "\t\treturn\n\t\tguard l
 (reference / relative).write_text(source)
 lock = Path("Latest.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved")
 (reference / lock).parent.mkdir(parents=True, exist_ok=True)
-(reference / lock).write_bytes((root / lock).read_bytes())
+candidate_lock = json.loads((root / lock).read_text())
+candidate_pin = next(
+    pin for pin in candidate_lock["pins"] if pin["identity"] == "sparkle"
+)
+
+# The historical project predates the checked-in lockfile and declares an
+# older exact Sparkle version. Keep the reference renderer on the same package
+# version as the candidate so visual differences describe source changes, not
+# dependency changes. The reference source remains the immutable commit; this
+# only normalizes disposable build inputs in the temporary worktree.
+project = reference / "Latest.xcodeproj/project.pbxproj"
+project_text = project.read_text()
+project_text, replacements = re.subn(
+    r'(XCRemoteSwiftPackageReference "Sparkle".*?version = )[^;]+(;)',
+    rf"\g<1>{candidate_pin['state']['version']}\g<2>",
+    project_text,
+    count=1,
+    flags=re.S,
+)
+if replacements != 1:
+    raise SystemExit("Could not normalize the reference Sparkle requirement")
+project.write_text(project_text)
+(reference / lock).write_text(json.dumps(candidate_lock, indent=2) + "\n")
 PYTHON
 mkdir -p /tmp/latest-visual-output
 xcodebuild -project "$REFERENCE_ROOT/Latest.xcodeproj" -scheme Latest \
