@@ -2,9 +2,11 @@
 //  AppCommands.swift
 //  Latest
 //
-//  Created by Codex on 31.05.26.
+//  Created by ertyoii on 31.05.26.
 //  Copyright © 2026 Max Langer. All rights reserved.
 //
+//  Fork contributions © 2026 ertyoii. First committed in this fork 2026-06-04.
+//  Licensed under GPL-3.0; see LICENSE.md.
 
 import SwiftUI
 
@@ -19,8 +21,7 @@ extension UpdateCheckingService: UpdateCheckingCommandHandling {}
 @MainActor
 final class AppCommands {
   private enum ExternalURL {
-    static let website = URL(string: "https://max.codes/latest")
-    static let donationPage = URL(string: "https://max.codes/latest/donate/")
+    static let website = URL(string: "https://github.com/Ertyoii/Latest")
   }
 
   private let updateCheckingService: UpdateCheckingCommandHandling
@@ -88,11 +89,6 @@ final class AppCommands {
     workspace.open(url)
   }
 
-  func donate() {
-    guard let url = ExternalURL.donationPage else { return }
-    workspace.open(url)
-  }
-
   func changeSortOrder(_ order: AppListSettings.SortOptions) {
     settings.sortOrder = order
   }
@@ -120,7 +116,7 @@ struct LatestCommands: Commands {
 
   var body: some Commands {
     CommandMenu("Updates") {
-      Button("Check for App Updates…") {
+      Button("View Latest Releases…") {
         appUpdateController.checkForAppUpdates()
       }
 
@@ -188,11 +184,8 @@ struct LatestCommands: Commands {
     }
 
     CommandGroup(after: .help) {
-      Button("Visit Latest Website") {
+      Button("Latest on GitHub") {
         appCommands.visitWebsite()
-      }
-      Button("Donate") {
-        appCommands.donate()
       }
     }
   }

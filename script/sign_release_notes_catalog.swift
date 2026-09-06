@@ -1,4 +1,4 @@
-#!/usr/bin/env swift
+#!/usr/bin/env swift  //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-08-08.  //  Licensed under GPL-3.0; see LICENSE.md.
 import CryptoKit
 import Foundation
 

@@ -2,9 +2,11 @@
 //  ComplexityBenchmarkTest.swift
 //  Latest Tests
 //
-//  Created by Codex on 31.05.26.
+//  Created by ertyoii on 31.05.26.
 //  Copyright © 2026 Max Langer. All rights reserved.
 //
+//  Fork contributions © 2026 ertyoii. First committed in this fork 2026-05-31.
+//  Licensed under GPL-3.0; see LICENSE.md.
 
 import Foundation
 import XCTest

@@ -4,6 +4,8 @@
 //
 //  Parsing and cache-key support kept separate from provider orchestration.
 //
+//  Fork contributions © 2026 ertyoii. First committed in this fork 2026-09-04.
+//  Licensed under GPL-3.0; see LICENSE.md.
 
 import AppKit
 

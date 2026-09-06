@@ -2,9 +2,11 @@
 //  TableViewSnapshotDiff.swift
 //  Latest
 //
-//  Created by Codex on 05.06.26.
+//  Created by ertyoii on 05.06.26.
 //  Copyright © 2026 Max Langer. All rights reserved.
 //
+//  Fork contributions © 2026 ertyoii. First committed in this fork 2026-06-05.
+//  Licensed under GPL-3.0; see LICENSE.md.
 
 import Foundation
 

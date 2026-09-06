@@ -1,6 +1,6 @@
 # Latest
 
-A macOS utility that finds updates for App Store, Sparkle, and Homebrew applications. This fork targets macOS 26+ and is built from source.
+A macOS utility that finds updates for App Store, Sparkle, and Homebrew applications. This independently maintained fork by [ertyoii](https://github.com/Ertyoii) targets macOS 26+ and is built from source.
 
 ![Latest](latest.png)
 
@@ -18,6 +18,10 @@ Open `Latest.xcodeproj` and use the `Latest` scheme to work in Xcode. Run all ar
 ```sh
 ./script/test.sh
 ```
+
+GitHub CI is optional for local development. The existing workflow runs the checks on a clean macOS runner, including exact visual comparisons with a fixed reference. Keep it enabled for independent regression checks; it is not needed to launch the app locally.
+
+The app's release menu opens this fork's GitHub releases. It does not use the original project's automatic update feed. Automatic self-updates require a separately configured, signed appcast for this fork.
 
 ## Architecture
 
@@ -47,4 +51,8 @@ The scope includes the app, tests, installer helper, and Swift scripts. Generate
 
 ## License
 
-See [LICENSE.md](LICENSE.md).
+Based on [Latest by Max Langer and contributors](https://github.com/mangerlahn/Latest). Thank you to the original authors for making this project available.
+
+Fork development and modifications © 2026 ertyoii. This modified version includes changes through September 6, 2026. Existing upstream and third-party copyright notices are retained; Git history records individual contributions. File creation credit does not imply sole authorship of derived code.
+
+Distributed under GNU GPL version 3; see [LICENSE.md](LICENSE.md). When distributing binaries, provide the corresponding source under the GPL. This software comes without warranty. Dependency notices are included in the app's About credits.

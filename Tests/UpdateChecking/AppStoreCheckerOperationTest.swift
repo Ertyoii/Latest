@@ -2,9 +2,11 @@
 //  AppStoreCheckerOperationTest.swift
 //  Latest Tests
 //
-//  Created by Codex on 12.05.26.
+//  Created by ertyoii on 12.05.26.
 //  Copyright © 2026 Max Langer. All rights reserved.
 //
+//  Fork contributions © 2026 ertyoii. First committed in this fork 2026-05-12.
+//  Licensed under GPL-3.0; see LICENSE.md.
 
 import XCTest
 

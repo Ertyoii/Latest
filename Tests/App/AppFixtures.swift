@@ -1,3 +1,6 @@
+//  Fork contributions © 2026 ertyoii. First committed in this fork 2026-09-06.
+//  Licensed under GPL-3.0; see LICENSE.md.
+
 import Foundation
 
 @testable import Latest

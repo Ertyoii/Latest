@@ -4,6 +4,8 @@
 //
 //  Copyright © 2026 Max Langer. All rights reserved.
 //
+//  Fork contributions © 2026 ertyoii. First committed in this fork 2026-08-29.
+//  Licensed under GPL-3.0; see LICENSE.md.
 
 import XCTest
 
@@ -76,7 +78,19 @@ final class AppDependencyBoundaryTest: XCTestCase {
 
     XCTAssertEqual(settings.sortOrder, .name)
     XCTAssertFalse(settings.showInstalledUpdates)
-    XCTAssertEqual(workspace.openedURLs.map(\.absoluteString), ["https://max.codes/latest"])
+    XCTAssertEqual(
+      workspace.openedURLs.map(\.absoluteString), ["https://github.com/Ertyoii/Latest"])
+  }
+
+  func testAppUpdateActionOpensForkReleases() {
+    let workspace = StubApplicationWorkspace()
+    let controller = AppUpdateController(workspace: workspace)
+
+    controller.checkForAppUpdates()
+
+    XCTAssertEqual(
+      workspace.openedURLs.map(\.absoluteString), ["https://github.com/Ertyoii/Latest/releases"])
+    XCTAssertNil(Bundle.main.object(forInfoDictionaryKey: "SUFeedURL"))
   }
 
   private func makeSettings() throws -> (AppListSettings, UserDefaults, String) {
