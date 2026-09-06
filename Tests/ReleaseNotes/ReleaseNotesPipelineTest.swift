@@ -59,7 +59,7 @@ final class ReleaseNotesPipelineTest: XCTestCase {
 		<script>self.__next_f.push([1,"{\\\"release\\\":{\\\"version\\\":\\\"1.11.3\\\",\\\"description\\\":\\\"Fixed one truncated item.\\\"}}"])</script>
 		</body></html>
 		"""
-		let text = try XCTUnwrap(ReleaseNotesMarkup.zedReleaseText(
+		let text = try XCTUnwrap(ZedReleaseNotesExtractor.zedReleaseText(
 			fromHTML: html,
 			version: "1.11.3",
 			pageURL: URL(string: "https://zed.dev/releases/stable/1.11.3")!
@@ -82,7 +82,7 @@ final class ReleaseNotesPipelineTest: XCTestCase {
 		<h2>July 8, 2026 version 7.0.9</h2><p>Resolved issue</p><p>Older fix.</p><p>macOS</p>
 		</body></html>
 		"""
-		let text = try XCTUnwrap(ReleaseNotesMarkup.zoomReleaseText(
+		let text = try XCTUnwrap(ZoomReleaseNotesExtractor.zoomReleaseText(
 			fromHTML: html,
 			version: "7.1.0",
 			pageURL: URL(string: "https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0061222")!

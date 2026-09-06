@@ -9,14 +9,9 @@
 import Foundation
 
 /// Renderer-independent sidebar behavior. Keeping these decisions outside the
-/// view makes keyboard movement and action availability directly testable.
+/// view makes row selection and swipe availability directly testable.
 @MainActor
 struct SidebarInteractionPolicy {
-	enum Movement {
-		case previous
-		case next
-	}
-
 	enum SwipeEdge {
 		case leading
 		case trailing
@@ -26,8 +21,6 @@ struct SidebarInteractionPolicy {
 		case update
 		case open
 		case revealInFinder
-		case ignore
-		case unignore
 	}
 
 	let entries: [AppListSnapshot.Entry]
@@ -52,29 +45,6 @@ struct SidebarInteractionPolicy {
 		return app
 	}
 
-	func selectableRow(from row: Int?, moving movement: Movement) -> Int? {
-		guard !entries.isEmpty else { return nil }
-		let stride: Int
-		let start: Int
-		switch movement {
-		case .previous:
-			stride = -1
-			start = min((row ?? entries.count) - 1, entries.count - 1)
-		case .next:
-			stride = 1
-			start = max((row ?? -1) + 1, 0)
-		}
-
-		var candidate = start
-		while entries.indices.contains(candidate) {
-			if isSelectable(row: candidate) {
-				return candidate
-			}
-			candidate += stride
-		}
-		return nil
-	}
-
 	func targetApp(clickedRow: Int, selectedRow: Int) -> App? {
 		if let clickedApp = app(at: clickedRow) {
 			return clickedApp
@@ -90,16 +60,6 @@ struct SidebarInteractionPolicy {
 		case .trailing:
 			return app.updateAvailable && !updating.isUpdating(app) ? [.update] : []
 		}
-	}
-
-	func contextActions(for app: App) -> [Action] {
-		var actions: [Action] = []
-		if app.updateAvailable && !updating.isUpdating(app) {
-			actions.append(.update)
-		}
-		actions.append(app.isIgnored ? .unignore : .ignore)
-		actions.append(contentsOf: [.open, .revealInFinder])
-		return actions
 	}
 
 	static func accessibilityLabel(for app: App, dateFormatter: DateFormatter) -> String {

@@ -159,13 +159,7 @@ private enum MigrationGalleryRenderer {
 		defer { window.close() }
 		window.layoutIfNeeded()
 		hostingView.layoutSubtreeIfNeeded()
-		let settleDuration: TimeInterval
-		if case .sidebar = scenario.surface {
-			settleDuration = 0.2
-		} else {
-			settleDuration = 0.05
-		}
-		RunLoop.main.run(until: Date(timeIntervalSinceNow: settleDuration))
+		RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
 		window.layoutIfNeeded()
 		hostingView.layoutSubtreeIfNeeded()
 
@@ -255,11 +249,6 @@ private enum MigrationGalleryRenderer {
 	}
 
 	private static func baselineFilename(for scenario: MigrationGalleryScenario) -> String {
-		if case .sidebar = scenario.surface {
-			return scenario.colorScheme == .dark
-				? "sidebar-legacy-dark.png"
-				: "sidebar-legacy-light.png"
-		}
 		return "\(scenario.id).png"
 	}
 
@@ -297,7 +286,7 @@ private enum MigrationGalleryRenderer {
 				height: max(0, detail.height - MigrationGalleryMetrics.detailHeaderHeight - 4)
 			)
 			return [header, body]
-		case .locations, .updateStateShelf, .toolbarStateShelf, .sidebar:
+		case .locations, .updateStateShelf, .toolbarStateShelf:
 			return [insetBounds]
 		}
 	}

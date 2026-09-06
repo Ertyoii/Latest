@@ -322,28 +322,17 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 	}
 
 	@MainActor
-	func testSidebarShowsLongInstalledVersionWithoutTruncationAtIdealWidth() {
-		let date = Date()
-		let app = makeApp(name: "Chrome", version: "151.0.7922.109", date: date)
-		guard let expectedVersion = app.localizedVersionInformation?.current else {
-			XCTFail("Expected the installed version field in the update row.")
-			return
-		}
-		let versionWidth = (expectedVersion as NSString).size(
-			withAttributes: [.font: NSFont.systemFont(ofSize: 11)]
-		).width
-		let availableWidth = AppKitUpdateRowContentView.Layout.availableVersionWidth(
-			rowWidth: VisualMetrics.sidebarIdealWidth
-		)
-
-		XCTAssertGreaterThanOrEqual(
-			availableWidth + 0.5,
-			versionWidth,
-			"The installed version should use the available row width instead of truncating."
-		)
-		XCTAssertEqual(AppKitUpdateRowContentView.Layout.trailingWidth, 59)
-		XCTAssertEqual(AppKitUpdateRowContentView.Layout.rightInset, 32)
+	func testSidebarShowsLongInstalledVersionWithoutTruncationAtIdealWidth() throws {
+		let app = makeApp(name: "Chrome", version: "151.0.7922.109")
+		let expectedVersion = try XCTUnwrap(app.localizedVersionInformation?.current)
+		let row = AppKitUpdateRowContentView(frame: NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: VisualMetrics.appRowHeight))
+		row.update(app: app, isSelected: false, filterQuery: nil, dateFormatter: DateFormatter())
+		row.layoutSubtreeIfNeeded()
+		let field = try XCTUnwrap(row.descendantTextFields().first { $0.stringValue == expectedVersion })
+		XCTAssertFalse(field.isHidden)
+		XCTAssertGreaterThanOrEqual(field.bounds.width + 0.5, field.intrinsicContentSize.width)
 	}
+
 
 	@MainActor
 	func testAppKitSidebarTextColorsFollowSelectionEmphasis() throws {

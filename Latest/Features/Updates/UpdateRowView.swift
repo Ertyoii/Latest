@@ -18,9 +18,6 @@ final class AppKitUpdateRowContentView: NSTableCellView {
 		static let trailingWidth: CGFloat = 59
 		static let statusSize: CGFloat = 16
 
-		static func availableVersionWidth(rowWidth: CGFloat) -> CGFloat {
-			rowWidth - leftInset - rightInset - iconSize - iconTextSpacing
-		}
 	}
 
 	var onSelect: (() -> Void)?

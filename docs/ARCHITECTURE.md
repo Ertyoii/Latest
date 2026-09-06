@@ -11,7 +11,7 @@ Latest targets macOS 26+ and Swift 6 with complete concurrency checking. CI uses
 - **Platform** contains Sparkle, App Store, install-helper, workspace, and AppKit integrations.
 - **Support** contains shared presentation helpers, settings, telemetry, and operation infrastructure.
 
-Inject the same `AppUpdating` instance through `AppEnvironment` into list and bulk-update models. Detail controls and both sidebar renderers receive it from the list model. Default live instances exist for standalone views and previews; their behavior must use the stored dependency. `UpdateProgressState` and `AppUpdateStateChange` are service contract values, independent of the queue implementation.
+Inject the same `AppUpdating` instance through `AppEnvironment` into list and bulk-update models. Detail controls and the sidebar renderer receive it from the list model. Default live instances exist for standalone views and previews; their behavior must use the stored dependency. `UpdateProgressState` is a service contract value, independent of the queue implementation.
 
 The current NSTableView sidebar and the existing AppKit drawing bridges are intentional. Refactoring service ownership must not change view hierarchy, geometry, fonts, colors, selection, or drawing code.
 
@@ -21,11 +21,19 @@ The current NSTableView sidebar and the existing AppKit drawing bridges are inte
 - `AppDataStore` protects its collection, identifier index, and ignored preferences with one `Mutex`. It returns immutable snapshots and runs caller predicates outside the lock. A separately protected work item preserves the 150 ms coalescing interval.
 - `UpdateRepository` protects pending requests, matching indexes, and completion state with `Mutex`. Its serial queue preserves load/finalization ordering. Completion callbacks execute outside the mutex and can reenter the repository.
 - Update progress and its callback share a mutex. Callbacks execute outside the lock; the queue installs observation before scheduling an operation. The base operation error is also protected.
-- Operation subclasses still inherit Foundation's unchecked sendability contract. Operation state/index locks and main-actor observer registries remain necessary. The narrow UserDefaults wrapper documents Foundation's thread-safe API boundary. Filesystem observers and attributed-string transfer retain their existing manual synchronization contracts; this refactor does not claim all unchecked conformances have been removed.
+- Operation subclasses still inherit Foundation's unchecked sendability contract. Operation state/index locks and main-actor observer storage remain necessary. The narrow UserDefaults wrapper documents Foundation's thread-safe API boundary. Filesystem observers and attributed-string transfer retain their existing manual synchronization contracts; this refactor does not claim all unchecked conformances have been removed.
 
 ## Release-note parsing
 
-`ReleaseNotesSourceExtractors.swift` is the stable routing facade. Zed, Zoom, Chrome, and Navicat each have a dedicated extractor type. Shared HTML extraction, text normalization, and version selection live in separate files. Keep source-specific parsing inside its extractor and reuse shared helpers where the semantics are actually the same. The refactor preserves existing parsing rules and public entry points.
+`ReleaseNotesSourceExtractors.swift` routes source-specific extraction and generic fallbacks. Zed, Zoom, Chrome, and Navicat each have a dedicated extractor type. Shared HTML extraction, text normalization, and version selection live in separate files. Keep source-specific parsing inside its extractor and reuse shared helpers where the semantics are actually the same. Call dedicated extractor types directly rather than adding forwarding methods to `ReleaseNotesMarkup`.
+
+## Repository and test support
+
+Sparkle is a pinned Swift Package Manager dependency; there are no submodules. `Frameworks/CommerceKit` and `Frameworks/StoreFoundation` contain the declarations used by App Store integration and are required by the Xcode build.
+
+Offline application fixtures live in `Tests/App/AppFixtures.swift`, not in the app target. The shipping sidebar is `UpdatesTableBridge`; the alternate SwiftUI List and its global progress feed have been retired. Queue consumers use per-app streams or object observers on the main actor. The historical migration decision is recorded in [MIGRATION.md](MIGRATION.md).
+
+GitHub Actions in `.github/workflows/ci.yml` is the CI entrypoint. `.codex/environments/environment.toml` connects the Run action to `script/build_and_run.sh`. `buildServer.json` is generated locally and ignored. `_config.yml` retains the GitHub Pages theme; it is independent of the app build.
 
 ## Verification
 

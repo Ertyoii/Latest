@@ -12,6 +12,10 @@ python3 - "$ROOT_DIR" "$REFERENCE_ROOT" <<'PYTHON'
 from pathlib import Path
 import sys
 root, reference = map(Path, sys.argv[1:])
+# The gallery is test harness code too. Copy its active scenarios so retired
+# experimental surfaces do not leave unmatched enum cases in the reference.
+gallery = Path("Tests/Migration/MigrationGallery.swift")
+(reference / gallery).write_bytes((root / gallery).read_bytes())
 relative = Path("Tests/Migration/MigrationVisualRegressionTest.swift")
 source = (root / relative).read_text().split("/// Captures the shipping composition,")[0]
 # Only this disposable original-app harness records without asserting against

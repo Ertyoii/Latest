@@ -92,10 +92,7 @@ final class ReleaseNotesAuditTest: XCTestCase {
 	private static func updateResults(for bundles: [App.Bundle]) async -> [App.Bundle.Identifier: Result<App.Update, Error>] {
 		let repository = UpdateRepository.newRepository()
 		let execution = await BoundedUpdateCheckExecutor(maximumConcurrentTasks: 6).run(bundles) { bundle in
-			guard let result = await UpdateCheckCoordinator.check(bundle, repository: repository) else {
-				throw LatestError.updateInfoUnavailable
-			}
-			return try result.get()
+			try await UpdateCheckCoordinator.check(bundle, repository: repository)
 		}
 		return execution.results.reduce(into: [:]) { results, indexedResult in
 			guard bundles.indices.contains(indexedResult.index) else { return }

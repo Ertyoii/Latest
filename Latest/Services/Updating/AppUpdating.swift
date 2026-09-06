@@ -27,11 +27,6 @@ enum UpdateProgressState: Sendable {
 	case cancelling
 }
 
-struct AppUpdateStateChange: Sendable {
-	let identifier: App.Bundle.Identifier
-	let state: UpdateProgressState
-}
-
 typealias UpdateStateFeed = (current: UpdateProgressState, changes: AsyncStream<UpdateProgressState>)
 typealias UpdateStateObserver = @MainActor (UpdateProgressState) -> Void
 
@@ -45,7 +40,6 @@ protocol AppUpdating: AnyObject, Sendable {
 	func state(for identifier: App.Bundle.Identifier) -> UpdateProgressState
 	@MainActor func states(for identifier: App.Bundle.Identifier) -> AsyncStream<UpdateProgressState>
 	@MainActor func stateChanges(for identifier: App.Bundle.Identifier) -> UpdateStateFeed
-	@MainActor func stateChanges() -> AsyncStream<AppUpdateStateChange>
 	@MainActor func addObserver(_ observer: NSObject, to identifier: App.Bundle.Identifier, handler: @escaping UpdateStateObserver)
 	func removeObserver(_ observer: NSObject, for identifier: App.Bundle.Identifier)
 }
@@ -71,7 +65,6 @@ final class AppUpdateService: AppUpdating {
 	func state(for identifier: App.Bundle.Identifier) -> UpdateProgressState { queue.state(for: identifier) }
 	@MainActor func states(for identifier: App.Bundle.Identifier) -> AsyncStream<UpdateProgressState> { queue.states(for: identifier) }
 	@MainActor func stateChanges(for identifier: App.Bundle.Identifier) -> UpdateStateFeed { queue.stateChanges(for: identifier) }
-	@MainActor func stateChanges() -> AsyncStream<AppUpdateStateChange> { queue.stateChanges() }
 	@MainActor func addObserver(_ observer: NSObject, to identifier: App.Bundle.Identifier, handler: @escaping UpdateStateObserver) { queue.addObserver(observer, to: identifier, handler: handler) }
 	func removeObserver(_ observer: NSObject, for identifier: App.Bundle.Identifier) { queue.removeObserver(observer, for: identifier) }
 }

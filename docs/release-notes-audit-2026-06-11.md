@@ -1,5 +1,8 @@
 # Release Notes Audit - 2026-06-11
 
+> Historical snapshot. Versions, coverage, paths, and source availability below describe the original audit, not the current installation. Run `./script/audit_release_notes.sh` for a new report; do not overwrite this historical evidence.
+
+
 Generated from `./script/audit_release_notes.sh` against:
 
 - `/Applications`

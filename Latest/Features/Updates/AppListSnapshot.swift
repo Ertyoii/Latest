@@ -96,7 +96,7 @@ struct AppListSnapshot {
 	/// The user-facable, sorted and filtered list of apps and sections. Observers of the data store will be notified, when this list changes.
 	let entries: [Entry]
 
-	/// Native section groups used by SwiftUI lists without reparsing flattened entries.
+	/// Section groups used for selection and presentation without reparsing flattened entries.
 	let sections: [SectionContent]
 
 	private let entryIndexesByAppIdentifier: [App.Bundle.Identifier: Int]

@@ -102,32 +102,6 @@ extension App {
 
 }
 
-extension App.Source {
-
-	var sourceIcon: NSImage? {
-		switch self {
-		case .none: nil
-		case .sparkle: NSImage(named: "sparkle")
-		case .appStore: NSImage(named: "appstore")
-		case .homebrew: NSImage(named: "brew")
-		}
-	}
-
-	var sourceName: String? {
-		switch self {
-		case .none:
-			nil
-		case .sparkle:
-			NSLocalizedString("WebSource", comment: "The source name for apps loaded from third-party websites.")
-		case .appStore:
-			NSLocalizedString("AppStoreSource", comment: "The source name of apps loaded from the App Store.")
-		case .homebrew:
-			NSLocalizedString("HomebrewSource", comment: "The source name for apps checked via Homebrew.")
-		}
-	}
-
-}
-
 extension App.Source.SupportState {
 
 	var statusImage: NSImage {

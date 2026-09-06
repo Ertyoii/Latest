@@ -70,7 +70,7 @@ final class AppDependencyBoundaryTest: XCTestCase {
 		)
 
 		commands.changeSortOrder(.name)
-		commands.toggleShowInstalledUpdates()
+		commands.showInstalledUpdates.toggle()
 		commands.visitWebsite()
 
 		XCTAssertEqual(settings.sortOrder, .name)

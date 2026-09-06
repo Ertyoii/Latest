@@ -10,7 +10,6 @@ import Foundation
 
 /// The queue where update operations are scheduled on.
 class UpdateQueue: OperationQueue, @unchecked Sendable {
-	typealias StateChange = AppUpdateStateChange
 
 	
 	// MARK: - Initialization
@@ -76,39 +75,17 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 	
 	// MARK: - Observer Handling
 	
-	/// The handler for notifying observers about changes to the update state.
-	typealias ObserverHandler = UpdateStateObserver
-
 	/// A mapping of observers associated with apps.
-	@MainActor private var observers = [App.Bundle.Identifier: MainActorObserverRegistry<UpdateOperation.ProgressState>]()
+	@MainActor private var observers = [App.Bundle.Identifier: [ObjectIdentifier: UpdateStateObserver]]()
 
 	/// Bounded structured-concurrency feeds used by SwiftUI rows.
 	@MainActor private var stateContinuations = [
 		App.Bundle.Identifier: [UUID: AsyncStream<UpdateOperation.ProgressState>.Continuation]
 	]()
 
-	/// One process-wide feed for consumers that display many apps at once. This
-	/// avoids creating an AsyncStream and task for every visible sidebar row.
-	@MainActor private var allStateContinuations = [
-		UUID: AsyncStream<StateChange>.Continuation
-	]()
-
 	@MainActor
 	func states(for identifier: App.Bundle.Identifier) -> AsyncStream<UpdateOperation.ProgressState> {
-		let streamIdentifier = UUID()
-		let initialState = state(for: identifier)
-		let (stream, continuation) = AsyncStream.makeStream(
-			of: UpdateOperation.ProgressState.self,
-			bufferingPolicy: .bufferingNewest(1)
-		)
-		stateContinuations[identifier, default: [:]][streamIdentifier] = continuation
-		continuation.yield(initialState)
-		continuation.onTermination = { [weak self] _ in
-			Task { @MainActor [weak self] in
-				self?.removeStateContinuation(streamIdentifier, for: identifier)
-			}
-		}
-		return stream
+		makeStateFeed(for: identifier, includesCurrentState: true).changes
 	}
 
 	/// Atomically captures the current state and registers a stream containing
@@ -117,7 +94,12 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 	@MainActor
 	func stateChanges(
 		for identifier: App.Bundle.Identifier
-	) -> (current: UpdateOperation.ProgressState, changes: AsyncStream<UpdateOperation.ProgressState>) {
+	) -> UpdateStateFeed {
+		makeStateFeed(for: identifier, includesCurrentState: false)
+	}
+
+	@MainActor
+	private func makeStateFeed(for identifier: App.Bundle.Identifier, includesCurrentState: Bool) -> UpdateStateFeed {
 		let streamIdentifier = UUID()
 		let currentState = state(for: identifier)
 		let (stream, continuation) = AsyncStream.makeStream(
@@ -125,6 +107,9 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 			bufferingPolicy: .bufferingNewest(1)
 		)
 		stateContinuations[identifier, default: [:]][streamIdentifier] = continuation
+		if includesCurrentState {
+			continuation.yield(currentState)
+		}
 		continuation.onTermination = { [weak self] _ in
 			Task { @MainActor [weak self] in
 				self?.removeStateContinuation(streamIdentifier, for: identifier)
@@ -133,39 +118,18 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 		return (currentState, stream)
 	}
 
+	/// Adds or replaces the observer and immediately delivers the current state.
 	@MainActor
-	func stateChanges() -> AsyncStream<StateChange> {
-		let streamIdentifier = UUID()
-		// Every terminal state must reach a multi-row consumer. A bounded FIFO can
-		// drop one app's final event when many other updates finish in the same run.
-		let (stream, continuation) = AsyncStream.makeStream(of: StateChange.self)
-		allStateContinuations[streamIdentifier] = continuation
-		continuation.onTermination = { [weak self] _ in
-			Task { @MainActor [weak self] in
-				self?.allStateContinuations.removeValue(forKey: streamIdentifier)
-			}
-		}
-		return stream
-	}
-	
-	/// Adds the observer if it is not already registered.
-	@MainActor
-	func addObserver(_ observer: NSObject, to identifier: App.Bundle.Identifier, handler: @escaping ObserverHandler) {
-		let observers = self.observers[identifier] ?? MainActorObserverRegistry()
-		observers.add(observer, handler: handler)
-		
-		// Call handler immediately to propagate initial state
-		handler(self.state(for: identifier))
-		
-		// Update observers
-		self.observers[identifier] = observers
+	func addObserver(_ observer: NSObject, to identifier: App.Bundle.Identifier, handler: @escaping UpdateStateObserver) {
+		observers[identifier, default: [:]][ObjectIdentifier(observer)] = handler
+		handler(state(for: identifier))
 	}
 	
 	/// Removes the observer.
 	func removeObserver(_ observer: NSObject, for identifier: App.Bundle.Identifier) {
 		let observerIdentifier = ObjectIdentifier(observer)
 		Task { @MainActor in
-			self.observers[identifier]?.remove(observerIdentifier)
+			self.observers[identifier]?.removeValue(forKey: observerIdentifier)
 			if self.observers[identifier]?.isEmpty == true {
 				self.observers.removeValue(forKey: identifier)
 			}
@@ -177,15 +141,11 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 		let state = self.state(for: identifier)
 		
 		Task { @MainActor in
-			self.observers[identifier]?.notify(with: state)
+			self.observers[identifier]?.values.forEach { $0(state) }
 			if let continuations = self.stateContinuations[identifier] {
 				for continuation in continuations.values {
 					continuation.yield(state)
 				}
-			}
-			let change = StateChange(identifier: identifier, state: state)
-			for continuation in self.allStateContinuations.values {
-				continuation.yield(change)
 			}
 		}
 	}

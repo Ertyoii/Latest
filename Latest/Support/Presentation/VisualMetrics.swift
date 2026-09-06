@@ -15,7 +15,6 @@ enum VisualMetrics {
 	/// 65-point synthetic fixture made every following row drift farther down.
 	static let appRowHeight: CGFloat = 60
 	static let sectionHeaderHeight: CGFloat = 27
-	static let listTopInset: CGFloat = 36
 	static let scrollBottomInset: CGFloat = 10
 	static let releaseNotesTextInset: CGFloat = 14
 
@@ -24,7 +23,6 @@ enum VisualMetrics {
 	static let mainWindowMinWidth: CGFloat = 350
 	static let mainWindowMinHeight: CGFloat = 300
 
-	static let sidebarMinWidth: CGFloat = 300
 	static let sidebarIdealWidth: CGFloat = 308
 	/// System Settings uses a 28pt outer curve and an 8pt visible inset, yielding
 	/// a concentric 20pt sidebar curve.
@@ -40,9 +38,6 @@ enum VisualMetrics {
 
 	static let appIconSize: CGFloat = 50
 	static let detailIconSize: CGFloat = 64
-
-	static let rowHorizontalPadding: CGFloat = 12
-	static let rowTextSpacing: CGFloat = 2
 
 	// The SwiftUI detail host starts below the unified toolbar. The former
 	// full-size AppKit host included the 40pt toolbar inset in its 119pt header.

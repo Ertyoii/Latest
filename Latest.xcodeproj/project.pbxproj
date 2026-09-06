@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		53D000012FF0000000000001 /* AppFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53D000022FF0000000000001 /* AppFixtures.swift */; };
 		501AA0012FC4000000000001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501AA0002FC4000000000001 /* main.swift */; };
 		501EA9821EB1BA4400D05821 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 501EA9841EB1BA4400D05821 /* Localizable.strings */; };
 		501EA98A1EB1BD8B00D05821 /* Localizable.stringsdict in Resources */ = {isa = PBXBuildFile; fileRef = 501EA98C1EB1BD8B00D05821 /* Localizable.stringsdict */; };
@@ -107,7 +108,6 @@
 		51F100082FD0000000000001 /* SelectableReleaseNotesTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100172FD0000000000001 /* SelectableReleaseNotesTextView.swift */; };
 		51F100092FD0000000000001 /* SupportStatusInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100182FD0000000000001 /* SupportStatusInfoView.swift */; };
 		51F1000A2FD0000000000001 /* UpdateActionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100192FD0000000000001 /* UpdateActionView.swift */; };
-		51F1000B2FD0000000000001 /* NativeUpdatesSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F1001A2FD0000000000001 /* NativeUpdatesSidebarView.swift */; };
 		51F1000C2FD0000000000001 /* UpdatesTableBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F1001B2FD0000000000001 /* UpdatesTableBridge.swift */; };
 		52A001012FE0000000000001 /* ReleaseNotesMemoryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000012FE0000000000001 /* ReleaseNotesMemoryCache.swift */; };
 		52A001022FE0000000000001 /* ReleaseNotesPersistentCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000022FE0000000000001 /* ReleaseNotesPersistentCache.swift */; };
@@ -185,6 +185,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		53D000022FF0000000000001 /* AppFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/App/AppFixtures.swift"; sourceTree = SOURCE_ROOT; };
 		29A88F89296B7DC2000A5EDE /* fa */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fa; path = fa.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		29A88F8A296B7DC2000A5EDE /* fa */ = {isa = PBXFileReference; lastKnownFileType = text.plist.stringsdict; name = fa; path = fa.lproj/Localizable.stringsdict; sourceTree = "<group>"; };
 		29A88F8B296B7DC2000A5EDE /* fa */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fa; path = fa.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -418,7 +419,6 @@
 		51F100172FD0000000000001 /* SelectableReleaseNotesTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Platform/AppKit/SelectableReleaseNotesTextView.swift"; sourceTree = SOURCE_ROOT; };
 		51F100182FD0000000000001 /* SupportStatusInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Features/ReleaseNotes/SupportStatusInfoView.swift"; sourceTree = SOURCE_ROOT; };
 		51F100192FD0000000000001 /* UpdateActionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Features/ReleaseNotes/UpdateActionView.swift"; sourceTree = SOURCE_ROOT; };
-		51F1001A2FD0000000000001 /* NativeUpdatesSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Features/Updates/NativeUpdatesSidebarView.swift"; sourceTree = SOURCE_ROOT; };
 		51F1001B2FD0000000000001 /* UpdatesTableBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Platform/AppKit/UpdatesTableBridge.swift"; sourceTree = SOURCE_ROOT; };
 		52A000012FE0000000000001 /* ReleaseNotesMemoryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Services/ReleaseNotes/ReleaseNotesMemoryCache.swift"; sourceTree = SOURCE_ROOT; };
 		52A000022FE0000000000001 /* ReleaseNotesPersistentCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Latest/Services/ReleaseNotes/ReleaseNotesPersistentCache.swift"; sourceTree = SOURCE_ROOT; };
@@ -570,7 +570,6 @@
 				51A0000B2FC3000000000001 /* SearchFieldRepresentable.swift */,
 				51A0000A2FC3000000000001 /* SearchFocusController.swift */,
 				51F100122FD0000000000001 /* SidebarInteractionPolicy.swift */,
-				51F1001A2FD0000000000001 /* NativeUpdatesSidebarView.swift */,
 				51F1001B2FD0000000000001 /* UpdatesTableBridge.swift */,
 				51A000102FC3000000000001 /* UpdateRowView.swift */,
 				51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */,
@@ -607,6 +606,7 @@
 			isa = PBXGroup;
 			children = (
 				51F100102FD0000000000001 /* MigrationGallery.swift */,
+				53D000022FF0000000000001 /* AppFixtures.swift */,
 				51F100142FD0000000000001 /* MigrationTelemetry.swift */,
 			);
 			path = Migration;
@@ -955,7 +955,6 @@
 			isa = PBXGroup;
 			children = (
 				507375562789AB0300F371D8 /* AppListSnapshot.swift */,
-				51F1001A2FD0000000000001 /* NativeUpdatesSidebarView.swift */,
 				51A0000A2FC3000000000001 /* SearchFocusController.swift */,
 				51F100122FD0000000000001 /* SidebarInteractionPolicy.swift */,
 				51A000102FC3000000000001 /* UpdateRowView.swift */,
@@ -1233,6 +1232,7 @@
 			isa = PBXGroup;
 			children = (
 				51F100102FD0000000000001 /* MigrationGallery.swift */,
+				53D000022FF0000000000001 /* AppFixtures.swift */,
 				51F100132FD0000000000001 /* MigrationInteractionContractTest.swift */,
 				51F100152FD0000000000001 /* MigrationPerformanceTest.swift */,
 				51F100112FD0000000000001 /* MigrationVisualRegressionTest.swift */,
@@ -1475,7 +1475,6 @@
 				51A0010A2FC3000000000001 /* SearchFocusController.swift in Sources */,
 				51A0010B2FC3000000000001 /* SearchFieldRepresentable.swift in Sources */,
 				51F100032FD0000000000001 /* SidebarInteractionPolicy.swift in Sources */,
-				51F1000B2FD0000000000001 /* NativeUpdatesSidebarView.swift in Sources */,
 				51F1000C2FD0000000000001 /* UpdatesTableBridge.swift in Sources */,
 				51A0010F2FC3000000000001 /* UpdateSectionHeaderView.swift in Sources */,
 				51A001102FC3000000000001 /* UpdateRowView.swift in Sources */,
@@ -1599,6 +1598,7 @@
 				51F100042FD0000000000001 /* MigrationInteractionContractTest.swift in Sources */,
 				51F100062FD0000000000001 /* MigrationPerformanceTest.swift in Sources */,
 				51F1000D2FD0000000000001 /* MigrationGallery.swift in Sources */,
+				53D000012FF0000000000001 /* AppFixtures.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1904,7 +1904,7 @@
 				);
 				LATEST_RELEASE_NOTES_CATALOG_PUBLIC_KEY = "";
 				LATEST_RELEASE_NOTES_CATALOG_URL = "";
-				MARKETING_VERSION = 0.55;
+				MARKETING_VERSION = 0.56;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1946,7 +1946,7 @@
 				);
 				LATEST_RELEASE_NOTES_CATALOG_PUBLIC_KEY = "";
 				LATEST_RELEASE_NOTES_CATALOG_URL = "";
-				MARKETING_VERSION = 0.55;
+				MARKETING_VERSION = 0.56;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

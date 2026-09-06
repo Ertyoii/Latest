@@ -39,13 +39,6 @@ final class MigrationInteractionContractTest: XCTestCase {
 		XCTAssertEqual(SettingsViewModel.Tab.general.contentSize, CGSize(width: 440, height: 255))
 	}
 
-	func testShippingSidebarDefaultsToMeasuredAppKitBoundary() {
-		XCTAssertEqual(SidebarImplementation.resolve(environmentValue: nil), .appKitTable)
-		XCTAssertEqual(SidebarImplementation.resolve(environmentValue: "appkit"), .appKitTable)
-		XCTAssertEqual(SidebarImplementation.resolve(environmentValue: "native"), .nativeList)
-		XCTAssertEqual(SidebarImplementation.resolve(environmentValue: "unknown"), .appKitTable)
-	}
-
 	@MainActor
 	func testLocalUATFixtureIsOfflinePopulatedAndSelected() {
 		let environment = AppEnvironment.localUATFixture()
@@ -185,19 +178,30 @@ final class MigrationInteractionContractTest: XCTestCase {
 	}
 
 	@MainActor
-	func testArrowMovementSkipsSectionHeaders() throws {
-		let firstApp = makeApp(name: "Discord", version: "1", remoteVersion: "2")
-		let secondApp = makeApp(name: "Cursor", version: "3")
-		let snapshot = AppListSnapshot(withApps: [firstApp, secondApp], filterQuery: nil)
-		let policy = SidebarInteractionPolicy(entries: snapshot.entries)
-		let firstRow = try XCTUnwrap(snapshot.firstIndex(of: firstApp))
-		let secondRow = try XCTUnwrap(snapshot.firstIndex(of: secondApp))
-
-		XCTAssertEqual(policy.selectableRow(from: nil, moving: .next), firstRow)
-		XCTAssertEqual(policy.selectableRow(from: firstRow, moving: .next), secondRow)
-		XCTAssertEqual(policy.selectableRow(from: secondRow, moving: .previous), firstRow)
-		XCTAssertNil(policy.selectableRow(from: secondRow, moving: .next))
-		XCTAssertNil(policy.selectableRow(from: firstRow, moving: .previous))
+	func testShippingTableArrowMovementSkipsSectionHeaders() throws {
+		let (window, table, viewModel) = try makeShippingSidebar()
+		defer { window.close() }
+		let appRows = viewModel.snapshot.entries.indices.filter {
+			if case .app = viewModel.snapshot.entries[$0] { return true }
+			return false
+		}
+		XCTAssertEqual(appRows.count, 2)
+		table.selectRowIndexes(IndexSet(integer: appRows[0]), byExtendingSelection: false)
+		func pressArrow(keyCode: UInt16, character: String) throws {
+			let event = try XCTUnwrap(NSEvent.keyEvent(
+				with: .keyDown, location: .zero, modifierFlags: [.function, .numericPad],
+				timestamp: 0, windowNumber: window.windowNumber, context: nil,
+				characters: character, charactersIgnoringModifiers: character,
+				isARepeat: false, keyCode: keyCode
+			))
+			table.keyDown(with: event)
+		}
+		window.makeFirstResponder(table)
+		try pressArrow(keyCode: 125, character: "\u{F701}")
+		XCTAssertEqual(table.selectedRow, appRows[1])
+		XCTAssertEqual(viewModel.selectedApp?.identifier, viewModel.snapshot.sections.last?.apps.first?.identifier)
+		try pressArrow(keyCode: 126, character: "\u{F700}")
+		XCTAssertEqual(table.selectedRow, appRows[0])
 	}
 
 	@MainActor
@@ -212,37 +216,6 @@ final class MigrationInteractionContractTest: XCTestCase {
 		XCTAssertEqual(viewModel.selectedApp?.identifier, second.identifier)
 		viewModel.select(identifier: URL(fileURLWithPath: "/Applications/Missing.app"))
 		XCTAssertNil(viewModel.selectedApp)
-	}
-
-	@MainActor
-	func testNativeSidebarUsesSystemLazyListWithoutCustomTableCoordinator() throws {
-		let first = makeApp(name: "Discord", version: "1", remoteVersion: "2")
-		let second = makeApp(name: "Cursor", version: "3", remoteVersion: "4")
-		let viewModel = UpdatesListViewModel(
-			snapshot: AppListSnapshot(withApps: [first, second], filterQuery: nil)
-		)
-		let orderedApps = viewModel.snapshot.sections.flatMap(\.apps)
-		XCTAssertEqual(orderedApps.count, 2)
-		viewModel.select(orderedApps[0])
-		let hostingView = NSHostingView(rootView: NativeUpdatesList(viewModel: viewModel))
-		hostingView.frame = NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 420)
-		let window = NSWindow(
-			contentRect: hostingView.bounds,
-			styleMask: [.titled],
-			backing: .buffered,
-			defer: false
-		)
-		window.contentView = hostingView
-		RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
-
-		XCTAssertNotNil(hostingView.descendant(of: NSScrollView.self))
-		XCTAssertFalse(hostingView.allDescendants().contains { String(describing: type(of: $0)) == "SwiftUIUpdateTableView" })
-		XCTAssertNotNil(
-			hostingView.descendant(of: NSTableView.self),
-			"SwiftUI List is expected to use the system's private lazy table implementation on macOS."
-		)
-		let section = try XCTUnwrap(viewModel.snapshot.sections.first?.section)
-		XCTAssertTrue(SidebarSectionPresentation.accessibilityLabel(for: section).contains("2"))
 	}
 
 	@MainActor
@@ -261,7 +234,7 @@ final class MigrationInteractionContractTest: XCTestCase {
 	}
 
 	@MainActor
-	func testSwipeAndContextActionsPreserveAvailabilityRules() throws {
+	func testSwipeActionsPreserveAvailabilityRules() throws {
 		let updatable = makeApp(name: "Discord", version: "1", remoteVersion: "2")
 		let installed = makeApp(name: "Cursor", version: "3")
 		let snapshot = AppListSnapshot(withApps: [updatable, installed], filterQuery: nil)
@@ -270,14 +243,10 @@ final class MigrationInteractionContractTest: XCTestCase {
 		let installedRow = try XCTUnwrap(snapshot.firstIndex(of: installed))
 		let leadingActions: [SidebarInteractionPolicy.Action] = [.open, .revealInFinder]
 		let trailingUpdateActions: [SidebarInteractionPolicy.Action] = [.update]
-		let updatableContextActions: [SidebarInteractionPolicy.Action] = [.update, .ignore, .open, .revealInFinder]
-		let installedContextActions: [SidebarInteractionPolicy.Action] = [.ignore, .open, .revealInFinder]
 
 		XCTAssertEqual(policy.swipeActions(for: updatableRow, edge: .leading), leadingActions)
 		XCTAssertEqual(policy.swipeActions(for: updatableRow, edge: .trailing), trailingUpdateActions)
 		XCTAssertEqual(policy.swipeActions(for: installedRow, edge: .trailing), [])
-		XCTAssertEqual(policy.contextActions(for: updatable), updatableContextActions)
-		XCTAssertEqual(policy.contextActions(for: installed), installedContextActions)
 	}
 
 	@MainActor
@@ -465,6 +434,40 @@ final class MigrationInteractionContractTest: XCTestCase {
 			return XCTFail("Expected the no-selection message.")
 		}
 		XCTAssertEqual(noSelectionMessage, .noSelection)
+	}
+
+	@MainActor
+	func testShippingMenuValidatesSelectedAppActions() throws {
+		let (window, table, viewModel) = try makeShippingSidebar()
+		defer { window.close() }
+		let menu = try XCTUnwrap(table.menu)
+		for (row, entry) in viewModel.snapshot.entries.enumerated() {
+			guard case .app(let app) = entry else { continue }
+			table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+			menu.update()
+			let updateItem = try XCTUnwrap(menu.items.first { $0.action == NSSelectorFromString("updateApp:") })
+			let ignoreItem = try XCTUnwrap(menu.items.first { $0.action == NSSelectorFromString("ignoreApp:") })
+			let unignoreItem = try XCTUnwrap(menu.items.first { $0.action == NSSelectorFromString("unignoreApp:") })
+			XCTAssertEqual(updateItem.isEnabled, app.updateAvailable)
+			XCTAssertEqual(ignoreItem.isHidden, app.isIgnored)
+			XCTAssertEqual(unignoreItem.isHidden, !app.isIgnored)
+		}
+	}
+
+	@MainActor
+	private func makeShippingSidebar() throws -> (NSWindow, NSTableView, UpdatesListViewModel) {
+		let apps = [makeApp(name: "Discord", version: "1", remoteVersion: "2"), makeApp(name: "Cursor", version: "3")]
+		let viewModel = UpdatesListViewModel(snapshot: AppListSnapshot(withApps: apps, filterQuery: nil))
+		let host = NSHostingView(rootView: UpdatesSidebarView(viewModel: viewModel, searchFocusController: SearchFocusController()))
+		host.frame = NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 420)
+		let window = NSWindow(contentRect: host.bounds, styleMask: [.titled], backing: .buffered, defer: false)
+		window.isReleasedWhenClosed = false
+		window.contentView = host
+		window.layoutIfNeeded()
+		host.layoutSubtreeIfNeeded()
+		let table = try XCTUnwrap(host.descendant(of: NSTableView.self))
+		XCTAssertTrue(table is SwiftUIUpdateTableView)
+		return (window, table, viewModel)
 	}
 
 	private func assertWaiting(

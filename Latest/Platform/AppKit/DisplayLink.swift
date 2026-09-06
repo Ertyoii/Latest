@@ -7,31 +7,24 @@
 
 import Foundation
 import QuartzCore
-#if os(macOS)
 import AppKit
-#endif
 
-/// Cross-platform convenience for accessing a DisplayLink.
+/// Animation clock for the update button.
 @MainActor
 final class DisplayLink: NSObject {
 
 	/// The amount of time the display link should be running. If  set to `nil`, the display link runs indefinitely.
-	private(set) var duration : Double?
-	
-	/// An optional completion handler called after the display link stopped animating.
-	var completionHandler : (@MainActor () -> Void)?
+	private let duration: Double?
 	
 	/// The current  animation progress. Only useful if a duration has been set.
 	private(set) var progress : Double = 0
 
 	private var displayLink: CADisplayLink?
 
-	/// Frames used to calculate the animation progress
-	private var _currentFrame : Double = 0
-	private var _frames : Double = 0
+	private var elapsedTime: Double = 0
 
 	/// The callback called for each animation step.
-	private(set) var callback : (@MainActor (_ progress: Double) -> Void)!
+	private let callback: @MainActor (Double) -> Void
 
 	private var fallbackTimer: Timer?
 
@@ -40,18 +33,13 @@ final class DisplayLink: NSObject {
 	
 	/// Initializes the display link with the given duration and callback.
 	init(duration: Double?, callback: @escaping @MainActor (_ progress: Double) -> Void) {
-		super.init()
-
 		self.duration = duration
 		self.callback = callback
+		super.init()
 
-		#if os(macOS)
 		if let screen = NSScreen.main ?? NSScreen.screens.first {
 			self.displayLink = screen.displayLink(target: self, selector: #selector(DisplayLink.displayTick(_:)))
 		}
-		#else
-		self.displayLink = CADisplayLink(target: self, selector: #selector(DisplayLink.displayTick(_:)))
-		#endif
 		self.displayLink?.add(to: .current, forMode: .common)
 		self.displayLink?.isPaused = true
 	}
@@ -72,19 +60,11 @@ final class DisplayLink: NSObject {
 	}
 
 	private func advanceFrame(frameDuration: Double) {
-		if let duration = self.duration {
-			self._frames = duration / (1 / 60.0)
-		} else {
-			self._frames = 1
-		}
-
-		self._currentFrame += frameDuration / (1 / 60.0)
-
-		// The display link and fallback timer are installed on the main run loop.
-		self.progress = self._currentFrame / self._frames
-		if self.duration != nil, self.progress >= 1 {
-			self.completionHandler?()
-			self.stop()
+		elapsedTime += frameDuration
+		// Indefinite animations expose elapsed 60-Hz frames to the spinner.
+		progress = elapsedTime / (duration ?? (1 / 60.0))
+		if duration != nil, progress >= 1 {
+			stop()
 		}
 
 		self.callback(self.progress)
@@ -95,7 +75,7 @@ final class DisplayLink: NSObject {
 	
 	/// Starts the display link.
 	func start() {
-		self._currentFrame = 0
+		self.elapsedTime = 0
 		if let displayLink {
 			displayLink.isPaused = false
 		} else {

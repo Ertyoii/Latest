@@ -1,5 +1,8 @@
 # Installed Release Note Source Inventory
 
+> Historical snapshot. Versions, coverage, paths, and source availability below describe the original audit, not the current installation. Run `./script/audit_release_notes.sh` for a new report; do not overwrite this historical evidence.
+
+
 Generated: 2026-06-14
 
 Scope: apps currently discovered from `/Applications` plus helper bundles surfaced by Latest's installed-app audit. "Yes" means there is a release-note source that can show app-version-specific notes. "No" means no reliable public app-version-specific release-note source was confirmed; Latest should show the normal updater metadata fallback instead of scraping unrelated product news.

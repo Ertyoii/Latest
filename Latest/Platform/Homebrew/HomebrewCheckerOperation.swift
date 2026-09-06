@@ -11,7 +11,6 @@ import Cocoa
 /// Async update checking via Homebrew. The historical type name is retained to
 /// avoid needless source churn, but checking is no longer an Operation.
 final class HomebrewCheckerOperation: Sendable {
-	static var sourceType: App.Source { .none }
 
 	private let bundle: App.Bundle
 	private let repository: UpdateRepository?

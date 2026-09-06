@@ -2,13 +2,8 @@
 set -euo pipefail
 
 LABEL="${1:-current}"
-SIDEBAR_IMPLEMENTATION="${2:-appkit}"
 if [[ ! "$LABEL" =~ ^[a-zA-Z0-9_-]+$ ]]; then
   echo "Benchmark label must contain only letters, numbers, underscores, or hyphens." >&2
-  exit 2
-fi
-if [[ "$SIDEBAR_IMPLEMENTATION" != "appkit" ]]; then
-  echo "The shipping sidebar benchmark uses the measured AppKit parity renderer; use appkit or omit the second argument." >&2
   exit 2
 fi
 
@@ -23,10 +18,10 @@ FLAG_FILE="$BUILD_DIR/run-migration-benchmarks"
 
 mkdir -p "$BUILD_DIR" "$MODULE_CACHE"
 rm -f "$LOG_FILE" "$REPORT_FILE"
-printf '%s\n' "$SIDEBAR_IMPLEMENTATION" > "$FLAG_FILE"
+touch "$FLAG_FILE"
 trap 'rm -f "$FLAG_FILE"' EXIT
 
-LATEST_SIDEBAR_IMPLEMENTATION="$SIDEBAR_IMPLEMENTATION" xcodebuild \
+xcodebuild \
   -project "$ROOT_DIR/Latest.xcodeproj" \
   -scheme Latest \
   -configuration Debug \

@@ -40,7 +40,7 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
 
 	var progressFraction: Double? {
 		guard !isIndeterminate, totalApps > 0 else { return nil }
-		return Double(checkedApps) / Double(max(totalApps, 1))
+		return Double(checkedApps) / Double(totalApps)
 	}
 
 	var hasUpdatesAvailable: Bool {

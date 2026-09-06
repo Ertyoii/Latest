@@ -1,5 +1,11 @@
 # Unreleased Changes
 
+# 0.56
+
+- Retired the experimental sidebar and unused update-observation APIs while preserving the shipping NSTableView UI.
+- Removed obsolete build configuration, unused resources, and forwarding helpers; moved offline fixtures into the test target.
+- Updated fork build instructions and replaced the old migration blueprint with a decision record.
+
 # 0.10.3
 Fixes a crash that may occur after updating to 0.10.2.
 

@@ -24,9 +24,8 @@ final class StableSelectionTableRowView: NSTableRowView {
 	}
 }
 
-/// Capability bridge retained because the native SwiftUI List candidate misses
-/// the sidebar's population and scroll performance gates. SwiftUI still owns
-/// feature state, search, and composition around this table renderer.
+/// Shipping sidebar renderer. NSTableView owns row geometry, selection, and
+/// scrolling; SwiftUI owns feature state, search, and surrounding composition.
 struct UpdatesTableBridge: NSViewRepresentable {
 	@ObservedObject var viewModel: UpdatesListViewModel
 	let showsSupportStatusOverride: Bool?

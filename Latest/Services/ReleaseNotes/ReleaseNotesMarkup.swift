@@ -216,7 +216,7 @@ enum ReleaseNotesMarkup {
 		let displayMarkup = markup.containsHTMLTag ? markup : Self.cleaningInlineMarkdown(in: markup)
 		let normalizedMarkup = Self.removingDuplicateLeadingLines(displayMarkup)
 		let isValidatedZedArticle = baseURL?.host?.localizedCaseInsensitiveContains("zed.dev") == true &&
-			Self.isUsefulZedReleaseArticleText(normalizedMarkup)
+			ZedReleaseNotesExtractor.isUsefulZedReleaseArticleText(normalizedMarkup)
 		guard isValidatedZedArticle || Self.isUsefulReleaseNotesText(normalizedMarkup, relevantVersion: relevantVersion) else {
 			return nil
 		}

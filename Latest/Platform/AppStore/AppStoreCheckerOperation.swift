@@ -210,9 +210,6 @@ final class AppStoreUpdateCheckerOperation: Sendable {
 	
 	// MARK: - Update Check
 	
-	static var sourceType: App.Source {
-		return .appStore
-	}
 	
 	static func canPerformUpdateCheck(forAppAt url: URL) -> Bool {
 		// Mac Apps contain a receipt, iOS apps are only available via the Mac App Store
@@ -239,11 +236,6 @@ final class AppStoreUpdateCheckerOperation: Sendable {
 	
 	
 	// MARK: - Bundle Operations
-	
-	/// Returns the app store receipt path for the app at the given URL, if available.
-	static func receiptPath(forAppAt url: URL) -> String? {
-		AppStoreReceipt.existingURL(forAppAt: url)?.path
-	}
 	
 	/// Returns whether the app at the given URL is an iOS app wrapped to run on macOS.
 	static func isIOSAppBundle(at url: URL) -> Bool {

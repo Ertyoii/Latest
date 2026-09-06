@@ -55,11 +55,9 @@ protocol UpdateCheckCoordinating: AnyObject {
 
 /**
  UpdateCheckCoordinator handles the logic for checking for updates.
- Each new method of checking for updates should be implemented in its own extension and then included in the `updateMethods` array
+ Update sources are registered in `availableCheckers`.
  */
 class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
-
-    typealias UpdateCheckerCallback = (_ app: App.Bundle) -> Void
 
 	/// The object holding the apps found by the checker.
 	var appProvider: AppProviding {
@@ -192,9 +190,8 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
 		}
 
 		let repository = UpdateRepository.newRepository()
-		let prioritizedBundles = Self.prioritizedBundlesForUpdateCheck(bundles)
-		let checkableBundles = prioritizedBundles.filter { bundle in
-			Self.checker(for: bundle.source) != nil
+		let checkableBundles = Self.prioritizedBundlesForUpdateCheck(bundles).filter {
+			Self.checker(for: $0.source) != nil
 		}
 		updateCheckLogger.info(
 			"Scheduled update check generation \(generation, privacy: .public) for \(bundles.count, privacy: .public) bundles and \(checkableBundles.count, privacy: .public) child tasks"
@@ -232,11 +229,7 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
 			guard let self, bundles.indices.contains(indexedResult.index) else { return }
 			self.didCheck(bundles[indexedResult.index], indexedResult.result, generation: generation)
 		}) { bundle in
-			try Task.checkCancellation()
-			guard let result = await Self.check(bundle, repository: repository) else {
-				throw LatestError.updateInfoUnavailable
-			}
-			return try result.get()
+			try await Self.check(bundle, repository: repository)
 		}
 
 		guard updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
@@ -330,39 +323,30 @@ extension UpdateCheckCoordinator {
 		availableCheckers.first { $0.canPerform(url) }?.source
 	}
 
-	static func check(_ bundle: App.Bundle, repository: UpdateRepository?) async -> Result<App.Update, Error>? {
-		guard let checker = checker(for: bundle.source) else { return nil }
-		do {
-			return .success(try await checker.check(bundle, repository))
-		} catch {
-			return .failure(error)
+	static func check(_ bundle: App.Bundle, repository: UpdateRepository?) async throws -> App.Update {
+		guard let checker = checker(for: bundle.source) else {
+			throw LatestError.updateInfoUnavailable
 		}
+		return try await checker.check(bundle, repository)
 	}
 
 	private static func checker(for source: App.Source) -> CheckerDefinition? {
 		availableCheckers.first { $0.source == source }
 	}
 
-	private static func prioritizedBundlesForUpdateCheck(_ bundles: [App.Bundle]) -> [App.Bundle] {
-		bundles.enumerated()
-			.sorted { left, right in
-				let leftPriority = updateCheckPriority(for: left.element.source)
-				let rightPriority = updateCheckPriority(for: right.element.source)
-				if leftPriority == rightPriority {
-					return left.offset < right.offset
-				}
-				return leftPriority < rightPriority
+	/// Preserve discovery order within each priority group.
+	static func prioritizedBundlesForUpdateCheck(_ bundles: [App.Bundle]) -> [App.Bundle] {
+		var supported = [App.Bundle]()
+		var fallback = [App.Bundle]()
+		for bundle in bundles {
+			switch bundle.source {
+			case .sparkle, .appStore:
+				supported.append(bundle)
+			case .homebrew, .none:
+				fallback.append(bundle)
 			}
-			.map(\.element)
-	}
-
-	private static func updateCheckPriority(for source: App.Source) -> Int {
-		switch source {
-		case .sparkle, .appStore:
-			return 0
-		case .homebrew, .none:
-			return 1
 		}
+		return supported + fallback
 	}
 
 }

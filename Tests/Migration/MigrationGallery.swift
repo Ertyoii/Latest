@@ -23,7 +23,6 @@ struct MigrationGalleryScenario: Identifiable {
 		case locations
 		case updateStateShelf
 		case toolbarStateShelf
-		case sidebar
 	}
 
 	enum DetailState {
@@ -199,8 +198,6 @@ struct MigrationGalleryView: View {
 			MigrationUpdateStateShelf()
 		case .toolbarStateShelf:
 			MigrationToolbarStateShelf()
-		case .sidebar:
-			MigrationSidebarFixture()
 		}
 	}
 }
@@ -610,79 +607,5 @@ private struct MigrationToolbarStateShelf: View {
 			.frame(width: 210, height: 42, alignment: .leading)
 			.background(.bar, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 		}
-	}
-}
-
-@MainActor
-private struct MigrationSidebarFixture: View {
-	@StateObject private var viewModel: UpdatesListViewModel
-
-	init() {
-		let apps = Self.makeApps()
-		let viewModel = UpdatesListViewModel(snapshot: AppListSnapshot(withApps: apps, filterQuery: nil))
-		viewModel.select(apps.first)
-		_viewModel = StateObject(wrappedValue: viewModel)
-	}
-
-	var body: some View {
-		ZStack {
-			Color(nsColor: .windowBackgroundColor)
-			NativeUpdatesList(
-				viewModel: viewModel,
-				showsSupportStatusOverride: true
-			)
-		}
-	}
-
-	private static func makeApps() -> [App] {
-		[
-			makeApp(
-				name: "Notes",
-				path: "/System/Applications/Notes.app",
-				currentVersion: "26.4",
-				remoteVersion: "26.5",
-				date: Date(timeIntervalSince1970: 1_753_000_000)
-			),
-			makeApp(
-				name: "Terminal",
-				path: "/System/Applications/Utilities/Terminal.app",
-				currentVersion: "2.14",
-				remoteVersion: "2.15",
-				date: Date(timeIntervalSince1970: 1_752_000_000)
-			),
-			makeApp(
-				name: "TextEdit",
-				path: "/System/Applications/TextEdit.app",
-				currentVersion: "1.19",
-				remoteVersion: "1.20",
-				date: Date(timeIntervalSince1970: 1_751_000_000)
-			)
-		]
-	}
-
-	private static func makeApp(
-		name: String,
-		path: String,
-		currentVersion: String,
-		remoteVersion: String,
-		date: Date
-	) -> App {
-		let bundle = App.Bundle(
-			version: Version(versionNumber: currentVersion, buildNumber: nil),
-			name: name,
-			bundleIdentifier: "com.example.migration.\(name)",
-			fileURL: URL(fileURLWithPath: path, isDirectory: true),
-			source: .appStore
-		)
-		let update = App.Update(
-			app: bundle,
-			remoteVersion: Version(versionNumber: remoteVersion, buildNumber: nil),
-			minimumOSVersion: nil,
-			source: .appStore,
-			date: date,
-			releaseNotes: nil,
-			updateAction: .builtIn { _ in }
-		)
-		return App(bundle: bundle, update: .success(update), isIgnored: false)
 	}
 }

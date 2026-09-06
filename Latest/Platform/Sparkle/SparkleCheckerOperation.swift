@@ -42,7 +42,6 @@ final class SparkleUpdateCheckerOperation: NSObject, @unchecked Sendable {
 		feedURL(from: url) != nil
 	}
 
-	static var sourceType: App.Source { .sparkle }
 
 	private static func feedURL(from appURL: URL) -> URL? {
 		guard let bundle = Bundle(path: appURL.path) else { return nil }

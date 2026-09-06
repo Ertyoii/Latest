@@ -732,7 +732,7 @@ final class ReleaseNotesMarkupTest: XCTestCase {
 		<script>self.__next_f.push([1,"[[\\"$\\",\\"$L105\\",\\"Zed-aarch64.dmg\\",{\\"release\\":{\\"version\\":\\"1.4.4\\",\\"description\\":\\"- copilot: Fixed an issue where using GPT models would return an error in `invalid_request_body` ([#57979](https://github.com/zed-industries/zed/pull/57979))\\\\r\\\\n\\\\r\\\\n\\",\\"assets\\":[\\"Zed-aarch64.dmg\\"],\\"published_at\\":\\"2026-05-28T20:55:02.000Z\\",\\"channelType\\":\\"stable\\",\\"isLatest\\":true},\\"asset\\":\\"Zed-aarch64.dmg\\"}]]"])</script>
 		"""
 
-		let text = try XCTUnwrap(ReleaseNotesMarkup.zedReleaseText(fromHTML: html, version: "1.4.4", pageURL: URL(string: "https://zed.dev/releases/stable/1.4.4")!))
+		let text = try XCTUnwrap(ZedReleaseNotesExtractor.zedReleaseText(fromHTML: html, version: "1.4.4", pageURL: URL(string: "https://zed.dev/releases/stable/1.4.4")!))
 
 		XCTAssertTrue(text.contains("invalid_request_body"))
 		XCTAssertFalse(text.contains(#"\r"#))
@@ -753,7 +753,7 @@ final class ReleaseNotesMarkupTest: XCTestCase {
 		<script>self.__next_f.push([1,"This week's release includes the ability to open a Git diff for a single file.\\r\\n\\r\\n## Features\\r\\n\\r\\n- Agent: Added a way to share skills via links.\\r\\n"])</script>
 		"""
 
-		let text = try XCTUnwrap(ReleaseNotesMarkup.zedReleaseText(fromHTML: html, version: "1.6.3", pageURL: URL(string: "https://zed.dev/releases/stable/1.6.3")!))
+		let text = try XCTUnwrap(ZedReleaseNotesExtractor.zedReleaseText(fromHTML: html, version: "1.6.3", pageURL: URL(string: "https://zed.dev/releases/stable/1.6.3")!))
 
 		XCTAssertTrue(text.hasPrefix("This week's release"))
 		XCTAssertTrue(text.contains("Agent: Added a way to share skills"))

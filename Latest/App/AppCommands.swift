@@ -97,14 +97,6 @@ final class AppCommands {
 		settings.sortOrder = order
 	}
 
-	func toggleShowInstalledUpdates() {
-		settings.showInstalledUpdates.toggle()
-	}
-
-	func toggleShowIgnoredUpdates() {
-		settings.showIgnoredUpdates.toggle()
-	}
-
 	var sortOrder: AppListSettings.SortOptions {
 		settings.sortOrder
 	}

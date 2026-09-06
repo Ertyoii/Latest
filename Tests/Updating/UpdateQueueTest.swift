@@ -114,25 +114,27 @@ final class UpdateQueueTest: XCTestCase {
 		observation.cancel()
 	}
 
-	func testGlobalStateFeedPublishesIdentifierAndCurrentState() async {
-		let identifier = URL(fileURLWithPath: "/Applications/GlobalStream-\(UUID().uuidString).app")
+	func testBothPerAppFeedsReceiveSubsequentUpdates() async {
+		let queue = UpdateQueue()
+		let identifier = URL(fileURLWithPath: "/Applications/Feeds-\(UUID().uuidString).app")
 		let operation = TestUpdateOperation(identifier: identifier)
-		var iterator = UpdateQueue.shared.stateChanges().makeAsyncIterator()
-
-		UpdateQueue.shared.addOperation(operation)
-		guard let change = await iterator.next() else {
-			return XCTFail("Expected a global queue state change")
+		defer { operation.complete() }
+		let states = queue.states(for: identifier)
+		let changes = queue.stateChanges(for: identifier).changes
+		let received = expectation(description: "Both feeds receive an update")
+		received.expectedFulfillmentCount = 2
+		let tasks = [states, changes].map { stream in
+			Task {
+				for await state in stream {
+					if case .none = state { continue }
+					received.fulfill()
+					break
+				}
+			}
 		}
-
-		XCTAssertEqual(change.identifier, identifier)
-		if case .pending = change.state {
-			// Expected state assigned by UpdateOperation before execution.
-		} else if case .initializing = change.state {
-			// A fast operation may start before the main actor receives the event.
-		} else {
-			XCTFail("Expected pending or initializing state, got \(change.state)")
-		}
-		operation.complete()
+		defer { tasks.forEach { $0.cancel() } }
+		queue.addOperation(operation)
+		await fulfillment(of: [received], timeout: 2)
 	}
 
 }
@@ -152,6 +154,28 @@ private final class TestUpdateOperation: UpdateOperation, @unchecked Sendable {
 
 	func complete() {
 		finish()
+	}
+}
+
+final class UpdateCheckSchedulingTest: XCTestCase {
+	func testPriorityGroupingPreservesOrderAndDuplicates() {
+		let sources: [App.Source] = [.none, .sparkle, .homebrew, .appStore, .none, .sparkle]
+		let bundles = sources.enumerated().map { index, source in
+			App.Bundle(
+				version: Version(versionNumber: "1", buildNumber: nil),
+				name: "App \(index)",
+				bundleIdentifier: "test.\(index)",
+				fileURL: URL(fileURLWithPath: "/Applications/Test-\(index).app"),
+				source: source,
+				modificationDate: .distantPast
+			)
+		}
+		let input = bundles + [bundles[1]]
+		XCTAssertEqual(
+			UpdateCheckCoordinator.prioritizedBundlesForUpdateCheck(input).map(\.identifier),
+			[1, 3, 5, 1, 0, 2, 4].map { bundles[$0].identifier }
+		)
+		XCTAssertTrue(UpdateCheckCoordinator.prioritizedBundlesForUpdateCheck([]).isEmpty)
 	}
 }
 
@@ -370,4 +394,36 @@ final class AppUpdatingBoundaryTest: XCTestCase {
                                 releaseNotes: nil, updateAction: action)
         return App(bundle: bundle, update: .success(update), isIgnored: false)
     }
+}
+
+@MainActor
+final class DisplayLinkTest: XCTestCase {
+	func testFiniteAnimationStopsAfterReachingItsDuration() async {
+		let finished = expectation(description: "Animation completes")
+		let link = DisplayLink(duration: 0.03) { progress in
+			if progress >= 1 { finished.fulfill() }
+		}
+		defer { link.invalidate() }
+		link.start()
+		await fulfillment(of: [finished], timeout: 2)
+		XCTAssertFalse(link.isRunning)
+		XCTAssertGreaterThanOrEqual(link.progress, 1)
+	}
+
+	func testIndefiniteAnimationContinuesUntilInvalidated() async {
+		let advanced = expectation(description: "Spinner advances")
+		var received = false
+		let link = DisplayLink(duration: nil) { progress in
+			if progress >= 2, !received {
+				received = true
+				advanced.fulfill()
+			}
+		}
+		defer { link.invalidate() }
+		link.start()
+		await fulfillment(of: [advanced], timeout: 2)
+		XCTAssertTrue(link.isRunning)
+		link.invalidate()
+		XCTAssertFalse(link.isRunning)
+	}
 }

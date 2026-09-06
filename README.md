@@ -1,5 +1,7 @@
 # Latest
 
+This fork maintains Latest Dev for macOS 26+. The download and donation links below refer to the upstream Latest project; build this fork from source to use its changes.
+
 [![Translation status][image-1]][1]
 
 This is Latest, a small utility app for the Mac. Latest is a free and open-source app for macOS that checks if all your apps are up to date. Get a quick overview of which apps changed and what changed and update them right away. Latest currently supports apps downloaded from the Mac App Store and apps that use Sparkle for updates, which covers most of the apps on the market.
@@ -30,9 +32,19 @@ After that, run `brew install --cask latest` to install the current version of L
 
 Install `ripgrep` (`brew install ripgrep`) for the repository checks. Run `./script/test.sh` for architecture, behavior, and visual regression tests. Swift packages are pinned in `Package.resolved`. See [Architecture](docs/ARCHITECTURE.md) for dependency boundaries and verification.
 
-You can build Latest directly on your machine. To do that, you have to download the source code by cloning the repository: `git clone --recurse-submodules git@github.com:mangerlahn/Latest.git`.
+You can build Latest directly on your machine. To do that, you have to download the source code by cloning the repository: `git clone https://github.com/Ertyoii/Latest.git`.
 
-Then you can open the `Latest.xcodeproj` and hit *Build and Run*. Make sure that the `Latest` scheme is selected.
+There are no Git submodules. Sparkle is resolved through Swift Package Manager using the checked-in `Latest.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`.
+
+Open `Latest.xcodeproj` and select the `Latest` scheme, or run `./script/build_and_run.sh` to build and launch Latest Dev. The Codex Run action uses that same script.
+
+For editors using xcode-build-server, generate the machine-specific configuration locally after installing that tool:
+
+```sh
+xcode-build-server config -project Latest.xcodeproj -scheme Latest --build_root "$PWD/build/DerivedData"
+```
+
+`buildServer.json` is ignored because it contains local executable and build paths.
 
 ## Contribution
 
