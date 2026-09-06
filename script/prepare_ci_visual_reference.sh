@@ -22,7 +22,14 @@ relative = Path("Tests/Migration/MigrationVisualRegressionTest.swift")
 source = (root / relative).read_text().split("/// Captures the shipping composition,")[0]
 # Only this disposable original-app harness records without asserting against
 # another machine's images. Candidate tests retain every comparison.
-source = source.replace("\t\tguard let baselineData =", "\t\treturn\n\t\tguard let baselineData =", 1)
+source, baseline_guard_replacements = re.subn(
+    r"(?m)^([ \t]*)guard let baselineData =",
+    r"\1return\n\1guard let baselineData =",
+    source,
+    count=1,
+)
+if baseline_guard_replacements != 1:
+    raise SystemExit("Could not disable baseline comparison in the reference harness")
 (reference / relative).write_text(source)
 lock = Path("Latest.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved")
 (reference / lock).parent.mkdir(parents=True, exist_ok=True)
