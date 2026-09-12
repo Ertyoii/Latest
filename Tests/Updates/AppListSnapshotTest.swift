@@ -36,11 +36,11 @@ final class AppListSnapshotTest: XCTestCase {
 
     XCTAssertEqual(snapshot.entries.count, 6)
     XCTAssertEqual(section(at: 0, in: snapshot)?.numberOfApps, 1)
-    XCTAssertEqual(snapshot.app(at: 1)?.name, "Alpha")
+    XCTAssertEqual(snapshot.sections[0].apps[0].name, "Alpha")
     XCTAssertEqual(section(at: 2, in: snapshot)?.numberOfApps, 1)
-    XCTAssertEqual(snapshot.app(at: 3)?.name, "Beta")
+    XCTAssertEqual(snapshot.sections[1].apps[0].name, "Beta")
     XCTAssertEqual(section(at: 4, in: snapshot)?.numberOfApps, 1)
-    XCTAssertEqual(snapshot.app(at: 5)?.name, "Gamma")
+    XCTAssertEqual(snapshot.sections[2].apps[0].name, "Gamma")
   }
 
   func testSnapshotFilterKeepsOnlyMatchingAppsAndSections() {
@@ -53,7 +53,7 @@ final class AppListSnapshotTest: XCTestCase {
 
     XCTAssertEqual(snapshot.entries.count, 2)
     XCTAssertEqual(section(at: 0, in: snapshot)?.numberOfApps, 1)
-    XCTAssertEqual(snapshot.app(at: 1)?.name, "Alpha")
+    XCTAssertEqual(snapshot.sections[0].apps[0].name, "Alpha")
   }
 
   func testSearchRefilterMatchesFullSnapshotRebuild() {
@@ -93,8 +93,8 @@ final class AppListSnapshotTest: XCTestCase {
 
     let snapshot = AppListSnapshot(withApps: [older, newer], filterQuery: nil)
 
-    XCTAssertEqual(snapshot.app(at: 1)?.name, "Z Newer")
-    XCTAssertEqual(snapshot.app(at: 2)?.name, "A Older")
+    XCTAssertEqual(snapshot.sections[0].apps[0].name, "Z Newer")
+    XCTAssertEqual(snapshot.sections[0].apps[1].name, "A Older")
   }
 
   func testSnapshotMatchesUpdatedAppByIdentifier() {
@@ -107,6 +107,33 @@ final class AppListSnapshotTest: XCTestCase {
     let snapshot = AppListSnapshot(withApps: [original], filterQuery: nil)
 
     XCTAssertEqual(snapshot.firstIndex(of: refreshed), snapshot.firstIndex(of: original))
+  }
+
+  func testTableAppendReloadsWhenExistingAppContentChanged() {
+    let original = makeApp(name: "Alpha", versionNumber: "1.0")
+    let refreshed = makeApp(
+      name: "Alpha", versionNumber: "1.0", remoteVersionNumber: "2.0", appURL: original.fileURL)
+    let appended = makeApp(name: "Beta", versionNumber: "1.0")
+    let diff = TableViewSnapshotDiff(from: [.app(original)], to: [.app(refreshed), .app(appended)])
+    guard case .reloadAll = diff.change else {
+      return XCTFail("Appending must not leave changed existing rows stale")
+    }
+  }
+
+  func testTableAppendAndRemovalPreserveUnchangedPrefix() {
+    let app = makeApp(name: "Alpha", versionNumber: "1.0")
+    let other = makeApp(name: "Beta", versionNumber: "1.0")
+    let append = TableViewSnapshotDiff(from: [.app(app)], to: [.app(app), .app(other)])
+    guard case .append(let appended) = append.change else { return XCTFail("Expected append") }
+    XCTAssertEqual(appended, IndexSet(integer: 1))
+    let removal = TableViewSnapshotDiff(from: [.app(app), .app(other)], to: [.app(app)])
+    guard case .remove(let removed) = removal.change else { return XCTFail("Expected removal") }
+    XCTAssertEqual(removed, IndexSet(integer: 1))
+    let changedRemoval = TableViewSnapshotDiff(
+      from: [.app(app), .app(other)], to: [.app(app.with(ignoredState: true))])
+    guard case .reloadAll = changedRemoval.change else {
+      return XCTFail("Removing must not leave changed existing rows stale")
+    }
   }
 
   private func configureSettings() {

@@ -105,6 +105,66 @@ final class ReleaseNotesProviderTest: XCTestCase {
   }
 
   @MainActor
+  func testDetailRefreshesChangedNotesButDoesNotReloadForPresentationChanges() {
+    let provider = DeferredNotesProvider()
+    let model = ReleaseNotesDetailViewModel(releaseNotesProvider: provider)
+    let first = makeReleaseNotesApp(html: "<p>Original content.</p>")
+    let changed = makeReleaseNotesApp(html: "<p>Changed content.</p>")
+    model.display(first)
+    let ignored = first.with(ignoredState: true)
+    model.display(ignored)
+    XCTAssertTrue(model.app === ignored)
+    XCTAssertEqual(provider.completions.count, 1)
+    model.display(changed)
+    XCTAssertEqual(provider.completions.count, 2)
+    provider.completions[1](.success(NSAttributedString(string: "New")))
+    provider.completions[0](.success(NSAttributedString(string: "Old")))
+    guard case .text(let text) = model.contentState else { return XCTFail("Expected text") }
+    XCTAssertEqual(text.string, "New")
+    model.display(nil)
+    provider.completions[1](.success(NSAttributedString(string: "Late")))
+    guard case .message = model.contentState else { return XCTFail("Selection was cleared") }
+  }
+
+  @MainActor
+  func testProviderDiskHitDoesNotRewriteOrRenewPayload() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cache = ReleaseNotesPersistentCache(directoryURL: directory)
+    let app = makeReleaseNotesApp(html: "<p>Unused source.</p>")
+    let key = ReleaseNotesCacheKey(app: app).stableIdentifier
+    let resolved = ResolvedReleaseNotes(
+      content: NSAttributedString(string: "Cached notes"),
+      quality: .genuine, provenance: .changelog)
+    let encoded = try XCTUnwrap(ReleaseNotesPersistentCache.payload(from: resolved))
+    let storedAt = Date(timeIntervalSinceNow: -3600)
+    let payload = ReleaseNotesPersistentPayload(
+      richTextData: encoded.richTextData,
+      qualityRawValue: encoded.qualityRawValue, provenanceRawValue: encoded.provenanceRawValue,
+      storedAt: storedAt)
+    await cache.store(payload, forKey: key)
+    let file = try XCTUnwrap(
+      FileManager.default.contentsOfDirectory(
+        at: directory,
+        includingPropertiesForKeys: nil
+      ).first)
+    let before = try Data(contentsOf: file)
+    let modificationDate = try file.resourceValues(forKeys: [.contentModificationDateKey])
+      .contentModificationDate
+    let provider = ReleaseNotesProvider(persistentCache: cache)
+    let notes = try await releaseNotes(for: app, provider: provider)
+    XCTAssertEqual(notes.string, "Cached notes")
+    // Drain main-actor tasks before inspecting the serial cache actor.
+    await Task.yield()
+    let loaded = await cache.payload(forKey: key)
+    XCTAssertEqual(loaded?.storedAt, storedAt)
+    XCTAssertEqual(try Data(contentsOf: file), before)
+    XCTAssertEqual(
+      try file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+      modificationDate)
+  }
+
+  @MainActor
   private func releaseNotes(for app: App, provider: ReleaseNotesProvider) async throws
     -> NSAttributedString
   {
@@ -146,4 +206,12 @@ final class ReleaseNotesProviderTest: XCTestCase {
     return App(bundle: bundle, update: .success(update), isIgnored: false)
   }
 
+}
+
+@MainActor
+private final class DeferredNotesProvider: ReleaseNotesProviding {
+  var completions = [ReleaseNotesProvider.Completion]()
+  func releaseNotes(for app: App, with completion: @escaping ReleaseNotesProvider.Completion) {
+    completions.append(completion)
+  }
 }

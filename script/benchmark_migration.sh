@@ -24,19 +24,22 @@ trap 'rm -f "$FLAG_FILE"' EXIT
 xcodebuild \
   -project "$ROOT_DIR/Latest.xcodeproj" \
   -scheme Latest \
-  -configuration Debug \
+  -configuration Release \
   -destination 'platform=macOS' \
   -derivedDataPath "$DERIVED_DATA" \
   -resultBundlePath "$RESULT_BUNDLE" \
+  -disableAutomaticPackageResolution \
+  -onlyUsePackageVersionsFromResolvedFile \
   CLANG_MODULE_CACHE_PATH="$MODULE_CACHE" \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY="" \
   -enableCodeCoverage NO \
-  -only-testing:'Latest Tests/MigrationPerformanceTest/testMigrationPerformanceMatrix' \
+  ENABLE_TESTABILITY=YES \
+  -only-testing:'Latest Tests/MigrationPerformanceTest' \
   test 2>&1 | tee "$LOG_FILE"
 
-rg '^MIGRATION_(CONFIGURATION|BENCHMARK|MEMORY)' "$LOG_FILE" > "$REPORT_FILE"
+rg '^MIGRATION_(CONFIGURATION|BENCHMARK|MEMORY|HEAP)' "$LOG_FILE" > "$REPORT_FILE"
 
 echo
 echo "Migration benchmark summary ($LABEL):"
@@ -52,6 +55,15 @@ BEGIN {
 	statistics["sidebar_long_jump_main_thread"] = "p95_ms"
 	budgets["selection_to_detail"] = 8
 	statistics["selection_to_detail"] = "p95_ms"
+	# Full provider-to-render paths: reserve a frame for a memory hit, and
+	# bounded extra latency for RTF decoding or cold markup preparation.
+	budgets["selection_to_render_memory"] = 16
+	statistics["selection_to_render_memory"] = "p95_ms"
+	budgets["selection_to_render_disk"] = 50
+	statistics["selection_to_render_disk"] = "p95_ms"
+	budgets["selection_to_render_cold"] = 100
+	statistics["selection_to_render_cold"] = "p95_ms"
+
 }
 
 $1 == "MIGRATION_BENCHMARK" {

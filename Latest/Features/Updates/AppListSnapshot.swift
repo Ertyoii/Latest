@@ -36,19 +36,14 @@ struct AppListSnapshot {
     filterQuery: String?,
     settings: any AppListSettingsProviding = AppListSettings.shared
   ) {
-    self.filterQuery = filterQuery
-    self.apps = apps
-    self.settings = settings
-    let preparedSections = Self.prepareSections(from: apps, settings: settings)
-    self.preparedSections = preparedSections
-    let sections = Self.generateSections(from: preparedSections, filterQuery: filterQuery)
-    self.sections = sections
-    let entries = Self.generateEntries(from: sections)
-    self.entries = entries
-    self.entryIndexesByAppIdentifier = Self.entryIndexesByAppIdentifier(entries)
-    self.appIdentifiers = Set(apps.map(\.identifier))
-    self.appsByIdentifier = Dictionary(
-      apps.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
+    self.init(
+      apps: apps,
+      filterQuery: filterQuery,
+      settings: settings,
+      preparedSections: Self.prepareSections(from: apps, settings: settings),
+      appsByIdentifier: Dictionary(
+        apps.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
+    )
   }
 
   private init(
@@ -56,7 +51,6 @@ struct AppListSnapshot {
     filterQuery: String?,
     settings: any AppListSettingsProviding,
     preparedSections: PreparedSections,
-    appIdentifiers: Set<App.Bundle.Identifier>,
     appsByIdentifier: [App.Bundle.Identifier: App]
   ) {
     self.filterQuery = filterQuery
@@ -68,7 +62,6 @@ struct AppListSnapshot {
     let entries = Self.generateEntries(from: sections)
     self.entries = entries
     self.entryIndexesByAppIdentifier = Self.entryIndexesByAppIdentifier(entries)
-    self.appIdentifiers = appIdentifiers
     self.appsByIdentifier = appsByIdentifier
   }
 
@@ -84,14 +77,8 @@ struct AppListSnapshot {
       filterQuery: filterQuery,
       settings: settings,
       preparedSections: preparedSections,
-      appIdentifiers: appIdentifiers,
       appsByIdentifier: appsByIdentifier
     )
-  }
-
-  /// Returns an updated snapshot.
-  func updated() -> AppListSnapshot {
-    return AppListSnapshot(withApps: self.apps, filterQuery: self.filterQuery, settings: settings)
   }
 
   /// The user-facable, sorted and filtered list of apps and sections. Observers of the data store will be notified, when this list changes.
@@ -101,8 +88,6 @@ struct AppListSnapshot {
   let sections: [SectionContent]
 
   private let entryIndexesByAppIdentifier: [App.Bundle.Identifier: Int]
-
-  private let appIdentifiers: Set<App.Bundle.Identifier>
 
   private let appsByIdentifier: [App.Bundle.Identifier: App]
 
@@ -226,21 +211,8 @@ struct AppListSnapshot {
 
   // MARK: - Accessors
 
-  /// Returns the app at the given index, if any.
-  func app(at index: Int) -> App? {
-    if case .app(let app) = self.entries[index] {
-      return app
-    }
-
-    return nil
-  }
-
   func firstIndex(of app: App) -> Int? {
     entryIndexesByAppIdentifier[app.identifier]
-  }
-
-  func contains(_ app: App) -> Bool {
-    return appIdentifiers.contains(app.identifier)
   }
 
   func app(withIdentifier identifier: App.Bundle.Identifier?) -> App? {
@@ -248,39 +220,24 @@ struct AppListSnapshot {
     return appsByIdentifier[identifier]
   }
 
-  /// Returns whether there is a section at the given index
-  func isSectionHeader(at index: Int) -> Bool {
-    if case .section(_) = self.entries[index] {
-      return true
-    }
-
-    return false
-  }
-
   // MARK: - Section Builder
 
   private static func updatableAppsSection(withCount numberOfApps: Int) -> Section {
     let title = NSLocalizedString(
       "AvailableUpdatesSection", comment: "Table Section Header for available updates")
-    let shortTitle = NSLocalizedString(
-      "AvailableSection", comment: "Touch Bar section title for available updates")
-    return Section(title: title, shortTitle: shortTitle, numberOfApps: numberOfApps)
+    return Section(title: title, numberOfApps: numberOfApps)
   }
 
   private static func updatedAppsSection(withCount numberOfApps: Int) -> Section {
     let title = NSLocalizedString(
       "InstalledAppsSection", comment: "Table Section Header for already installed apps")
-    let shortTitle = NSLocalizedString(
-      "InstalledSection", comment: "Touch Bar section title for installed apps")
-    return Section(title: title, shortTitle: shortTitle, numberOfApps: numberOfApps)
+    return Section(title: title, numberOfApps: numberOfApps)
   }
 
   private static func ignoredAppsSection(withCount numberOfApps: Int) -> Section {
     let title = NSLocalizedString(
       "IgnoredAppsSection", comment: "Table Section Header for ignored apps")
-    let shortTitle = NSLocalizedString(
-      "IgnoredSection", comment: "Touch Bar section title for ignored apps")
-    return Section(title: title, shortTitle: shortTitle, numberOfApps: numberOfApps)
+    return Section(title: title, numberOfApps: numberOfApps)
   }
 
   private static func entryIndexesByAppIdentifier(_ entries: [Entry]) -> [App.Bundle.Identifier:
@@ -330,23 +287,8 @@ extension AppListSnapshot {
     /// The title of the section.
     let title: String
 
-    /// A shorter representation of the sections title.
-    let shortTitle: String
-
     /// The number of apps this section encloses.
     let numberOfApps: Int
-
-    // MARK: - Protocol Overrides
-
-    /// Exclude the number of apps from the function
-    static func == (lhs: Section, rhs: Section) -> Bool {
-      return lhs.title == rhs.title && lhs.numberOfApps == rhs.numberOfApps
-    }
-
-    /// Exclude the number of apps from the function
-    func hash(into hasher: inout Hasher) {
-      hasher.combine(title)
-    }
 
   }
 }

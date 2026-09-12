@@ -79,6 +79,7 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
   }
 
   func display(_ app: App?) {
+    if self.app !== app { self.app = app }
     let nextKey = app.map(Self.displayKey(for:))
     guard nextKey != displayedKey else { return }
     displayedKey = nextKey
@@ -87,7 +88,6 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
     let requestID = displayRequestID
     loadingTask?.cancel()
     loadingTask = nil
-    self.app = app
     MigrationTelemetry.shared.detailCommitted()
 
     guard let app else {
@@ -126,15 +126,6 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
   }
 
   static func displayKey(for app: App) -> String {
-    let latestUpdateDate = app.latestUpdateDate?.timeIntervalSinceReferenceDate ?? -1
-    let version = app.localizedVersionInformation?.combined(includeNew: app.updateAvailable) ?? ""
-    return [
-      app.identifier.absoluteString,
-      version,
-      String(latestUpdateDate),
-      app.externalUpdaterName ?? "",
-      app.source.supportState.compactLabel,
-      String(ReleaseNotesSourceCatalog.revision),
-    ].joined(separator: "|")
+    ReleaseNotesCacheKey(app: app).stableIdentifier
   }
 }

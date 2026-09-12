@@ -84,6 +84,14 @@ final class ComplexityBenchmarkTest: XCTestCase {
       throw XCTSkip("Run script/benchmark_complexity.sh to execute complexity benchmarks.")
     }
 
+    #if DEBUG
+      let configuration = "Debug"
+    #else
+      let configuration = "Release"
+    #endif
+    FileHandle.standardError.write(
+      Data("BENCHMARK_CONFIGURATION configuration=\(configuration) samples=30\n".utf8))
+
     configureSettings()
 
     let dataStoreBundles = makeBundles(count: 2_000)
@@ -124,7 +132,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
       appCount: 250, fillerDirectoryCount: 250)
     defer { try? FileManager.default.removeItem(at: bundleCollectionRoot) }
 
-    benchmark("app_data_store_update_batch", iterations: 5) {
+    benchmark("app_data_store_update_batch", iterations: 30) {
       let store = AppDataStore()
       _ = store.set(appBundles: Set(dataStoreBundles))
 
@@ -142,7 +150,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
       return checksum
     }
 
-    benchmark("app_list_snapshot_build_and_lookup", iterations: 7) {
+    benchmark("app_list_snapshot_build_and_lookup", iterations: 30) {
       let snapshot = AppListSnapshot(withApps: snapshotApps, filterQuery: nil)
       var checksum = snapshot.entries.count
       for app in lookupApps {
@@ -151,7 +159,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
       return checksum
     }
 
-    benchmark("app_list_search_refilter", iterations: 7) {
+    benchmark("app_list_search_refilter", iterations: 30) {
       var checksum = 0
       for query in searchQueries {
         checksum &+= searchSnapshot.refiltered(with: query).entries.count
@@ -159,7 +167,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
       return checksum
     }
 
-    benchmark("app_list_search_full_rebuild", iterations: 7) {
+    benchmark("app_list_search_full_rebuild", iterations: 30) {
       var checksum = 0
       for query in searchQueries {
         checksum &+= AppListSnapshot(withApps: snapshotApps, filterQuery: query).entries.count
@@ -167,7 +175,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
       return checksum
     }
 
-    benchmark("version_comparison_repeated_parse", iterations: 7) {
+    benchmark("version_comparison_repeated_parse", iterations: 30) {
       var checksum = 0
       for pair in versionPairs {
         if pair.local < pair.remote {
@@ -177,7 +185,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
       return checksum
     }
 
-    try benchmark("release_notes_markup_parse_and_render", iterations: 5) {
+    try benchmark("release_notes_markup_parse_and_render", iterations: 30) {
       try ReleaseNotesMarkup.attributedString(
         from: releaseNotesMarkup,
         baseURL: URL(string: "https://example.com/changelog"),
@@ -185,7 +193,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
       ).get().length
     }
 
-    await benchmarkAsync("release_notes_persistent_cache_read", iterations: 7) {
+    await benchmarkAsync("release_notes_persistent_cache_read", iterations: 30) {
       var checksum = 0
       for index in 0..<100 {
         checksum &+=
@@ -194,7 +202,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
       return checksum
     }
 
-    try benchmark("update_repository_catalog_decode", iterations: 5) {
+    try benchmark("update_repository_catalog_decode", iterations: 30) {
       let entries = try JSONDecoder().decode(
         [UpdateRepository.Entry].self, from: repositoryCatalogData)
       return entries.reduce(into: 0) { checksum, entry in
@@ -203,7 +211,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
       }
     }
 
-    try benchmark("update_repository_compact_index_decode", iterations: 7) {
+    try benchmark("update_repository_compact_index_decode", iterations: 30) {
       let index = try PropertyListDecoder().decode(
         UpdateRepositoryCompactIndex.self, from: compactRepositoryData)
       let entries = index.entries
@@ -213,7 +221,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
       }
     }
 
-    benchmark("update_repository_entry_metadata_and_matching", iterations: 5) {
+    benchmark("update_repository_entry_metadata_and_matching", iterations: 30) {
       var checksum = 0
       for entry in repositoryEntries {
         checksum &+= entry.version.versionNumber?.count ?? 0
@@ -231,7 +239,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
       return checksum
     }
 
-    benchmark("update_repository_lazy_metadata_and_matching", iterations: 5) {
+    benchmark("update_repository_lazy_metadata_and_matching", iterations: 30) {
       var checksum = 0
       for (index, group) in repositoryCandidateGroups.enumerated() {
         guard
@@ -252,11 +260,32 @@ final class ComplexityBenchmarkTest: XCTestCase {
       return checksum
     }
 
-    benchmark("bundle_collection_path_filtering", iterations: 5) {
+    benchmark("bundle_collection_path_filtering", iterations: 30) {
       BundleCollector.collectBundles(at: bundleCollectionRoot).count
     }
 
-    await benchmarkAsync("update_check_end_to_end", iterations: 7) {
+    let overlapBundles = Array(dataStoreBundles.prefix(100))
+    benchmark("update_result_acceptance_overlap", iterations: 30) {
+      let store = AppDataStore()
+      let generations = UpdateCheckGenerationTracker()
+      let staleGeneration = generations.begin()
+      DispatchQueue.concurrentPerform(iterations: 8) { _ in
+        let generation = generations.begin()
+        for bundle in overlapBundles {
+          _ = generations.withCurrent(generation) { store.set(appBundle: bundle) }
+        }
+      }
+      let latest = generations.begin()
+      for bundle in overlapBundles {
+        _ = generations.withCurrent(latest) { store.set(appBundle: bundle) }
+      }
+      let rejected = generations.withCurrent(staleGeneration) { store.set(appBundles: []) }
+      XCTAssertNil(rejected)
+      XCTAssertEqual(store.apps.count, overlapBundles.count)
+      return store.apps.count
+    }
+
+    await benchmarkAsync("update_check_scheduler_fixture", iterations: 30) {
       await self.runStructuredUpdateCheckBatch(taskCount: 120, maximumConcurrentChecks: 6)
     }
   }

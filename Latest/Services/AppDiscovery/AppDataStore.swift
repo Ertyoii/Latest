@@ -17,16 +17,9 @@ final class AppDataStore: AppProviding, Sendable {
     let value: UserDefaults
   }
   private struct State: Sendable {
-    var apps = Set<App>()
     var appsByIdentifier = [App.Bundle.Identifier: App]()
     var ignoredAppIdentifiers: Set<String>
     let preferences: Preferences
-
-    mutating func update(_ app: App) {
-      if let old = appsByIdentifier[app.identifier] { apps.remove(old) }
-      apps.insert(app)
-      appsByIdentifier[app.identifier] = app
-    }
   }
 
   private let state: Mutex<State>
@@ -44,7 +37,7 @@ final class AppDataStore: AppProviding, Sendable {
       ))
   }
 
-  var apps: Set<App> { state.withLock { $0.apps } }
+  var apps: [App] { state.withLock { Array($0.appsByIdentifier.values) } }
   var updatableApps: [App] {
     apps.filter { $0.updateAvailable && $0.usesBuiltInUpdater && !$0.isIgnored }
   }
@@ -56,19 +49,21 @@ final class AppDataStore: AppProviding, Sendable {
 
   func set(appBundles: Set<App.Bundle>) -> Set<App> {
     let added = state.withLock { state in
-      let oldApps = state.apps
-      let apps = Set(
-        appBundles.map { bundle in
-          state.appsByIdentifier[bundle.identifier]?.with(bundle: bundle)
-            ?? App(
-              bundle: bundle, update: nil,
-              isIgnored: state.ignoredAppIdentifiers.contains(bundle.bundleIdentifier))
-        })
-      state.apps = apps
-      state.appsByIdentifier = apps.reduce(into: [:]) { index, app in
-        index[app.identifier] = index[app.identifier] ?? app
+      var added = Set<App>()
+      var appsByIdentifier = [App.Bundle.Identifier: App]()
+      appsByIdentifier.reserveCapacity(appBundles.count)
+      for bundle in appBundles {
+        let previous = state.appsByIdentifier[bundle.identifier]
+        let app =
+          previous?.with(bundle: bundle)
+          ?? App(
+            bundle: bundle, update: nil,
+            isIgnored: state.ignoredAppIdentifiers.contains(bundle.bundleIdentifier))
+        appsByIdentifier[bundle.identifier] = app
+        if previous != app { added.insert(app) }
       }
-      return apps.subtracting(oldApps)
+      state.appsByIdentifier = appsByIdentifier
+      return added
     }
     scheduleFilterUpdate()
     return added
@@ -81,7 +76,7 @@ final class AppDataStore: AppProviding, Sendable {
         ?? App(
           bundle: bundle, update: nil,
           isIgnored: state.ignoredAppIdentifiers.contains(bundle.bundleIdentifier))
-      state.update(app)
+      state.appsByIdentifier[app.identifier] = app
       return app
     }
     scheduleFilterUpdate()
@@ -94,7 +89,7 @@ final class AppDataStore: AppProviding, Sendable {
         state.appsByIdentifier[bundle.identifier]?.isIgnored
         ?? state.ignoredAppIdentifiers.contains(bundle.bundleIdentifier)
       let app = App(bundle: bundle, update: update, isIgnored: ignored)
-      state.update(app)
+      state.appsByIdentifier[app.identifier] = app
       return app
     }
     scheduleFilterUpdate()
@@ -109,13 +104,14 @@ final class AppDataStore: AppProviding, Sendable {
         state.ignoredAppIdentifiers.remove(app.bundleIdentifier)
       }
       state.preferences.value.set(Array(state.ignoredAppIdentifiers), forKey: Self.ignoredAppsKey)
-      state.update(app.with(ignoredState: ignored))
+      let currentApp = state.appsByIdentifier[app.identifier] ?? app
+      state.appsByIdentifier[app.identifier] = currentApp.with(ignoredState: ignored)
     }
     scheduleFilterUpdate()
   }
 
   @MainActor func updates() -> AsyncStream<[App]> {
-    updateStreams.stream(initialValue: Array(apps))
+    updateStreams.stream(initialValue: apps)
   }
 
   private func scheduleFilterUpdate() {
@@ -124,7 +120,7 @@ final class AppDataStore: AppProviding, Sendable {
       let work = DispatchWorkItem { [weak self] in
         Task { @MainActor [weak self] in
           guard let self else { return }
-          self.updateStreams.yield(Array(self.apps))
+          self.updateStreams.yield(self.apps)
         }
       }
       scheduled = work

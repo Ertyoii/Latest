@@ -49,7 +49,9 @@ extension Array where Element == AppListSnapshot.Entry {
 
   fileprivate func exactlyMatchesPrefix(of other: [Element]) -> Bool {
     guard count <= other.count else { return false }
-    return zip(self, other).allSatisfy(==)
+    return zip(self, other).allSatisfy {
+      $0.isSimilar(to: $1) && !$0.needsReload(comparedTo: $1)
+    }
   }
 
   fileprivate func reloadIndexes(comparedTo other: [Element]) -> IndexSet {

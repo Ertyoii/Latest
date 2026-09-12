@@ -184,6 +184,43 @@ final class UpdateCheckSchedulingTest: XCTestCase {
 }
 
 final class UpdateCheckGenerationTrackerTest: XCTestCase {
+  func testGenerationCannotAdvanceDuringResultAcceptance() {
+    let tracker = UpdateCheckGenerationTracker()
+    let generation = tracker.begin()
+    let accepting = DispatchSemaphore(value: 0)
+    let releaseAcceptance = DispatchSemaphore(value: 0)
+    let advanceAttempted = DispatchSemaphore(value: 0)
+    let advanced = DispatchSemaphore(value: 0)
+    let events = Mutex([String]())
+    let finished = expectation(description: "Both operations finish")
+    finished.expectedFulfillmentCount = 2
+    DispatchQueue.global().async {
+      _ = tracker.withCurrent(generation) {
+        accepting.signal()
+        releaseAcceptance.wait()
+        events.withLock { $0.append("accepted") }
+      }
+      finished.fulfill()
+    }
+    XCTAssertEqual(accepting.wait(timeout: .now() + 2), .success)
+    DispatchQueue.global().async {
+      advanceAttempted.signal()
+      _ = tracker.begin()
+      events.withLock { $0.append("advanced") }
+      advanced.signal()
+      finished.fulfill()
+    }
+    XCTAssertEqual(advanceAttempted.wait(timeout: .now() + 2), .success)
+    XCTAssertEqual(advanced.wait(timeout: .now() + 0.05), .timedOut)
+    releaseAcceptance.signal()
+    wait(for: [finished], timeout: 2)
+    XCTAssertEqual(events.withLock { $0 }, ["accepted", "advanced"])
+    let stale = tracker.withCurrent(generation) {
+      XCTFail("Stale write ran")
+      return 1
+    }
+    XCTAssertNil(stale)
+  }
 
   func testStartingNewGenerationInvalidatesOlderWork() {
     let tracker = UpdateCheckGenerationTracker()

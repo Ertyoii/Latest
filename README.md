@@ -13,11 +13,31 @@ brew install ripgrep
 ./script/build_and_run.sh
 ```
 
-Open `Latest.xcodeproj` and use the `Latest` scheme to work in Xcode. Run all architecture, behavior, performance, and visual checks with:
+Open `Latest.xcodeproj` and use the `Latest` scheme to work in Xcode. Run the architecture, behavior, and visual checks with:
 
 ```sh
 ./script/test.sh
 ```
+
+Run the opt-in performance suites with:
+
+```sh
+./script/benchmark_complexity.sh
+./script/benchmark_migration.sh current
+```
+
+These use optimized Release builds with testability enabled and coverage disabled.
+Small workloads collect 30 samples; scrolling and repeated selection collect more.
+The migration report includes cold, disk-cache, and memory-cache selection through
+SwiftUI, the real release-notes provider, and the rendered text view, plus resident
+memory and live heap bytes/blocks. Cold means an empty application cache with
+embedded HTML, not a cold OS filesystem cache or a live network request.
+The sleeping-task scheduler fixture and immediate-provider selection fixture remain
+separate from the full selection-to-render measurements. The overlap fixture
+measures generation acceptance and store writes under concurrent refreshes.
+Compare results only under the same build configuration, hardware, and workload;
+Debug measurements are not a Release baseline. Live heap deltas are retained
+allocations, not total allocation churn or peak memory.
 
 GitHub CI is optional for local development. The existing workflow runs the checks on a clean macOS runner, including exact visual comparisons with a fixed reference. Keep it enabled for independent regression checks; it is not needed to launch the app locally.
 

@@ -7,6 +7,7 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-08-29.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
+import Combine
 import XCTest
 
 @testable import Latest
@@ -28,7 +29,7 @@ final class AppDependencyBoundaryTest: XCTestCase {
     XCTAssertTrue(hidden.sections.isEmpty)
 
     settings.includeUnsupportedApps = true
-    let visible = hidden.updated()
+    let visible = hidden.updated(with: nil)
     XCTAssertEqual(visible.sections.flatMap(\.apps), [app])
   }
 
@@ -54,6 +55,33 @@ final class AppDependencyBoundaryTest: XCTestCase {
     XCTAssertEqual(provider.ignoredChanges.count, 1)
     XCTAssertEqual(provider.ignoredChanges.first?.ignored, true)
     XCTAssertEqual(provider.ignoredChanges.first?.app, app)
+  }
+
+  func testSelectedAppUsesFreshObjectAfterProviderRefresh() throws {
+    let (settings, defaults, suiteName) = try makeSettings()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    settings.showInstalledUpdates = true
+    let original = makeApp(source: .sparkle)
+    let refreshed = original.with(ignoredState: true)
+    settings.showIgnoredUpdates = true
+    let viewModel = UpdatesListViewModel(
+      snapshot: AppListSnapshot(withApps: [original], filterQuery: nil, settings: settings),
+      settings: settings,
+      appProvider: StubAppProvider(apps: [refreshed]),
+      workspace: StubApplicationWorkspace()
+    )
+    viewModel.select(original)
+    let selectionRefreshed = expectation(description: "Selected app refreshed")
+    let observation = viewModel.$selectedApp.sink { app in
+      if app === refreshed { selectionRefreshed.fulfill() }
+    }
+    viewModel.startObserving()
+    defer {
+      observation.cancel()
+      viewModel.stopObserving()
+    }
+    wait(for: [selectionRefreshed], timeout: 2)
+    XCTAssertTrue(viewModel.selectedApp === refreshed)
   }
 
   func testCommandsUseInjectedPreferencesAndWorkspace() throws {

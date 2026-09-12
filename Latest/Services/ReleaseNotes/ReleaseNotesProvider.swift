@@ -23,7 +23,7 @@ let releaseNotesSignposter = OSSignposter(
 
 private let releaseNotesHTMLCache = ReleaseNotesHTMLCache()
 private let releaseNotesGitHubCache = ReleaseNotesGitHubCache()
-private let releaseNotesPersistentCache = ReleaseNotesPersistentCache()
+private let sharedReleaseNotesPersistentCache = ReleaseNotesPersistentCache()
 
 /// Handles release notes conversion and loading.
 ///
@@ -37,7 +37,8 @@ class ReleaseNotesProvider {
   typealias ResolvedCompletion = @MainActor (Result<ResolvedReleaseNotes, Error>) -> Void
 
   /// Initializes the provider.
-  init() {
+  init(persistentCache: ReleaseNotesPersistentCache = sharedReleaseNotesPersistentCache) {
+    self.persistentCache = persistentCache
     let cache = NSCache<ReleaseNotesCacheKey, ResolvedReleaseNotesBox>()
     cache.countLimit = 128
     cache.totalCostLimit = 16 * 1_024 * 1_024
@@ -45,6 +46,7 @@ class ReleaseNotesProvider {
   }
 
   private let pipeline = ReleaseNotesPipeline()
+  private let persistentCache: ReleaseNotesPersistentCache
 
   /// Tracks the currently requested app.
   ///
@@ -96,28 +98,30 @@ class ReleaseNotesProvider {
         )
         if let payload = ReleaseNotesPersistentCache.payload(from: resolved) {
           Task {
-            await releaseNotesPersistentCache.store(payload, forKey: cacheKey.stableIdentifier)
+            await self.persistentCache.store(payload, forKey: cacheKey.stableIdentifier)
           }
         }
       }
 
       /// Release notes may be returned late or updated while another app was already requested. Don't forward this update, just cache in case of success.
-      guard self.isCurrentRequest(requestID, for: app) else { return }
+      guard self.isCurrentRequest(requestID) else { return }
 
       completion(releaseNotes)
     }
 
     currentReleaseNotesTask = Task { [weak self] in
       guard let self else { return }
-      if let payload = await releaseNotesPersistentCache.payload(forKey: cacheKey.stableIdentifier),
+      if let payload = await self.persistentCache.payload(forKey: cacheKey.stableIdentifier),
         let resolved = ReleaseNotesPersistentCache.resolvedReleaseNotes(from: payload)
       {
-        guard !Task.isCancelled, self.isCurrentRequest(requestID, for: app) else { return }
-        finish(.success(resolved))
+        guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
+        self.cache.setObject(
+          ResolvedReleaseNotesBox(resolved), forKey: cacheKey, cost: resolved.content.length * 2)
+        completion(Self.validated(.success(resolved)))
         return
       }
 
-      guard !Task.isCancelled, self.isCurrentRequest(requestID, for: app) else { return }
+      guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
       self.loadReleaseNotes(for: app, with: finish)
     }
   }
@@ -146,7 +150,7 @@ class ReleaseNotesProvider {
     let requestID = currentRequestID
     if let releaseNotes = app.releaseNotes {
       switch releaseNotes {
-      case .html(let html):
+      case .html(let html), .genericMetadata(let html):
         currentReleaseNotesTask = Task { [weak self] in
           guard let self else { return }
           let releaseNotes = await self.pipeline.resolve(
@@ -158,22 +162,7 @@ class ReleaseNotesProvider {
             ),
             for: ReleaseNotesContext(app: app)
           )
-          guard !Task.isCancelled, self.isCurrentRequest(requestID, for: app) else { return }
-          completion(releaseNotes)
-        }
-      case .genericMetadata(let html):
-        currentReleaseNotesTask = Task { [weak self] in
-          guard let self else { return }
-          let releaseNotes = await self.pipeline.resolve(
-            ReleaseNotesCandidate(
-              markup: html,
-              baseURL: nil,
-              provenance: .homebrewMetadata,
-              qualityHint: .genericMetadata
-            ),
-            for: ReleaseNotesContext(app: app)
-          )
-          guard !Task.isCancelled, self.isCurrentRequest(requestID, for: app) else { return }
+          guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
           completion(releaseNotes)
         }
       case .url(let url):
@@ -190,7 +179,7 @@ class ReleaseNotesProvider {
             baseURL: nil,
             relevantVersion: app.remoteVersion?.versionNumber
           )
-          guard !Task.isCancelled, self.isCurrentRequest(requestID, for: app) else { return }
+          guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
           completion(
             releaseNotes.map {
               ResolvedReleaseNotes(
@@ -215,24 +204,13 @@ class ReleaseNotesProvider {
           allowsLatestFallback: allowsLatestFallback, fallbackHTML: fallbackHTML,
           requestID: requestID, with: completion)
       }
-    } else if app.error != nil {
-      // Update-check failures describe the scan, not the content pane. The
-      // detail view should state that notes are unavailable instead of
-      // presenting a long networking/update error as release-note content.
-      completion(.failure(LatestError.releaseNotesUnavailable))
     } else {
       completion(.failure(LatestError.releaseNotesUnavailable))
     }
   }
 
-  private func isCurrentRequest(_ requestID: UUID, for app: App? = nil) -> Bool {
-    guard requestID == currentRequestID else { return false }
-
-    if let app {
-      return currentApp == app
-    }
-
-    return true
+  private func isCurrentRequest(_ requestID: UUID) -> Bool {
+    requestID == currentRequestID
   }
 
   private nonisolated static func validated(
@@ -260,6 +238,7 @@ class ReleaseNotesProvider {
 
       do {
         let html = try await Self.fetchHTML(from: url)
+        guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
         let context = ReleaseNotesContext(
           appName: self.currentApp?.name ?? "",
           bundleIdentifier: self.currentApp?.bundleIdentifier ?? "",

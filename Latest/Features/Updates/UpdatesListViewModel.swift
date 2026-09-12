@@ -154,6 +154,8 @@ final class UpdatesListViewModel: ObservableObject {
       let selectedApp,
       snapshot.firstIndex(of: selectedApp) != nil
     {
+      let refreshedApp = snapshot.app(withIdentifier: selectedApp.identifier)
+      if refreshedApp !== selectedApp { self.selectedApp = refreshedApp }
       return
     }
 

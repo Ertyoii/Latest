@@ -42,8 +42,15 @@ struct ReleaseNotesDetailView: View {
     }
   }
 
-  private var selectionKey: String {
-    updatesViewModel.selectedApp.map(ReleaseNotesDetailViewModel.displayKey(for:)) ?? "no-selection"
+  private struct SelectionKey: Hashable {
+    let app: ObjectIdentifier?
+    let catalogRevision: UInt64
+  }
+
+  private var selectionKey: SelectionKey {
+    SelectionKey(
+      app: updatesViewModel.selectedApp.map(ObjectIdentifier.init),
+      catalogRevision: ReleaseNotesSourceCatalog.revision)
   }
 }
 

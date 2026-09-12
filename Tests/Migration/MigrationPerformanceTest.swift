@@ -9,6 +9,7 @@
 //  Licensed under GPL-3.0; see LICENSE.md.
 
 import AppKit
+import Darwin
 import Darwin.Mach
 import SwiftUI
 import XCTest
@@ -37,7 +38,7 @@ final class MigrationPerformanceTest: XCTestCase {
     }
 
     let populatedApps = try XCTUnwrap(appsBySize[500])
-    benchmark("cold_launch_to_populated_sidebar_fixture", iterations: 9) {
+    benchmark("cold_launch_to_populated_sidebar_fixture", iterations: 30) {
       let snapshot = AppListSnapshot(withApps: populatedApps, filterQuery: nil)
       let viewModel = UpdatesListViewModel(snapshot: snapshot)
       let host = NSHostingView(
@@ -55,7 +56,7 @@ final class MigrationPerformanceTest: XCTestCase {
 
     let scanRoot = try makeSyntheticAppRoot(count: 120)
     defer { try? FileManager.default.removeItem(at: scanRoot) }
-    benchmark("scan_to_stable_snapshot_fixture", iterations: 9) {
+    benchmark("scan_to_stable_snapshot_fixture", iterations: 30) {
       let bundles = BundleCollector.collectBundles(at: scanRoot)
       let apps = bundles.map { Latest.App(bundle: $0, update: nil, isIgnored: false) }
       return AppListSnapshot(withApps: apps, filterQuery: nil).entries.count
@@ -147,7 +148,7 @@ final class MigrationPerformanceTest: XCTestCase {
     )
 
     let markup = makeReleaseNotesMarkup(sectionCount: 220)
-    try benchmark("rich_text_normalization_layout", iterations: 15) {
+    try benchmark("rich_text_normalization_layout", iterations: 30) {
       let text = try ReleaseNotesMarkup.attributedString(
         from: markup,
         baseURL: URL(string: "https://example.com/changelog"),
@@ -191,6 +192,82 @@ final class MigrationPerformanceTest: XCTestCase {
       .deletingLastPathComponent()
       .deletingLastPathComponent()
       .appendingPathComponent("build/run-migration-benchmarks")
+  }
+
+  func testReleaseNotesSelectionPerformance() throws {
+    guard FileManager.default.fileExists(atPath: Self.benchmarkFlagURL.path) else {
+      throw XCTSkip("Run script/benchmark_migration.sh to execute selection benchmarks.")
+    }
+    configureSettings()
+    let apps = makeApps(count: 30)
+    for mode in ["cold", "disk", "memory"] {
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        UUID().uuidString)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let cache = ReleaseNotesPersistentCache(directoryURL: directory)
+      let provider = ReleaseNotesProvider(persistentCache: cache)
+      if mode != "cold" {
+        let seeded = expectation(description: "Seed isolated cache")
+        Task { @MainActor in
+          for app in apps {
+            let resolved = ResolvedReleaseNotes(
+              content: NSAttributedString(string: "Cached notes for \(app.name)"),
+              quality: .genuine, provenance: .changelog)
+            if let payload = ReleaseNotesPersistentCache.payload(from: resolved) {
+              await cache.store(payload, forKey: ReleaseNotesCacheKey(app: app).stableIdentifier)
+            }
+          }
+          seeded.fulfill()
+        }
+        wait(for: [seeded], timeout: 10)
+      }
+      if mode == "memory" {
+        for app in apps {
+          let loaded = expectation(description: "Warm provider cache")
+          provider.releaseNotes(for: app) { _ in loaded.fulfill() }
+          wait(for: [loaded], timeout: 3)
+        }
+      }
+      let model = UpdatesListViewModel(snapshot: AppListSnapshot(withApps: apps, filterQuery: nil))
+      let detail = ReleaseNotesDetailViewModel(releaseNotesProvider: provider)
+      let host = NSHostingView(
+        rootView: ReleaseNotesDetailView(updatesViewModel: model, detailViewModel: detail))
+      host.frame = NSRect(x: 0, y: 0, width: 720, height: 640)
+      let window = attachToWindow(host)
+      defer { window.close() }
+      let memoryBefore = residentMemoryBytes()
+      var heapBefore = malloc_statistics_t()
+      malloc_zone_statistics(nil, &heapBefore)
+      benchmarkSamples("selection_to_render_\(mode)", values: apps) { app in
+        model.select(app)
+        // Drive the actual SwiftUI selection task, provider, and text view. A
+        // previously rendered app's content must not satisfy this sample.
+        let deadline = Date(timeIntervalSinceNow: 3)
+        var rendered = false
+        repeat {
+          host.layoutSubtreeIfNeeded()
+          host.displayIfNeeded()
+          if detail.app === app, case .text(let text) = detail.contentState,
+            let view = host.descendant(of: NSTextView.self), view.string == text.string,
+            view.string.contains(app.name)
+              || view.string.contains("app \(apps.firstIndex(where: { $0 === app })!).")
+          {
+            rendered = true
+            break
+          }
+          RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.001))
+        } while Date() < deadline
+        XCTAssertTrue(rendered, "Selection did not render: \(mode) / \(app.name)")
+        return rendered ? 1 : 0
+      }
+      emitMemoryLine(
+        name: "selection_to_render_\(mode)", before: memoryBefore, after: residentMemoryBytes())
+      var heapAfter = malloc_statistics_t()
+      malloc_zone_statistics(nil, &heapAfter)
+      let line =
+        "MIGRATION_HEAP name=selection_to_render_\(mode) live_bytes_before=\(heapBefore.size_in_use) live_bytes_after=\(heapAfter.size_in_use) live_blocks_before=\(heapBefore.blocks_in_use) live_blocks_after=\(heapAfter.blocks_in_use)"
+      FileHandle.standardError.write(Data((line + "\n").utf8))
+    }
   }
 
   private func benchmark(
@@ -260,7 +337,12 @@ final class MigrationPerformanceTest: XCTestCase {
   }
 
   private func emitConfigurationLine() {
-    let line = "MIGRATION_CONFIGURATION sidebar=appkit-parity"
+    #if DEBUG
+      let configuration = "Debug"
+    #else
+      let configuration = "Release"
+    #endif
+    let line = "MIGRATION_CONFIGURATION sidebar=appkit-parity configuration=\(configuration)"
     FileHandle.standardError.write(Data((line + "\n").utf8))
   }
 

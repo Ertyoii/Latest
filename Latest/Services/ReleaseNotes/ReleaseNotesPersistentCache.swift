@@ -117,25 +117,34 @@ actor ReleaseNotesPersistentCache {
   private func trimToLimits() {
     let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey]
     guard
-      var files = try? FileManager.default.contentsOfDirectory(
+      let urls = try? FileManager.default.contentsOfDirectory(
         at: directoryURL,
         includingPropertiesForKeys: Array(keys),
         options: [.skipsHiddenFiles]
       )
     else { return }
 
-    files.sort {
-      let lhs = try? $0.resourceValues(forKeys: keys).contentModificationDate
-      let rhs = try? $1.resourceValues(forKeys: keys).contentModificationDate
-      return (lhs ?? .distantPast) < (rhs ?? .distantPast)
+    let files = urls.map { url in
+      let values = try? url.resourceValues(forKeys: keys)
+      return (
+        url: url, date: values?.contentModificationDate ?? .distantPast,
+        size: values?.fileSize ?? 0
+      )
     }
-    var totalBytes = files.reduce(0) { partialResult, url in
-      partialResult + ((try? url.resourceValues(forKeys: keys).fileSize) ?? 0)
-    }
-    while files.count > maximumEntryCount || totalBytes > maximumStoredBytes {
-      let oldest = files.removeFirst()
-      totalBytes -= (try? oldest.resourceValues(forKeys: keys).fileSize) ?? 0
-      try? FileManager.default.removeItem(at: oldest)
+    var remainingCount = files.count
+    var totalBytes = files.reduce(0) { $0 + $1.size }
+    guard remainingCount > maximumEntryCount || totalBytes > maximumStoredBytes else { return }
+    for file in files.sorted(by: { $0.date < $1.date }) {
+      guard remainingCount > maximumEntryCount || totalBytes > maximumStoredBytes else { break }
+      do {
+        try FileManager.default.removeItem(at: file.url)
+        remainingCount -= 1
+        totalBytes -= file.size
+      } catch {
+        // A failed deletion still occupies space. Try the next oldest file.
+        releaseNotesLogger.debug(
+          "Unable to evict cached release notes: \(error.localizedDescription, privacy: .public)")
+      }
     }
   }
 }

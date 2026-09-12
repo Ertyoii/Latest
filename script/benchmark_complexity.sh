@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT="Latest.xcodeproj"
 SCHEME="Latest"
-CONFIGURATION="Debug"
+CONFIGURATION="Release"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
@@ -27,11 +27,14 @@ xcodebuild \
   -destination 'platform=macOS' \
   -derivedDataPath "$DERIVED_DATA" \
   -resultBundlePath "$RESULT_BUNDLE" \
+  -disableAutomaticPackageResolution \
+  -onlyUsePackageVersionsFromResolvedFile \
   CLANG_MODULE_CACHE_PATH="$MODULE_CACHE" \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY="" \
   -enableCodeCoverage NO \
+  ENABLE_TESTABILITY=YES \
   -only-testing:"Latest Tests/ComplexityBenchmarkTest/testComplexityBenchmarks" \
   test 2>&1 | tee "$LOG_FILE"
 
@@ -44,6 +47,7 @@ cat "$REPORT_FILE"
 awk '
 BEGIN {
 	budgets["app_data_store_update_batch"] = 40
+	budgets["update_result_acceptance_overlap"] = 40
 	budgets["app_list_snapshot_build_and_lookup"] = 12
 	budgets["app_list_search_refilter"] = 160
 	budgets["app_list_search_full_rebuild"] = 360
@@ -55,10 +59,9 @@ BEGIN {
 	budgets["update_repository_entry_metadata_and_matching"] = 280
 	budgets["update_repository_lazy_metadata_and_matching"] = 15
 	budgets["bundle_collection_path_filtering"] = 170
-	# The debug XCTest runtime occasionally adds a scheduler/timer spike. This
-	# remains below the 144 ms pre-migration baseline while leaving headroom for
-	# that measured noise.
-	budgets["update_check_end_to_end"] = 120
+	# Synthetic sleeping child tasks measure scheduler overhead, not network or
+	# end-to-end app latency. Preserve the existing absolute ceiling.
+	budgets["update_check_scheduler_fixture"] = 120
 }
 
 $1 == "BENCHMARK" {

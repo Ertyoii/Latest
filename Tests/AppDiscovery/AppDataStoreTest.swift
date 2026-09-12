@@ -93,6 +93,43 @@ final class AppDataStoreTest: XCTestCase {
     )
   }
 
+  func testBulkRefreshReportsOnlyNewOrChangedVersionsAndRemovesMissingApps() {
+    let store = AppDataStore()
+    let root = URL(fileURLWithPath: "/Applications/Store-\(UUID().uuidString)")
+    let original = makeBundle(versionNumber: "1.0", at: root.appendingPathComponent("A.app"))
+    let removed = makeBundle(versionNumber: "1.0", at: root.appendingPathComponent("B.app"))
+    XCTAssertEqual(store.set(appBundles: [original, removed]).count, 2)
+    XCTAssertTrue(store.set(appBundles: [original, removed]).isEmpty)
+
+    let refreshed = makeBundle(versionNumber: "2.0", at: original.fileURL)
+    let added = store.set(appBundles: [refreshed])
+    XCTAssertEqual(added.map(\.version), [refreshed.version])
+    XCTAssertEqual(store.apps.map(\.identifier), [original.identifier])
+    XCTAssertTrue(store.set(appBundles: []).isEmpty)
+    XCTAssertTrue(store.apps.isEmpty)
+  }
+
+  func testIgnoringStaleAppPreservesLatestBundleAndUpdate() throws {
+    let suiteName = "AppDataStoreTest.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = AppDataStore(userDefaults: defaults)
+    let url = URL(fileURLWithPath: "/Applications/Stale.app")
+    let original = store.set(appBundle: makeBundle(versionNumber: "1.0", at: url))
+    let latestBundle = makeBundle(versionNumber: "2.0", at: url)
+    let remoteVersion = Version(versionNumber: "3.0", buildNumber: nil)
+    _ = store.set(
+      .success(makeUpdate(for: latestBundle, remoteVersion: remoteVersion)), for: latestBundle)
+
+    store.setIgnoredState(true, for: original)
+
+    let current = try XCTUnwrap(store.apps.first)
+    XCTAssertEqual(store.apps.count, 1)
+    XCTAssertEqual(current.version, latestBundle.version)
+    XCTAssertEqual(current.remoteVersion, remoteVersion)
+    XCTAssertTrue(current.isIgnored)
+  }
+
   private func makeBundle(versionNumber: String, at url: URL) -> App.Bundle {
     App.Bundle(
       version: Version(versionNumber: versionNumber, buildNumber: nil),

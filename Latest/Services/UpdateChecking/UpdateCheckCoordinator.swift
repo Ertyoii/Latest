@@ -249,11 +249,13 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
   /// Callback to notify that an app has been updated.
   private func didCheck(_ bundle: App.Bundle, _ update: Result<App.Update, Error>, generation: Int)
   {
-    guard updateCheckGeneration.isCurrent(generation) else {
-      return
-    }
-
-    let app = self.dataStore.set(update, for: bundle)
+    guard
+      let app = updateCheckGeneration.withCurrent(
+        generation,
+        perform: {
+          self.dataStore.set(update, for: bundle)
+        })
+    else { return }
 
     Task { @MainActor in
       guard self.updateCheckGeneration.isCurrent(generation) else { return }
@@ -308,6 +310,15 @@ final class UpdateCheckGenerationTracker: Sendable {
       }
 
       return currentGeneration
+    }
+  }
+
+  /// Serialize result acceptance with generation changes. The operation must not
+  /// reenter this tracker or invoke observers; AppDataStore publishes asynchronously.
+  func withCurrent<Value>(_ generation: Int, perform operation: () -> Value) -> Value? {
+    currentGeneration.withLock { current in
+      guard generation == current else { return nil }
+      return operation()
     }
   }
 
