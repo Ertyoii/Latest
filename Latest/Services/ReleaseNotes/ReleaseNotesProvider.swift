@@ -75,6 +75,15 @@ class ReleaseNotesProvider {
     currentReleaseNotesTask?.cancel()
     currentReleaseNotesTask = nil
     webContentLoader?.cancel()
+    if let notes = Self.bundledReleaseNotes(for: app) {
+      completion(
+        .success(
+          ResolvedReleaseNotes(
+            content: NSAttributedString(string: notes), quality: .genuine,
+            provenance: .bundledFallback
+          )))
+      return
+    }
     if app.error != nil, app.releaseNotes == nil {
       completion(.failure(LatestError.releaseNotesUnavailable))
       return

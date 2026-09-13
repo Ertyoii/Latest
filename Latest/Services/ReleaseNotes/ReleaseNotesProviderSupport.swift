@@ -26,6 +26,24 @@ enum GitHubReleaseFetchError: Error {
 
 extension ReleaseNotesProvider {
 
+  private static let bundledAppReleaseNotes: [String: String] = {
+    guard let url = Bundle.main.url(forResource: "LatestReleaseNotes", withExtension: "json"),
+      let data = try? Data(contentsOf: url),
+      let notes = try? JSONDecoder().decode([String: String].self, from: data)
+    else { return [:] }
+    return notes
+  }()
+
+  /// Local fork builds have no appcast. Match the installed version exactly,
+  /// independently of updater support, and never substitute upstream notes.
+  static func bundledReleaseNotes(for app: App) -> String? {
+    guard app.bundleIdentifier == "com.max-langer.Latest.dev",
+      !app.updateAvailable, app.releaseNotes == nil,
+      let version = app.version.versionNumber
+    else { return nil }
+    return bundledAppReleaseNotes[version]
+  }
+
   nonisolated static func githubReleaseWebURL(fromAPIURL apiURL: URL) -> URL? {
     guard apiURL.host?.caseInsensitiveCompare("api.github.com") == .orderedSame else {
       return nil

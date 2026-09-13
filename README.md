@@ -41,7 +41,7 @@ allocations, not total allocation churn or peak memory.
 
 GitHub CI is optional for local development. The existing workflow runs the checks on a clean macOS runner, including exact visual comparisons with a fixed reference. Keep it enabled for independent regression checks; it is not needed to launch the app locally.
 
-The app's release menu opens this fork's GitHub releases. It does not use the original project's automatic update feed. Automatic self-updates require a separately configured, signed appcast for this fork.
+The app's release menu opens this fork's GitHub releases. It does not use the original project's automatic update feed. Automatic self-updates require a separately configured, signed appcast for this fork. Latest Dev reads its offline notes from `Latest/Resources/LatestReleaseNotes.json`, matched to the installed version. Add an entry there when bumping the app version.
 
 ## Architecture
 

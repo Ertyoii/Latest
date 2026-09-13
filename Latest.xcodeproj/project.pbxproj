@@ -94,6 +94,7 @@
 		51A020082FC4000000000001 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A020032FC4000000000001 /* GeneralSettingsView.swift */; };
 		51A020092FC4000000000001 /* LocationsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A020042FC4000000000001 /* LocationsSettingsView.swift */; };
 		51B000012FC5000000000001 /* ReleaseNotesSources.json in Resources */ = {isa = PBXBuildFile; fileRef = 51B000002FC5000000000001 /* ReleaseNotesSources.json */; };
+		FA691397FB78445BB28E4188 /* LatestReleaseNotes.json in Resources */ = {isa = PBXBuildFile; fileRef = 6CC32A1D8DEA423388F22C29 /* LatestReleaseNotes.json */; };
 		51C100012FC6000000000001 /* LatestApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C100002FC6000000000001 /* LatestApplication.swift */; };
 		51D000012FC7000000000001 /* UpdateSources.json in Resources */ = {isa = PBXBuildFile; fileRef = 51D000002FC7000000000001 /* UpdateSources.json */; };
 		51E000012FC8000000000001 /* ReleaseNotesPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51E000002FC8000000000001 /* ReleaseNotesPipeline.swift */; };
@@ -403,6 +404,7 @@
 		51A020032FC4000000000001 /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GeneralSettingsView.swift"; sourceTree = "<group>"; };
 		51A020042FC4000000000001 /* LocationsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocationsSettingsView.swift"; sourceTree = "<group>"; };
 		51B000002FC5000000000001 /* ReleaseNotesSources.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ReleaseNotesSources.json; sourceTree = "<group>"; };
+		6CC32A1D8DEA423388F22C29 /* LatestReleaseNotes.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = LatestReleaseNotes.json; sourceTree = "<group>"; };
 		51C100002FC6000000000001 /* LatestApplication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LatestApplication.swift"; sourceTree = "<group>"; };
 		51D000002FC7000000000001 /* UpdateSources.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = UpdateSources.json; sourceTree = "<group>"; };
 		51E000002FC8000000000001 /* ReleaseNotesPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesPipeline.swift"; sourceTree = "<group>"; };
@@ -551,6 +553,7 @@
 				50A86BBC27EA6BF4007A5F80 /* Credits.rtf */,
 				50FEB8802B1D2402006FB75D /* ExcludedAppIdentifiers.plist */,
 				51B000002FC5000000000001 /* ReleaseNotesSources.json */,
+				6CC32A1D8DEA423388F22C29 /* LatestReleaseNotes.json */,
 				51D000002FC7000000000001 /* UpdateSources.json */,
 			);
 			path = Resources;
@@ -1122,6 +1125,7 @@
 				50290E791E53EB6A00133E3D /* Assets.xcassets in Resources */,
 				50FEB8812B1D2402006FB75D /* ExcludedAppIdentifiers.plist in Resources */,
 				51B000012FC5000000000001 /* ReleaseNotesSources.json in Resources */,
+				FA691397FB78445BB28E4188 /* LatestReleaseNotes.json in Resources */,
 				51D000012FC7000000000001 /* UpdateSources.json in Resources */,
 				501EA9821EB1BA4400D05821 /* Localizable.strings in Resources */,
 				508605292E78B077009235D2 /* App.icon in Resources */,
@@ -1591,7 +1595,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1421;
+				CURRENT_PROJECT_VERSION = 1422;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = D87N659XLV;
@@ -1610,7 +1614,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.58;
+				MARKETING_VERSION = 0.59;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1633,7 +1637,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1421;
+				CURRENT_PROJECT_VERSION = 1422;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = D87N659XLV;
@@ -1653,7 +1657,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.58;
+				MARKETING_VERSION = 0.59;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

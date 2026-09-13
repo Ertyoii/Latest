@@ -121,16 +121,20 @@ struct ReleaseNotesHeaderView: View {
             .offset(y: VisualMetrics.detailMetadataLineVerticalCorrection)
             .lineLimit(1)
         }
-
-        if let date = app.latestUpdateDate {
-          Text(date, format: .dateTime.year().month(.wide).day())
-            .font(.system(size: NSFont.systemFontSize(for: .small)))
-            .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-            .offset(y: VisualMetrics.detailMetadataLineVerticalCorrection)
-            .lineLimit(1)
-        }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
+      // The optional date extends below the two-line block without recentering it.
+      .overlay(alignment: .topLeading) {
+        if let date = app.latestUpdateDate {
+          GeometryReader { geometry in
+            Text(date, format: .dateTime.year().month(.wide).day())
+              .font(.system(size: NSFont.systemFontSize(for: .small)))
+              .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+              .lineLimit(1)
+              .offset(y: geometry.size.height + VisualMetrics.detailMetadataLineVerticalCorrection)
+          }
+        }
+      }
       .offset(y: VisualMetrics.detailMetadataVerticalOffset)
       .layoutPriority(1)
 

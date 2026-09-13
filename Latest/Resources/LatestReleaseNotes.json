@@ -1,0 +1,4 @@
+{
+  "0.58": "Latest Dev 0.58\n\n• Improved refresh behavior and release-note cache handling.\n• Simplified app-list state and reduced unnecessary work during updates.",
+  "0.59": "Latest Dev 0.59\n\n• Added offline release notes for Latest Dev.\n• Fixed release-note margins shifting when switching apps or scrolling.\n• Aligned app names and versions consistently when a release date is displayed."
+}

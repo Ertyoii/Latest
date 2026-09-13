@@ -13,6 +13,30 @@ import XCTest
 @testable import Latest
 
 final class ReleaseNotesProviderTest: XCTestCase {
+  @MainActor
+  func testLatestDevHasVersionMatchedOfflineNotesWithoutAnUpdater() async throws {
+    func app(identifier: String, version: String) -> App {
+      let bundle = App.Bundle(
+        version: Version(versionNumber: version, buildNumber: nil),
+        name: "Latest Dev", bundleIdentifier: identifier,
+        fileURL: URL(fileURLWithPath: "/Applications/Latest Dev.app"),
+        source: .none, modificationDate: .distantPast)
+      return App(
+        bundle: bundle, update: .failure(LatestError.releaseNotesUnavailable), isIgnored: false)
+    }
+    let installed = app(identifier: "com.max-langer.Latest.dev", version: "0.59")
+    let notes = try await releaseNotes(for: installed, provider: ReleaseNotesProvider())
+    XCTAssertTrue(notes.string.contains("Latest Dev 0.59"))
+    XCTAssertTrue(notes.string.contains("release-note margins"))
+    XCTAssertFalse(installed.supported)
+    XCTAssertNil(
+      ReleaseNotesProvider.bundledReleaseNotes(
+        for: app(identifier: "com.max-langer.Latest.dev", version: "0.57")))
+    XCTAssertNil(
+      ReleaseNotesProvider.bundledReleaseNotes(
+        for: app(identifier: "com.max-langer.Latest", version: "0.59")))
+  }
+
   func testReleaseNotesProviderBuildsGitHubWebURLFromAPIURL() throws {
     let apiURL = URL(string: "https://api.github.com/repos/usebruno/bruno/releases/tags/v3.4.2")!
     let webURL = try XCTUnwrap(ReleaseNotesProvider.githubReleaseWebURL(fromAPIURL: apiURL))

@@ -356,6 +356,52 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
+  func testReleaseNotesMarginsStayStableAcrossSelectionScrollingAndResize() throws {
+    let short = NSAttributedString(
+      string: "Discord is available from Homebrew.\nVoice and text chat software")
+    let long = NSAttributedString(
+      string: Array(repeating: "Release notes with improvements and bug fixes.", count: 150).joined(
+        separator: "\n"))
+    let host = NSHostingView(rootView: SelectableReleaseNotesTextView(text: short))
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 480, height: 280),
+      styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    defer { window.close() }
+
+    for (index, source) in [short, long, short, long, short].enumerated() {
+      window.setContentSize(NSSize(width: index.isMultiple(of: 2) ? 480 : 360, height: 280))
+      host.rootView = SelectableReleaseNotesTextView(text: source)
+      for _ in 0..<10 {
+        window.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+      }
+      let scroll = try XCTUnwrap(host.descendant(of: NSScrollView.self))
+      let text = try XCTUnwrap(scroll.documentView as? NSTextView)
+      XCTAssertEqual(text.string, source.string)
+      let layout = try XCTUnwrap(text.layoutManager)
+      let container = try XCTUnwrap(text.textContainer)
+      layout.ensureLayout(for: container)
+      for range in [
+        NSRange(location: text.string.utf16.count - 1, length: 1), NSRange(location: 0, length: 0),
+      ] {
+        text.scrollRangeToVisible(range)
+        scroll.layoutSubtreeIfNeeded()
+      }
+      let glyph = layout.boundingRect(forGlyphRange: NSRange(location: 0, length: 1), in: container)
+      let origin = text.convert(
+        NSPoint(
+          x: text.textContainerOrigin.x + glyph.minX,
+          y: text.textContainerOrigin.y + glyph.minY), to: scroll)
+      XCTAssertEqual(origin.x, VisualMetrics.releaseNotesTextInset + 5, accuracy: 0.5)
+      XCTAssertEqual(origin.y, VisualMetrics.releaseNotesTextInset, accuracy: 0.5)
+      XCTAssertEqual(scroll.contentView.bounds.minX, 0, accuracy: 0.5)
+    }
+  }
+
+  @MainActor
   func testUpdateActionPresentationCoversEveryOperationState() {
     let updatable = makeApp(name: "Discord", version: "1", remoteVersion: "2")
     let installed = makeApp(name: "Cursor", version: "3")

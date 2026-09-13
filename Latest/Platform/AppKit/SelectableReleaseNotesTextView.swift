@@ -64,18 +64,6 @@ struct SelectableReleaseNotesTextView: NSViewRepresentable {
     scrollView.hasVerticalScroller = true
     scrollView.autohidesScrollers = true
     scrollView.automaticallyAdjustsContentInsets = false
-    scrollView.contentInsets = NSEdgeInsets(
-      top: VisualMetrics.releaseNotesTextInset,
-      left: VisualMetrics.releaseNotesTextInset,
-      bottom: VisualMetrics.releaseNotesTextInset,
-      right: VisualMetrics.releaseNotesTextInset
-    )
-    scrollView.scrollerInsets = NSEdgeInsets(
-      top: -VisualMetrics.releaseNotesTextInset,
-      left: -VisualMetrics.releaseNotesTextInset,
-      bottom: -VisualMetrics.releaseNotesTextInset,
-      right: -VisualMetrics.releaseNotesTextInset
-    )
 
     let textView = NSTextView()
     textView.drawsBackground = false
@@ -84,7 +72,12 @@ struct SelectableReleaseNotesTextView: NSViewRepresentable {
     textView.allowsUndo = false
     textView.isRichText = true
     textView.importsGraphics = false
-    textView.textContainerInset = .zero
+    // Keep padding in document coordinates: clip-view insets can be consumed
+    // by scrollRangeToVisible when the same view displays another app.
+    textView.textContainerInset = NSSize(
+      width: VisualMetrics.releaseNotesTextInset,
+      height: VisualMetrics.releaseNotesTextInset
+    )
     textView.textContainer?.widthTracksTextView = true
     textView.textContainer?.containerSize = NSSize(
       width: scrollView.contentSize.width,
