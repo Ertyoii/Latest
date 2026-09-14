@@ -1,64 +1,40 @@
 ---
 name: replace-macos-app-build
-description: Build and install the latest local macOS app bundle into /Applications, make Spotlight/LaunchServices/Dock resolve to that installed bundle, and clean stale duplicate .app build artifacts. Use when a user asks to replace the Spotlight or Dock app with the newest local build, update /Applications/SomeApp.app from an Xcode build, remove old DerivedData/build app copies, or make macOS launch the installed app instead of a debug artifact.
+description: Build and replace a local macOS app in /Applications, remove duplicate build copies, and repair LaunchServices or Spotlight resolution. Use for installing the newest local app build or fixing duplicate app entries.
 ---
 
 # Replace macOS App Build
 
-## Quick Start
+Deliver one installed app at `/Applications/<install-name>.app`, with the requested version and macOS resolving to that path. Build products are temporary installation inputs. Remove them after verifying the installed copy; retaining the fresh build requires an explicit user request.
 
-Use `scripts/replace_macos_app_build.sh` for the fragile filesystem and LaunchServices work instead of hand-writing ad hoc commands.
+Follow the user's current instructions and existing authorization. Infer routine project, scheme, and app names from the repository and installed bundle. Ask only when identity or scope remains ambiguous. This skill does not authorize a version bump, commit, push, Dock restart, or changes to other apps by itself.
 
-From the app repo:
+## Execute
 
-```bash
-skills/replace-macos-app-build/scripts/replace_macos_app_build.sh \
-  --project Latest.xcodeproj \
-  --scheme Latest \
-  --configuration Debug \
-  --derived-data build/DerivedData \
-  --app-name "Latest Dev" \
-  --install-name "Latest Dev" \
-  --artifact-name "Latest" \
-  --clean-artifacts \
-  --open
+Use [the installer](scripts/replace_macos_app_build.sh) relative to **this loaded skill's folder**. Do not silently substitute a different repository copy.
+
+From the repository root, for Latest:
+
+```sh
+<skill-folder>/scripts/replace_macos_app_build.sh \
+  --project Latest.xcodeproj --scheme Latest \
+  --configuration Release --derived-data build/DerivedData \
+  --app-name 'Latest Dev' --install-name 'Latest Dev' \
+  --bundle-id com.max-langer.Latest.dev --artifact-name Latest --open
 ```
 
-## Workflow
+- Default to **Release** for normal use. The product name may still contain `Dev`; that is separate from the build configuration. Honor an explicit Debug request, but still remove its build copy after installation unless the user asks to keep it (`--keep-build`).
+- Inspect installed and built bundle identity before replacement. Never overwrite a different bundle identifier. The script verifies an expected identifier, stops the matching app, copies it, and checks complete bundle content before cleanup.
+- Enumerate duplicate products under repository `build/` and user Xcode DerivedData. Cleanup matches both exact product names and bundle identifier, unregisters each duplicate, then removes it—including the fresh installation source. Do not delete unrelated apps, source, caches, logs, or result bundles.
+- Register and index `/Applications` after cleanup. Open that installed path when requested or when completing the normal replacement workflow. Restart Dock only when explicitly requested or a persistent Dock item still points at the removed copy.
+- `--dry-run` prints the plan without building or changing state; `--clean-artifacts` remains accepted for older callers, but cleanup is now the default.
 
-1. Confirm the app identity before replacing anything:
-   - Source build bundle path.
-   - Installed `/Applications/<install-name>.app` path.
-   - `CFBundleIdentifier`, `CFBundleShortVersionString`, `CFBundleVersion`, and executable name.
+## Verify and report
 
-2. Build the app:
-   - Use `xcodebuild build`.
-   - Prefer a project-local DerivedData path such as `build/DerivedData`.
-   - Use `CODE_SIGNING_ALLOWED=NO` for local debug replacement unless the user explicitly needs signed distribution behavior.
+Verify marketing/build version and bundle identifier from the installed plist. Verify the full copy **before** removing the source: Debug executables can be launcher stubs whose hashes remain unchanged; the `.debug.dylib` contains the implementation.
 
-3. Replace the installed app:
-   - Copy from the built product to `/Applications/<install-name>.app` with `rsync -a --delete`.
-   - Do not remove unrelated apps.
+After cleanup, enumerate matching products again, verify LaunchServices resolves to `/Applications`, and check the running process path after launch. Only the installed app should remain unless retention was explicitly requested. Spotlight can lag; distinguish stale indexed entries from files that still exist, and do not claim the UI is fixed without observing it.
 
-4. Refresh macOS app resolution:
-   - Register the installed app with LaunchServices using `lsregister -f -R -trusted`.
-   - Run `mdimport` on the installed app so Spotlight re-indexes metadata.
-   - If the user specifically wants Dock cleanup or the Dock still points at a stale app, restart Dock with `killall Dock`; otherwise avoid disturbing Dock.
-   - Open the installed app when requested so the running Dock icon resolves to `/Applications`.
+On build, identity, or copy-verification failure, stop before deleting build products. Keep enough evidence to recover and report the actual blocker. Run focused script checks and an installation verification for installer changes; do not rerun the application's entire test suite for a documentation-only skill edit.
 
-5. Clean stale artifacts:
-  - Remove duplicate build products with the exact app name under repo-local `build/` and `~/Library/Developer/Xcode/DerivedData`.
-   - Use repeated `--artifact-name` values for old product names that should also be removed, such as a prior `Latest.app` after switching to `Latest Dev.app`.
-   - Preserve the fresh build product used for installation unless the caller explicitly cleans all build output.
-   - Never delete `/Applications/<install-name>.app` during cleanup.
-
-6. Verify:
-   - `osascript -e 'POSIX path of (path to app id "<bundle-id>")'` should resolve to `/Applications/<install-name>.app/`.
-   - `osascript -e 'tell application id "<bundle-id>" to version'` should report the new marketing version after launch.
-   - The installed `Info.plist` should show the expected version/build.
-
-## Notes
-
-- If Spotlight metadata commands briefly report “could not find” immediately after `mdimport`, trust filesystem plus LaunchServices checks first and mention Spotlight may lag.
-- If there is no persistent Dock item for the app, there is no Dock plist entry to rewrite; launching the installed bundle is enough for the running Dock icon.
-- If multiple matching app bundles exist, enumerate them first and keep `/Applications` as the source of truth.
+Report the installed version/path, cleanup result, and any unresolved resolution issue concisely. If permission review blocks a required operation, identify the operation and reason rather than reporting completion.

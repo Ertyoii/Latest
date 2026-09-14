@@ -3,13 +3,13 @@ set -euo pipefail
 
 PROJECT=""
 SCHEME=""
-CONFIGURATION="Debug"
+CONFIGURATION="Release"
 DERIVED_DATA="build/DerivedData"
 APP_NAME=""
 INSTALL_NAME=""
 BUNDLE_ID=""
 CODE_SIGNING_ALLOWED_VALUE="NO"
-CLEAN_ARTIFACTS=0
+KEEP_BUILD=0
 RESTART_DOCK=0
 OPEN_APP=0
 DRY_RUN=0
@@ -23,14 +23,15 @@ Usage:
 Options:
   --project PATH          Xcode project to build.
   --scheme NAME           Xcode scheme to build.
-  --configuration NAME    Build configuration. Default: Debug.
+  --configuration NAME    Build configuration. Default: Release.
   --derived-data PATH     DerivedData output. Default: build/DerivedData.
   --app-name NAME         Built app product name without .app.
   --install-name NAME     Installed app name in /Applications. Defaults to --app-name.
   --bundle-id ID          Expected bundle id. If omitted, read from built Info.plist.
   --artifact-name NAME    Extra stale .app product name to clean. Repeatable.
   --code-signing VALUE    CODE_SIGNING_ALLOWED value. Default: NO.
-  --clean-artifacts       Remove stale duplicate app bundles from build/ and Xcode DerivedData.
+  --clean-artifacts       Compatibility flag; duplicate cleanup is now the default.
+  --keep-build            Explicitly retain the fresh build for debugging.
   --restart-dock          Restart Dock after registration.
   --open                  Open the installed app after replacement.
   --dry-run               Print destructive/copy commands without executing them.
@@ -48,7 +49,8 @@ while [[ $# -gt 0 ]]; do
     --bundle-id) BUNDLE_ID="$2"; shift 2 ;;
     --artifact-name) ARTIFACT_NAMES+=("$2"); shift 2 ;;
     --code-signing) CODE_SIGNING_ALLOWED_VALUE="$2"; shift 2 ;;
-    --clean-artifacts) CLEAN_ARTIFACTS=1; shift ;;
+    --clean-artifacts) shift ;;
+    --keep-build) KEEP_BUILD=1; shift ;;
     --restart-dock) RESTART_DOCK=1; shift ;;
     --open) OPEN_APP=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -71,28 +73,50 @@ if [[ "$INSTALL_NAME" != "$APP_NAME" ]]; then
   ARTIFACT_NAMES+=("$INSTALL_NAME")
 fi
 
-run() {
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    printf '[dry-run] '
-    printf '%q ' "$@"
-    printf '\n'
-  else
-    "$@"
+PROJECT_ROOT="$(pwd -P)"
+for name in "$CONFIGURATION" "$APP_NAME" "$INSTALL_NAME" "${ARTIFACT_NAMES[@]}"; do
+  if [[ -z "$name" || "$name" == */* || "$name" == . || "$name" == .. ]]; then
+    echo "Expected a plain app product name, not a path: $name" >&2
+    exit 2
   fi
-}
-
-PROJECT_ROOT="$(pwd)"
-BUILT_APP="$PROJECT_ROOT/$DERIVED_DATA/Build/Products/$CONFIGURATION/$APP_NAME.app"
+done
+# Limit both the source and cleanup to build-output trees, never source folders.
+DERIVED_DATA="$(python3 - "$PROJECT_ROOT" "$DERIVED_DATA" <<'PYTHON'
+from pathlib import Path
+import sys
+root, supplied = sys.argv[1:]
+path = Path(supplied).resolve()
+allowed = [Path(root) / 'build', Path.home() / 'Library/Developer/Xcode/DerivedData']
+if not any(path == base or base in path.parents for base in allowed):
+    sys.exit('DerivedData must be inside this repository/build or Xcode DerivedData.')
+print(path)
+PYTHON
+)"
+BUILT_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/$APP_NAME.app"
 INSTALLED_APP="/Applications/$INSTALL_NAME.app"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [[ -L "$INSTALLED_APP" ]]; then
+  echo "Refusing to replace a symlink at $INSTALLED_APP" >&2
+  exit 1
+fi
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "Plan: build $PROJECT / $SCHEME ($CONFIGURATION) at $BUILT_APP"
+  echo "Plan: verify identity, stop the matching app, copy to $INSTALLED_APP, and verify all copied content"
+  echo "Plan: unregister and remove matching-identity app products from repository/build and Xcode DerivedData"
+  echo "Plan: keep fresh build=$KEEP_BUILD; register and index $INSTALLED_APP; open=$OPEN_APP"
+  exit 0
+fi
 
 echo "Building $SCHEME ($CONFIGURATION)..."
-run xcodebuild build \
+xcodebuild build \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
   -configuration "$CONFIGURATION" \
   -destination "platform=macOS" \
   -derivedDataPath "$DERIVED_DATA" \
+  -disableAutomaticPackageResolution \
+  -onlyUsePackageVersionsFromResolvedFile \
+  CLANG_ENABLE_CODE_COVERAGE=NO \
   CODE_SIGNING_ALLOWED="$CODE_SIGNING_ALLOWED_VALUE"
 
 if [[ ! -d "$BUILT_APP" ]]; then
@@ -100,8 +124,22 @@ if [[ ! -d "$BUILT_APP" ]]; then
   exit 1
 fi
 
-if [[ -z "$BUNDLE_ID" ]]; then
-  BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$BUILT_APP/Contents/Info.plist")"
+ACTUAL_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$BUILT_APP/Contents/Info.plist")"
+if [[ -n "$BUNDLE_ID" && "$ACTUAL_BUNDLE_ID" != "$BUNDLE_ID" ]]; then
+  echo "Built bundle identifier does not match --bundle-id" >&2
+  exit 1
+fi
+BUNDLE_ID="$ACTUAL_BUNDLE_ID"
+if [[ ! "$BUNDLE_ID" =~ ^[A-Za-z0-9.-]+$ ]]; then
+  echo "Invalid bundle identifier" >&2
+  exit 1
+fi
+if [[ -d "$INSTALLED_APP" ]]; then
+  installed_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INSTALLED_APP/Contents/Info.plist")"
+  if [[ "$installed_id" != "$BUNDLE_ID" ]]; then
+    echo "Refusing to overwrite a different app at $INSTALLED_APP" >&2
+    exit 1
+  fi
 fi
 
 MARKETING_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$BUILT_APP/Contents/Info.plist")"
@@ -112,52 +150,62 @@ echo "Install target: $INSTALLED_APP"
 echo "Bundle id: $BUNDLE_ID"
 echo "Version: $MARKETING_VERSION ($BUILD_VERSION)"
 
-if [[ "$DRY_RUN" -eq 0 ]]; then
-  if [[ "$(osascript -e "application id \"$BUNDLE_ID\" is running" 2>/dev/null || true)" == "true" ]]; then
-    echo "Quitting running app..."
-    osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
-    for _ in {1..50}; do
-      if [[ "$(osascript -e "application id \"$BUNDLE_ID\" is running" 2>/dev/null || true)" != "true" ]]; then
-        break
-      fi
-      sleep 0.2
-    done
-  fi
-else
-  echo "[dry-run] would quit running app with bundle id $BUNDLE_ID before replacement"
+echo "Stopping the matching running app..."
+osascript -e "if application id \"$BUNDLE_ID\" is running then tell application id \"$BUNDLE_ID\" to quit"
+for attempt in {1..20}; do
+  running="$(osascript -e "application id \"$BUNDLE_ID\" is running")"
+  [[ "$running" == false ]] && break
+  sleep 0.2
+done
+if [[ "$running" != false ]]; then
+  echo "App did not quit; leaving installed and built bundles intact." >&2
+  exit 1
 fi
 
 echo "Replacing installed app..."
-run rsync -a --delete "$BUILT_APP/" "$INSTALLED_APP/"
-
-echo "Registering LaunchServices and Spotlight..."
-run "$LSREGISTER" -f -R -trusted "$INSTALLED_APP"
-run mdimport "$INSTALLED_APP"
-
-if [[ "$CLEAN_ARTIFACTS" -eq 1 ]]; then
-  echo "Cleaning stale duplicate app bundles..."
-  while IFS= read -r -d '' candidate; do
-    case "$candidate" in
-      "$BUILT_APP"|"$INSTALLED_APP") continue ;;
-    esac
-    echo "Removing $candidate"
-    run rm -rf "$candidate"
-  done < <(
-    for artifact_name in "${ARTIFACT_NAMES[@]}"; do
-      find "$PROJECT_ROOT/build" -name "$artifact_name.app" -type d -print0 2>/dev/null || true
-      find "$HOME/Library/Developer/Xcode/DerivedData" -name "$artifact_name.app" -type d -print0 2>/dev/null || true
-    done
-  )
+rsync -a --delete "$BUILT_APP/" "$INSTALLED_APP/"
+# Verify the complete bundle, including Debug implementation dylibs, before
+# deleting the source. A launcher-stub hash alone does not verify app code.
+differences="$(rsync -a --delete --checksum --dry-run --itemize-changes "$BUILT_APP/" "$INSTALLED_APP/")"
+if [[ -n "$differences" ]]; then
+  echo "Installed bundle differs from the build; preserving source for recovery." >&2
+  printf '%s\n' "$differences" >&2
+  exit 1
 fi
+
+echo "Cleaning duplicate app products, including the fresh build..."
+while IFS= read -r -d '' candidate; do
+  [[ "$candidate" == "$INSTALLED_APP" ]] && continue
+  [[ "$KEEP_BUILD" -eq 1 && "$candidate" == "$BUILT_APP" ]] && continue
+  [[ -L "$candidate" ]] && continue
+  candidate_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$candidate/Contents/Info.plist" 2>/dev/null || true)"
+  if [[ "$candidate_id" != "$BUNDLE_ID" ]]; then
+    echo "Preserving different bundle identity: $candidate"
+    continue
+  fi
+  "$LSREGISTER" -u "$candidate"
+  rm -rf -- "$candidate"
+  echo "Removed $candidate"
+done < <(
+  for artifact_name in "${ARTIFACT_NAMES[@]}"; do
+    for root in "$PROJECT_ROOT/build" "$HOME/Library/Developer/Xcode/DerivedData"; do
+      [[ ! -d "$root" ]] || find "$root" -type d -name "$artifact_name.app" -prune -print0
+    done
+  done
+)
+
+echo "Registering the installed app and refreshing Spotlight..."
+"$LSREGISTER" -f -R -trusted "$INSTALLED_APP"
+mdimport "$INSTALLED_APP"
 
 if [[ "$RESTART_DOCK" -eq 1 ]]; then
   echo "Restarting Dock..."
-  run killall Dock
+  killall Dock
 fi
 
 if [[ "$OPEN_APP" -eq 1 ]]; then
   echo "Opening installed app..."
-  run open -a "$INSTALLED_APP"
+  open -a "$INSTALLED_APP"
 fi
 
 if [[ "$DRY_RUN" -eq 0 ]]; then
