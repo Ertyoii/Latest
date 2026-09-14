@@ -147,6 +147,8 @@ enum ReleaseNotesSourceCatalog {
     let versionPrefix: String? =
       if definition.capabilities.contains(.exactVersion) {
         version.versionNumber
+      } else if definition.capabilities.contains(.majorMinorPatchVersion) {
+        version.versionNumber.map { $0.split(separator: ".").prefix(3).joined(separator: ".") }
       } else if definition.capabilities.contains(.majorMinorVersion) {
         version.versionNumber?.majorMinorVersionPrefix
       } else {
@@ -210,7 +212,7 @@ enum ReleaseNotesSourceCatalog {
 
     guard let version = remoteVersion.versionNumber,
       let apiURL = URL(
-        string: "https://api.github.com/repos/waydabber/BetterDummy/releases/tags/v\(version)")
+        string: "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v\(version)")
     else {
       return nil
     }

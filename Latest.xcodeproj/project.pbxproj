@@ -143,6 +143,7 @@
 		B19FFBF5C471F9724704AE54 /* ReleaseNotesHTMLExtraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FDE96FFFEC9B3854A230E64 /* ReleaseNotesHTMLExtraction.swift */; };
 		D691B34EE29B0FF98A22ED72 /* ReleaseNotesTextNormalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 903BBFF6BD25262BCF8BE89A /* ReleaseNotesTextNormalization.swift */; };
 		FA6C0E11A75026835D8C8DA0 /* ZoomReleaseNotesExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76F591149A1D25F98CE7FF78 /* ZoomReleaseNotesExtractor.swift */; };
+		E45390A9AC334B3F99000101 /* ReleaseNotesDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = E45390A9AC334B3F99000102 /* ReleaseNotesDocument.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -454,6 +455,7 @@
 		A492B900BB42DB5CA9C73A45 /* ReleaseNotesVersionSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesVersionSelection.swift"; sourceTree = "<group>"; };
 		A937EB19DC5A6BBCB6EF6BC6 /* AppUpdating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppUpdating.swift"; sourceTree = "<group>"; };
 		E573007060BA2A08246BCBD6 /* ZedReleaseNotesExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ZedReleaseNotesExtractor.swift"; sourceTree = "<group>"; };
+		E45390A9AC334B3F99000102 /* ReleaseNotesDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesDocument.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -738,6 +740,7 @@
 				A492B900BB42DB5CA9C73A45 /* ReleaseNotesVersionSelection.swift */,
 				903BBFF6BD25262BCF8BE89A /* ReleaseNotesTextNormalization.swift */,
 				3FDE96FFFEC9B3854A230E64 /* ReleaseNotesHTMLExtraction.swift */,
+				E45390A9AC334B3F99000102 /* ReleaseNotesDocument.swift */,
 				5421DAACBA730AEEB29C717F /* NavicatReleaseNotesExtractor.swift */,
 				8F7D497DE3A7D3B325C635EA /* ChromeReleaseNotesExtractor.swift */,
 				52A000012FE0000000000001 /* ReleaseNotesMemoryCache.swift */,
@@ -1248,6 +1251,7 @@
 				04DB211D3099FDA076EC8F2F /* ReleaseNotesVersionSelection.swift in Sources */,
 				D691B34EE29B0FF98A22ED72 /* ReleaseNotesTextNormalization.swift in Sources */,
 				B19FFBF5C471F9724704AE54 /* ReleaseNotesHTMLExtraction.swift in Sources */,
+				E45390A9AC334B3F99000101 /* ReleaseNotesDocument.swift in Sources */,
 				4F5BE2A6B6B58FB29F49877C /* NavicatReleaseNotesExtractor.swift in Sources */,
 				98849C45CA55E4F4E92740CB /* ChromeReleaseNotesExtractor.swift in Sources */,
 				52F001012FE2000000000001 /* AppPresentation.swift in Sources */,
@@ -1595,7 +1599,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1422;
+				CURRENT_PROJECT_VERSION = 1429;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = D87N659XLV;
@@ -1614,7 +1618,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.59;
+				MARKETING_VERSION = 0.60;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1637,7 +1641,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1422;
+				CURRENT_PROJECT_VERSION = 1429;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = D87N659XLV;
@@ -1657,7 +1661,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.59;
+				MARKETING_VERSION = 0.60;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

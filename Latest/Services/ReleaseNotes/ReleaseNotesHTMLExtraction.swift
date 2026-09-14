@@ -62,15 +62,13 @@ extension ReleaseNotesMarkup {
     }
 
     let range = NSRange(markup.startIndex..<markup.endIndex, in: markup)
-    guard let match = Regexes.firstRawURL.firstMatch(in: markup, range: range),
-      let matchRange = Range(match.range, in: markup)
-    else {
-      return nil
+    for match in Regexes.firstRawURL.matches(in: markup, range: range) {
+      guard let matchRange = Range(match.range, in: markup) else { continue }
+      let urlString = String(markup[matchRange]).trimmingCharacters(
+        in: CharacterSet(charactersIn: ".,;)"))
+      if let url = URL(string: urlString), isReleaseNotesLink(url) { return url }
     }
-
-    let urlString = String(markup[matchRange]).trimmingCharacters(
-      in: CharacterSet(charactersIn: ".,;)"))
-    return URL(string: urlString)
+    return nil
   }
 
   static func linkedChangelogURL(fromHTML html: String, version: String?, pageURL: URL) -> URL? {
@@ -94,14 +92,13 @@ extension ReleaseNotesMarkup {
       let label = Self.plainText(fromHTML: labelHTML) ?? labelHTML
       let searchText = href + "\n" + label
       guard
-        candidates.contains(where: { candidate in
-          searchText.range(of: candidate, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-        })
+        Self.lineContainsVersionCandidate(searchText, candidates: candidates)
       else {
         continue
       }
 
-      guard let url = URL(string: href, relativeTo: pageURL)?.absoluteURL else {
+      guard let url = URL(string: href, relativeTo: pageURL)?.absoluteURL, isReleaseNotesLink(url)
+      else {
         continue
       }
 
@@ -117,6 +114,17 @@ extension ReleaseNotesMarkup {
     }
 
     return preferredURL ?? fallbackURL
+  }
+
+  static func isReleaseNotesLink(_ url: URL) -> Bool {
+    guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return false }
+    let path = url.path.lowercased()
+    guard !path.contains("/pull/"), !path.contains("/issues/"), !path.contains("/compare/"),
+      !ReleaseNotesProviderConstants.downloadExtensions.contains(url.pathExtension.lowercased())
+    else { return false }
+    return path.range(
+      of: #"(release|changelog|change-log|notes|whatsnew|what-s-new|updates)"#,
+      options: .regularExpression) != nil
   }
 
   static func isReactServerReference(_ text: String) -> Bool {
@@ -140,9 +148,19 @@ extension ReleaseNotesMarkup {
     {
       let articleHTML = String(html[article.range])
       let articleText = Self.plainText(fromHTML: articleHTML) ?? articleHTML
-      if candidates.contains(where: { candidate in
-        articleText.range(of: candidate, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-      }) {
+      let openingTag = String(articleHTML.prefix(200)).lowercased()
+      if openingTag.range(
+        of: #"class=["'][^"']*\b(visionos|ios|windows|android)\b"#, options: .regularExpression)
+        != nil
+      {
+        searchStart = article.range.upperBound
+        continue
+      }
+      let heading =
+        articleHTML.range(of: #"(?is)<h[1-6]\b[^>]*>.*?</h[1-6]>"#, options: .regularExpression)
+        .flatMap { Self.plainText(fromHTML: String(articleHTML[$0])) }
+        ?? String(articleText.prefix(200))
+      if Self.lineContainsVersionCandidate(heading, candidates: candidates) {
         if let preferredSuffix {
           if candidates.contains(where: { candidate in
             articleText.range(
@@ -164,7 +182,7 @@ extension ReleaseNotesMarkup {
       searchStart = article.range.upperBound
     }
 
-    return fallbackArticleHTML
+    return preferredSuffix == nil ? fallbackArticleHTML : nil
   }
 
   private static func firstHTMLBlock(in html: String, tagName: String, marker: String) -> String? {
@@ -256,17 +274,17 @@ extension ReleaseNotesMarkup {
 
   private static func firstHrefURL(in html: String, baseURL: URL?) -> URL? {
     let range = NSRange(html.startIndex..<html.endIndex, in: html)
-    guard let match = Regexes.anchorHref.firstMatch(in: html, range: range),
-      let hrefRange = Range(match.range(at: 1), in: html)
-    else {
-      return nil
+    for match in Regexes.anchorHref.matches(in: html, range: range) {
+      guard let hrefRange = Range(match.range(at: 1), in: html) else { continue }
+      let href = Self.decodingHTMLEntities(in: String(html[hrefRange]))
+      if let url = URL(string: href, relativeTo: baseURL)?.absoluteURL, isReleaseNotesLink(url) {
+        return url
+      }
     }
-
-    let href = Self.decodingHTMLEntities(in: String(html[hrefRange]))
-    return URL(string: href, relativeTo: baseURL)?.absoluteURL
+    return nil
   }
 
-  private static func decodingHTMLEntities(in string: String) -> String {
+  static func decodingHTMLEntities(in string: String) -> String {
     var result = string
     let replacements = [
       "&nbsp;": " ",
@@ -276,6 +294,9 @@ extension ReleaseNotesMarkup {
       "&quot;": "\"",
       "&#39;": "'",
       "&apos;": "'",
+      "&rsquo;": "’", "&lsquo;": "‘", "&ldquo;": "“", "&rdquo;": "”",
+      "&mdash;": "—", "&ndash;": "–", "&middot;": "·", "&copy;": "©",
+      "&hellip;": "…", "&bull;": "•", "&reg;": "®",
     ]
 
     for (entity, replacement) in replacements {

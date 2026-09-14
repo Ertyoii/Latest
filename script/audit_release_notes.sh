@@ -7,12 +7,14 @@ CONFIGURATION="Debug"
 
 RUN_INSTALLED_AUDIT=false
 HOMEBREW_CASK_CATALOG=""
+LIVE_CASK_CATALOG=""
 
 usage() {
   cat <<'EOF'
-usage: script/audit_release_notes.sh [--installed] [--homebrew-cask PATH|-]
+usage: script/audit_release_notes.sh [--installed] [--homebrew-cask PATH|-] [--catalog PATH]
 
 Runs deterministic release-note fixture tests by default.
+  --catalog PATH        Check every mapped source with current versions from a public cask JSON file.
   --installed           Also inspect locally installed applications and perform network-backed checks.
   --homebrew-cask PATH  Measure public cask coverage without inspecting installed applications.
 EOF
@@ -23,6 +25,11 @@ while (($#)); do
     --installed)
       RUN_INSTALLED_AUDIT=true
       shift
+      ;;
+    --catalog)
+      if (($# < 2)); then echo "error: --catalog requires a JSON path" >&2; exit 2; fi
+      LIVE_CASK_CATALOG="$2"
+      shift 2
       ;;
     --homebrew-cask)
       if (($# < 2)); then
@@ -70,33 +77,19 @@ else
 fi
 
 only_testing=(
-  "Latest Tests/VersionParserTest/testMarkdownReleaseNotesAreRenderedAsRichTextLists"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupKeepsOnlyRelevantVersionSection"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupKeepsOnlyCurrentReleaseFromHTMLHistory"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupRejectsVersionOnlyAndLinkOnlyText"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupPreservesPlainTextChangelogLineBreaks"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupSeparatesCompactedSparkleChangelogText"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupDeduplicatesRepeatedLeadingVersionTitle"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupRejectsNavigationPageNoise"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupRejectsMojibakeText"
-  "Latest Tests/VersionParserTest/testReleaseNotesProviderRejectsDownloadLikeReleaseNotesURL"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupSeparatesHTMLChangelogHeadings"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupExtractsFirstSectionFromVersionlessChangelog"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupStopsCursorSectionAtNextDatedEntry"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupSkipsVersionNavigationWhenFindingRelevantSection"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupIgnoresZedReactServerDescriptionReference"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupExtractsZedReleasePayloadBeforeVersionNavigation"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupExtractsRelevantSectionFromHTMLWithoutRendering"
-  "Latest Tests/VersionParserTest/testReleaseNotesMarkupExtractsFirstReleaseNotesURLFromStubText"
-  "Latest Tests/VersionParserTest/testEveryCatalogHomebrewTokenProducesAConcreteRoute"
-  "Latest Tests/VersionParserTest/testReleaseNotesSourceCatalogUsesVerifiedVendorReleaseNotePages"
-  "Latest Tests/VersionParserTest/testSignedCatalogAcceptsValidRemoteDocument"
-  "Latest Tests/VersionParserTest/testSignedCatalogClassifiesStreamingSizeLimitAsOversized"
-  "Latest Tests/VersionParserTest/testSignedCatalogPersistsAndRevalidatesVerifiedRemoteCatalog"
+  "Latest Tests/ReleaseNotesMarkupTest"
+  "Latest Tests/ReleaseNotesCatalogTest"
+  "Latest Tests/ReleaseNotesProviderTest"
   "Latest Tests/ReleaseNotesPipelineTest"
 )
 
 swift_flags=""
+if [[ -n "$LIVE_CASK_CATALOG" ]]; then
+  only_testing+=("Latest Tests/ReleaseNotesAuditTest/testCatalogReleaseNotesAudit")
+  swift_flags="-DLATEST_RELEASE_NOTES_AUDIT"
+  export TEST_RUNNER_LATEST_RELEASE_NOTES_CASK_CATALOG="$LIVE_CASK_CATALOG"
+  export TEST_RUNNER_LATEST_RELEASE_NOTES_CATALOG_REPORT="$BUILD_DIR/release-notes-catalog-audit.json"
+fi
 if [[ "$RUN_INSTALLED_AUDIT" == true ]]; then
   only_testing+=("Latest Tests/ReleaseNotesAuditTest/testInstalledApplicationReleaseNotesAudit")
   swift_flags="-DLATEST_RELEASE_NOTES_AUDIT"

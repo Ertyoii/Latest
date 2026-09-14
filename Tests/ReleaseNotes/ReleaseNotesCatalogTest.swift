@@ -33,7 +33,7 @@ final class ReleaseNotesCatalogTest: XCTestCase {
 
     XCTAssertEqual(
       apiURL.absoluteString,
-      "https://api.github.com/repos/waydabber/BetterDummy/releases/tags/v4.3.4")
+      "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v4.3.4")
     XCTAssertTrue(fallbackHTML?.contains("BetterDisplay 4.3.4") == true)
   }
 
@@ -59,7 +59,7 @@ final class ReleaseNotesCatalogTest: XCTestCase {
 
     XCTAssertEqual(
       apiURL.absoluteString,
-      "https://api.github.com/repos/waydabber/BetterDummy/releases/tags/v4.3.4")
+      "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v4.3.4")
     XCTAssertTrue(fallbackHTML?.contains("BetterDisplay 4.3.4") == true)
   }
 
@@ -273,6 +273,22 @@ final class ReleaseNotesCatalogTest: XCTestCase {
     }
   }
 
+  func testNewSourcesMatchPublishedVersionPrecision() throws {
+    for (token, version, prefix) in [
+      ("expressvpn", "14.2.1.13658", "14.2.1"), ("navicat-for-postgresql", "17.3.12", "17.3.12"),
+      ("navicat-for-sqlite", "17.3.12", "17.3.12"),
+    ] {
+      guard
+        case .changelog(let urls, let actualPrefix, let latestFallback, _) =
+          ReleaseNotesSourceCatalog.releaseNotes(
+            forHomebrewToken: token, version: Version(versionNumber: version, buildNumber: nil))
+      else { return XCTFail("Missing source for \(token)") }
+      XCTAssertEqual(actualPrefix, prefix)
+      XCTAssertEqual(urls.count, 1)
+      XCTAssertFalse(latestFallback)
+    }
+  }
+
   func testEveryCatalogHomebrewTokenProducesAConcreteRoute() {
     let version = Version(versionNumber: "2026.1.4", buildNumber: "261.26222.59")
     let tokens = ReleaseNotesSourceCatalog.catalogHomebrewTokens
@@ -339,7 +355,10 @@ final class ReleaseNotesCatalogTest: XCTestCase {
       ("windowkeys", "3.0.1", "https://www.apptorium.com/windowkeys/release-notes/3.0.1"),
       ("expressions", "1.3.9", "https://www.apptorium.com/expressions/release-notes/1.3.9"),
       ("screenfocus", "1.1.1", "https://www.apptorium.com/screenfocus/release-notes/1.1.1"),
-      ("eclipse-java", "4.40", "https://www.eclipse.org/eclipse/news/4.40/"),
+      (
+        "eclipse-java", "4.40",
+        "https://raw.githubusercontent.com/eclipse-platform/www.eclipse.org-eclipse/master/news/4.40/platform.md"
+      ),
       ("parallels", "26.4.0", "https://kb.parallels.com/en/131014"),
     ]
 

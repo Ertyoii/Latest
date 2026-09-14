@@ -8,6 +8,8 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-05-30.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
+// Opt-in live catalog audit. Ordinary tests never contact vendor websites.
+import AppKit
 import Foundation
 import XCTest
 
@@ -64,7 +66,7 @@ final class ReleaseNotesAuditTest: XCTestCase {
               rows.append(
                 AuditRow(
                   bundle: bundle,
-                  status: "accepted",
+                  status: resolved.quality == .genericMetadata ? "metadata-only" : "accepted",
                   detail:
                     "source=\(app.source.rawValue) quality=\(resolved.quality) provenance=\(resolved.provenance.rawValue)",
                   excerpt: text
@@ -177,6 +179,10 @@ final class ReleaseNotesAuditTest: XCTestCase {
       options: [.regularExpression, .caseInsensitive]) != nil
     {
       issues.append("raw-html")
+    }
+
+    if !ReleaseNotesMarkup.isUsefulReleaseNotesText(trimmedText) {
+      issues.append("not-release-content")
     }
 
     if trimmedText.count > 20_000 {
@@ -323,5 +329,92 @@ private struct AuditRow {
 
   var summary: String {
     "- \(status): \(bundle.name) \(bundle.version.debugDescription) [\(bundle.source.rawValue)] - \(detail)"
+  }
+}
+
+extension ReleaseNotesAuditTest {
+  @MainActor
+  func testCatalogReleaseNotesAudit() async throws {
+    #if LATEST_RELEASE_NOTES_AUDIT
+      guard
+        let catalogPath = ProcessInfo.processInfo.environment["LATEST_RELEASE_NOTES_CASK_CATALOG"],
+        let reportPath = ProcessInfo.processInfo.environment["LATEST_RELEASE_NOTES_CATALOG_REPORT"]
+      else {
+        throw XCTSkip("Pass --catalog PATH to script/audit_release_notes.sh.")
+      }
+      struct Cask: Decodable {
+        let token: String
+        let version: String
+        let name: [String]
+      }
+      let casks = try JSONDecoder().decode(
+        [Cask].self, from: Data(contentsOf: URL(fileURLWithPath: catalogPath)))
+      let tokens = Set(ReleaseNotesSourceCatalog.catalogHomebrewTokens)
+      let selected = casks.filter { tokens.contains($0.token) }
+      let output = URL(fileURLWithPath: reportPath).deletingLastPathComponent()
+        .appendingPathComponent("catalog-rendered", isDirectory: true)
+      try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+      var rows = [[String: String]]()
+      for start in stride(from: 0, to: selected.count, by: 6) {
+        let tasks = selected[start..<min(start + 6, selected.count)].map { cask in
+          Task { @MainActor () -> [String: String] in
+            let version = VersionParser.parse(combinedVersionNumber: cask.version)
+            var row = [
+              "token": cask.token, "version": cask.version, "name": cask.name.first ?? cask.token,
+            ]
+            guard
+              let source = ReleaseNotesSourceCatalog.releaseNotes(
+                forHomebrewToken: cask.token, version: version)
+            else {
+              row["status"] = "no-route"
+              return row
+            }
+            row["route"] = String(describing: source)
+            let bundle = App.Bundle(
+              version: version, name: cask.name.first ?? cask.token,
+              bundleIdentifier: "audit.catalog." + cask.token,
+              fileURL: output.appendingPathComponent(cask.token + ".app"), source: .homebrew)
+            let update = App.Update(
+              app: bundle, remoteVersion: version, minimumOSVersion: nil,
+              source: .homebrew, date: nil, releaseNotes: source,
+              updateAction: .external(label: "Audit") { _ in })
+            let app = App(bundle: bundle, update: .success(update), isIgnored: false)
+            let provider = ReleaseNotesProvider(
+              persistentCache: ReleaseNotesPersistentCache(
+                directoryURL: output.appendingPathComponent(UUID().uuidString)))
+            let result = await withCheckedContinuation { continuation in
+              provider.resolvedReleaseNotes(for: app) { continuation.resume(returning: $0) }
+            }
+            switch result {
+            case .failure(let error):
+              row["status"] = "rejected"
+              row["error"] = String(describing: error)
+            case .success(let resolved):
+              row["status"] = "rendered"
+              row["quality"] = String(describing: resolved.quality)
+              row["provenance"] = resolved.provenance.rawValue
+              row["text"] = resolved.content.string
+              let formatted = ReleaseNotesTextFormatter.format(resolved.content)
+              if let rtf = try? formatted.data(
+                from: NSRange(location: 0, length: formatted.length),
+                documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+              {
+                try? rtf.write(to: output.appendingPathComponent(cask.token + ".rtf"))
+              }
+            }
+            print("CATALOG_PROBE " + cask.token + " " + (row["status"] ?? "unknown"))
+            return row
+          }
+        }
+        for task in tasks { rows.append(await task.value) }
+        let data = try JSONSerialization.data(
+          withJSONObject: rows, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: URL(fileURLWithPath: reportPath), options: .atomic)
+      }
+      XCTAssertEqual(rows.count, selected.count)
+      XCTAssertFalse(rows.isEmpty)
+    #else
+      throw XCTSkip("Pass --catalog PATH to script/audit_release_notes.sh.")
+    #endif
   }
 }

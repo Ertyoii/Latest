@@ -25,7 +25,7 @@ enum NavicatReleaseNotesExtractor {
       let startIndex = lines.firstIndex(where: { line in
         line.localizedCaseInsensitiveContains("(macOS)")
           && line.localizedCaseInsensitiveContains("version")
-          && candidates.contains(where: { line.localizedCaseInsensitiveContains($0) })
+          && ReleaseNotesMarkup.lineContainsVersionCandidate(line, candidates: candidates)
       })
     else {
       return nil
@@ -39,7 +39,9 @@ enum NavicatReleaseNotesExtractor {
         && (line.localizedCaseInsensitiveContains("(Windows)")
           || line.localizedCaseInsensitiveContains("(macOS)")
           || line.localizedCaseInsensitiveContains("(Linux)"))
-      if isPlatformReleaseHeading {
+      if isPlatformReleaseHeading || line.hasPrefix("To upgrade,")
+        || ReleaseNotesMarkup.looksLikeDateReleaseBoundary(line)
+      {
         endIndex = index
         break
       }

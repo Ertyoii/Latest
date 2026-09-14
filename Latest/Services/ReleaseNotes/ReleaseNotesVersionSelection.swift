@@ -9,10 +9,7 @@ extension ReleaseNotesMarkup {
     from text: String, version: String?, allowFirstSectionFallback: Bool,
     preferredSuffix: String? = nil
   ) -> String? {
-    let lines = text.components(separatedBy: .newlines).compactMap { line -> String? in
-      let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
-      return trimmedLine.isEmpty ? nil : trimmedLine
-    }
+    let lines = text.components(separatedBy: .newlines)
 
     guard !lines.isEmpty else { return nil }
 
@@ -26,9 +23,9 @@ extension ReleaseNotesMarkup {
           let pattern: String
           if let preferredSuffix {
             let escapedSuffix = NSRegularExpression.escapedPattern(for: preferredSuffix)
-            pattern = #"(^|[^\d])v?\#(escapedVersion)\s+\#(escapedSuffix)([^\w]|\z)"#
+            pattern = #"(^|[^\w.])v?\#(escapedVersion)\s+\#(escapedSuffix)([^\w]|\z)"#
           } else {
-            pattern = #"(^|[^\d])v?\#(escapedVersion)([^\d]|\z)"#
+            pattern = #"(^|[^\w.])v?\#(escapedVersion)([^\w.]|\z)"#
           }
           return try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
         }
@@ -37,12 +34,16 @@ extension ReleaseNotesMarkup {
       let standardMatchers = matchers(preferredSuffix: nil)
       let preferredMatchers = preferredSuffix.map { matchers(preferredSuffix: $0) } ?? []
 
-      func matchingVersionIndex(requiresBoundary: Bool, matchers: [NSRegularExpression]) -> Int? {
+      func matchingVersionIndex(
+        requiresBoundary: Bool, matchers: [NSRegularExpression], requiresHeading: Bool = false
+      ) -> Int? {
         for (index, line) in lines.enumerated() {
-          guard !Self.looksLikeVersionNavigation(line, at: index, in: lines),
+          guard !requiresHeading || line.trimmingCharacters(in: .whitespaces).hasPrefix("#"),
+            !Self.looksLikeVersionNavigation(line, at: index, in: lines),
             !requiresBoundary || Self.looksLikeVersionBoundary(line)
           else { continue }
 
+          let line = line.trimmingCharacters(in: .whitespaces)
           let lineRange = NSRange(line.startIndex..<line.endIndex, in: line)
           if matchers.contains(where: { regex in
             regex.firstMatch(in: line, range: lineRange) != nil
@@ -61,7 +62,9 @@ extension ReleaseNotesMarkup {
       }
 
       startIndex =
-        startIndex ?? matchingVersionIndex(requiresBoundary: true, matchers: standardMatchers)
+        startIndex ?? matchingVersionIndex(
+          requiresBoundary: true, matchers: standardMatchers, requiresHeading: true)
+        ?? matchingVersionIndex(requiresBoundary: true, matchers: standardMatchers)
         ?? matchingVersionIndex(requiresBoundary: false, matchers: standardMatchers)
     }
 
@@ -75,13 +78,12 @@ extension ReleaseNotesMarkup {
     let exactVersion = version?.trimmingCharacters(in: .whitespacesAndNewlines)
     let startLine = lines[startIndex]
     let shouldEndAtVersionBoundary = Self.looksLikeVersionBoundary(startLine)
-    let startsWithBareVersionLine = Self.isBareVersionLine(startLine)
+    var hasBody = false
     var endIndex = lines.endIndex
     for index in (startIndex + 1)..<lines.endIndex {
       let line = lines[index]
-      let isImmediateDateAfterBareVersion =
-        startsWithBareVersionLine && index == startIndex + 1
-        && Self.looksLikeDateReleaseBoundary(line)
+      let isImmediateDateAfterBareVersion = !hasBody && Self.looksLikeDateReleaseBoundary(line)
+
       let isBoundary =
         if shouldEndAtVersionBoundary {
           Self.looksLikeVersionBoundary(line)
@@ -90,9 +92,14 @@ extension ReleaseNotesMarkup {
           Self.looksLikeReleaseBoundary(line)
         }
 
-      if isBoundary && !(exactVersion.map { line.localizedCaseInsensitiveContains($0) } ?? false) {
+      if isBoundary
+        && (hasBody || !(exactVersion.map { line.localizedCaseInsensitiveContains($0) } ?? false))
+      {
         endIndex = index
         break
+      }
+      if !line.trimmingCharacters(in: .whitespaces).isEmpty && !isImmediateDateAfterBareVersion {
+        hasBody = true
       }
     }
 
@@ -106,7 +113,7 @@ extension ReleaseNotesMarkup {
     candidates.contains { candidate in
       let escapedCandidate = NSRegularExpression.escapedPattern(for: candidate)
       return line.range(
-        of: #"(^|[^\d])v?\#(escapedCandidate)([^\d]|\z)"#,
+        of: #"(^|[^\w.])v?\#(escapedCandidate)([^\w.]|\z)"#,
         options: [.regularExpression, .caseInsensitive]) != nil
     }
   }
@@ -118,12 +125,12 @@ extension ReleaseNotesMarkup {
     }
 
     var candidates = [version]
-    let parts = version.split(separator: ".", omittingEmptySubsequences: true)
-    if parts.count >= 2 {
-      candidates.append(parts.prefix(2).joined(separator: "."))
+    var parts = version.split(separator: ".").map(String.init)
+    while parts.count > 2, parts.last == "0" {
+      parts.removeLast()
+      candidates.append(parts.joined(separator: "."))
     }
-
-    return Array(Set(candidates)).sorted { $0.count > $1.count }
+    return candidates
   }
 
   private static func looksLikeReleaseBoundary(_ line: String) -> Bool {
@@ -131,17 +138,32 @@ extension ReleaseNotesMarkup {
   }
 
   static func looksLikeDateReleaseBoundary(_ line: String) -> Bool {
-    line.range(of: #"^[A-Z][a-z]+ \d{1,2}, \d{4}"#, options: .regularExpression) != nil
+    let line = line.replacingOccurrences(
+      of: #"^\s*#{1,6}\s+"#, with: "", options: .regularExpression
+    )
+    .trimmingCharacters(in: .whitespaces)
+    return line.range(
+      of:
+        #"^(?:[A-Z][a-z]+ \d{1,2},? \d{4}|\d{4} [A-Z][a-z]+ \d{1,2}|\d{4}-\d{2}-\d{2})(?:\s*(?:·.*|version\b.*))?\s*$"#,
+      options: .regularExpression) != nil
   }
 
   static func looksLikeVersionBoundary(_ line: String) -> Bool {
-    line.range(of: #"^#{1,6}\s*v?\d+(\.\d+){1,}"#, options: [.regularExpression, .caseInsensitive])
-      != nil
-      || line.range(
-        of: #"^v?\d+(\.\d+){1,}(\s|$|-)"#, options: [.regularExpression, .caseInsensitive]) != nil
-      || line.range(
-        of: #"^(?![-*•])\D{1,60}v?\d+(\.\d+){1,}(\s|$|-)"#,
-        options: [.regularExpression, .caseInsensitive]) != nil
+    let line = line.trimmingCharacters(in: .whitespaces)
+    let label = cleaningInlineMarkdown(in: line).replacingOccurrences(
+      of: #"^#{1,6}\s+"#, with: "", options: .regularExpression)
+    guard label.count < 180, !label.hasPrefix("-"), !label.hasPrefix("•"),
+      !label.lowercased().hasPrefix("download"),
+      let range = label.range(
+        of: #"(?i)^(?:[^\d\n]{0,65})v?\d+(?:\.\d+)+(?:[a-z]+\d*)?"#, options: .regularExpression)
+    else { return false }
+    let suffix = label[range.upperBound...].trimmingCharacters(in: .whitespaces)
+    if line.hasPrefix("#") { return true }
+    if suffix.isEmpty || suffix.first.map({ ":(-–—".contains($0) }) == true { return true }
+    if ["desktop", "mobile", "release", "release notes"].contains(suffix.lowercased()) {
+      return true
+    }
+    return suffix.range(of: #"^[A-Z][a-z]+ \d{1,2},? \d{4}"#, options: .regularExpression) != nil
   }
 
   private static func looksLikeVersionNavigation(_ line: String, at index: Int, in lines: [String])

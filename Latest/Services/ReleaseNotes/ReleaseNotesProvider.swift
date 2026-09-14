@@ -166,7 +166,7 @@ class ReleaseNotesProvider {
             ReleaseNotesCandidate(
               markup: html,
               baseURL: nil,
-              provenance: releaseNotes.provenance,
+              provenance: app.source == .appStore ? .appStore : releaseNotes.provenance,
               qualityHint: releaseNotes.qualityHint
             ),
             for: ReleaseNotesContext(app: app)
@@ -179,7 +179,8 @@ class ReleaseNotesProvider {
           from: url, relevantVersion: app.remoteVersion?.versionNumber, requestID: requestID,
           with: completion)
       case .encoded(let data):
-        let provenance = releaseNotes.provenance
+        let provenance: ReleaseNotesProvenance =
+          app.source == .appStore ? .appStore : releaseNotes.provenance
         let quality = releaseNotes.qualityHint
         currentReleaseNotesTask = Task { [weak self] in
           guard let self else { return }
@@ -211,7 +212,22 @@ class ReleaseNotesProvider {
         self.changelogReleaseNotes(
           from: urls, versionPrefix: versionPrefix ?? app.remoteVersion?.versionNumber,
           allowsLatestFallback: allowsLatestFallback, fallbackHTML: fallbackHTML,
-          requestID: requestID, with: completion)
+          requestID: requestID,
+          with: { result in
+            let broadVersion =
+              versionPrefix.map {
+                !ReleaseNotesMarkup.versionCandidates(from: app.remoteVersion?.versionNumber)
+                  .contains($0)
+              } ?? false
+            completion(
+              result.map { resolved in
+                ResolvedReleaseNotes(
+                  content: resolved.content,
+                  quality: allowsLatestFallback || broadVersion
+                    ? min(resolved.quality, .degraded) : resolved.quality,
+                  provenance: resolved.provenance)
+              })
+          })
       }
     } else {
       completion(.failure(LatestError.releaseNotesUnavailable))
@@ -444,19 +460,12 @@ class ReleaseNotesProvider {
       fromHTML: linkedHTML,
       baseURL: linkedURL,
       relevantVersion: relevantVersion,
-      allowFirstSectionFallback: true
+      allowFirstSectionFallback: false
     ) {
       return try? result.get().mapToResolved(quality: .genuine, provenance: .changelog)
     }
 
-    guard
-      let releaseNotes = await ReleaseNotesMarkup.plainTextAttributedStringByPreparingOffMain(
-        fromHTML: linkedHTML,
-        baseURL: linkedURL,
-        relevantVersion: relevantVersion
-      )
-    else { return nil }
-    return try? releaseNotes.get().mapToResolved(quality: .genuine, provenance: .changelog)
+    return nil
   }
 
   private func changelogReleaseNotes(
@@ -533,7 +542,16 @@ class ReleaseNotesProvider {
       let attemptID = UUID()
       activeAttemptID = attemptID
 
-      activeWebContentLoader.load(from: url) { result in
+      activeWebContentLoader.load(
+        from: url,
+        acceptsContent: { html in
+          await Task.detached {
+            ReleaseNotesMarkup.relevantChangelogText(
+              fromHTML: html, version: versionPrefix, pageURL: url,
+              allowFirstSectionFallback: allowsLatestFallback) != nil
+          }.value
+        }
+      ) { result in
         guard self.isCurrentRequest(requestID), activeAttemptID == attemptID, !didComplete else {
           return
         }
@@ -633,10 +651,10 @@ class ReleaseNotesProvider {
       return ChangelogContent(text: releaseHTML, baseURL: url)
     }
 
-    if url.host?.localizedCaseInsensitiveContains("chromereleases.googleblog.com") == true,
-      let text = ReleaseNotesMarkup.relevantChangelogText(
-        fromHTML: html, version: versionPrefix, pageURL: url,
-        allowFirstSectionFallback: allowsLatestFallback)
+    // Select the release already present on this page before following navigation links.
+    if let text = ReleaseNotesMarkup.relevantChangelogText(
+      fromHTML: html, version: versionPrefix, pageURL: url,
+      allowFirstSectionFallback: allowsLatestFallback)
     {
       return ChangelogContent(text: text, baseURL: url)
     }
@@ -654,23 +672,10 @@ class ReleaseNotesProvider {
 
       if let text = ReleaseNotesMarkup.relevantChangelogText(
         fromHTML: linkedHTML, version: versionPrefix, pageURL: linkedURL,
-        allowFirstSectionFallback: true)
+        allowFirstSectionFallback: false)
       {
         return ChangelogContent(text: text, baseURL: linkedURL)
       }
-
-      if let text = ReleaseNotesMarkup.plainText(fromHTML: linkedHTML),
-        ReleaseNotesMarkup.isUsefulReleaseNotesText(text, relevantVersion: versionPrefix)
-      {
-        return ChangelogContent(text: text, baseURL: linkedURL)
-      }
-    }
-
-    if let text = ReleaseNotesMarkup.relevantChangelogText(
-      fromHTML: html, version: versionPrefix, pageURL: url,
-      allowFirstSectionFallback: allowsLatestFallback)
-    {
-      return ChangelogContent(text: text, baseURL: url)
     }
 
     return nil

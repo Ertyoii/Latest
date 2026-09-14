@@ -315,16 +315,16 @@ final class UpdateRepositoryTest: XCTestCase {
   func testHomebrewCaskEntryProvidesFallbackReleaseNotesWhenNoChangelogExists() throws {
     let json = """
       {
-      \t"token": "expressvpn",
+      \t"token": "example-vpn",
       \t"version": "14.1.1.13156",
-      \t"name": ["ExpressVPN"],
+      \t"name": ["ExampleVPN"],
       \t"desc": "VPN client for secure & private internet access",
       \t"artifacts": [
       \t\t{
       \t\t\t"uninstall": [
       \t\t\t\t{
-      \t\t\t\t\t"quit": "com.express.vpn",
-      \t\t\t\t\t"delete": "/Applications/ExpressVPN.app"
+      \t\t\t\t\t"quit": "com.example.vpn",
+      \t\t\t\t\t"delete": "/Applications/ExampleVPN.app"
       \t\t\t\t}
       \t\t\t]
       \t\t}
@@ -340,7 +340,7 @@ final class UpdateRepositoryTest: XCTestCase {
       return XCTFail("Expected separately classified Homebrew metadata")
     }
 
-    XCTAssertTrue(html.contains("ExpressVPN 14.1.1.13156"))
+    XCTAssertTrue(html.contains("ExampleVPN 14.1.1.13156"))
     XCTAssertTrue(html.contains("secure &amp; private"))
   }
 

@@ -28,12 +28,17 @@ enum ZoomReleaseNotesExtractor {
 
     let versionIndexes = lines.indices.filter { index in
       let line = lines[index]
-      return ReleaseNotesMarkup.lineContainsVersionCandidate(line, candidates: candidates)
+      return
+        (ReleaseNotesMarkup.looksLikeDateReleaseBoundary(line)
+        || line.range(of: #"^\d+(?:\.\d+)+\s*(?:\(|$)"#, options: .regularExpression) != nil)
+        && ReleaseNotesMarkup.lineContainsVersionCandidate(line, candidates: candidates)
     }
 
     for versionIndex in versionIndexes {
       let startIndex =
-        lines[..<versionIndex].indices.reversed().first { index in
+        ReleaseNotesMarkup.looksLikeDateReleaseBoundary(lines[versionIndex])
+        ? versionIndex
+        : lines[..<versionIndex].indices.reversed().first { index in
           ReleaseNotesMarkup.looksLikeDateReleaseBoundary(lines[index])
         } ?? versionIndex
 
@@ -94,6 +99,7 @@ enum ZoomReleaseNotesExtractor {
         }
       }
 
+      if ["Type", "Feature title", "Description", "Platforms"].contains(trimmedLine) { continue }
       if trimmedLine.localizedCaseInsensitiveCompare("Type Feature title Description Platforms")
         == .orderedSame
       {
@@ -131,7 +137,7 @@ enum ZoomReleaseNotesExtractor {
       index = endIndex
     }
 
-    return cleanedLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    return cleanedLines.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   private static func zoomArticleBodyHTML(fromHTML html: String) -> String? {
@@ -179,7 +185,7 @@ enum ZoomReleaseNotesExtractor {
   private static func zoomReleaseTextWithVersionHeader(_ text: String, version: String?) -> String {
     guard let version = version?.trimmingCharacters(in: .whitespacesAndNewlines),
       !version.isEmpty,
-      text.range(of: version, options: [.caseInsensitive, .diacriticInsensitive]) == nil
+      !text.hasPrefix("Zoom " + version)
     else {
       return text
     }

@@ -14,6 +14,29 @@ import XCTest
 
 final class ReleaseNotesProviderTest: XCTestCase {
   @MainActor
+  func testGitHubSelectedReleaseKeepsBodyBeforeVersionedDownloadLink() async throws {
+    let html = """
+      <p>BetterDisplay 5 brings expanded display arrangement and advanced image controls.</p>
+      <h2>Highlights</h2><ul><li>Improved brightness syncing after wake.</li></ul>
+      <p><a href="https://github.com/waydabber/BetterDisplay/releases/download/v5.0.5/BetterDisplay-v5.0.5.dmg">Download for macOS</a></p>
+      """
+    let result = await ReleaseNotesMarkup.githubAttributedStringByPreparingOffMain(
+      from: html, title: nil,
+      baseURL: URL(string: "https://github.com/waydabber/BetterDisplay/releases/tag/v5.0.5")!,
+      relevantVersion: "5.0.5")
+    let text = try XCTUnwrap(result).get().string
+    XCTAssertTrue(text.contains("expanded display arrangement"))
+    XCTAssertTrue(text.contains("Improved brightness syncing"))
+  }
+
+  func testInternalFetchErrorsProduceReadableReleaseNoteMessages() {
+    let expected = ReleaseNotesMessage(error: LatestError.releaseNotesUnavailable)
+    for error in [FetchHTMLError.unusableText, .fetchFailed] {
+      XCTAssertEqual(ReleaseNotesMessage(error: error), expected)
+    }
+  }
+
+  @MainActor
   func testLatestDevHasVersionMatchedOfflineNotesWithoutAnUpdater() async throws {
     func app(identifier: String, version: String) -> App {
       let bundle = App.Bundle(

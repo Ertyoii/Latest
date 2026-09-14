@@ -37,9 +37,16 @@ extension ReleaseNotesMarkup {
       return nil
     }
 
+    if ["md", "mdx"].contains(pageURL.pathExtension.lowercased()) {
+      let markdown = Self.normalizedPlainText(html)
+      return Self.relevantText(
+        from: markdown, version: version, allowFirstSectionFallback: allowFirstSectionFallback)
+        ?? (Self.isUsefulReleaseNotesText(markdown, relevantVersion: version)
+          && pageURL.pathExtension == "mdx" ? markdown : nil)
+    }
     let preferredSuffix =
       pageURL.host?.localizedCaseInsensitiveContains("obsidian.md") == true ? "Desktop" : nil
-    guard let text = Self.plainText(fromHTML: html),
+    guard let text = ReleaseNotesDocument.markdown(fromHTML: html, baseURL: pageURL),
       let relevantText = Self.relevantText(
         from: text, version: version, allowFirstSectionFallback: allowFirstSectionFallback,
         preferredSuffix: preferredSuffix),

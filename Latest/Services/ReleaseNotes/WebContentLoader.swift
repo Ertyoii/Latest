@@ -16,13 +16,16 @@ class WebContentLoader: NSObject {
   ///
   /// The update handler is called once after the page reaches a settled DOM state.
   func load(
-    from url: URL, contentUpdateHandler: @escaping @MainActor (Result<String, Error>) -> Void
+    from url: URL,
+    acceptsContent: (@Sendable (String) async -> Bool)? = nil,
+    contentUpdateHandler: @escaping @MainActor (Result<String, Error>) -> Void
   ) {
     pendingContentUpdateTask?.cancel()
     loadTimeoutTask?.cancel()
     let loadID = UUID()
     currentLoadID = loadID
     currentUpdateHandler = contentUpdateHandler
+    self.acceptsContent = acceptsContent
     let webView = activeWebView
     webView.stopLoading()
     currentNavigation = webView.load(URLRequest(url: url))
@@ -36,6 +39,7 @@ class WebContentLoader: NSObject {
     currentLoadID = UUID()
     currentNavigation = nil
     currentUpdateHandler = nil
+    acceptsContent = nil
     guard let webView else { return }
     webView.stopLoading()
     Task<Void, Never> { @MainActor in
@@ -101,6 +105,8 @@ class WebContentLoader: NSObject {
   private var currentLoadID = UUID()
 
   /// The current update handler.
+  private var acceptsContent: (@Sendable (String) async -> Bool)?
+
   private var currentUpdateHandler: (@MainActor (Result<String, Error>) -> Void)?
 
   /// Delayed content extraction work used to collapse mutation bursts.
@@ -149,6 +155,8 @@ class WebContentLoader: NSObject {
         !html.isEmpty
       else { return }
 
+      if let acceptsContent, !(await acceptsContent(html)) { return }
+      guard loadID == currentLoadID else { return }
       loadTimeoutTask?.cancel()
       currentUpdateHandler = nil
       _ = try? await webView.evaluateJavaScript(

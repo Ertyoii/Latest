@@ -58,6 +58,12 @@ Sparkle is pinned through Swift Package Manager. `Frameworks/CommerceKit` and `F
 
 `UpdateInstaller` is a separate privileged helper target that installs App Store update packages and writes their receipts. The main app communicates with it over XPC. `Frameworks` contains headers and module maps for the macOS App Store frameworks; both folders are required by the current implementation.
 
+## Release-note checks
+
+`./script/audit_release_notes.sh` runs the deterministic release-note regression suite. To check every mapped app against current upstream pages, download the public Homebrew cask JSON and run `./script/audit_release_notes.sh --catalog /path/to/cask.json`. The live check writes `build/release-notes-catalog-audit.json` with per-app results and `build/catalog-rendered/*.rtf` for formatting review. Network failures and rejected content are recorded, rather than treated as successful coverage.
+
+`./script/audit_release_note_coverage.sh /path/to/cask.json` measures available source routes; a route does not guarantee that an upstream page supplies usable release notes. `--installed` on the audit script separately checks locally installed apps.
+
 ## Swift formatting
 
 Use the Swift toolchain's `swift-format` through Xcode (`xcrun swift-format`). The checked-in `.swift-format` records the defaults from version 6.3.0: two-space indentation, a 100-column line-length target, sorted imports, and trailing commas in multiline collections. Multiline string contents are not reflowed.

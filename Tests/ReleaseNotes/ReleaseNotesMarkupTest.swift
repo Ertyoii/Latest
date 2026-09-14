@@ -7,12 +7,254 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-08-29.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
+import AppKit
 import CryptoKit
 import XCTest
 
 @testable import Latest
 
 final class ReleaseNotesMarkupTest: XCTestCase {
+  func testMarkdownDisclosureMarkupDoesNotLeakIntoNotes() {
+    let source = """
+      # Platform 4.41
+      <details>
+      <summary>Contributors</summary>
+      - Example contributor
+      </details>
+      <!-- Internal issue reference -->
+      Fixed console zooming.
+      ```html
+      <details>
+      ```
+      """
+    let text = ReleaseNotesDocument.render(source).string
+    XCTAssertTrue(text.contains("Contributors"))
+    XCTAssertTrue(text.contains("Fixed console zooming"))
+    XCTAssertFalse(text.contains("<summary>"))
+    XCTAssertFalse(text.contains("Internal issue"))
+    XCTAssertEqual(text.components(separatedBy: "<details>").count - 1, 1)
+  }
+
+  func testMarkdownRelativeLinksResolveAgainstTheSourcePage() throws {
+    let rendered = ReleaseNotesMarkup.attributedString(
+      fromMarkdown: "See [details](details.md) for the crash fix.",
+      baseURL: URL(string: "https://example.com/releases/4.0.md")!)
+    let range = (rendered.string as NSString).range(of: "details")
+    XCTAssertEqual(
+      rendered.attribute(.link, at: range.location, effectiveRange: nil) as? URL,
+      URL(string: "https://example.com/releases/details.md"))
+  }
+
+  func testDatedProductChangelogFallbackPreservesOneAnnouncement() throws {
+    let html = """
+      <div><span>Sep 10, 2026</span> · <span>Changelog</span></div>
+      <h1>Cursor Projects</h1><p>Projects maintains context and coordinates work across agents.</p>
+      <h2>Shared context</h2><p>Agents share research and project decisions.</p>
+      <div><span>Sep 2, 2026</span> · <span>Changelog</span></div>
+      <h1>Previous announcement</h1><p>Older content.</p>
+      """
+    let text = try XCTUnwrap(
+      ReleaseNotesMarkup.relevantChangelogText(
+        fromHTML: html, version: "3.20", pageURL: URL(string: "https://cursor.com/changelog")!,
+        allowFirstSectionFallback: true))
+    XCTAssertTrue(text.contains("Shared context"))
+    XCTAssertFalse(text.contains("Older content"))
+  }
+
+  func testZoomIgnoresVersionReferencesOutsideTheVersionMatrix() throws {
+    let html = """
+      <h2>July 24, 2026</h2><p>Note: This fix is also included in version 7.1.5 and later.</p>
+      <p>Full versions</p><p>7.0.6 (84834)</p><h3>Resolved issues</h3><p>Older security fix.</p>
+      <h2>July 20, 2026</h2><p>Full versions</p><p>7.1.5 (84650)</p>
+      <h3>Resolved issues</h3><p>Fixed a meeting audio crash.</p>
+      """
+    let text = try XCTUnwrap(
+      ZoomReleaseNotesExtractor.zoomReleaseText(
+        fromHTML: html, version: "7.1.5", pageURL: URL(string: "https://support.zoom.com/notes")!))
+    XCTAssertTrue(text.hasPrefix("Zoom 7.1.5"))
+    XCTAssertTrue(text.contains("meeting audio crash"))
+    XCTAssertFalse(text.contains("Older security fix"))
+  }
+
+  func testVersionMentionsInsideProseDoNotTruncateMarkdown() throws {
+    let markdown = """
+      Ghostty 1.3.1 includes changes from many contributors.
+
+      ## Highlights
+
+      Ghostty 1.3.0 had a noticeable mouse bug. This issue is now resolved.
+
+      ## Full Changelog
+
+      - Fixed phantom selection after focus changes.
+      - Added configurable progress indicators.
+
+      More improvements will ship a bit further out than the 1.3.1 release.
+      """
+    let text = try ReleaseNotesMarkup.attributedString(
+      from: markdown, baseURL: nil, relevantVersion: "1.3.1"
+    ).get().string
+    XCTAssertTrue(text.contains("includes changes"))
+    XCTAssertTrue(text.contains("Added configurable"))
+    XCTAssertTrue(text.contains("More improvements"))
+  }
+
+  func testAdjacentVersionAndBadgeSpansStaySeparated() throws {
+    let html =
+      "<h2>Farrago <span>2.2.0</span><span>MacOS 27 Support</span></h2><p>Added support for the new system.</p><h2>Farrago 2.1.5</h2><p>Old notes.</p>"
+    let selected = try XCTUnwrap(
+      ReleaseNotesMarkup.relevantChangelogText(
+        fromHTML: html, version: "2.2.0", pageURL: URL(string: "https://example.com/releases")!,
+        allowFirstSectionFallback: false))
+    XCTAssertTrue(selected.contains("2.2.0 MacOS"))
+    XCTAssertTrue(selected.contains("Added support"))
+    XCTAssertFalse(selected.contains("Old notes"))
+  }
+
+  func testListContinuationDoesNotRepeatBullet() {
+    let text = ReleaseNotesDocument.render(
+      "- First paragraph.\n\n  Continuation paragraph.\n\n- Next item.")
+    XCTAssertEqual(text.string.filter { $0 == "•" }.count, 2)
+  }
+
+  func testEquivalentHTMLAndMarkdownPreserveStructure() throws {
+    let html = """
+      <h2>Fixes</h2><ul><li><strong>Fixed</strong> the <a href="https://example.com/issues/1">editor</a>.
+      <ul><li>Keep <code>code_names</code> and <em>emphasis</em>.</li></ul></li></ul>
+      <p>A second paragraph &rsquo; &mdash; &copy;.</p>
+      """
+    let markdown = """
+      ## Fixes
+
+      - **Fixed** the [editor](https://example.com/issues/1).
+          - Keep `code_names` and *emphasis*.
+
+      A second paragraph ’ — ©.
+      """
+    let htmlText = try ReleaseNotesMarkup.attributedString(from: html, baseURL: nil).get()
+    let markdownText = try ReleaseNotesMarkup.attributedString(from: markdown, baseURL: nil).get()
+    XCTAssertEqual(htmlText.string, markdownText.string)
+    let text = ReleaseNotesTextFormatter.format(htmlText)
+    let editor = (text.string as NSString).range(of: "editor")
+    XCTAssertEqual(
+      text.attribute(.link, at: editor.location, effectiveRange: nil) as? URL,
+      URL(string: "https://example.com/issues/1"))
+    let code = (text.string as NSString).range(of: "code_names")
+    XCTAssertTrue(
+      (text.attribute(.font, at: code.location, effectiveRange: nil) as? NSFont)?.fontDescriptor
+        .symbolicTraits.contains(.monoSpace) == true)
+    let nested = (text.string as NSString).range(of: "Keep")
+    let paragraph = try XCTUnwrap(
+      text.attribute(.paragraphStyle, at: nested.location, effectiveRange: nil) as? NSParagraphStyle
+    )
+    XCTAssertGreaterThan(paragraph.firstLineHeadIndent, 0)
+    XCTAssertGreaterThan(paragraph.headIndent, paragraph.firstLineHeadIndent)
+  }
+
+  func testReleaseSelectionIgnoresNavigationAndPreservesReleaseDate() throws {
+    let html = """
+      <nav><a href="/download/4.6">Moom 4.6 requires macOS</a></nav>
+      <h2>Moom 4.6</h2><h3>August 19, 2026</h3>
+      <h3>New Features</h3><ul><li>Added configurable window arrangements.</li></ul>
+      <h2>Moom 4.5.1</h2><p>Older changes.</p>
+      """
+    let text = try XCTUnwrap(
+      ReleaseNotesMarkup.relevantChangelogText(
+        fromHTML: html, version: "4.6.0",
+        pageURL: URL(string: "https://manytricks.com/moom/releasenotes/")!,
+        allowFirstSectionFallback: false))
+    XCTAssertTrue(text.contains("August 19, 2026"))
+    XCTAssertTrue(text.contains("Added configurable"))
+    XCTAssertFalse(text.contains("Older changes"))
+    XCTAssertFalse(text.contains("requires macOS"))
+  }
+
+  func testExactVersionsDoNotMatchAnotherPatchOrSuffix() {
+    for (expected, wrong) in [("4.6.0", "4.4.6"), ("5.5.3", "5.5.1"), ("3.7.1beta1", "3.7.1")] {
+      XCTAssertNil(
+        ReleaseNotesMarkup.relevantText(
+          from: "## Version \(wrong)\n\n- Fixed an important crash.", version: expected,
+          allowFirstSectionFallback: false))
+    }
+  }
+
+  func testColonVersionBoundaryAndLeadingDateAreKeptSeparate() throws {
+    let text = try XCTUnwrap(
+      ReleaseNotesMarkup.relevantText(
+        from: "0.98:\nFixed a crash.\n0.97:\nOld changes.", version: "0.98",
+        allowFirstSectionFallback: false))
+    XCTAssertFalse(text.contains("Old changes"))
+    let dated = try XCTUnwrap(
+      ReleaseNotesMarkup.relevantText(
+        from:
+          "version 14.2.1\nFixed unnecessary reconnections.\n2026 June 17\nversion 14.2.0\nOld changes.",
+        version: "14.2.1", allowFirstSectionFallback: false))
+    XCTAssertFalse(dated.contains("June"))
+  }
+
+  func testKnownLiveStubsAreRejected() {
+    for text in [
+      "Resolutionator 2.4 requires\nmacOS 10.9 Mavericks or newer. What’s new?\nRelease Notes\nWhat’s new in Resolutionator?",
+      "Download A Better Finder Attributes 7.48\nfor Intel & Apple Silicon Macs, requires macOS 13.\nMore Options &gt;&gt;",
+      "DBeaver Enterprise 26.2", "What's New in CLion 2026.2\nCLion\nDownload", "Moom 4.6 requires",
+      "153.0.4234.32 (September 10, 2026)\nExtended Stable 152",
+      "If you are not redirected automatically, follow this link.",
+      "155.0.1\nFirefox for Android Release",
+      "Conversation\nCommits 58\nChecks\nFiles changed\nMerged",
+    ] {
+      XCTAssertFalse(ReleaseNotesMarkup.isUsefulReleaseNotesText(text), text)
+    }
+    XCTAssertTrue(ReleaseNotesMarkup.isUsefulReleaseNotesText("Fixed a crash."))
+    XCTAssertTrue(
+      ReleaseNotesMarkup.isUsefulReleaseNotesText("Minor bug fixes and security enhancements."))
+  }
+
+  func testMacArticleWinsOverSameVersionOnOtherPlatforms() throws {
+    let html = """
+      <article class="visionos app"><h2>OmniPlan 4.11</h2><p>Fixed a Vision Pro crash.</p></article>
+      <article class="mac app"><h2>OmniPlan 4.11</h2><p>Fixed a Mac document crash.</p></article>
+      """
+    let selected = try XCTUnwrap(
+      ReleaseNotesMarkup.releaseContentHTML(
+        fromHTML: html, version: "4.11",
+        pageURL: URL(string: "https://www.omnigroup.com/releasenotes/omniplan")!))
+    XCTAssertTrue(selected.contains("Mac document"))
+    XCTAssertFalse(selected.contains("Vision Pro"))
+  }
+
+  func testFallbackDoesNotFollowPullRequestsOrDownloads() {
+    for path in [
+      "https://github.com/usebruno/bruno/pull/8734", "https://example.com/releases/app.dmg",
+      "https://example.com/",
+    ] {
+      XCTAssertNil(
+        ReleaseNotesMarkup.firstReleaseNotesURL(
+          in: "<a href=\"\(path)\">Read more</a>", baseURL: nil))
+    }
+    XCTAssertNotNil(
+      ReleaseNotesMarkup.firstReleaseNotesURL(
+        in: "https://example.com/changelog/4.1.0", baseURL: nil))
+  }
+
+  func testMarkdownContainingHTMLDoesNotLoseReleaseBoundaries() throws {
+    let markdown = """
+      ## 4.90.0
+
+      - Fixed a crash with <code>docker stop</code>.
+      - Added support for another runtime.
+
+      ## 4.89.0
+
+      - Old change must not appear.
+      """
+    let text = try ReleaseNotesMarkup.attributedString(
+      from: markdown, baseURL: URL(string: "https://docs.docker.com/desktop/release-notes.md"),
+      relevantVersion: "4.90.0"
+    ).get()
+    XCTAssertTrue(text.string.contains("Fixed a crash"))
+    XCTAssertFalse(text.string.contains("Old change"))
+  }
+
   func testMarkdownReleaseNotesAreRenderedAsRichTextLists() throws {
     let markdown = """
       ## IINA 1.4.2

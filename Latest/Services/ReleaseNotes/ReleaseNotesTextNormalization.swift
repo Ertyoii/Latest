@@ -13,7 +13,7 @@ extension ReleaseNotesMarkup {
       }
       displayText = plainText
     } else {
-      displayText = text
+      displayText = Self.decodingHTMLEntities(in: text)
     }
     guard !Self.looksLikeBinaryOrMojibakeText(displayText),
       !Self.looksLikeWebPageChrome(displayText)
@@ -21,7 +21,49 @@ extension ReleaseNotesMarkup {
       return false
     }
 
-    var informationText = displayText
+    let lines = displayText.components(separatedBy: .newlines).map {
+      cleaningInlineMarkdown(in: $0).trimmingCharacters(in: .whitespaces)
+    }
+    let navigation = Set(lines.map { $0.lowercased() })
+    if navigation.contains("conversation")
+      && (navigation.contains("files changed") || navigation.contains("checks"))
+    {
+      return false
+    }
+    if navigation.contains("products") && navigation.contains("shop")
+      && navigation.contains("support")
+    {
+      return false
+    }
+    if displayText.localizedCaseInsensitiveContains("If you are not redirected automatically") {
+      return false
+    }
+    let title = lines.prefix(5).joined(separator: " ")
+    if title.range(
+      of:
+        #"(?i)(Firefox for Android|\(Windows\) Release Notes|for Apple Vision Pro|Requires visionOS)"#,
+      options: .regularExpression) != nil
+    {
+      return false
+    }
+    let bodyLines = lines.enumerated().filter { index, line in
+      if index > 0, lines[index - 1].lowercased().hasSuffix("requires") { return false }
+      let label = line.replacingOccurrences(
+        of: #"^#{1,6}\s+"#, with: "", options: .regularExpression)
+      if looksLikeVersionBoundary(line) || looksLikeDateReleaseBoundary(line) { return false }
+      if label.range(
+        of:
+          #"(?i)^(download\b|extended stable\b|requires\b|.*\brequires\s*$|for Intel & Apple|macOS.*Version|What's New in|What’s New in)"#,
+        options: .regularExpression) != nil
+      {
+        return false
+      }
+      return ![
+        "download", "release notes", "changelog", "description", "platforms", "type",
+        "what it makes", "the manifest",
+      ].contains(label.lowercased())
+    }
+    var informationText = bodyLines.map(\.element).joined(separator: "\n")
     informationText = replacingMatches(in: informationText, matching: Regexes.rawURL, with: " ")
     informationText = replacingMatches(
       in: informationText, matching: Regexes.markdownLink, with: " ")

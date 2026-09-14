@@ -22,6 +22,7 @@ struct ReleaseNotesSourceDefinition: Codable, Equatable, Sendable {
   enum VersionPrefix: String, Codable, Sendable {
     case exact
     case majorMinor
+    case majorMinorPatch
     case none
   }
 
@@ -33,6 +34,7 @@ struct ReleaseNotesSourceDefinition: Codable, Equatable, Sendable {
     case githubReleaseAPI
     case latestSectionFallback
     case majorMinorVersion
+    case majorMinorPatchVersion
   }
 
   let keys: [String]
@@ -134,6 +136,8 @@ struct ReleaseNotesSourceDefinition: Codable, Equatable, Sendable {
       result.insert(.exactVersion)
     case .majorMinor:
       result.insert(.majorMinorVersion)
+    case .majorMinorPatch:
+      result.insert(.majorMinorPatchVersion)
     case .none:
       break
     }
@@ -231,8 +235,9 @@ enum ReleaseNotesCatalogCodec {
         }
       }
       guard
-        !(definition.capabilities.contains(.exactVersion)
-          && definition.capabilities.contains(.majorMinorVersion))
+        definition.capabilities.intersection([
+          .exactVersion, .majorMinorVersion, .majorMinorPatchVersion,
+        ]).count <= 1
       else {
         throw ReleaseNotesCatalogValidationError.invalidCapabilityCombination
       }

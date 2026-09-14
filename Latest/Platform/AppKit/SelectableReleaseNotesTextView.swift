@@ -30,19 +30,37 @@ enum ReleaseNotesTextFormatter {
     string.removeAttribute(.font, range: textRange)
     string.addAttribute(.font, value: defaultFont, range: textRange)
 
-    let paragraphStyle = NSMutableParagraphStyle()
-    paragraphStyle.alignment = .left
-    paragraphStyle.firstLineHeadIndent = 0
-    paragraphStyle.headIndent = 0
-    paragraphStyle.tabStops = []
-    string.removeAttribute(.paragraphStyle, range: textRange)
-    string.addAttribute(.paragraphStyle, value: paragraphStyle, range: textRange)
+    let plainText = string.string
+    plainText.enumerateSubstrings(
+      in: plainText.startIndex..<plainText.endIndex, options: .byParagraphs
+    ) { paragraph, range, _, _ in
+      guard let paragraph else { return }
+      let nsRange = NSRange(range, in: plainText)
+      let original =
+        string.attribute(.paragraphStyle, at: nsRange.location, effectiveRange: nil)
+        as? NSParagraphStyle
+      let isList = paragraph.range(of: #"^\s*(?:[•◦]|\d+\.)\s"#, options: .regularExpression) != nil
+      let style = NSMutableParagraphStyle()
+      style.alignment = .left
+      style.tabStops = []
+      style.lineSpacing = min(max(original?.lineSpacing ?? 0, 0), 2)
+      style.paragraphSpacing = min(max(original?.paragraphSpacing ?? 0, 0), isList ? 4 : 8)
+      style.paragraphSpacingBefore = min(original?.paragraphSpacingBefore ?? 0, 5)
+      if isList {
+        style.firstLineHeadIndent = min(max(original?.firstLineHeadIndent ?? 0, 0), 64)
+        style.headIndent = style.firstLineHeadIndent + 14
+      }
+      string.addAttribute(.paragraphStyle, value: style, range: nsRange)
+    }
 
     attributedString.enumerateAttribute(.font, in: textRange) { fontObject, range, _ in
       guard let font = fontObject as? NSFont else { return }
-      let descriptor = defaultFont.fontDescriptor.withSymbolicTraits(
+      let baseFont =
+        font.fontDescriptor.symbolicTraits.contains(.monoSpace)
+        ? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular) : defaultFont
+      let descriptor = baseFont.fontDescriptor.withSymbolicTraits(
         font.fontDescriptor.symbolicTraits)
-      if let replacement = NSFont(descriptor: descriptor, size: defaultFont.pointSize) {
+      if let replacement = NSFont(descriptor: descriptor, size: baseFont.pointSize) {
         string.addAttribute(.font, value: replacement, range: range)
       }
     }

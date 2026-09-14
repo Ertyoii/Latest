@@ -10,7 +10,7 @@
     "keys": ["betterdisplay", "comgithubwaydabberbetterdisplay", "probetterdisplaybetterdisplay"],
     "homebrewTokens": ["betterdisplay"],
     "kind": "github",
-    "urlTemplate": "https://api.github.com/repos/waydabber/BetterDummy/releases/tags/v{version}",
+    "urlTemplate": "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v{version}",
     "versionPrefix": "exact",
     "knownFallbackKey": "betterdisplay"
   },
@@ -26,7 +26,7 @@
     "homebrewTokens": ["brave-browser", "brave-origin"],
     "kind": "changelog",
     "urlTemplate": "https://brave.com/latest/",
-    "versionPrefix": "majorMinor"
+    "versionPrefix": "majorMinorPatch"
   },
   {
     "keys": ["chrome", "googlechrome", "comgooglechrome"],
@@ -247,7 +247,7 @@
     "keys": ["airfoil"],
     "homebrewTokens": ["airfoil"],
     "kind": "changelog",
-    "urlTemplate": "https://rogueamoeba.com/support/releasenotes/?product=Airfoil",
+    "urlTemplate": "https://rogueamoeba.com/support/releasenotes/?product=Airfoil%20for%20Mac",
     "versionPrefix": "exact"
   },
   {
@@ -354,7 +354,7 @@
     "homebrewTokens": ["zoom"],
     "kind": "changelog",
     "urlTemplate": "https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0061222",
-    "versionPrefix": "exact"
+    "versionPrefix": "majorMinorPatch"
   },
   {
     "keys": ["abletonlive"],
@@ -609,7 +609,7 @@
       "eclipse-rcp"
     ],
     "kind": "changelog",
-    "urlTemplate": "https://www.eclipse.org/eclipse/news/{version}/",
+    "urlTemplate": "https://raw.githubusercontent.com/eclipse-platform/www.eclipse.org-eclipse/master/news/{version}/platform.md",
     "versionPrefix": "exact"
   },
   {
@@ -617,6 +617,27 @@
     "homebrewTokens": ["parallels"],
     "kind": "changelog",
     "urlTemplate": "https://kb.parallels.com/en/131014",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["expressvpn", "comexpressvpn"],
+    "homebrewTokens": ["expressvpn"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.expressvpn.com/support/vpn-setup/release-notes/mac-app/",
+    "versionPrefix": "majorMinorPatch"
+  },
+  {
+    "keys": ["navicatforpostgresql", "comnavicatnavicatforpostgresql"],
+    "homebrewTokens": ["navicat-for-postgresql"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.navicat.com/en/products/navicat-for-postgresql-release-note",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["navicatforsqlite", "comnavicatnavicatforsqlite"],
+    "homebrewTokens": ["navicat-for-sqlite"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.navicat.com/en/products/navicat-for-sqlite-release-note",
     "versionPrefix": "exact"
   }
 ]

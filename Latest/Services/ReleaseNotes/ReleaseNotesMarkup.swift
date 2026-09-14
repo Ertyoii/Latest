@@ -130,17 +130,7 @@ enum ReleaseNotesMarkup {
     relevantVersion: String?
   ) async -> ReleaseNotesProvider.ReleaseNotes? {
     let preparedMarkup = await prepareOffMain {
-      let relevantMarkup: String
-      if markup.containsHTMLTag {
-        relevantMarkup = markup
-      } else {
-        relevantMarkup =
-          relevantText(
-            from: markup,
-            version: relevantVersion,
-            allowFirstSectionFallback: true
-          ) ?? markup
-      }
+      let relevantMarkup = markup
       guard isUsefulReleaseNotesText(relevantMarkup, relevantVersion: relevantVersion) else {
         return nil
       }
@@ -152,7 +142,9 @@ enum ReleaseNotesMarkup {
           guard let text, !text.isEmpty else { return nil }
           return text
         } as [String]).joined(separator: "\n\n")
-      return prepare(renderedMarkup, baseURL: baseURL, relevantVersion: relevantVersion)
+      // The API/tag page already selected this release. Version mentions in links
+      // or download buttons must not replace its body with a trailing fragment.
+      return prepare(renderedMarkup, baseURL: baseURL, relevantVersion: nil)
     }
     guard let preparedMarkup else { return nil }
     let result = render(preparedMarkup)
@@ -243,7 +235,7 @@ enum ReleaseNotesMarkup {
         ?? sourceMarkup
     }
 
-    let displayMarkup = markup.containsHTMLTag ? markup : Self.cleaningInlineMarkdown(in: markup)
+    let displayMarkup = markup
     let normalizedMarkup = Self.removingDuplicateLeadingLines(displayMarkup)
     let isValidatedZedArticle =
       baseURL?.host?.localizedCaseInsensitiveContains("zed.dev") == true
@@ -270,7 +262,8 @@ enum ReleaseNotesMarkup {
   {
     switch preparedMarkup.kind {
     case .markdown:
-      return .success(Self.attributedString(fromMarkdown: preparedMarkup.string))
+      return .success(
+        Self.attributedString(fromMarkdown: preparedMarkup.string, baseURL: preparedMarkup.baseURL))
     case .plainText:
       return .success(Self.attributedString(fromPlainText: preparedMarkup.string))
     case .html:
@@ -351,7 +344,15 @@ enum ReleaseNotesMarkup {
 extension String {
 
   var containsHTMLTag: Bool {
-    range(
+    // Markdown can contain inline HTML/MDX. Do not flatten the whole document
+    // simply because a later paragraph includes a tag.
+    let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmed.hasPrefix("<"),
+      trimmed.range(of: #"(?m)^\s*(?:#{1,6} |[-*] |---\s*$)"#, options: .regularExpression) != nil
+    {
+      return false
+    }
+    return range(
       of: #"<\s*/?\s*(html|body|p|br|div|span|ul|ol|li|h[1-6]|a|strong|em|table)\b"#,
       options: [.regularExpression, .caseInsensitive]) != nil
   }

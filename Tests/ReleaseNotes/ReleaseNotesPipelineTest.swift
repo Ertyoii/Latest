@@ -33,7 +33,7 @@ final class ReleaseNotesPipelineTest: XCTestCase {
     }
     XCTAssertEqual(
       apiURL.absoluteString,
-      "https://api.github.com/repos/waydabber/BetterDummy/releases/tags/v4.3.5")
+      "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v4.3.5")
   }
 
   func testCurrentTelegramRegressionSelectsExactDesktopVersion() throws {

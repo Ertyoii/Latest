@@ -15,9 +15,12 @@ enum ReleaseNotesProviderConstants {
   ]
 }
 
-enum FetchHTMLError: Error {
+enum FetchHTMLError: LocalizedError {
   case unusableText
   case fetchFailed
+
+  var errorDescription: String? { LatestError.releaseNotesUnavailable.errorDescription }
+  var failureReason: String? { LatestError.releaseNotesUnavailable.failureReason }
 }
 
 enum GitHubReleaseFetchError: Error {
