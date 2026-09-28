@@ -38,6 +38,7 @@ struct UpdatesTableBridge: NSViewRepresentable {
     tableView.usesAutomaticRowHeights = false
     tableView.intercellSpacing = .zero
     tableView.style = .sourceList
+    tableView.floatsGroupRows = true
     tableView.backgroundColor = .clear
     tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
     tableView.allowsColumnReordering = false
@@ -206,7 +207,7 @@ struct UpdatesTableBridge: NSViewRepresentable {
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
       if isSectionHeader(at: row) {
-        return NoDrawingGroupRowView()
+        return SidebarSectionRowView()
       }
 
       return NSTableRowView()

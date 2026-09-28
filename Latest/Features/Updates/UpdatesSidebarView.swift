@@ -54,15 +54,12 @@ struct UpdatesSidebarHeaderView: View {
   }
 }
 
-/// A standard sidebar material keeps AppKit controls in one native vibrancy
-/// context, without a separate floating glass surface.
+/// One opaque system surface matches pinned headers without sampling scrolled rows.
 private struct SidebarSurface<Content: View>: NSViewRepresentable {
   @ViewBuilder var content: Content
 
-  func makeNSView(context: Context) -> NSVisualEffectView {
-    let surface = NSVisualEffectView()
-    surface.material = .sidebar
-    surface.blendingMode = .withinWindow
+  func makeNSView(context: Context) -> SidebarBackgroundView {
+    let surface = SidebarBackgroundView()
     let host = NSHostingView(rootView: content)
     host.translatesAutoresizingMaskIntoConstraints = false
     surface.addSubview(host)
@@ -75,7 +72,21 @@ private struct SidebarSurface<Content: View>: NSViewRepresentable {
     return surface
   }
 
-  func updateNSView(_ surface: NSVisualEffectView, context: Context) {
+  func updateNSView(_ surface: SidebarBackgroundView, context: Context) {
     (surface.subviews.first as? NSHostingView<Content>)?.rootView = content
+  }
+}
+
+private final class SidebarBackgroundView: NSView {
+  override var isOpaque: Bool { true }
+
+  override func draw(_ dirtyRect: NSRect) {
+    NSColor.windowBackgroundColor.setFill()
+    bounds.fill()
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    needsDisplay = true
   }
 }

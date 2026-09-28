@@ -223,7 +223,7 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 
   @MainActor
   func testSectionHeadersNeverAcquireSelectionHighlight() {
-    let row = NoDrawingGroupRowView()
+    let row = SidebarSectionRowView()
     row.selectionHighlightStyle = .sourceList
     row.isSelected = true
     XCTAssertEqual(row.selectionHighlightStyle, .none)

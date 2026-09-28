@@ -209,7 +209,10 @@ final class SwiftUIUpdateTableView: NSTableView {
   }
 }
 
-final class NoDrawingGroupRowView: NSTableRowView {
+final class SidebarSectionRowView: NSTableRowView {
+  override var allowsVibrancy: Bool { false }
+  override var isOpaque: Bool { true }
+
   override var selectionHighlightStyle: NSTableView.SelectionHighlightStyle {
     get { .none }
     set {}
@@ -220,7 +223,10 @@ final class NoDrawingGroupRowView: NSTableRowView {
     set {}
   }
 
-  override func drawBackground(in dirtyRect: NSRect) {}
+  override func drawBackground(in dirtyRect: NSRect) {
+    NSColor.windowBackgroundColor.setFill()
+    bounds.fill()
+  }
   override func drawSelection(in dirtyRect: NSRect) {}
 }
 
