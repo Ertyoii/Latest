@@ -13,60 +13,48 @@ struct LatestRootView: View {
   let environment: AppEnvironment
 
   @ObservedObject private var updatesViewModel: UpdatesListViewModel
-  @ObservedObject private var updateCheckingService: UpdateCheckingService
-  @State private var columnVisibility = MainWindowSidebarPolicy.defaultVisibility
   init(environment: AppEnvironment) {
     self.environment = environment
     _updatesViewModel = ObservedObject(wrappedValue: environment.updatesListViewModel)
-    _updateCheckingService = ObservedObject(wrappedValue: environment.updateCheckingService)
   }
 
   var body: some View {
-    NavigationSplitView(columnVisibility: $columnVisibility) {
+    HStack(spacing: 0) {
       UpdatesSidebarView(
         viewModel: updatesViewModel,
         searchFocusController: environment.searchFocusController,
         showsSupportStatusOverride: updatesViewModel.showsSupportStatus
       )
-      .navigationSplitViewColumnWidth(
-        min: VisualMetrics.sidebarIdealWidth,
-        ideal: VisualMetrics.sidebarIdealWidth,
-        max: VisualMetrics.sidebarIdealWidth
-      )
-    } detail: {
+      .frame(width: VisualMetrics.sidebarIdealWidth)
+      .frame(maxHeight: .infinity)
+      .overlay(alignment: .trailing) {
+        Divider()
+      }
+      .ignoresSafeArea(.container, edges: .top)
+
       ReleaseNotesDetailView(
         updatesViewModel: updatesViewModel,
         showsSupportStatus: updatesViewModel.showsSupportStatus
       )
       .frame(minWidth: VisualMetrics.detailMinWidth)
-    }
-    .navigationSplitViewStyle(.balanced)
-    .navigationTitle("Latest")
-    .navigationSubtitle(updatesViewModel.statusText)
-    .background {
-      WindowAccessor { window in
-        MainWindowConfiguration.apply(to: window)
+      .overlay(alignment: .top) {
+        Rectangle()
+          .fill(Color(nsColor: .separatorColor))
+          .frame(height: 1)
+          .allowsHitTesting(false)
       }
+    }
+    .navigationTitle("Latest")
+    .toolbar(removing: .title)
+    .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+    .background {
+      WindowAccessor()
+        .ignoresSafeArea(.container, edges: .top)
     }
     .toolbar {
-      ToolbarItem(placement: .navigation) {
-        RefreshToolbarButton(isEnabled: !updateCheckingService.isRunning) {
-          environment.commands.reload()
-        }
-      }
-      ToolbarItem(placement: .primaryAction) {
-        ToolbarUpdateProgressView(
-          presentation: ToolbarProgressPresentation(
-            isRunning: updateCheckingService.isRunning,
-            fraction: updateCheckingService.progressFraction
-          )
-        )
+      UpdatesToolbar(service: environment.updateCheckingService) {
+        environment.commands.reload()
       }
     }
   }
-}
-
-@MainActor
-enum MainWindowSidebarPolicy {
-  static let defaultVisibility = NavigationSplitViewVisibility.all
 }

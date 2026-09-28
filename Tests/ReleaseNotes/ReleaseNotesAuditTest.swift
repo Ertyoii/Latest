@@ -394,13 +394,9 @@ extension ReleaseNotesAuditTest {
               row["quality"] = String(describing: resolved.quality)
               row["provenance"] = resolved.provenance.rawValue
               row["text"] = resolved.content.string
-              let formatted = ReleaseNotesTextFormatter.format(resolved.content)
-              if let rtf = try? formatted.data(
-                from: NSRange(location: 0, length: formatted.length),
-                documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
-              {
-                try? rtf.write(to: output.appendingPathComponent(cask.token + ".rtf"))
-              }
+              try ReleaseNotesWebDocument.html(for: resolved.content).write(
+                to: output.appendingPathComponent(cask.token + ".html"),
+                atomically: true, encoding: .utf8)
             }
             print("CATALOG_PROBE " + cask.token + " " + (row["status"] ?? "unknown"))
             return row

@@ -172,11 +172,11 @@ final class SwiftUIUpdateTableView: NSTableView {
 
   override func layout() {
     super.layout()
-    lockHorizontalGeometry()
+    sizeToViewport()
   }
 
   override func setFrameOrigin(_ newOrigin: NSPoint) {
-    super.setFrameOrigin(NSPoint(x: AppKitTableGeometry.leadingOffset, y: newOrigin.y))
+    super.setFrameOrigin(NSPoint(x: 0, y: newOrigin.y))
   }
 
   override func mouseDown(with event: NSEvent) {
@@ -190,14 +190,17 @@ final class SwiftUIUpdateTableView: NSTableView {
     super.mouseDown(with: event)
   }
 
-  private func lockHorizontalGeometry() {
+  func sizeToViewport() {
     guard let scrollView = enclosingScrollView else { return }
     let width = scrollView.contentSize.width
     if width > 0, abs(frame.width - width) > 0.5 {
       setFrameSize(NSSize(width: width, height: frame.height))
     }
-    if frame.origin.x != AppKitTableGeometry.leadingOffset {
-      setFrameOrigin(NSPoint(x: AppKitTableGeometry.leadingOffset, y: frame.origin.y))
+    if let column = tableColumns.first, width > 0, abs(column.width - width) > 0.5 {
+      column.width = width
+    }
+    if frame.origin.x != 0 {
+      setFrameOrigin(NSPoint(x: 0, y: frame.origin.y))
     }
     if scrollView.contentView.bounds.origin.x != 0 {
       scrollView.contentView.scroll(to: NSPoint(x: 0, y: scrollView.contentView.bounds.origin.y))
@@ -207,7 +210,18 @@ final class SwiftUIUpdateTableView: NSTableView {
 }
 
 final class NoDrawingGroupRowView: NSTableRowView {
+  override var selectionHighlightStyle: NSTableView.SelectionHighlightStyle {
+    get { .none }
+    set {}
+  }
+
+  override var isSelected: Bool {
+    get { false }
+    set {}
+  }
+
   override func drawBackground(in dirtyRect: NSRect) {}
+  override func drawSelection(in dirtyRect: NSRect) {}
 }
 
 final class LockedHorizontalScrollView: NSScrollView {

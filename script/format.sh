@@ -12,8 +12,8 @@ esac
 # Restrict formatting to project-owned Swift files, excluding build outputs and dependencies.
 files=()
 while IFS= read -r -d '' file; do
-  files+=("$file")
-done < <(git ls-files -z -- 'Latest/*.swift' 'Tests/*.swift' 'UpdateInstaller/*.swift' 'script/*.swift')
+  [[ -f "$file" ]] && files+=("$file")
+done < <(git ls-files --cached --others --exclude-standard -z -- 'Latest/*.swift' 'Tests/*.swift' 'UpdateInstaller/*.swift' 'script/*.swift')
 
 if [[ "${1:-}" != --check ]]; then
   xcrun swift-format format --configuration "$ROOT_DIR/.swift-format" --in-place --parallel "${files[@]}"

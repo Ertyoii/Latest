@@ -1,168 +1,56 @@
-//
-//  WindowAccessor.swift
-//  Latest
-//
-//  Created by ertyoii on 31.05.26.
-//  Copyright © 2026 Max Langer. All rights reserved.
-//
-//  Fork contributions © 2026 ertyoii. First committed in this fork 2026-06-04.
-//  Licensed under GPL-3.0; see LICENSE.md.
-
+// Copyright © 2026 ertyoii. Licensed under GPL-3.0; see LICENSE.md.
 import AppKit
 import SwiftUI
 
 struct WindowAccessor: NSViewRepresentable {
-  let configure: (NSWindow) -> Void
-
-  func makeNSView(context: Context) -> NSView {
-    let view = NSView(frame: .zero)
-    DispatchQueue.main.async {
-      if let window = view.window {
-        configure(window)
-      }
-    }
-    return view
-  }
-
-  func updateNSView(_ view: NSView, context: Context) {
-    DispatchQueue.main.async {
-      if let window = view.window {
-        configure(window)
-      }
-    }
-  }
+  func makeNSView(context: Context) -> ToolbarTitleView { ToolbarTitleView() }
+  func updateNSView(_ view: ToolbarTitleView, context: Context) { view.updateTitle() }
+  static func dismantleNSView(_ view: ToolbarTitleView, coordinator: ()) { view.removeTitle() }
 }
 
-/// A local capability bridge for the system-owned sidebar glass. SwiftUI does
-/// not expose the generated surface's corner or window-edge alignment, so this
-/// view walks only its own ancestor chain and adjusts the public glass view and
-/// its public edge constraints. It never searches the wider SwiftUI hierarchy.
-struct SidebarGlassGeometryAccessor: NSViewRepresentable {
-  let cornerRadius: CGFloat
-  let leadingLayoutInset: CGFloat
+final class ToolbarTitleView: NSView {
+  private let titleField = ToolbarTitleField(
+    labelWithString: NSLocalizedString("Updates", comment: "Main toolbar title"))
 
-  func makeNSView(context: Context) -> SidebarGlassGeometryConfigurationView {
-    SidebarGlassGeometryConfigurationView(
-      cornerRadius: cornerRadius,
-      leadingLayoutInset: leadingLayoutInset
-    )
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    titleField.font = .systemFont(ofSize: 15, weight: .semibold)
+    titleField.textColor = .labelColor
+    titleField.setAccessibilityIdentifier("toolbar.title")
+    titleField.sizeToFit()
   }
-
-  func updateNSView(_ view: SidebarGlassGeometryConfigurationView, context: Context) {
-    view.cornerRadius = cornerRadius
-    view.leadingLayoutInset = leadingLayoutInset
-    view.scheduleConfiguration()
-  }
-}
-
-@MainActor
-final class SidebarGlassGeometryConfigurationView: NSView {
-  var cornerRadius: CGFloat
-  var leadingLayoutInset: CGFloat
-  private var configurationIsScheduled = false
-
-  init(cornerRadius: CGFloat, leadingLayoutInset: CGFloat) {
-    self.cornerRadius = cornerRadius
-    self.leadingLayoutInset = leadingLayoutInset
-    super.init(frame: .zero)
-  }
-
   @available(*, unavailable)
-  required init?(coder: NSCoder) {
-    fatalError("init(coder:) has not been implemented")
-  }
-
-  override func viewDidMoveToSuperview() {
-    super.viewDidMoveToSuperview()
-    scheduleConfiguration()
-  }
-
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
-    scheduleConfiguration()
+    removeTitle()
+    if let window { MainWindowConfiguration.apply(to: window) }
+    updateTitle()
   }
-
   override func layout() {
     super.layout()
-    scheduleConfiguration()
+    updateTitle()
   }
-
-  func scheduleConfiguration() {
-    guard !configurationIsScheduled else { return }
-    configurationIsScheduled = true
-    DispatchQueue.main.async { [weak self] in
-      guard let self else { return }
-      configurationIsScheduled = false
-      _ = configureNearestGlassAncestor()
-    }
+  func updateTitle() {
+    guard let window, let host = window.contentView?.superview else { return }
+    let windowBounds = host.convert(host.bounds, to: nil)
+    let toolbar = NSRect(
+      x: windowBounds.minX + VisualMetrics.sidebarIdealWidth,
+      y: window.contentLayoutRect.maxY,
+      width: max(0, windowBounds.width - VisualMetrics.sidebarIdealWidth),
+      height: max(0, windowBounds.maxY - window.contentLayoutRect.maxY))
+    let rect = host.convert(toolbar, from: nil).intersection(host.bounds)
+    if titleField.superview !== host { host.addSubview(titleField) }
+    let origin = NSPoint(
+      x: rect.minX + VisualMetrics.detailHeaderHorizontalPadding,
+      y: rect.midY - titleField.frame.height / 2)
+    if titleField.frame.origin != origin { titleField.setFrameOrigin(origin) }
   }
-
-  @discardableResult
-  func configureNearestGlassAncestor() -> Bool {
-    var ancestor = superview
-    while let currentView = ancestor {
-      if let glassView = currentView as? NSGlassEffectView {
-        if abs(glassView.cornerRadius - cornerRadius) > 0.5 {
-          glassView.cornerRadius = cornerRadius
-        }
-        configureLeadingLayout(of: glassView)
-        return true
-      }
-      ancestor = currentView.superview
-    }
-    return false
-  }
-
-  private func configureLeadingLayout(of glassView: NSGlassEffectView) {
-    guard let container = glassView.superview else { return }
-
-    for constraint in container.constraints where constraint.isActive {
-      if constraint.matches(
-        first: glassView,
-        attribute: .leading,
-        second: container,
-        attribute: .leading
-      ) {
-        constraint.setConstantIfNeeded(leadingLayoutInset)
-      } else if constraint.matches(
-        first: container,
-        attribute: .leading,
-        second: glassView,
-        attribute: .leading
-      ) {
-        constraint.setConstantIfNeeded(-leadingLayoutInset)
-      } else if constraint.matches(
-        first: container,
-        attribute: .width,
-        second: glassView,
-        attribute: .width
-      ) {
-        constraint.setConstantIfNeeded(leadingLayoutInset)
-      } else if constraint.matches(
-        first: glassView,
-        attribute: .width,
-        second: container,
-        attribute: .width
-      ) {
-        constraint.setConstantIfNeeded(-leadingLayoutInset)
-      }
-    }
-  }
+  func removeTitle() { titleField.removeFromSuperview() }
 }
 
-extension NSLayoutConstraint {
-  fileprivate func setConstantIfNeeded(_ target: CGFloat) {
-    guard abs(constant - target) > 0.5 else { return }
-    constant = target
-  }
-
-  fileprivate func matches(
-    first firstView: NSView,
-    attribute firstAttribute: NSLayoutConstraint.Attribute,
-    second secondView: NSView,
-    attribute secondAttribute: NSLayoutConstraint.Attribute
-  ) -> Bool {
-    (self.firstItem as? NSView) === firstView && self.firstAttribute == firstAttribute
-      && (self.secondItem as? NSView) === secondView && self.secondAttribute == secondAttribute
-  }
+/// The static title leaves titlebar dragging to the window.
+private final class ToolbarTitleField: NSTextField {
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

@@ -12,6 +12,7 @@ import AppKit
 import Darwin
 import Darwin.Mach
 import SwiftUI
+import WebKit
 import XCTest
 
 @testable import Latest
@@ -244,13 +245,23 @@ final class MigrationPerformanceTest: XCTestCase {
         // previously rendered app's content must not satisfy this sample.
         let deadline = Date(timeIntervalSinceNow: 3)
         var rendered = false
+        var renderedText = ""
+        var checkingContent = false
         repeat {
           host.layoutSubtreeIfNeeded()
           host.displayIfNeeded()
+          if let web = host.descendant(of: WKWebView.self), !checkingContent {
+            checkingContent = true
+            web.evaluateJavaScript("document.body.innerText") { result, _ in
+              renderedText = result as? String ?? ""
+              checkingContent = false
+            }
+          }
           if detail.app === app, case .text(let text) = detail.contentState,
-            let view = host.descendant(of: NSTextView.self), view.string == text.string,
-            view.string.contains(app.name)
-              || view.string.contains("app \(apps.firstIndex(where: { $0 === app })!).")
+            renderedText.trimmingCharacters(in: .whitespacesAndNewlines)
+              == text.string.trimmingCharacters(in: .whitespacesAndNewlines),
+            renderedText.contains(app.name)
+              || renderedText.contains("app \(apps.firstIndex(where: { $0 === app })!).")
           {
             rendered = true
             break

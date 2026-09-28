@@ -56,8 +56,9 @@ fi
 
 allowed_bridges=(
 	"Latest/Features/ReleaseNotes/UpdateActionView.swift"
+	"Latest/Features/Updates/UpdatesSidebarView.swift"
 	"Latest/Platform/AppKit/SearchFieldRepresentable.swift"
-	"Latest/Platform/AppKit/SelectableReleaseNotesTextView.swift"
+	"Latest/Platform/AppKit/ReleaseNotesWebView.swift"
 	"Latest/Platform/AppKit/UpdatesTableBridge.swift"
 	"Latest/Platform/AppKit/WindowAccessor.swift"
 )
@@ -99,8 +100,6 @@ done < <(rg -l 'NSGlassEffectView' "$ROOT_DIR/Latest" --glob '*.swift' | sort)
 
 if ((${#glass_bridge_files[@]} == 0)); then
 	pass "no Liquid Glass view bridge is present"
-elif ((${#glass_bridge_files[@]} == 1)) && [[ "${glass_bridge_files[0]}" == "Latest/Platform/AppKit/WindowAccessor.swift" ]]; then
-	pass "Liquid Glass access is limited to the reviewed local sidebar geometry bridge"
 else
 	fail "unexpected Liquid Glass view coupling: ${glass_bridge_files[*]}"
 fi

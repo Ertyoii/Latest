@@ -134,7 +134,7 @@ final class ReleaseNotesMarkupTest: XCTestCase {
     let htmlText = try ReleaseNotesMarkup.attributedString(from: html, baseURL: nil).get()
     let markdownText = try ReleaseNotesMarkup.attributedString(from: markdown, baseURL: nil).get()
     XCTAssertEqual(htmlText.string, markdownText.string)
-    let text = ReleaseNotesTextFormatter.format(htmlText)
+    let text = htmlText
     let editor = (text.string as NSString).range(of: "editor")
     XCTAssertEqual(
       text.attribute(.link, at: editor.location, effectiveRange: nil) as? URL,

@@ -13,8 +13,10 @@ import AppKit
 @MainActor
 final class AppKitUpdateRowContentView: NSTableCellView {
   enum Layout {
-    static let leftInset: CGFloat = 10
-    static let rightInset: CGFloat = 32
+    // Source-list cells already have a leading inset. Avoid adding it twice;
+    // leave matching visual breathing room after the trailing date/status.
+    static let leftInset: CGFloat = 0
+    static let rightInset: CGFloat = 36
     static let iconSize: CGFloat = 50
     static let iconTextSpacing: CGFloat = 8
     static let trailingWidth: CGFloat = 59
@@ -22,7 +24,6 @@ final class AppKitUpdateRowContentView: NSTableCellView {
 
   }
 
-  var onSelect: (() -> Void)?
   private var updating: any AppUpdating = AppUpdateService.shared
 
   private let iconView = NSImageView()
@@ -154,9 +155,6 @@ final class AppKitUpdateRowContentView: NSTableCellView {
     separator.translatesAutoresizingMaskIntoConstraints = false
     addSubview(separator)
 
-    let clickRecognizer = NSClickGestureRecognizer(target: self, action: #selector(selectRow(_:)))
-    addGestureRecognizer(clickRecognizer)
-
     NSLayoutConstraint.activate([
       iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Layout.leftInset),
       iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -262,7 +260,4 @@ final class AppKitUpdateRowContentView: NSTableCellView {
     }
   }
 
-  @objc private func selectRow(_ sender: NSClickGestureRecognizer) {
-    onSelect?()
-  }
 }

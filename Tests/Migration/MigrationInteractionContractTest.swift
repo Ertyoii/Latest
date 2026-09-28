@@ -10,6 +10,7 @@
 
 import AppKit
 import SwiftUI
+import WebKit
 import XCTest
 
 @testable import Latest
@@ -295,7 +296,7 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testReleaseNotesTextPreservesRichTextSelectionCopyAndAccessibility() throws {
+  func testReleaseNotesTextPreservesRichTextSelectionCopyAndAccessibility() async throws {
     let source = NSMutableAttributedString(string: "Bold link\tbody\nSecond paragraph")
     let fullRange = NSRange(location: 0, length: source.length)
     let linkRange = (source.string as NSString).range(of: "link")
@@ -312,93 +313,138 @@ final class MigrationInteractionContractTest: XCTestCase {
       ], range: fullRange)
     source.addAttribute(.link, value: URL(string: "https://example.com/release")!, range: linkRange)
 
-    let formatted = ReleaseNotesTextFormatter.format(source)
-    XCTAssertEqual(formatted.string, "Bold link body\nSecond paragraph")
-    XCTAssertEqual(
-      formatted.attribute(.link, at: linkRange.location, effectiveRange: nil) as? URL,
-      URL(string: "https://example.com/release")
-    )
-    let formattedFont = try XCTUnwrap(
-      formatted.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
-    )
-    XCTAssertTrue(formattedFont.fontDescriptor.symbolicTraits.contains(.bold))
-    XCTAssertEqual(formattedFont.pointSize, NSFont.systemFontSize)
-    XCTAssertNil(formatted.attribute(.backgroundColor, at: 0, effectiveRange: nil))
-    XCTAssertNil(formatted.attribute(.shadow, at: 0, effectiveRange: nil))
-    let paragraphStyle = try XCTUnwrap(
-      formatted.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
-    )
-    XCTAssertEqual(paragraphStyle.alignment, .left)
-    XCTAssertEqual(paragraphStyle.firstLineHeadIndent, 0)
-    XCTAssertEqual(paragraphStyle.headIndent, 0)
-    XCTAssertTrue(paragraphStyle.tabStops.isEmpty)
+    let html = ReleaseNotesWebDocument.html(for: source)
+    XCTAssertTrue(html.contains("<strong>"))
+    XCTAssertFalse(html.contains("background-color"))
+    XCTAssertFalse(html.contains("22px"))
 
-    let hostingView = NSHostingView(rootView: SelectableReleaseNotesTextView(text: source))
-    hostingView.frame = NSRect(x: 0, y: 0, width: 480, height: 280)
+    let hostingView = NSHostingView(rootView: ReleaseNotesWebView(text: source))
     let window = NSWindow(
-      contentRect: hostingView.bounds,
-      styleMask: [.titled],
-      backing: .buffered,
-      defer: false
-    )
+      contentRect: NSRect(x: 0, y: 0, width: 480, height: 280),
+      styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
     window.contentView = hostingView
-    window.layoutIfNeeded()
+    defer { window.close() }
+    window.orderFront(nil)
     hostingView.layoutSubtreeIfNeeded()
-    XCTAssertNotNil(hostingView.descendant(of: NSScrollView.self))
-    let textView = try XCTUnwrap(hostingView.descendant(of: NSTextView.self))
-    XCTAssertTrue(textView.isSelectable)
-    XCTAssertFalse(textView.isEditable)
-    XCTAssertEqual(textView.string, formatted.string)
-    XCTAssertEqual(
-      textView.textStorage?.attribute(.link, at: linkRange.location, effectiveRange: nil) as? URL,
-      URL(string: "https://example.com/release")
-    )
+    let web = try XCTUnwrap(hostingView.descendant(of: WKWebView.self))
+    try await waitForWebContent(web, containing: "Second paragraph")
+    let href = try await web.evaluateJavaScript("document.querySelector('a').href") as? String
+    XCTAssertEqual(href, "https://example.com/release")
+    let selection =
+      try await web.evaluateJavaScript(
+        """
+        var range = document.createRange(); range.selectNodeContents(document.querySelector('main'));
+        window.getSelection().removeAllRanges(); window.getSelection().addRange(range);
+        window.getSelection().toString();
+        """) as? String
+    XCTAssertEqual(selection, source.string.replacingOccurrences(of: "\t", with: " "))
+    XCTAssertFalse(web.configuration.websiteDataStore.isPersistent)
   }
 
   @MainActor
-  func testReleaseNotesMarginsStayStableAcrossSelectionScrollingAndResize() throws {
-    let short = NSAttributedString(
-      string: "Discord is available from Homebrew.\nVoice and text chat software")
+  func testReleaseNotesWebViewReusesRendererAndResetsScrollOnSelection() async throws {
+    let short = NSAttributedString(string: "Short release notes")
     let long = NSAttributedString(
-      string: Array(repeating: "Release notes with improvements and bug fixes.", count: 150).joined(
-        separator: "\n"))
-    let host = NSHostingView(rootView: SelectableReleaseNotesTextView(text: short))
+      string: Array(repeating: "Long release notes", count: 150)
+        .joined(separator: "\n"))
+    let host = NSHostingView(
+      rootView: ReleaseNotesDetailSurface(app: nil, contentState: .text(long)))
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 480, height: 280),
       styleMask: [.titled, .resizable], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.contentView = host
     defer { window.close() }
+    window.orderFront(nil)
+    host.layoutSubtreeIfNeeded()
+    let web = try XCTUnwrap(host.descendant(of: WKWebView.self))
+    try await waitForWebContent(web, containing: "Long release notes")
+    _ = try await web.evaluateJavaScript("window.scrollTo(0, document.body.scrollHeight)")
+    let scrolled = try await web.evaluateJavaScript("window.scrollY") as? Double
+    XCTAssertGreaterThan(scrolled ?? 0, 0)
+    host.rootView = ReleaseNotesDetailSurface(app: nil, contentState: .loading)
+    host.layoutSubtreeIfNeeded()
+    XCTAssertTrue(host.descendant(of: WKWebView.self) === web)
+    host.rootView = ReleaseNotesDetailSurface(app: nil, contentState: .text(short))
+    window.setContentSize(NSSize(width: 360, height: 280))
+    host.layoutSubtreeIfNeeded()
+    try await waitForWebContent(web, containing: "Short release notes")
+    XCTAssertTrue(host.descendant(of: WKWebView.self) === web)
+    let top = try await web.evaluateJavaScript("window.scrollY") as? Double
+    XCTAssertEqual(top, 0)
+    let overflow =
+      try await web.evaluateJavaScript(
+        "document.documentElement.scrollWidth > window.innerWidth") as? Bool
+    XCTAssertEqual(overflow, false)
+  }
 
-    for (index, source) in [short, long, short, long, short].enumerated() {
-      window.setContentSize(NSSize(width: index.isMultiple(of: 2) ? 480 : 360, height: 280))
-      host.rootView = SelectableReleaseNotesTextView(text: source)
-      for _ in 0..<10 {
-        window.layoutIfNeeded()
-        host.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
-      }
-      let scroll = try XCTUnwrap(host.descendant(of: NSScrollView.self))
-      let text = try XCTUnwrap(scroll.documentView as? NSTextView)
-      XCTAssertEqual(text.string, source.string)
-      let layout = try XCTUnwrap(text.layoutManager)
-      let container = try XCTUnwrap(text.textContainer)
-      layout.ensureLayout(for: container)
-      for range in [
-        NSRange(location: text.string.utf16.count - 1, length: 1), NSRange(location: 0, length: 0),
-      ] {
-        text.scrollRangeToVisible(range)
-        scroll.layoutSubtreeIfNeeded()
-      }
-      let glyph = layout.boundingRect(forGlyphRange: NSRange(location: 0, length: 1), in: container)
-      let origin = text.convert(
-        NSPoint(
-          x: text.textContainerOrigin.x + glyph.minX,
-          y: text.textContainerOrigin.y + glyph.minY), to: scroll)
-      XCTAssertEqual(origin.x, VisualMetrics.releaseNotesTextInset + 5, accuracy: 0.5)
-      XCTAssertEqual(origin.y, VisualMetrics.releaseNotesTextInset, accuracy: 0.5)
-      XCTAssertEqual(scroll.contentView.bounds.minX, 0, accuracy: 0.5)
+  func testReleaseNotesWebDocumentEscapesMarkupAndRejectsScriptLinks() {
+    let text = NSMutableAttributedString(string: "<script>alert('x')</script> & notes")
+    text.addAttribute(.link, value: "javascript:alert(1)", range: NSRange(location: 0, length: 8))
+    let html = ReleaseNotesWebDocument.html(for: text)
+    XCTAssertTrue(html.contains("&lt;script&gt;"))
+    XCTAssertFalse(html.contains("<script>"))
+    XCTAssertFalse(html.contains("href=\"javascript:"))
+    XCTAssertTrue(html.contains("default-src 'none'"))
+  }
+
+  func testReleaseNotesSerializationPreservesUnicodeAndSharesLinkPolicy() {
+    let source = NSAttributedString(string: "<&>\"\t👩🏽‍💻 e\u{301} 中文")
+    let html = ReleaseNotesWebDocument.html(for: source)
+    XCTAssertTrue(html.contains("&lt;&amp;&gt;&quot; 👩🏽‍💻 e\u{301} 中文"))
+    for scheme in ["https", "http", "mailto"] {
+      let link = "\(scheme):example.com"
+      XCTAssertEqual(ReleaseNotesWebDocument.externalURL(link)?.absoluteString, link)
+      XCTAssertEqual(ReleaseNotesWebDocument.externalURL(URL(string: link))?.absoluteString, link)
     }
+    for link in ["javascript:alert(1)", "file:///etc/hosts", "data:text/html,test", "/relative"] {
+      XCTAssertNil(ReleaseNotesWebDocument.externalURL(link))
+    }
+    XCTAssertNil(ReleaseNotesWebDocument.externalURL(nil))
+  }
+
+  @MainActor
+  func testSidebarSupportPreferenceUpdatesExistingRows() async throws {
+    let app = makeApp(name: "Example", version: "1")
+    let model = UpdatesListViewModel(snapshot: AppListSnapshot(withApps: [app], filterQuery: nil))
+    let host = NSHostingView(
+      rootView: UpdatesTableBridge(viewModel: model, showsSupportStatusOverride: true))
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 308, height: 400),
+      styleMask: [.titled], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    window.orderFront(nil)
+    defer { window.close() }
+    host.layoutSubtreeIfNeeded()
+    let table = try XCTUnwrap(host.descendant(of: NSTableView.self))
+    let row = try XCTUnwrap(model.snapshot.firstIndex(of: app))
+    let cell = try XCTUnwrap(table.view(atColumn: 0, row: row, makeIfNecessary: true))
+    let status = try XCTUnwrap(
+      cell.allDescendants().compactMap { $0 as? NSImageView }.first { $0.toolTip != nil })
+    XCTAssertFalse(status.isHidden)
+    for visible in [false, true] {
+      host.rootView = UpdatesTableBridge(viewModel: model, showsSupportStatusOverride: visible)
+      host.layoutSubtreeIfNeeded()
+      try await Task.sleep(for: .milliseconds(100))
+      XCTAssertEqual(status.isHidden, !visible)
+      XCTAssertTrue(table.view(atColumn: 0, row: row, makeIfNecessary: false) === cell)
+    }
+  }
+
+  @MainActor
+  private func waitForWebContent(_ web: WKWebView, containing text: String) async throws {
+    let deadline = Date(timeIntervalSinceNow: 10)
+    while Date() < deadline {
+      if let body = try? await web.evaluateJavaScript("document.body.innerText") as? String,
+        body.contains(text), !web.isLoading
+      {
+        return
+      }
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    XCTFail("WebKit did not render expected content: \(text)")
   }
 
   @MainActor

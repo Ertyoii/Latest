@@ -63,29 +63,42 @@ struct ReleaseNotesDetailSurface: View {
   var body: some View {
     VStack(spacing: 0) {
       if let app {
-        ReleaseNotesHeaderView(app: app, showsSupportStatus: showsSupportStatus, updating: updating)
+        ReleaseNotesHeaderView(
+          app: app, showsSupportStatus: showsSupportStatus, updating: updating)
+
       }
       content
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(.background)
+    .background(Color(nsColor: .textBackgroundColor))
   }
 
-  @ViewBuilder
   private var content: some View {
-    switch contentState {
-    case .message(let message):
-      ReleaseNotesMessageView(message: message)
-    case .loading:
-      ProgressView()
-        .controlSize(.regular)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityLabel("Loading Release Notes")
-    case .text(let text):
-      SelectableReleaseNotesTextView(text: text)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    ZStack {
+      ReleaseNotesWebView(text: displayedText)
+        .opacity(displayedText == nil ? 0 : 1)
+        .allowsHitTesting(displayedText != nil)
+        .accessibilityHidden(displayedText == nil)
+
+      switch contentState {
+      case .message(let message):
+        ReleaseNotesMessageView(message: message)
+      case .loading:
+        ProgressView()
+          .controlSize(.regular)
+          .accessibilityLabel("Loading Release Notes")
+      case .text:
+        EmptyView()
+      }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
+
+  private var displayedText: NSAttributedString? {
+    if case .text(let text) = contentState { return text }
+    return nil
+  }
+
 }
 
 struct ReleaseNotesHeaderView: View {
@@ -140,6 +153,7 @@ struct ReleaseNotesHeaderView: View {
 
       UpdateActionView(app: app, updating: updating)
         .id(app.identifier)
+
     }
     .padding(.horizontal, VisualMetrics.detailHeaderHorizontalPadding)
     .frame(height: VisualMetrics.detailHeaderHeight)

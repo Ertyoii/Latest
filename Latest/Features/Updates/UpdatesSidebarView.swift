@@ -8,6 +8,7 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-06-04.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
+import AppKit
 import SwiftUI
 
 struct UpdatesSidebarView: View {
@@ -26,20 +27,12 @@ struct UpdatesSidebarView: View {
   }
 
   var body: some View {
-    ZStack(alignment: .top) {
-
-      UpdatesTableBridge(
-        viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride)
-
-      UpdatesSidebarHeaderView(viewModel: viewModel, searchFocusController: searchFocusController)
-    }
-    .background {
-      SidebarGlassGeometryAccessor(
-        cornerRadius: VisualMetrics.sidebarGlassCornerRadius,
-        leadingLayoutInset: VisualMetrics.sidebarGlassLeadingLayoutInset
-      )
-      .allowsHitTesting(false)
-      .accessibilityHidden(true)
+    SidebarSurface {
+      VStack(spacing: 0) {
+        UpdatesSidebarHeaderView(viewModel: viewModel, searchFocusController: searchFocusController)
+        UpdatesTableBridge(
+          viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride)
+      }
     }
   }
 }
@@ -50,14 +43,39 @@ struct UpdatesSidebarHeaderView: View {
 
   var body: some View {
     SearchFieldRepresentable(
-      text: $viewModel.searchQuery,
+      text: viewModel.searchQuery,
       focusController: searchFocusController,
       onTextChanged: viewModel.setSearchQuery
     )
     .frame(height: 28)
-    .padding(.top, -1)
-    .padding(.leading, 24)
-    .padding(.trailing, 20)
-    .frame(maxWidth: .infinity, minHeight: 39, maxHeight: 39, alignment: .top)
+    .glassEffect(.regular, in: .capsule)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
+  }
+}
+
+/// A standard sidebar material keeps AppKit controls in one native vibrancy
+/// context, without a separate floating glass surface.
+private struct SidebarSurface<Content: View>: NSViewRepresentable {
+  @ViewBuilder var content: Content
+
+  func makeNSView(context: Context) -> NSVisualEffectView {
+    let surface = NSVisualEffectView()
+    surface.material = .sidebar
+    surface.blendingMode = .withinWindow
+    let host = NSHostingView(rootView: content)
+    host.translatesAutoresizingMaskIntoConstraints = false
+    surface.addSubview(host)
+    NSLayoutConstraint.activate([
+      host.leadingAnchor.constraint(equalTo: surface.leadingAnchor),
+      host.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
+      host.topAnchor.constraint(equalTo: surface.safeAreaLayoutGuide.topAnchor),
+      host.bottomAnchor.constraint(equalTo: surface.bottomAnchor),
+    ])
+    return surface
+  }
+
+  func updateNSView(_ surface: NSVisualEffectView, context: Context) {
+    (surface.subviews.first as? NSHostingView<Content>)?.rootView = content
   }
 }

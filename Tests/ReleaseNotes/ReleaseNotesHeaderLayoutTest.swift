@@ -138,86 +138,57 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
   }
 
   @MainActor
-  func testSidebarGlassAccessorConfiguresOnlyItsNearestGlassAncestor() {
-    XCTAssertEqual(
-      VisualMetrics.sidebarGlassCornerRadius,
-      VisualMetrics.mainWindowCornerRadius - VisualMetrics.sidebarGlassInset
-    )
-    let outerGlass = NSGlassEffectView()
-    outerGlass.cornerRadius = 7
-    let innerGlass = NSGlassEffectView()
-    innerGlass.cornerRadius = 8
-    let container = NSView()
-    let accessor = SidebarGlassGeometryConfigurationView(
-      cornerRadius: VisualMetrics.sidebarGlassCornerRadius,
-      leadingLayoutInset: VisualMetrics.sidebarGlassLeadingLayoutInset
-    )
-
-    outerGlass.addSubview(innerGlass)
-    innerGlass.addSubview(container)
-    container.addSubview(accessor)
-
-    XCTAssertTrue(accessor.configureNearestGlassAncestor())
-    XCTAssertEqual(innerGlass.cornerRadius, VisualMetrics.sidebarGlassCornerRadius)
-    XCTAssertEqual(
-      outerGlass.cornerRadius, 7, "The accessor must not alter unrelated glass ancestors.")
+  func testToolbarTitleStaysAlignedAndCleansUp() throws {
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 768, height: 516),
+      styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+      backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.toolbar = NSToolbar(identifier: "title-test")
+    defer { window.close() }
+    let accessor = ToolbarTitleView()
+    let content = try XCTUnwrap(window.contentView)
+    content.addSubview(accessor)
+    let host = try XCTUnwrap(content.superview)
+    for width in [768.0, 1000.0] {
+      window.setContentSize(NSSize(width: width, height: 516))
+      window.layoutIfNeeded()
+      accessor.updateTitle()
+      let title = try XCTUnwrap(
+        host.subviews.compactMap { $0 as? NSTextField }.first {
+          $0.accessibilityIdentifier() == "toolbar.title"
+        })
+      XCTAssertEqual(title.stringValue, "Updates")
+      XCTAssertEqual(
+        title.frame.minX,
+        VisualMetrics.sidebarIdealWidth + VisualMetrics.detailHeaderHorizontalPadding)
+      XCTAssertNil(title.hitTest(.zero))
+    }
+    accessor.removeTitle()
+    XCTAssertFalse(host.subviews.contains { $0.accessibilityIdentifier() == "toolbar.title" })
   }
 
   @MainActor
-  func testSidebarGlassAccessorCompensatesTheWindowFacingLeadingInset() {
-    let wrapper = NSView(frame: NSRect(x: 0, y: 0, width: 316, height: 548))
-    let glass = NSGlassEffectView()
-    glass.translatesAutoresizingMaskIntoConstraints = false
-    wrapper.addSubview(glass)
-
-    let leading = glass.leadingAnchor.constraint(
-      equalTo: wrapper.leadingAnchor,
-      constant: VisualMetrics.sidebarGlassInset
-    )
-    let trailing = glass.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor)
-    let equalBreadth = wrapper.widthAnchor.constraint(
-      equalTo: glass.widthAnchor,
-      constant: VisualMetrics.sidebarGlassInset
-    )
-    equalBreadth.priority = NSLayoutConstraint.Priority(999.99)
-    NSLayoutConstraint.activate([leading, trailing, equalBreadth])
-
-    let accessor = SidebarGlassGeometryConfigurationView(
-      cornerRadius: VisualMetrics.sidebarGlassCornerRadius,
-      leadingLayoutInset: VisualMetrics.sidebarGlassLeadingLayoutInset
-    )
-    glass.contentView = accessor
-
-    XCTAssertTrue(accessor.configureNearestGlassAncestor())
-    XCTAssertEqual(leading.constant, VisualMetrics.sidebarGlassLeadingLayoutInset)
-    XCTAssertEqual(equalBreadth.constant, VisualMetrics.sidebarGlassLeadingLayoutInset)
-    XCTAssertEqual(trailing.constant, 0)
+  func testSidebarTableDoesNotShiftItsSelectionTowardTheRight() {
+    let scroll = LockedHorizontalScrollView(frame: NSRect(x: 0, y: 0, width: 308, height: 400))
+    let table = SwiftUIUpdateTableView(frame: scroll.bounds)
+    table.style = .sourceList
+    scroll.documentView = table
+    for width in [308.0, 360.0] {
+      scroll.setFrameSize(NSSize(width: width, height: 400))
+      table.setFrameOrigin(NSPoint(x: 4, y: 0))
+      table.layout()
+      XCTAssertEqual(table.frame.minX, 0)
+      XCTAssertEqual(table.frame.maxX, scroll.contentSize.width, accuracy: 0.5)
+    }
   }
 
   @MainActor
-  func testSidebarGlassAccessorDoesNothingOutsideAGlassSurface() {
-    let container = NSView()
-    let accessor = SidebarGlassGeometryConfigurationView(
-      cornerRadius: VisualMetrics.sidebarGlassCornerRadius,
-      leadingLayoutInset: VisualMetrics.sidebarGlassLeadingLayoutInset
-    )
-    container.addSubview(accessor)
-
-    XCTAssertFalse(accessor.configureNearestGlassAncestor())
-  }
-
-  @MainActor
-  func testProductionSidebarGlassUsesWindowConcentricRadius() throws {
+  func testMainWindowHasNoFloatingSidebarGlass() throws {
     let environment = AppEnvironment.localUATFixture()
     let hostingView = NSHostingView(rootView: LatestRootView(environment: environment))
-    hostingView.frame = NSRect(
-      x: 0,
-      y: 0,
-      width: VisualMetrics.mainWindowDefaultWidth,
-      height: VisualMetrics.mainWindowDefaultHeight
-    )
     let window = NSWindow(
-      contentRect: hostingView.bounds,
+      contentRect: NSRect(x: 0, y: 0, width: 768, height: 516),
       styleMask: [.titled, .closable, .resizable],
       backing: .buffered,
       defer: false
@@ -225,76 +196,38 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
     window.isReleasedWhenClosed = false
     window.contentView = hostingView
     defer { window.close() }
-
     window.orderFront(nil)
-    let sidebarGlass = try XCTUnwrap(
-      waitForValue {
-        window.layoutIfNeeded()
-        hostingView.layoutSubtreeIfNeeded()
-        return hostingView.descendantGlassEffects().first(where: {
-          $0.containsDescendant(of: SidebarGlassGeometryConfigurationView.self)
-            && abs(
-              $0.bounds.width
-                - (VisualMetrics.sidebarIdealWidth - VisualMetrics.sidebarGlassLeadingCompensation)
-            ) < 0.5 && $0.bounds.height >= VisualMetrics.mainWindowMinHeight
-            && $0.cornerRadius == VisualMetrics.sidebarGlassCornerRadius
-        })
-      }
-    )
-    let glassRectInWindow = sidebarGlass.convert(sidebarGlass.bounds, to: nil)
-    let contentBounds = try XCTUnwrap(window.contentView).bounds
-    let leadingInset = glassRectInWindow.minX - contentBounds.minX
-    let visibleLeadingInset = leadingInset - VisualMetrics.sidebarGlassLeadingCompensation
-    let bottomInset = glassRectInWindow.minY - contentBounds.minY
-    let topInset = contentBounds.maxY - glassRectInWindow.maxY
 
-    XCTAssertEqual(leadingInset, VisualMetrics.sidebarGlassLeadingLayoutInset, accuracy: 0.5)
-    XCTAssertEqual(visibleLeadingInset, VisualMetrics.sidebarGlassInset, accuracy: 0.5)
-    XCTAssertEqual(bottomInset, VisualMetrics.sidebarGlassInset, accuracy: 0.5)
-    XCTAssertEqual(topInset, VisualMetrics.sidebarGlassInset, accuracy: 0.5)
-    XCTAssertEqual(sidebarGlass.cornerRadius, VisualMetrics.sidebarGlassCornerRadius)
-    XCTAssertEqual(
-      visibleLeadingInset + sidebarGlass.cornerRadius,
-      VisualMetrics.mainWindowCornerRadius,
-      accuracy: 0.5
-    )
-    XCTAssertEqual(
-      bottomInset + sidebarGlass.cornerRadius,
-      VisualMetrics.mainWindowCornerRadius,
-      accuracy: 0.5
-    )
-    XCTAssertEqual(
-      topInset + sidebarGlass.cornerRadius,
-      VisualMetrics.mainWindowCornerRadius,
-      accuracy: 0.5
-    )
+    window.layoutIfNeeded()
+    hostingView.layoutSubtreeIfNeeded()
+    let search = try XCTUnwrap(
+      hostingView.descendantTextFields().compactMap { $0 as? NSSearchField }.first)
+    XCTAssertTrue(search.isEditable)
+    XCTAssertTrue(search.isSelectable)
+    search.stringValue = "Notes"
+    search.sendAction(search.action, to: search.target)
+    XCTAssertEqual(environment.updatesListViewModel.searchQuery, "Notes")
 
-    window.setContentSize(NSSize(width: 900, height: 640))
-    XCTAssertTrue(
-      waitForCondition {
-        window.layoutIfNeeded()
-        hostingView.layoutSubtreeIfNeeded()
-        let glassRect = sidebarGlass.convert(sidebarGlass.bounds, to: nil)
-        guard let contentBounds = window.contentView?.bounds else { return false }
-        return abs(
-          glassRect.minX - contentBounds.minX - VisualMetrics.sidebarGlassLeadingLayoutInset
-        ) < 0.5 && abs(glassRect.minY - contentBounds.minY - VisualMetrics.sidebarGlassInset) < 0.5
-          && sidebarGlass.cornerRadius == VisualMetrics.sidebarGlassCornerRadius
-      })
+    for size in [NSSize(width: 768, height: 516), NSSize(width: 1000, height: 700)] {
+      window.setContentSize(size)
+      window.layoutIfNeeded()
+      hostingView.layoutSubtreeIfNeeded()
+      XCTAssertFalse(
+        hostingView.descendantGlassEffects().contains {
+          $0.bounds.height >= VisualMetrics.mainWindowMinHeight
+        },
+        "The sidebar must remain attached, without a floating glass surface."
+      )
+    }
+  }
 
-    let resizedGlassRect = sidebarGlass.convert(sidebarGlass.bounds, to: nil)
-    let resizedContentBounds = try XCTUnwrap(window.contentView).bounds
-    XCTAssertEqual(
-      resizedGlassRect.minX - resizedContentBounds.minX,
-      VisualMetrics.sidebarGlassLeadingLayoutInset,
-      accuracy: 0.5
-    )
-    XCTAssertEqual(
-      resizedGlassRect.minY - resizedContentBounds.minY,
-      VisualMetrics.sidebarGlassInset,
-      accuracy: 0.5
-    )
-    XCTAssertEqual(sidebarGlass.cornerRadius, VisualMetrics.sidebarGlassCornerRadius)
+  @MainActor
+  func testSectionHeadersNeverAcquireSelectionHighlight() {
+    let row = NoDrawingGroupRowView()
+    row.selectionHighlightStyle = .sourceList
+    row.isSelected = true
+    XCTAssertEqual(row.selectionHighlightStyle, .none)
+    XCTAssertFalse(row.isSelected)
   }
 
   @MainActor
@@ -328,11 +261,6 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
     commands.reload()
 
     XCTAssertEqual(updateChecking.checkForUpdatesCount, 1)
-  }
-
-  @MainActor
-  func testMainWindowSidebarIsVisibleByDefault() {
-    XCTAssertEqual(MainWindowSidebarPolicy.defaultVisibility, .all)
   }
 
   @MainActor
@@ -420,16 +348,6 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
     }
   }
 
-  @MainActor
-  func testSidebarSelectionStaysNeutralWhenWindowBecomesKey() {
-    let row = StableSelectionTableRowView()
-    row.isSelected = true
-    row.isEmphasized = true
-
-    XCTAssertTrue(row.isSelected)
-    XCTAssertFalse(row.isEmphasized)
-  }
-
   private func makeApp(
     name: String,
     version: String,
@@ -456,33 +374,6 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
     return Latest.App(bundle: bundle, update: .success(update), isIgnored: false)
   }
 
-  @MainActor
-  private func waitForValue<Value>(
-    timeout: TimeInterval = 1,
-    pollInterval: TimeInterval = 0.01,
-    _ value: () -> Value?
-  ) -> Value? {
-    let deadline = Date(timeIntervalSinceNow: timeout)
-    repeat {
-      if let value = value() {
-        return value
-      }
-      RunLoop.main.run(until: min(deadline, Date(timeIntervalSinceNow: pollInterval)))
-    } while Date() < deadline
-
-    return value()
-  }
-
-  @MainActor
-  private func waitForCondition(
-    timeout: TimeInterval = 1,
-    pollInterval: TimeInterval = 0.01,
-    _ condition: () -> Bool
-  ) -> Bool {
-    waitForValue(timeout: timeout, pollInterval: pollInterval) {
-      condition() ? true : nil
-    } ?? false
-  }
 }
 
 @MainActor
@@ -500,11 +391,6 @@ private final class UpdateCheckingCommandSpy: UpdateCheckingCommandHandling {
 }
 
 extension NSView {
-  fileprivate func containsDescendant<ViewType: NSView>(of type: ViewType.Type) -> Bool {
-    if self is ViewType { return true }
-    return subviews.contains { $0.containsDescendant(of: type) }
-  }
-
   fileprivate func descendantGlassEffects() -> [NSGlassEffectView] {
     subviews.flatMap { view -> [NSGlassEffectView] in
       let current = (view as? NSGlassEffectView).map { [$0] } ?? []

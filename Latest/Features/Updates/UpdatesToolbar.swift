@@ -9,6 +9,24 @@
 
 import SwiftUI
 
+/// Observe scan progress at the toolbar boundary, without invalidating the app list.
+struct UpdatesToolbar: ToolbarContent {
+  @ObservedObject var service: UpdateCheckingService
+  let reload: () -> Void
+
+  var body: some ToolbarContent {
+    ToolbarSpacer(.flexible, placement: .primaryAction)
+    ToolbarItem(placement: .primaryAction) {
+      ToolbarUpdateProgressView(
+        presentation: ToolbarProgressPresentation(
+          isRunning: service.isRunning, fraction: service.progressFraction))
+    }
+    ToolbarItem(placement: .primaryAction) {
+      RefreshToolbarButton(isEnabled: !service.isRunning, action: reload)
+    }
+  }
+}
+
 struct RefreshToolbarButton: View {
   static let accessibilityIdentifier = "toolbar.refresh"
   static let accessibilityLabel = "Check for Updates"

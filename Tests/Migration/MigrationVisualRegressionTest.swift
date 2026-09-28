@@ -66,7 +66,7 @@ final class MigrationVisualRegressionTest: XCTestCase {
     XCTAssertEqual(tableView.rowHeight, 60)
     XCTAssertEqual(tableView.intercellSpacing, .zero)
     XCTAssertEqual(tableView.style, .sourceList)
-    XCTAssertEqual(tableView.frame.minX, 4, accuracy: 0.5)
+    XCTAssertEqual(tableView.frame.minX, 0, accuracy: 0.5)
     XCTAssertEqual(tableView.numberOfRows, viewModel.snapshot.entries.count)
 
     let firstSectionRow = try XCTUnwrap(

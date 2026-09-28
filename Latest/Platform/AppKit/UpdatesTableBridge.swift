@@ -11,21 +11,6 @@
 import AppKit
 import SwiftUI
 
-enum AppKitTableGeometry {
-  static let leadingOffset: CGFloat = 4
-}
-
-/// Keeps the selected application visually stable when focus moves between the
-/// main and Settings windows. The source-list selection geometry remains
-/// system-owned, but it always uses the neutral, unemphasized treatment.
-@MainActor
-final class StableSelectionTableRowView: NSTableRowView {
-  override var isEmphasized: Bool {
-    get { false }
-    set { super.isEmphasized = false }
-  }
-}
-
 /// Shipping sidebar renderer. NSTableView owns row geometry, selection, and
 /// scrolling; SwiftUI owns feature state, search, and surrounding composition.
 struct UpdatesTableBridge: NSViewRepresentable {
@@ -48,15 +33,12 @@ struct UpdatesTableBridge: NSViewRepresentable {
       coordinator?.selectRow(at: row)
     }
     tableView.headerView = nil
-    tableView.backgroundColor = .clear
     tableView.gridStyleMask = []
     tableView.rowHeight = VisualMetrics.appRowHeight
     tableView.usesAutomaticRowHeights = false
     tableView.intercellSpacing = .zero
-    // The original table used the source-list selection treatment without
-    // opting the whole table into source-list indentation. Applying `.sourceList`
-    // here shifts every cell horizontally on macOS 26.
     tableView.style = .sourceList
+    tableView.backgroundColor = .clear
     tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
     tableView.allowsColumnReordering = false
     tableView.allowsColumnResizing = false
@@ -80,20 +62,21 @@ struct UpdatesTableBridge: NSViewRepresentable {
     scrollView.automaticallyAdjustsContentInsets = false
     scrollView.drawsBackground = false
     scrollView.contentView.drawsBackground = false
-    scrollView.contentInsets = NSEdgeInsets(top: 33, left: 0, bottom: 0, right: 0)
+    scrollView.contentInsets = NSEdgeInsetsZero
     scrollView.scrollerInsets = NSEdgeInsets(
       top: 0, left: 0, bottom: VisualMetrics.scrollBottomInset, right: 0)
     scrollView.documentView = tableView
 
     context.coordinator.tableView = tableView
     context.coordinator.observeLiveScrolling(in: scrollView)
-    context.coordinator.resizeColumn(in: scrollView)
+    (scrollView.documentView as? SwiftUIUpdateTableView)?.sizeToViewport()
     context.coordinator.apply(viewModel: viewModel)
     return scrollView
   }
 
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
-    context.coordinator.resizeColumn(in: scrollView)
+    (scrollView.documentView as? SwiftUIUpdateTableView)?.sizeToViewport()
+    context.coordinator.showsSupportStatusOverride = showsSupportStatusOverride
     context.coordinator.scheduleApply(viewModel: viewModel)
   }
 
@@ -107,11 +90,11 @@ struct UpdatesTableBridge: NSViewRepresentable {
     private var filterQuery: String?
     private var selectedIdentifier: App.Bundle.Identifier?
     private var selectedRowIndex: Int?
-    private var contentState: TableContentState?
+    private var snapshotRevision: Int?
     private var pendingUpdate: TableUpdate?
     private var isUpdateScheduled = false
     private var isSynchronizingSelection = false
-    private let showsSupportStatusOverride: Bool?
+    var showsSupportStatusOverride: Bool?
     private let menuController: SidebarTableMenuController
     var tableViewMenu: NSMenu { menuController.menu }
 
@@ -176,9 +159,9 @@ struct UpdatesTableBridge: NSViewRepresentable {
     private func apply(_ update: TableUpdate, viewModel: UpdatesListViewModel) {
       self.viewModel = viewModel
       let previousEntries = entries
-      let previousContentState = contentState
+      let previousRevision = snapshotRevision
       let previousSelectedRowIndex = selectedRowIndex
-      let needsContentUpdate = previousContentState != update.contentState
+      let needsContentUpdate = previousRevision != update.snapshotRevision
       let tableChange =
         needsContentUpdate
         ? TableViewSnapshotDiff(from: previousEntries, to: update.snapshot.entries).change : nil
@@ -186,10 +169,10 @@ struct UpdatesTableBridge: NSViewRepresentable {
       filterQuery = update.snapshot.filterQuery
       selectedIdentifier = update.selectedIdentifier
       selectedRowIndex = update.selectedRowIndex
-      contentState = update.contentState
+      snapshotRevision = update.snapshotRevision
       menuController.update(viewModel: viewModel, entries: entries)
 
-      if previousContentState == nil {
+      if previousRevision == nil {
         tableView?.reloadData()
       } else if needsContentUpdate {
         apply(tableChange)
@@ -200,32 +183,6 @@ struct UpdatesTableBridge: NSViewRepresentable {
       }
 
       syncSelection()
-    }
-
-    func resizeColumn(in scrollView: NSScrollView) {
-      guard let tableView else { return }
-      let width = scrollView.contentSize.width
-      guard width > 0 else { return }
-
-      if abs(tableView.frame.width - width) > 0.5
-        || tableView.frame.origin.x != AppKitTableGeometry.leadingOffset
-      {
-        tableView.setFrameOrigin(
-          NSPoint(
-            x: AppKitTableGeometry.leadingOffset,
-            y: tableView.frame.origin.y
-          ))
-        tableView.setFrameSize(NSSize(width: width, height: tableView.frame.height))
-      }
-
-      if let column = tableView.tableColumns.first, abs(column.width - width) > 0.5 {
-        column.width = width
-      }
-
-      if scrollView.contentView.bounds.origin.x != 0 {
-        scrollView.contentView.scroll(to: NSPoint(x: 0, y: scrollView.contentView.bounds.origin.y))
-        scrollView.reflectScrolledClipView(scrollView.contentView)
-      }
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
@@ -252,9 +209,7 @@ struct UpdatesTableBridge: NSViewRepresentable {
         return NoDrawingGroupRowView()
       }
 
-      // Preserve the native source-list geometry without flashing the accent
-      // color as focus moves between the main and Settings windows.
-      return StableSelectionTableRowView()
+      return NSTableRowView()
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int)
@@ -279,9 +234,6 @@ struct UpdatesTableBridge: NSViewRepresentable {
           tableView.makeView(withIdentifier: identifier, owner: self) as? AppKitUpdateRowContentView
           ?? AppKitUpdateRowContentView()
         view.identifier = identifier
-        view.onSelect = { [weak self] in
-          self?.viewModel.select(app)
-        }
         view.update(
           app: app,
           isSelected: selectedIdentifier == app.identifier,
@@ -440,7 +392,7 @@ struct UpdatesTableBridge: NSViewRepresentable {
       let snapshot: AppListSnapshot
       let selectedIdentifier: App.Bundle.Identifier?
       let selectedRowIndex: Int?
-      let contentState: TableContentState
+      let snapshotRevision: Int
 
       init(viewModel: UpdatesListViewModel) {
         self.snapshot = viewModel.snapshot
@@ -448,12 +400,8 @@ struct UpdatesTableBridge: NSViewRepresentable {
         self.selectedRowIndex = viewModel.selectedApp.flatMap {
           viewModel.snapshot.firstIndex(of: $0)
         }
-        self.contentState = TableContentState(snapshotRevision: viewModel.snapshotRevision)
+        self.snapshotRevision = viewModel.snapshotRevision
       }
-    }
-
-    @MainActor private struct TableContentState: Equatable {
-      let snapshotRevision: Int
     }
 
     private static let dateFormatter: DateFormatter = {

@@ -9,8 +9,7 @@
 
 import AppKit
 
-/// Applies the window behavior SwiftUI does not currently expose. System-owned
-/// split-view and Liquid Glass surfaces are deliberately left untouched.
+/// Keeps the titlebar joined to the attached sidebar and detail surfaces.
 @MainActor
 enum MainWindowConfiguration {
   static func apply(to window: NSWindow) {

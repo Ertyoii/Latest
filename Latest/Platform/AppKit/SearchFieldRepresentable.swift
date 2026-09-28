@@ -53,7 +53,7 @@ final class UpdateSearchField: NSSearchField {
 }
 
 struct SearchFieldRepresentable: NSViewRepresentable {
-  @Binding var text: String
+  let text: String
   @ObservedObject var focusController: SearchFocusController
   let onTextChanged: (String) -> Void
 
@@ -63,22 +63,22 @@ struct SearchFieldRepresentable: NSViewRepresentable {
 
   func makeNSView(context: Context) -> UpdateSearchField {
     let field = UpdateSearchField()
+    field.cell = SidebarSearchFieldCell(textCell: "")
+    field.isEditable = true
+    field.isSelectable = true
+    field.cell?.isScrollable = true
     field.controlSize = .large
+    field.drawsBackground = false
+    field.isBezeled = true
+    field.focusRingType = .none
+    field.font = .systemFont(ofSize: 13)
     field.delegate = context.coordinator
     field.target = context.coordinator
     field.action = #selector(Coordinator.searchFieldAction(_:))
-    field.focusRingType = .none
     field.sendsSearchStringImmediately = true
     field.sendsWholeSearchString = false
     field.setAccessibilityIdentifier("updates.search")
     field.setAccessibilityLabel("Search Apps")
-    if let cell = field.cell as? NSSearchFieldCell {
-      cell.controlSize = .large
-      cell.bezelStyle = .roundedBezel
-      cell.isScrollable = true
-      cell.lineBreakMode = .byClipping
-      cell.sendsSearchStringImmediately = true
-    }
     context.coordinator.applyFocusRequest(to: field)
     return field
   }
@@ -122,5 +122,13 @@ struct SearchFieldRepresentable: NSViewRepresentable {
         field.resignFocus(restoringPreviousResponder: true)
       }
     }
+  }
+}
+
+/// The system glass supplies the bezel; NSSearchField keeps its native text,
+/// search/cancel buttons, keyboard handling, and accessibility.
+private final class SidebarSearchFieldCell: NSSearchFieldCell {
+  override func draw(withFrame frame: NSRect, in controlView: NSView) {
+    drawInterior(withFrame: frame, in: controlView)
   }
 }

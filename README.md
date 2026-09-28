@@ -60,7 +60,7 @@ Sparkle is pinned through Swift Package Manager. `Frameworks/CommerceKit` and `F
 
 ## Release-note checks
 
-`./script/audit_release_notes.sh` runs the deterministic release-note regression suite. To check every mapped app against current upstream pages, download the public Homebrew cask JSON and run `./script/audit_release_notes.sh --catalog /path/to/cask.json`. The live check writes `build/release-notes-catalog-audit.json` with per-app results and `build/catalog-rendered/*.rtf` for formatting review. Network failures and rejected content are recorded, rather than treated as successful coverage.
+`./script/audit_release_notes.sh` runs the deterministic release-note regression suite. To check every mapped app against current upstream pages, download the public Homebrew cask JSON and run `./script/audit_release_notes.sh --catalog /path/to/cask.json`. The live check writes `build/release-notes-catalog-audit.json` with per-app results and `build/catalog-rendered/*.html` using the app's release-note renderer for formatting review. Network failures and rejected content are recorded, rather than treated as successful coverage.
 
 `./script/audit_release_note_coverage.sh /path/to/cask.json` measures available source routes; a route does not guarantee that an upstream page supplies usable release notes. `--installed` on the audit script separately checks locally installed apps.
 
