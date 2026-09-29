@@ -56,9 +56,7 @@ fi
 
 allowed_bridges=(
 	"Latest/Features/ReleaseNotes/UpdateActionView.swift"
-	"Latest/Features/Updates/UpdatesSidebarView.swift"
 	"Latest/Platform/AppKit/SearchFieldRepresentable.swift"
-	"Latest/Platform/AppKit/ReleaseNotesWebView.swift"
 	"Latest/Platform/AppKit/UpdatesTableBridge.swift"
 	"Latest/Platform/AppKit/WindowAccessor.swift"
 )

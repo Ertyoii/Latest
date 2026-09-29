@@ -10,6 +10,7 @@
 
 import AppKit
 import SwiftUI
+import WebKit
 import XCTest
 
 @testable import Latest
@@ -449,7 +450,7 @@ private enum VisualRegressionError: LocalizedError {
 /// strict full-frame comparison without accepting any changed RGBA pixels.
 final class ProductionVisualParityTest: XCTestCase {
   @MainActor
-  func testProductionWindowStates() throws {
+  func testProductionWindowStates() async throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent()
     let output = root.appendingPathComponent("build/production-visuals", isDirectory: true)
@@ -458,7 +459,7 @@ final class ProductionVisualParityTest: XCTestCase {
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
     let comparesReference = FileManager.default.fileExists(atPath: reference.path)
     for dark in [false, true] {
-      for state in ["initial", "selection", "search", "downloading"] {
+      for state in ["initial", "selection", "search", "downloading", "pinned", "toolbar"] {
         let suite = "ProductionVisualParity.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -476,7 +477,7 @@ final class ProductionVisualParityTest: XCTestCase {
           let started = expectation(description: "Visual fixture operation started")
           let updating = ProductionCaptureOperation(app: apps[0], started: started)
           UpdateQueue.shared.addOperation(updating)
-          wait(for: [started], timeout: 2)
+          await fulfillment(of: [started], timeout: 2)
           updating.progressState = .downloading(loadedSize: 25_000_000, totalSize: 100_000_000)
           operation = updating
         }
@@ -492,15 +493,31 @@ final class ProductionVisualParityTest: XCTestCase {
           contentRect: CGRect(x: 0, y: 0, width: 768, height: 516),
           styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
+        if state == "toolbar" {
+          window.styleMask.insert(.fullSizeContentView)
+          window.toolbarStyle = .unified
+          window.toolbar = NSToolbar(identifier: "ProductionVisualParity")
+          window.toolbar?.insertItem(withItemIdentifier: .flexibleSpace, at: 0)
+        }
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         window.contentView = view
         window.orderFront(nil)
         defer { window.close() }
         window.layoutIfNeeded()
         view.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.4))
+        try await Task.sleep(for: .milliseconds(400))
+        let web = try XCTUnwrap(view.firstDescendant(of: WKWebView.self))
+        try await waitForWebPaint(web)
         window.layoutIfNeeded()
         view.layoutSubtreeIfNeeded()
+        if state == "pinned", let table = view.firstDescendant(of: NSTableView.self),
+          let scroll = table.enclosingScrollView
+        {
+          scroll.contentView.scroll(to: NSPoint(x: 0, y: 240))
+          scroll.reflectScrolledClipView(scroll.contentView)
+          table.layoutSubtreeIfNeeded()
+          try await Task.sleep(for: .milliseconds(100))
+        }
         let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         view.cacheDisplay(in: view.bounds, to: bitmap)
         let name = "production-\(state)-\(dark ? "dark" : "light").png"
@@ -528,6 +545,97 @@ final class ProductionVisualParityTest: XCTestCase {
           output: output, reference: reference, comparesReference: comparesReference)
       }
     }
+  }
+
+  @MainActor
+  func testReleaseNotesRenderedPixels() async throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+    let output = root.appendingPathComponent("build/production-visuals", isDirectory: true)
+    let reference = root.appendingPathComponent(
+      "build/production-visual-reference", isDirectory: true)
+    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+    let text = NSMutableAttributedString(
+      string:
+        "Release 1.2 — Unicode café 中文\nBold and italic with code.\nhttps://example.com/notes\n"
+        + Array(
+          repeating: "A long release-note line that wraps naturally across the viewport.", count: 35
+        ).joined(separator: "\n"))
+    let string = text.string as NSString
+    text.addAttribute(
+      .font, value: NSFont.boldSystemFont(ofSize: 13), range: string.range(of: "Bold"))
+    text.addAttribute(
+      .font,
+      value: NSFontManager.shared.convert(
+        NSFont.systemFont(ofSize: 13), toHaveTrait: .italicFontMask),
+      range: string.range(of: "italic"))
+    text.addAttribute(
+      .font, value: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+      range: string.range(of: "code"))
+    text.addAttribute(
+      .link, value: URL(string: "https://example.com/notes")!,
+      range: string.range(of: "https://example.com/notes"))
+    for dark in [false, true] {
+      for width in [460, 680] {
+        let host = NSHostingView(
+          rootView: ReleaseNotesWebView(text: text)
+            .environment(\.colorScheme, dark ? .dark : .light))
+        let window = NSWindow(
+          contentRect: NSRect(x: 0, y: 0, width: width, height: 360),
+          styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        // Inspect the rendering engine, not a particular representable or SwiftUI wrapper.
+        var renderer: WKWebView?
+        for _ in 0..<200 {
+          renderer = host.firstDescendant(of: WKWebView.self)
+          if let renderer, !renderer.isLoading,
+            let body = try? await renderer.evaluateJavaScript("document.body.innerText") as? String,
+            body.contains("Release 1.2")
+          {
+            break
+          }
+          try await Task.sleep(for: .milliseconds(50))
+        }
+        let web = try XCTUnwrap(renderer)
+        let body = try await web.evaluateJavaScript("document.body.innerText") as? String
+        XCTAssertTrue(body?.contains("Release 1.2") == true)
+        for scrolled in [false, true] {
+          _ = try await web.evaluateJavaScript("window.scrollTo(0, \(scrolled ? 160 : 0))")
+          try await Task.sleep(for: .milliseconds(100))
+          let image = try await web.takeSnapshot(configuration: nil)
+          let bitmap = try XCTUnwrap(
+            NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation)))
+          try record(
+            bitmap,
+            name: "web-\(width)-\(dark ? "dark" : "light")-\(scrolled ? "scrolled" : "top").png",
+            output: output, reference: reference,
+            comparesReference: FileManager.default.fileExists(atPath: reference.path))
+        }
+      }
+    }
+  }
+
+  @MainActor
+  private func waitForWebPaint(_ web: WKWebView) async throws {
+    var ready = false
+    for _ in 0..<200 {
+      ready =
+        (try? await web.evaluateJavaScript(
+          "document.readyState === 'complete' && !!document.querySelector('main')?.textContent.length"
+        ) as? Bool) == true && !web.isLoading
+      if ready { break }
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    XCTAssertTrue(ready, "Release notes must be loaded before comparing pixels")
+    _ = try await web.callAsyncJavaScript(
+      "await document.fonts.ready; await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));",
+      arguments: [:], in: nil, contentWorld: .page)
+    web.displayIfNeeded()
   }
 
   private func record(

@@ -28,9 +28,8 @@ struct LatestRootView: View {
       .frame(width: VisualMetrics.sidebarIdealWidth)
       .frame(maxHeight: .infinity)
       .overlay(alignment: .trailing) {
-        Divider()
+        Divider().ignoresSafeArea(.container, edges: .top)
       }
-      .ignoresSafeArea(.container, edges: .top)
 
       ReleaseNotesDetailView(
         updatesViewModel: updatesViewModel,

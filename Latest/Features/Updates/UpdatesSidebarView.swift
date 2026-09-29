@@ -27,13 +27,12 @@ struct UpdatesSidebarView: View {
   }
 
   var body: some View {
-    SidebarSurface {
-      VStack(spacing: 0) {
-        UpdatesSidebarHeaderView(viewModel: viewModel, searchFocusController: searchFocusController)
-        UpdatesTableBridge(
-          viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride)
-      }
+    VStack(spacing: 0) {
+      UpdatesSidebarHeaderView(viewModel: viewModel, searchFocusController: searchFocusController)
+      UpdatesTableBridge(
+        viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride)
     }
+    .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea(.container, edges: .top))
   }
 }
 
@@ -51,42 +50,5 @@ struct UpdatesSidebarHeaderView: View {
     .glassEffect(.regular, in: .capsule)
     .padding(.horizontal, 12)
     .padding(.vertical, 8)
-  }
-}
-
-/// One opaque system surface matches pinned headers without sampling scrolled rows.
-private struct SidebarSurface<Content: View>: NSViewRepresentable {
-  @ViewBuilder var content: Content
-
-  func makeNSView(context: Context) -> SidebarBackgroundView {
-    let surface = SidebarBackgroundView()
-    let host = NSHostingView(rootView: content)
-    host.translatesAutoresizingMaskIntoConstraints = false
-    surface.addSubview(host)
-    NSLayoutConstraint.activate([
-      host.leadingAnchor.constraint(equalTo: surface.leadingAnchor),
-      host.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
-      host.topAnchor.constraint(equalTo: surface.safeAreaLayoutGuide.topAnchor),
-      host.bottomAnchor.constraint(equalTo: surface.bottomAnchor),
-    ])
-    return surface
-  }
-
-  func updateNSView(_ surface: SidebarBackgroundView, context: Context) {
-    (surface.subviews.first as? NSHostingView<Content>)?.rootView = content
-  }
-}
-
-private final class SidebarBackgroundView: NSView {
-  override var isOpaque: Bool { true }
-
-  override func draw(_ dirtyRect: NSRect) {
-    NSColor.windowBackgroundColor.setFill()
-    bounds.fill()
-  }
-
-  override func viewDidChangeEffectiveAppearance() {
-    super.viewDidChangeEffectiveAppearance()
-    needsDisplay = true
   }
 }

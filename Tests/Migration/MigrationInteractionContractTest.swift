@@ -340,6 +340,9 @@ final class MigrationInteractionContractTest: XCTestCase {
         """) as? String
     XCTAssertEqual(selection, source.string.replacingOccurrences(of: "\t", with: " "))
     XCTAssertFalse(web.configuration.websiteDataStore.isPersistent)
+    XCTAssertFalse(web.configuration.defaultWebpagePreferences.allowsContentJavaScript)
+    XCTAssertFalse(web.allowsBackForwardNavigationGestures)
+    XCTAssertFalse(web.allowsMagnification)
   }
 
   @MainActor
@@ -363,6 +366,12 @@ final class MigrationInteractionContractTest: XCTestCase {
     _ = try await web.evaluateJavaScript("window.scrollTo(0, document.body.scrollHeight)")
     let scrolled = try await web.evaluateJavaScript("window.scrollY") as? Double
     XCTAssertGreaterThan(scrolled ?? 0, 0)
+    _ = try await web.evaluateJavaScript("window.rendererReuseMarker = 42")
+    host.rootView = ReleaseNotesDetailSurface(app: nil, contentState: .text(long))
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(100))
+    let marker = try await web.evaluateJavaScript("window.rendererReuseMarker") as? Int
+    XCTAssertEqual(marker, 42, "Unchanged notes must not reload the page")
     host.rootView = ReleaseNotesDetailSurface(app: nil, contentState: .loading)
     host.layoutSubtreeIfNeeded()
     XCTAssertTrue(host.descendant(of: WKWebView.self) === web)

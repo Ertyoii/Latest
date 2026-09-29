@@ -660,6 +660,7 @@
 			isa = PBXGroup;
 			children = (
 				51A000142FC3000000000001 /* ReleaseNotesDetailView.swift */,
+				51F100172FD0000000000001 /* ReleaseNotesWebView.swift */,
 				51F100162FD0000000000001 /* ReleaseNotesDetailViewModel.swift */,
 				51F100182FD0000000000001 /* SupportStatusInfoView.swift */,
 				51F100192FD0000000000001 /* UpdateActionView.swift */,
@@ -783,7 +784,6 @@
 				5058BA3921202BA7003F332B /* IconCache.swift */,
 				52A000082FE0000000000001 /* MainWindowConfiguration.swift */,
 				51A0000B2FC3000000000001 /* SearchFieldRepresentable.swift */,
-				51F100172FD0000000000001 /* ReleaseNotesWebView.swift */,
 				5073755A278B0A7400F371D8 /* TableViewSnapshotDiff.swift */,
 				508323E1257824A9000BBA13 /* UpdateButton.swift */,
 				508323E2257824AA000BBA13 /* UpdateButtonCell.swift */,
@@ -1599,7 +1599,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1432;
+				CURRENT_PROJECT_VERSION = 1433;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = D87N659XLV;
@@ -1618,7 +1618,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.62;
+				MARKETING_VERSION = 0.63;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1641,7 +1641,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1432;
+				CURRENT_PROJECT_VERSION = 1433;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = D87N659XLV;
@@ -1661,7 +1661,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.62;
+				MARKETING_VERSION = 0.63;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

@@ -9,60 +9,63 @@
 //  Licensed under GPL-3.0; see LICENSE.md.
 
 import AppKit
+import Combine
 import SwiftUI
 import WebKit
 
-/// Reuses WebKit's native selection, scrolling, accessibility and link handling.
-struct ReleaseNotesWebView: NSViewRepresentable {
+/// SwiftUI owns the page lifetime; WebKit retains native text selection and scrolling.
+struct ReleaseNotesWebView: View {
   let text: NSAttributedString?
+  @StateObject private var renderer = ReleaseNotesPage()
 
-  func makeCoordinator() -> Coordinator { Coordinator() }
+  var body: some View {
+    WebView(renderer.page)
+      .webViewBackForwardNavigationGestures(.disabled)
+      .webViewMagnificationGestures(.disabled)
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel("Release Notes")
+      .accessibilityIdentifier("release-notes.web")
+      .onAppear { renderer.display(text) }
+      .onChange(of: text.map(ObjectIdentifier.init)) { renderer.display(text) }
+      .onDisappear { renderer.stop() }
+  }
+}
 
-  func makeNSView(context: Context) -> WKWebView {
-    let configuration = WKWebViewConfiguration()
+@MainActor
+private final class ReleaseNotesPage: ObservableObject {
+  let page: WebPage
+  private var displayedText: NSAttributedString?
+
+  init() {
+    var configuration = WebPage.Configuration()
     configuration.websiteDataStore = .nonPersistent()
-    configuration.defaultWebpagePreferences.allowsContentJavaScript = false
-    let view = WKWebView(frame: .zero, configuration: configuration)
-    view.underPageBackgroundColor = .textBackgroundColor
-    view.navigationDelegate = context.coordinator
-    view.setAccessibilityLabel("Release Notes")
-    view.setAccessibilityIdentifier("release-notes.web")
-    context.coordinator.display(text, in: view)
-    return view
+    configuration.defaultNavigationPreferences.allowsContentJavaScript = false
+    page = WebPage(configuration: configuration, navigationDecider: ReleaseNotesNavigationDecider())
   }
 
-  func updateNSView(_ view: WKWebView, context: Context) {
-    context.coordinator.display(text, in: view)
+  func display(_ text: NSAttributedString?) {
+    guard let text, displayedText !== text else { return }
+    displayedText = text
+    page.load(html: ReleaseNotesWebDocument.html(for: text))
   }
 
-  static func dismantleNSView(_ view: WKWebView, coordinator: Coordinator) {
-    view.stopLoading()
-    view.navigationDelegate = nil
+  func stop() {
+    page.stopLoading()
+    displayedText = nil
   }
+}
 
-  @MainActor
-  final class Coordinator: NSObject, WKNavigationDelegate {
-    private var displayedText: NSAttributedString?
-
-    func display(_ text: NSAttributedString?, in view: WKWebView) {
-      guard let text, displayedText !== text else { return }
-      displayedText = text
-      view.loadHTMLString(ReleaseNotesWebDocument.html(for: text), baseURL: nil)
+private struct ReleaseNotesNavigationDecider: WebPage.NavigationDeciding {
+  func decidePolicy(
+    for action: WebPage.NavigationAction, preferences: inout WebPage.NavigationPreferences
+  ) async -> WKNavigationActionPolicy {
+    if action.navigationType == .linkActivated,
+      let url = ReleaseNotesWebDocument.externalURL(action.request.url)
+    {
+      NSWorkspace.shared.open(url)
     }
-
-    func webView(
-      _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
-      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-    ) {
-      if navigationAction.navigationType == .linkActivated,
-        let url = ReleaseNotesWebDocument.externalURL(navigationAction.request.url)
-      {
-        NSWorkspace.shared.open(url)
-      }
-      decisionHandler(
-        navigationAction.navigationType == .other
-          && navigationAction.request.url?.absoluteString == "about:blank" ? .allow : .cancel)
-    }
+    return action.navigationType == .other && action.request.url?.absoluteString == "about:blank"
+      ? .allow : .cancel
   }
 }
 
