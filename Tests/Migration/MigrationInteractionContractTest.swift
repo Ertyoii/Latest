@@ -44,14 +44,15 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testLocalUATFixtureIsOfflinePopulatedAndSelected() {
-    let environment = AppEnvironment.localUATFixture()
+  func testLocalUATFixtureIsOfflinePopulatedAndSelected() throws {
+    let environment = AppEnvironment.localUATFixture(
+      settings: try isolatedAppListSettings(for: self))
     let apps = environment.updatesListViewModel.snapshot.apps
     XCTAssertEqual(apps.count, 18)
-    XCTAssertEqual(
-      environment.updatesListViewModel.selectedApp?.name,
-      environment.updatesListViewModel.snapshot.sections.first?.apps.first?.name
-    )
+    let firstVisible = try XCTUnwrap(
+      environment.updatesListViewModel.snapshot.sections.first?.apps.first)
+    let selected = try XCTUnwrap(environment.updatesListViewModel.selectedApp)
+    XCTAssertEqual(selected.identifier, firstVisible.identifier)
     XCTAssertTrue(apps.allSatisfy { $0.releaseNotes != nil })
     XCTAssertTrue(apps.allSatisfy { FileManager.default.fileExists(atPath: $0.fileURL.path) })
     XCTAssertEqual(

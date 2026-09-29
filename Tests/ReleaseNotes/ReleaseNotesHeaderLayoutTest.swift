@@ -185,7 +185,8 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 
   @MainActor
   func testMainWindowHasNoFloatingSidebarGlass() throws {
-    let environment = AppEnvironment.localUATFixture()
+    let environment = AppEnvironment.localUATFixture(
+      settings: try isolatedAppListSettings(for: self))
     let hostingView = NSHostingView(rootView: LatestRootView(environment: environment))
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 768, height: 516),

@@ -14,8 +14,8 @@ import XCTest
 
 @MainActor
 final class AppListSnapshotTest: XCTestCase {
-  func testUpdatesListViewModelDoesNotRebuildSnapshotForDuplicateSearchAction() {
-    let viewModel = UpdatesListViewModel()
+  func testUpdatesListViewModelDoesNotRebuildSnapshotForDuplicateSearchAction() throws {
+    let viewModel = UpdatesListViewModel(settings: try isolatedAppListSettings(for: self))
 
     XCTAssertEqual(viewModel.snapshotRevision, 0)
     viewModel.setSearchQuery("latest")
@@ -24,15 +24,16 @@ final class AppListSnapshotTest: XCTestCase {
     XCTAssertEqual(viewModel.snapshotRevision, 1)
   }
 
-  func testSnapshotPartitionsAppsIntoAvailableInstalledAndIgnoredSections() {
-    configureSettings()
+  func testSnapshotPartitionsAppsIntoAvailableInstalledAndIgnoredSections() throws {
+    let settings = try isolatedAppListSettings(for: self)
 
     let available = makeApp(name: "Alpha", versionNumber: "1.0", remoteVersionNumber: "2.0")
     let installed = makeApp(name: "Beta", versionNumber: "1.0")
     let ignored = makeApp(
       name: "Gamma", versionNumber: "1.0", remoteVersionNumber: "2.0", isIgnored: true)
 
-    let snapshot = AppListSnapshot(withApps: [installed, ignored, available], filterQuery: nil)
+    let snapshot = AppListSnapshot(
+      withApps: [installed, ignored, available], filterQuery: nil, settings: settings)
 
     XCTAssertEqual(snapshot.entries.count, 6)
     XCTAssertEqual(section(at: 0, in: snapshot)?.numberOfApps, 1)
@@ -43,41 +44,42 @@ final class AppListSnapshotTest: XCTestCase {
     XCTAssertEqual(snapshot.sections[2].apps[0].name, "Gamma")
   }
 
-  func testSnapshotFilterKeepsOnlyMatchingAppsAndSections() {
-    configureSettings()
+  func testSnapshotFilterKeepsOnlyMatchingAppsAndSections() throws {
+    let settings = try isolatedAppListSettings(for: self)
 
     let alpha = makeApp(name: "Alpha", versionNumber: "1.0", remoteVersionNumber: "2.0")
     let beta = makeApp(name: "Beta", versionNumber: "1.0", remoteVersionNumber: "2.0")
 
-    let snapshot = AppListSnapshot(withApps: [alpha, beta], filterQuery: "alp")
+    let snapshot = AppListSnapshot(withApps: [alpha, beta], filterQuery: "alp", settings: settings)
 
     XCTAssertEqual(snapshot.entries.count, 2)
     XCTAssertEqual(section(at: 0, in: snapshot)?.numberOfApps, 1)
     XCTAssertEqual(snapshot.sections[0].apps[0].name, "Alpha")
   }
 
-  func testSearchRefilterMatchesFullSnapshotRebuild() {
-    configureSettings()
+  func testSearchRefilterMatchesFullSnapshotRebuild() throws {
+    let settings = try isolatedAppListSettings(for: self)
     let apps = [
       makeApp(name: "Alpha", versionNumber: "1.0", remoteVersionNumber: "2.0"),
       makeApp(name: "Alphabet", versionNumber: "1.0"),
       makeApp(name: "Beta", versionNumber: "1.0", remoteVersionNumber: "2.0", isIgnored: true),
     ]
-    let snapshot = AppListSnapshot(withApps: apps, filterQuery: nil)
+    let snapshot = AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings)
+    let filtered = snapshot.refiltered(with: "ALPHA")
 
     XCTAssertEqual(
-      snapshot.refiltered(with: "alpha").entries,
-      AppListSnapshot(withApps: apps, filterQuery: "alpha").entries
+      filtered.entries,
+      AppListSnapshot(withApps: apps, filterQuery: "ALPHA", settings: settings).entries
     )
+    XCTAssertEqual(filtered.sections.map { $0.apps.map(\.name) }, [["Alpha"], ["Alphabet"]])
     XCTAssertEqual(
       snapshot.refiltered(with: nil).entries,
-      AppListSnapshot(withApps: apps, filterQuery: nil).entries
+      AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings).entries
     )
   }
 
   func testInstalledAppsAreSortedByBundleModificationDate() throws {
-    configureSettings()
-    AppListSettings.shared.sortOrder = .name
+    let settings = try isolatedAppListSettings(for: self)
 
     let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -91,22 +93,24 @@ final class AppListSnapshotTest: XCTestCase {
       name: "Z Newer", versionNumber: "1.0", modificationDate: Date(timeIntervalSince1970: 2),
       in: directory)
 
-    let snapshot = AppListSnapshot(withApps: [older, newer], filterQuery: nil)
+    let snapshot = AppListSnapshot(
+      withApps: [older, newer], filterQuery: nil, settings: settings)
 
     XCTAssertEqual(snapshot.sections[0].apps[0].name, "Z Newer")
     XCTAssertEqual(snapshot.sections[0].apps[1].name, "A Older")
   }
 
-  func testSnapshotMatchesUpdatedAppByIdentifier() {
-    configureSettings()
+  func testSnapshotMatchesUpdatedAppByIdentifier() throws {
+    let settings = try isolatedAppListSettings(for: self)
 
     let appURL = URL(
       fileURLWithPath: "/Applications/Snapshot-\(UUID().uuidString).app", isDirectory: true)
     let original = makeApp(name: "Snapshot", versionNumber: "1.0", appURL: appURL)
     let refreshed = makeApp(name: "Snapshot", versionNumber: "1.1", appURL: appURL)
-    let snapshot = AppListSnapshot(withApps: [original], filterQuery: nil)
+    let snapshot = AppListSnapshot(withApps: [original], filterQuery: nil, settings: settings)
 
-    XCTAssertEqual(snapshot.firstIndex(of: refreshed), snapshot.firstIndex(of: original))
+    let originalIndex = try XCTUnwrap(snapshot.firstIndex(of: original))
+    XCTAssertEqual(snapshot.firstIndex(of: refreshed), originalIndex)
   }
 
   func testTableAppendReloadsWhenExistingAppContentChanged() {
@@ -134,14 +138,6 @@ final class AppListSnapshotTest: XCTestCase {
     guard case .reloadAll = changedRemoval.change else {
       return XCTFail("Removing must not leave changed existing rows stale")
     }
-  }
-
-  private func configureSettings() {
-    AppListSettings.shared.sortOrder = .name
-    AppListSettings.shared.showInstalledUpdates = true
-    AppListSettings.shared.showIgnoredUpdates = true
-    AppListSettings.shared.includeUnsupportedApps = true
-    AppListSettings.shared.includeAppsWithLimitedSupport = true
   }
 
   private func section(at index: Int, in snapshot: AppListSnapshot) -> AppListSnapshot.Section? {

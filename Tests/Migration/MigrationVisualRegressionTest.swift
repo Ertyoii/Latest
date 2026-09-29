@@ -37,7 +37,8 @@ final class MigrationVisualRegressionTest: XCTestCase {
 
   @MainActor
   func testProductionSidebarUsesMeasuredOriginalTableGeometryAndRealIcons() throws {
-    let environment = AppEnvironment.localUATFixture()
+    let environment = AppEnvironment.localUATFixture(
+      settings: try isolatedAppListSettings(for: self))
     let viewModel = environment.updatesListViewModel
     let hostingView = NSHostingView(
       rootView: UpdatesSidebarView(
@@ -133,9 +134,8 @@ extension NSView {
 
 @MainActor
 private enum MigrationGalleryRenderer {
-  /// Recording must never overwrite the checked-in reference images. When a
-  /// developer asks to record, write candidates to /tmp and still compare them
-  /// with the immutable original-renderer baselines.
+  /// Recording writes candidates to /tmp for review; it never changes the
+  /// checked-in reference images or skips their comparison.
   private static let candidateOutputDirectory: URL? = {
     guard
       ProcessInfo.processInfo.environment["LATEST_RECORD_VISUAL_BASELINES"] == "1"
@@ -227,13 +227,7 @@ private enum MigrationGalleryRenderer {
     scenario: MigrationGalleryScenario,
     testCase: XCTestCase
   ) throws {
-    let runnerReferences = baselineDirectory.deletingLastPathComponent()
-      .deletingLastPathComponent().deletingLastPathComponent()
-      .appendingPathComponent("build/ci-visual-reference", isDirectory: true)
-    let baselineURL =
-      FileManager.default.fileExists(atPath: runnerReferences.path)
-      ? runnerReferences.appendingPathComponent("\(scenario.id)-actual.png")
-      : baselineDirectory.appendingPathComponent(baselineFilename(for: scenario))
+    let baselineURL = baselineDirectory.appendingPathComponent(baselineFilename(for: scenario))
     guard let png = rendered.representation(using: .png, properties: [:]) else {
       throw VisualRegressionError.couldNotEncodePNG
     }
@@ -262,7 +256,7 @@ private enum MigrationGalleryRenderer {
     guard let baselineData = try? Data(contentsOf: baselineURL),
       let baseline = NSBitmapImageRep(data: baselineData)
     else {
-      XCTFail("Missing immutable visual reference \(baselineURL.path)")
+      XCTFail("Missing checked-in visual reference \(baselineURL.path)")
       return
     }
 

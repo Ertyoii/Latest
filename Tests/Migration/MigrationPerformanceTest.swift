@@ -24,14 +24,14 @@ final class MigrationPerformanceTest: XCTestCase {
       throw XCTSkip("Run script/benchmark_migration.sh to execute migration benchmarks.")
     }
 
-    configureSettings()
+    let settings = try isolatedAppListSettings(for: self)
     emitConfigurationLine()
     let appsBySize = Dictionary(
       uniqueKeysWithValues: [100, 500, 1_500].map { ($0, makeApps(count: $0)) })
 
     for rowCount in [100, 500, 1_500] {
       let apps = try XCTUnwrap(appsBySize[rowCount])
-      let snapshot = AppListSnapshot(withApps: apps, filterQuery: nil)
+      let snapshot = AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings)
       let queries = (0..<60).map { "Benchmark App \($0 % max(rowCount / 10, 1))" }
       benchmarkSamples("sidebar_filter_\(rowCount)", values: queries) { query in
         snapshot.refiltered(with: query).entries.count
@@ -40,8 +40,9 @@ final class MigrationPerformanceTest: XCTestCase {
 
     let populatedApps = try XCTUnwrap(appsBySize[500])
     benchmark("cold_launch_to_populated_sidebar_fixture", iterations: 30) {
-      let snapshot = AppListSnapshot(withApps: populatedApps, filterQuery: nil)
-      let viewModel = UpdatesListViewModel(snapshot: snapshot)
+      let snapshot = AppListSnapshot(
+        withApps: populatedApps, filterQuery: nil, settings: settings)
+      let viewModel = UpdatesListViewModel(snapshot: snapshot, settings: settings)
       let host = NSHostingView(
         rootView: UpdatesSidebarView(
           viewModel: viewModel,
@@ -60,12 +61,12 @@ final class MigrationPerformanceTest: XCTestCase {
     benchmark("scan_to_stable_snapshot_fixture", iterations: 30) {
       let bundles = BundleCollector.collectBundles(at: scanRoot)
       let apps = bundles.map { Latest.App(bundle: $0, update: nil, isIgnored: false) }
-      return AppListSnapshot(withApps: apps, filterQuery: nil).entries.count
+      return AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings).entries.count
     }
 
     let scrollSnapshot = AppListSnapshot(
-      withApps: try XCTUnwrap(appsBySize[1_500]), filterQuery: nil)
-    let scrollViewModel = UpdatesListViewModel(snapshot: scrollSnapshot)
+      withApps: try XCTUnwrap(appsBySize[1_500]), filterQuery: nil, settings: settings)
+    let scrollViewModel = UpdatesListViewModel(snapshot: scrollSnapshot, settings: settings)
     let scrollHost = NSHostingView(
       rootView: UpdatesSidebarView(
         viewModel: scrollViewModel,
@@ -114,7 +115,8 @@ final class MigrationPerformanceTest: XCTestCase {
 
     let detailApps = Array(populatedApps.prefix(80))
     let detailViewModel = UpdatesListViewModel(
-      snapshot: AppListSnapshot(withApps: detailApps, filterQuery: nil))
+      snapshot: AppListSnapshot(withApps: detailApps, filterQuery: nil, settings: settings),
+      settings: settings)
     let detailState = ReleaseNotesDetailViewModel(
       releaseNotesProvider: ImmediateReleaseNotesProvider(
         text: NSAttributedString(string: "Migration benchmark release notes")
@@ -167,7 +169,7 @@ final class MigrationPerformanceTest: XCTestCase {
     }
 
     let environment = AppEnvironment(
-      updatesListViewModel: UpdatesListViewModel(snapshot: scrollSnapshot)
+      updatesListViewModel: UpdatesListViewModel(snapshot: scrollSnapshot, settings: settings)
     )
     let splitHost = NSHostingView(rootView: LatestRootView(environment: environment))
     splitHost.frame = NSRect(x: 0, y: 0, width: 1_000, height: 640)
@@ -199,7 +201,7 @@ final class MigrationPerformanceTest: XCTestCase {
     guard FileManager.default.fileExists(atPath: Self.benchmarkFlagURL.path) else {
       throw XCTSkip("Run script/benchmark_migration.sh to execute selection benchmarks.")
     }
-    configureSettings()
+    let settings = try isolatedAppListSettings(for: self)
     let apps = makeApps(count: 30)
     for mode in ["cold", "disk", "memory"] {
       let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -229,7 +231,9 @@ final class MigrationPerformanceTest: XCTestCase {
           wait(for: [loaded], timeout: 3)
         }
       }
-      let model = UpdatesListViewModel(snapshot: AppListSnapshot(withApps: apps, filterQuery: nil))
+      let model = UpdatesListViewModel(
+        snapshot: AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings),
+        settings: settings)
       let detail = ReleaseNotesDetailViewModel(releaseNotesProvider: provider)
       let host = NSHostingView(
         rootView: ReleaseNotesDetailView(updatesViewModel: model, detailViewModel: detail))
@@ -367,14 +371,6 @@ final class MigrationPerformanceTest: XCTestCase {
       }
     }
     return result == KERN_SUCCESS ? info.resident_size : 0
-  }
-
-  private func configureSettings() {
-    AppListSettings.shared.sortOrder = .name
-    AppListSettings.shared.showInstalledUpdates = true
-    AppListSettings.shared.showIgnoredUpdates = true
-    AppListSettings.shared.includeUnsupportedApps = true
-    AppListSettings.shared.includeAppsWithLimitedSupport = true
   }
 
   private func attachToWindow<Content: View>(_ host: NSHostingView<Content>) -> NSWindow {

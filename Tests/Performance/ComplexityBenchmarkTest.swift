@@ -92,11 +92,12 @@ final class ComplexityBenchmarkTest: XCTestCase {
     FileHandle.standardError.write(
       Data("BENCHMARK_CONFIGURATION configuration=\(configuration) samples=30\n".utf8))
 
-    configureSettings()
+    let settings = try isolatedAppListSettings(for: self)
 
     let dataStoreBundles = makeBundles(count: 2_000)
     let snapshotApps = makeApps(count: 1_500)
-    let searchSnapshot = AppListSnapshot(withApps: snapshotApps, filterQuery: nil)
+    let searchSnapshot = AppListSnapshot(
+      withApps: snapshotApps, filterQuery: nil, settings: settings)
     let searchQueries = (0..<40).map { "Benchmark App \($0)" }
     let lookupApps = Array(snapshotApps.prefix(400))
     let versionPairs = makeVersionPairs(count: 80_000)
@@ -151,7 +152,8 @@ final class ComplexityBenchmarkTest: XCTestCase {
     }
 
     benchmark("app_list_snapshot_build_and_lookup", iterations: 30) {
-      let snapshot = AppListSnapshot(withApps: snapshotApps, filterQuery: nil)
+      let snapshot = AppListSnapshot(
+        withApps: snapshotApps, filterQuery: nil, settings: settings)
       var checksum = snapshot.entries.count
       for app in lookupApps {
         checksum &+= snapshot.firstIndex(of: app) ?? 0
@@ -170,7 +172,10 @@ final class ComplexityBenchmarkTest: XCTestCase {
     benchmark("app_list_search_full_rebuild", iterations: 30) {
       var checksum = 0
       for query in searchQueries {
-        checksum &+= AppListSnapshot(withApps: snapshotApps, filterQuery: query).entries.count
+        checksum &+=
+          AppListSnapshot(
+            withApps: snapshotApps, filterQuery: query, settings: settings
+          ).entries.count
       }
       return checksum
     }
@@ -403,14 +408,6 @@ final class ComplexityBenchmarkTest: XCTestCase {
       checksum
     )
     FileHandle.standardError.write(Data((line + "\n").utf8))
-  }
-
-  private func configureSettings() {
-    AppListSettings.shared.sortOrder = .name
-    AppListSettings.shared.showInstalledUpdates = true
-    AppListSettings.shared.showIgnoredUpdates = true
-    AppListSettings.shared.includeUnsupportedApps = true
-    AppListSettings.shared.includeAppsWithLimitedSupport = true
   }
 
   private func makeBundles(count: Int) -> [App.Bundle] {
