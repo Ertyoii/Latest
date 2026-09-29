@@ -90,6 +90,16 @@ final class MigrationVisualRegressionTest: XCTestCase {
       3,
       "Visible production rows must materialize real file icons on their first frame."
     )
+
+    let cell = try XCTUnwrap(
+      tableView.view(atColumn: 0, row: firstAppRow, makeIfNecessary: false)
+        as? AppKitUpdateRowContentView)
+    cell.layoutSubtreeIfNeeded()
+    let updateButton = try XCTUnwrap(cell.subviews.compactMap { $0 as? UpdateButton }.first)
+    let supportStatus = try XCTUnwrap(
+      cell.subviews.compactMap { $0 as? NSImageView }.first { $0.toolTip != nil })
+    XCTAssertEqual(updateButton.frame.midX, supportStatus.frame.midX, accuracy: 0.5)
+    XCTAssertEqual(updateButton.frame.midY, cell.bounds.midY, accuracy: 0.5)
   }
 
   @MainActor

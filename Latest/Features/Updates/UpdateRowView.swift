@@ -171,9 +171,9 @@ final class AppKitUpdateRowContentView: NSTableCellView {
       dateField.topAnchor.constraint(equalTo: topAnchor, constant: 4),
       dateField.widthAnchor.constraint(equalToConstant: Layout.trailingWidth),
 
-      updateButton.trailingAnchor.constraint(equalTo: dateField.trailingAnchor),
+      updateButton.centerXAnchor.constraint(equalTo: supportStateImageView.centerXAnchor),
       updateButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-      updateButton.widthAnchor.constraint(equalToConstant: Layout.trailingWidth),
+      updateButton.widthAnchor.constraint(equalToConstant: 24),
       updateButton.heightAnchor.constraint(equalToConstant: 24),
 
       supportStateImageView.trailingAnchor.constraint(equalTo: dateField.trailingAnchor),
