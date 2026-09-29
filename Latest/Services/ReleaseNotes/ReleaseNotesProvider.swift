@@ -299,7 +299,8 @@ class ReleaseNotesProvider {
     from url: URL, relevantVersion: String?, requestID: UUID,
     with completion: @escaping ResolvedCompletion
   ) {
-    activeWebContentLoader.load(from: url) { result in
+    activeWebContentLoader.load(from: url) { [weak self] result in
+      guard let self else { return }
       guard self.isCurrentRequest(requestID) else { return }
 
       switch result {
@@ -551,7 +552,7 @@ class ReleaseNotesProvider {
               allowFirstSectionFallback: allowsLatestFallback) != nil
           }.value
         }
-      ) { result in
+      ) { [self] result in
         guard self.isCurrentRequest(requestID), activeAttemptID == attemptID, !didComplete else {
           return
         }

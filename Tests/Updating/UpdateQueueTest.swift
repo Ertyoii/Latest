@@ -420,7 +420,7 @@ final class AppUpdatingBoundaryTest: XCTestCase {
     model?.performAction()
     XCTAssertTrue(
       operation.isCancelled, "Progress control must cancel the injected queue's operation")
-    weak var weakModel = model
+    weak let weakModel = model
     model = nil
     XCTAssertNil(
       weakModel, "The observation task must not retain its owner across stream suspension")

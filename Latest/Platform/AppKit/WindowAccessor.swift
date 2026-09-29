@@ -18,6 +18,7 @@ final class ToolbarTitleView: NSView {
     titleField.textColor = .labelColor
     titleField.setAccessibilityIdentifier("toolbar.title")
     titleField.sizeToFit()
+    addSubview(titleField)
   }
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -33,15 +34,15 @@ final class ToolbarTitleView: NSView {
     updateTitle()
   }
   func updateTitle() {
-    guard let window, let host = window.contentView?.superview else { return }
-    let windowBounds = host.convert(host.bounds, to: nil)
+    guard let window, let contentView = window.contentView else { return }
+    let windowBounds = contentView.convert(contentView.bounds, to: nil)
     let toolbar = NSRect(
       x: windowBounds.minX + VisualMetrics.sidebarIdealWidth,
       y: window.contentLayoutRect.maxY,
       width: max(0, windowBounds.width - VisualMetrics.sidebarIdealWidth),
       height: max(0, windowBounds.maxY - window.contentLayoutRect.maxY))
-    let rect = host.convert(toolbar, from: nil).intersection(host.bounds)
-    if titleField.superview !== host { host.addSubview(titleField) }
+    let rect = convert(toolbar, from: nil).intersection(bounds)
+    if titleField.superview !== self { addSubview(titleField) }
     let origin = NSPoint(
       x: rect.minX + VisualMetrics.detailHeaderHorizontalPadding,
       y: rect.midY - titleField.frame.height / 2)

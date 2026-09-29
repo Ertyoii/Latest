@@ -157,8 +157,6 @@ enum SidebarUpdateActionTitle {
 }
 
 final class SwiftUIUpdateTableView: NSTableView {
-  var onMouseDownRow: ((Int) -> Void)?
-
   override func menu(for event: NSEvent) -> NSMenu? {
     let clickedPoint = convert(event.locationInWindow, from: nil)
     let clickedRow = row(at: clickedPoint)
@@ -177,17 +175,6 @@ final class SwiftUIUpdateTableView: NSTableView {
 
   override func setFrameOrigin(_ newOrigin: NSPoint) {
     super.setFrameOrigin(NSPoint(x: 0, y: newOrigin.y))
-  }
-
-  override func mouseDown(with event: NSEvent) {
-    window?.makeFirstResponder(self)
-    let clickedPoint = convert(event.locationInWindow, from: nil)
-    let clickedRow = row(at: clickedPoint)
-    if clickedRow >= 0, delegate?.tableView?(self, shouldSelectRow: clickedRow) ?? true {
-      selectRowIndexes(IndexSet(integer: clickedRow), byExtendingSelection: false)
-      onMouseDownRow?(clickedRow)
-    }
-    super.mouseDown(with: event)
   }
 
   func sizeToViewport() {

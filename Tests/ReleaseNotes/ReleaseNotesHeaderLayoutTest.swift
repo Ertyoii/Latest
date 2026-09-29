@@ -148,24 +148,25 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
     defer { window.close() }
     let accessor = ToolbarTitleView()
     let content = try XCTUnwrap(window.contentView)
+    accessor.frame = content.bounds
+    accessor.autoresizingMask = [.width, .height]
     content.addSubview(accessor)
-    let host = try XCTUnwrap(content.superview)
     for width in [768.0, 1000.0] {
       window.setContentSize(NSSize(width: width, height: 516))
       window.layoutIfNeeded()
       accessor.updateTitle()
       let title = try XCTUnwrap(
-        host.subviews.compactMap { $0 as? NSTextField }.first {
+        accessor.subviews.compactMap { $0 as? NSTextField }.first {
           $0.accessibilityIdentifier() == "toolbar.title"
         })
       XCTAssertEqual(title.stringValue, "Updates")
       XCTAssertEqual(
-        title.frame.minX,
+        title.convert(title.bounds, to: nil).minX,
         VisualMetrics.sidebarIdealWidth + VisualMetrics.detailHeaderHorizontalPadding)
       XCTAssertNil(title.hitTest(.zero))
     }
     accessor.removeTitle()
-    XCTAssertFalse(host.subviews.contains { $0.accessibilityIdentifier() == "toolbar.title" })
+    XCTAssertFalse(accessor.subviews.contains { $0.accessibilityIdentifier() == "toolbar.title" })
   }
 
   @MainActor
@@ -225,7 +226,7 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
   @MainActor
   func testSectionHeadersNeverAcquireSelectionHighlight() {
     let row = SidebarSectionRowView()
-    row.selectionHighlightStyle = .sourceList
+    row.selectionHighlightStyle = .regular
     row.isSelected = true
     XCTAssertEqual(row.selectionHighlightStyle, .none)
     XCTAssertFalse(row.isSelected)

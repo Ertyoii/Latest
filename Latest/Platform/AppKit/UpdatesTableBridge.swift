@@ -29,9 +29,6 @@ struct UpdatesTableBridge: NSViewRepresentable {
     tableView.delegate = context.coordinator
     tableView.dataSource = context.coordinator
     tableView.menu = context.coordinator.tableViewMenu
-    tableView.onMouseDownRow = { [weak coordinator = context.coordinator] row in
-      coordinator?.selectRow(at: row)
-    }
     tableView.headerView = nil
     tableView.gridStyleMask = []
     tableView.rowHeight = VisualMetrics.appRowHeight

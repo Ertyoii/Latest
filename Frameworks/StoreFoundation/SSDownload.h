@@ -56,7 +56,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)pauseWithStoreClient:(id)arg1;
 - (id)initWithCoder:(id)arg1;
 - (void)encodeWithCoder:(id)arg1;
-- (BOOL)isEqual:(id)arg1;
+- (BOOL)isEqual:(nullable id)arg1;
 - (id)initWithAssets:(id)arg1 metadata:(id)arg2;
 - (id)init;
 - (void)resume;
