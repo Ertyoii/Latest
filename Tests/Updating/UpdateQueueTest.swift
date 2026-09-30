@@ -455,35 +455,3 @@ final class AppUpdatingBoundaryTest: XCTestCase {
     return App(bundle: bundle, update: .success(update), isIgnored: false)
   }
 }
-
-@MainActor
-final class DisplayLinkTest: XCTestCase {
-  func testFiniteAnimationStopsAfterReachingItsDuration() async {
-    let finished = expectation(description: "Animation completes")
-    let link = DisplayLink(duration: 0.03) { progress in
-      if progress >= 1 { finished.fulfill() }
-    }
-    defer { link.invalidate() }
-    link.start()
-    await fulfillment(of: [finished], timeout: 2)
-    XCTAssertFalse(link.isRunning)
-    XCTAssertGreaterThanOrEqual(link.progress, 1)
-  }
-
-  func testIndefiniteAnimationContinuesUntilInvalidated() async {
-    let advanced = expectation(description: "Spinner advances")
-    var received = false
-    let link = DisplayLink(duration: nil) { progress in
-      if progress >= 2, !received {
-        received = true
-        advanced.fulfill()
-      }
-    }
-    defer { link.invalidate() }
-    link.start()
-    await fulfillment(of: [advanced], timeout: 2)
-    XCTAssertTrue(link.isRunning)
-    link.invalidate()
-    XCTAssertFalse(link.isRunning)
-  }
-}

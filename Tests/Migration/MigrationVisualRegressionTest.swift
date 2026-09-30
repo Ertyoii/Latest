@@ -105,10 +105,6 @@ final class MigrationVisualRegressionTest: XCTestCase {
       tableView.view(atColumn: 0, row: firstAppRow, makeIfNecessary: false))
     cell.layoutSubtreeIfNeeded()
     XCTAssertTrue(cell.accessibilityLabel()?.contains(viewModel.snapshot.apps[0].name) == true)
-    let updateButton = try XCTUnwrap(cell.firstDescendant(of: UpdateButton.self))
-    let buttonFrame = updateButton.convert(updateButton.bounds, to: cell)
-    XCTAssertEqual(buttonFrame.midX, cell.bounds.maxX - 44, accuracy: 0.5)
-    XCTAssertEqual(buttonFrame.midY, cell.bounds.midY, accuracy: 0.5)
     let rendered = try await captureWindowBitmap(window)
     let icon = cell.convert(
       NSRect(x: 0, y: cell.bounds.midY - 25, width: 50, height: 50), to: nil)
@@ -478,6 +474,131 @@ private enum VisualRegressionError: LocalizedError {
 /// than just the migration gallery. A same-machine reference directory enables
 /// strict full-frame comparison without accepting any changed RGBA pixels.
 final class ProductionVisualParityTest: XCTestCase {
+  @MainActor
+  func testSidebarProgressActionCancelsOnlyItsInjectedOperation() async throws {
+    let queue = UpdateQueue()
+    queue.isSuspended = true
+    defer {
+      queue.cancelAllOperations()
+      queue.isSuspended = false
+    }
+    let service = AppUpdateService(queue: queue)
+    let apps = Array(LocalUATFixture.apps.prefix(2))
+    let operations = apps.map {
+      UpdateOperation(bundleIdentifier: $0.bundleIdentifier, appIdentifier: $0.identifier)
+    }
+    for operation in operations { queue.addOperation(operation) }
+    operations[0].progressState = .downloading(loadedSize: 25, totalSize: 100)
+    let row = UpdateRowHostingCell(frame: NSRect(x: 0, y: 0, width: 308, height: 60))
+    let window = NSWindow(
+      contentRect: row.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = row
+    window.orderFront(nil)
+    defer { window.close() }
+    row.update(
+      app: apps[0], isSelected: false, filterQuery: nil,
+      dateFormatter: DateFormatter(), updating: service)
+    try await Task.sleep(for: .milliseconds(150))
+    row.layoutSubtreeIfNeeded()
+    let down = try XCTUnwrap(
+      NSEvent.mouseEvent(
+        with: .leftMouseDown, location: NSPoint(x: 264, y: 30), modifierFlags: [],
+        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+        context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+    let up = try XCTUnwrap(
+      NSEvent.mouseEvent(
+        with: .leftMouseUp, location: down.locationInWindow, modifierFlags: [],
+        timestamp: down.timestamp + 0.05, windowNumber: window.windowNumber,
+        context: nil, eventNumber: 2, clickCount: 1, pressure: 0))
+    // Queue mouse-up first so a native control's tracking loop can consume it.
+    NSApp.postEvent(up, atStart: false)
+    window.sendEvent(down)
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertTrue(operations[0].isCancelled)
+    XCTAssertFalse(operations[1].isCancelled, "Cancel must target the displayed app only")
+  }
+
+  @MainActor
+  func testSidebarUpdateControlStates() async throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+    let marker = root.appendingPathComponent("build/sidebar-control-capture-set")
+    let set =
+      (try? String(contentsOf: marker, encoding: .utf8))?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? "current"
+    let output = root.appendingPathComponent("build/sidebar-control-\(set)")
+    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+    let app = LocalUATFixture.apps[0]
+    let started = expectation(description: "Sidebar update fixture started")
+    let operation = ProductionCaptureOperation(app: app, started: started)
+    UpdateQueue.shared.addOperation(operation)
+    await fulfillment(of: [started], timeout: 2)
+    defer { operation.finish() }
+    let states: [(String, UpdateProgressState)] = [
+      ("idle", .none), ("waiting", .pending),
+      ("download", .downloading(loadedSize: 25_000_000, totalSize: 100_000_000)),
+      ("extract", .extracting(progress: 0.5)),
+      ("error", .error(LatestError.updateInfoUnavailable)),
+    ]
+    for dark in [false, true] {
+      for selected in [false, true] {
+        let row = UpdateRowHostingCell(frame: NSRect(x: 0, y: 0, width: 308, height: 60))
+        let nativeRow = NSTableRowView(frame: row.bounds)
+        nativeRow.backgroundColor = .textBackgroundColor
+        nativeRow.addSubview(row)
+        let window = NSWindow(
+          contentRect: row.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        window.contentView = nativeRow
+        window.orderFront(nil)
+        defer { window.close() }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        row.update(app: app, isSelected: selected, filterQuery: nil, dateFormatter: formatter)
+        nativeRow.isSelected = selected
+        nativeRow.isEmphasized = selected
+        row.backgroundStyle = selected ? .emphasized : .normal
+        for (name, state) in states {
+          operation.progressState = state
+          try await Task.sleep(for: .milliseconds(300))
+          window.layoutIfNeeded()
+          row.layoutSubtreeIfNeeded()
+          let bitmap = try await captureWindowBitmap(window)
+          let filename = "\(dark ? "dark" : "light")-\(selected ? "selected" : "plain")-\(name).png"
+          try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
+            to: output.appendingPathComponent(filename))
+          // The status dot returns after a failure; an active operation instead
+          // paints its indicator at the established center (264, 30).
+          var greenStatusPixels = 0
+          var indicatorPixels = 0
+          for y in 35..<83 {
+            for x in 502..<555 {
+              let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
+              if color.greenComponent - max(color.redComponent, color.blueComponent) > 0.2 {
+                greenStatusPixels += 1
+              }
+              if selected
+                ? color.redComponent > 0.9 : color.blueComponent - color.redComponent > 0.2
+              {
+                indicatorPixels += 1
+              }
+            }
+          }
+          if name == "idle" || name == "error" {
+            XCTAssertGreaterThan(greenStatusPixels, 20, filename)
+          } else {
+            XCTAssertEqual(greenStatusPixels, 0, filename)
+            if name != "waiting" || selected {
+              XCTAssertGreaterThan(indicatorPixels, 20, filename)
+            }
+          }
+        }
+      }
+    }
+  }
+
   @MainActor
   func testProductionWindowStates() async throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()

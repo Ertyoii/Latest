@@ -1,0 +1,170 @@
+{
+  "baseline_commit": "6664262",
+  "scale": 2,
+  "row_size": [
+    308,
+    60
+  ],
+  "cases": [
+    {
+      "name": "dark-plain-download.png",
+      "changed_pixels": 767,
+      "outside_control": 0,
+      "max_channel_difference": 44,
+      "pixels_over_2": 240,
+      "pixels_over_32": 4
+    },
+    {
+      "name": "dark-plain-error.png",
+      "changed_pixels": 0,
+      "outside_control": 0,
+      "max_channel_difference": 0,
+      "pixels_over_2": 0,
+      "pixels_over_32": 0
+    },
+    {
+      "name": "dark-plain-extract.png",
+      "changed_pixels": 807,
+      "outside_control": 0,
+      "max_channel_difference": 47,
+      "pixels_over_2": 345,
+      "pixels_over_32": 4
+    },
+    {
+      "name": "dark-plain-idle.png",
+      "changed_pixels": 0,
+      "outside_control": 0,
+      "max_channel_difference": 0,
+      "pixels_over_2": 0,
+      "pixels_over_32": 0
+    },
+    {
+      "name": "dark-plain-waiting.png",
+      "changed_pixels": 476,
+      "outside_control": 0,
+      "max_channel_difference": 56,
+      "pixels_over_2": 424,
+      "pixels_over_32": 252
+    },
+    {
+      "name": "dark-selected-download.png",
+      "changed_pixels": 414,
+      "outside_control": 0,
+      "max_channel_difference": 44,
+      "pixels_over_2": 233,
+      "pixels_over_32": 4
+    },
+    {
+      "name": "dark-selected-error.png",
+      "changed_pixels": 0,
+      "outside_control": 0,
+      "max_channel_difference": 0,
+      "pixels_over_2": 0,
+      "pixels_over_32": 0
+    },
+    {
+      "name": "dark-selected-extract.png",
+      "changed_pixels": 560,
+      "outside_control": 0,
+      "max_channel_difference": 48,
+      "pixels_over_2": 342,
+      "pixels_over_32": 4
+    },
+    {
+      "name": "dark-selected-idle.png",
+      "changed_pixels": 0,
+      "outside_control": 0,
+      "max_channel_difference": 0,
+      "pixels_over_2": 0,
+      "pixels_over_32": 0
+    },
+    {
+      "name": "dark-selected-waiting.png",
+      "changed_pixels": 482,
+      "outside_control": 0,
+      "max_channel_difference": 220,
+      "pixels_over_2": 460,
+      "pixels_over_32": 323
+    },
+    {
+      "name": "light-plain-download.png",
+      "changed_pixels": 577,
+      "outside_control": 0,
+      "max_channel_difference": 45,
+      "pixels_over_2": 254,
+      "pixels_over_32": 4
+    },
+    {
+      "name": "light-plain-error.png",
+      "changed_pixels": 0,
+      "outside_control": 0,
+      "max_channel_difference": 0,
+      "pixels_over_2": 0,
+      "pixels_over_32": 0
+    },
+    {
+      "name": "light-plain-extract.png",
+      "changed_pixels": 790,
+      "outside_control": 0,
+      "max_channel_difference": 49,
+      "pixels_over_2": 350,
+      "pixels_over_32": 4
+    },
+    {
+      "name": "light-plain-idle.png",
+      "changed_pixels": 0,
+      "outside_control": 0,
+      "max_channel_difference": 0,
+      "pixels_over_2": 0,
+      "pixels_over_32": 0
+    },
+    {
+      "name": "light-plain-waiting.png",
+      "changed_pixels": 305,
+      "outside_control": 0,
+      "max_channel_difference": 66,
+      "pixels_over_2": 249,
+      "pixels_over_32": 81
+    },
+    {
+      "name": "light-selected-download.png",
+      "changed_pixels": 538,
+      "outside_control": 0,
+      "max_channel_difference": 40,
+      "pixels_over_2": 235,
+      "pixels_over_32": 6
+    },
+    {
+      "name": "light-selected-error.png",
+      "changed_pixels": 0,
+      "outside_control": 0,
+      "max_channel_difference": 0,
+      "pixels_over_2": 0,
+      "pixels_over_32": 0
+    },
+    {
+      "name": "light-selected-extract.png",
+      "changed_pixels": 567,
+      "outside_control": 0,
+      "max_channel_difference": 46,
+      "pixels_over_2": 344,
+      "pixels_over_32": 6
+    },
+    {
+      "name": "light-selected-idle.png",
+      "changed_pixels": 0,
+      "outside_control": 0,
+      "max_channel_difference": 0,
+      "pixels_over_2": 0,
+      "pixels_over_32": 0
+    },
+    {
+      "name": "light-selected-waiting.png",
+      "changed_pixels": 347,
+      "outside_control": 0,
+      "max_channel_difference": 214,
+      "pixels_over_2": 334,
+      "pixels_over_32": 172
+    }
+  ]
+}

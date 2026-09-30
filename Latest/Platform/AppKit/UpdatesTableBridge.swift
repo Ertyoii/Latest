@@ -452,26 +452,11 @@ private struct UpdatesTableView: NSViewRepresentable {
 final class UpdateRowHostingCell: NSTableCellView {
   private var host: UpdateRowHostingView?
   private let selection = UpdateRowSelection()
-  private let updateButton = UpdateButton(frame: .zero)
 
-  override init(frame frameRect: NSRect) {
-    super.init(frame: frameRect)
-    updateButton.cell = UpdateButtonCell()
-    updateButton.target = updateButton
-    updateButton.action = #selector(UpdateButton.performAction(_:))
-    updateButton.isBordered = false
-    updateButton.contentTintColor = UpdateButton.Style.tintColor
-    updateButton.showActionButton = false
-    addSubview(updateButton)
-  }
+  override init(frame frameRect: NSRect) { super.init(frame: frameRect) }
 
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-  override func layout() {
-    super.layout()
-    updateButton.frame = NSRect(x: bounds.maxX - 56, y: bounds.midY - 12, width: 24, height: 24)
-  }
 
   override var backgroundStyle: NSView.BackgroundStyle {
     didSet {
@@ -487,8 +472,6 @@ final class UpdateRowHostingCell: NSTableCellView {
     showsSupportStatusOverride: Bool? = nil,
     updating: any AppUpdating = AppUpdateService.shared
   ) {
-    updateButton.updating = updating
-    updateButton.app = app
     selection.style =
       isSelected ? (backgroundStyle == .emphasized ? .active : .inactive) : .unselected
     let content = UpdateRowView(
@@ -502,7 +485,7 @@ final class UpdateRowHostingCell: NSTableCellView {
       host.sizingOptions = []
       host.frame = bounds
       host.autoresizingMask = [.width, .height]
-      addSubview(host, positioned: .below, relativeTo: updateButton)
+      addSubview(host)
       self.host = host
     }
     setAccessibilityElement(true)

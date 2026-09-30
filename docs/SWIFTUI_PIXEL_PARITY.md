@@ -307,3 +307,76 @@ SwiftUI layout/Core Animation transaction work in addition to synchronous row
 color updates. Evidence and reproduction commands are recorded in
 `build/keyboard-optimization-20260930.md` and its JSON report. The optimized
 Release checkout build was launched; no installed-app replacement was made.
+
+## Sidebar progress control migration and unpushed-change cleanup
+
+The previous row migration and keyboard optimizations were committed first as
+`6664262`. The sidebar control now uses a SwiftUI button and Canvas, with the
+original paths, 24-point frame, pause bars, line widths, and backing alignment.
+AppKit colors and path geometry remain data inputs; the sidebar no longer hosts
+an `NSButton` or an `NSButtonCell`. The detail action capsule is a separate bridge
+and was not included in this migration.
+
+`SidebarUpdateStatus` owns one update-state stream for both the support dot and
+progress control. Its state changes invalidate the status/control leaf, rather
+than the row's icon, name, date, or version layout. Reusing a cell for another app
+or update service resets observation by app/service identity. Repeated equivalent
+presentations do not publish another view change. Waiting animation is owned by
+SwiftUI's timeline; progress interpolation is owned by SwiftUI animation. Reduced
+motion pauses the spinner and disables progress interpolation.
+
+The row's previous second observer, custom button/cell, animation clock, native
+control layout, and obsolete build references were removed. The two tests for
+that deleted clock were removed with their production owner. No remaining
+production or test caller references the three deleted files. This focused
+change removes approximately 570 net production Swift lines.
+
+The original sidebar hides its progress control on error and restores the support
+dot. The migrated control preserves that behavior. Cancel is available while
+downloading or extracting; waiting states remain non-actionable. A real window
+mouse click verified that Cancel reaches only the displayed app's injected queue.
+Temporarily disconnecting the button action caused that test to fail at the
+cancellation assertion; restoring the action passed.
+
+Before editing production code, the native renderer was captured and tested in
+light/dark, selected/unselected, idle, waiting, downloading, extracting, and error
+states. Both renderers produced 616×120-pixel row captures on this 2× display.
+Across all 20 comparisons, **no pixels outside the control region changed**.
+All eight idle/error comparisons match exactly. The determinate indicators have
+414–807 changed stroke pixels in dark appearance and 538–790 in light appearance;
+the largest per-channel difference is 49/255. The visible center, diameter, pause
+bars, colors, and arc direction remain the same, but this is **not an exact RGBA
+match** for the animated control. Spinner captures also differ in animation
+phase, so a strict instantaneous spinner comparison is not a static parity proof.
+No visual baseline was replaced with candidate output and no tolerance was
+relaxed. Selected download captures and the comparison JSON are saved under
+`docs/visual-evidence/sidebar-control-*` for review.
+
+The cleanup review covered all unpushed changes relative to refreshed
+`origin/develop`: search and focus restoration, title/header drawing, row/state
+observation, table scheduling and selection, command invalidation, settled note
+requests, their tests, Xcode paths, and benchmark/artifact scripts. The complexity
+scanner's callback-loop flags were inspected as leads, not treated as defects.
+The identity-aware selection wrapper, native table/responder boundary, search
+window reader, and detail rasterization bridge still have concrete callers and
+behavior contracts, so they were retained. No speculative algorithm rewrite or
+test-only production seam was added.
+
+Final validation:
+
+| Check | Result |
+| --- | --- |
+| `./script/test.sh` | 259 tests, six skipped, zero failures |
+| Keyboard selection/render work | p95 6.983 ms; maximum 7.489 ms; 120/120 steps preserved |
+| Continuous scroll work | p95 2.428 ms |
+| Selection to detail | p95 3.288 ms |
+| Repeated selection memory growth | 13.92 MiB; below 24 MiB |
+| Absolute Release benchmark gates | All pass, including the 8.333 ms keyboard/scroll work budgets |
+| Runtime warning gate | Zero matching warnings |
+| Formatting, structure, shell syntax, diff checks | Pass |
+
+Full test bundle: `build/Latest-Tests-20260930-142640.xcresult`. Benchmark report:
+`build/migration-benchmark-sidebar_control.txt`. The original control capture
+passed before migration; the new rendered-state and real mouse-action checks
+passed after migration. These timings measure work, not presented FPS. No version
+bump, push, release, or installed-app replacement is part of this change.

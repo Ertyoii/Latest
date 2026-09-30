@@ -34,7 +34,6 @@ struct UpdateRowView: View {
   private let versions: App.DisplayableVersionInformation?
   private let formattedDate: AttributedString
   @Environment(\.controlActiveState) private var controlActiveState
-  @State private var observedUpdate: ObservedUpdate?
 
   init(
     app: App, selection: UpdateRowSelection,
@@ -56,22 +55,6 @@ struct UpdateRowView: View {
         string: date,
         attributes: [.font: NSFont.preferredFont(forTextStyle: .callout, options: [:])]
       ))
-  }
-
-  private var observationKey: ObservationKey {
-    ObservationKey(app: app.identifier, service: ObjectIdentifier(updating))
-  }
-
-  private var isUpdating: Bool {
-    if let observedUpdate, observedUpdate.key == observationKey { return observedUpdate.isActive }
-    return Self.isActive(updating.state(for: app.identifier))
-  }
-
-  private static func isActive(_ state: UpdateProgressState) -> Bool {
-    switch state {
-    case .none, .error: false
-    default: true
-    }
   }
 
   var body: some View {
@@ -116,37 +99,15 @@ struct UpdateRowView: View {
         .padding(.top, 3.5)
         .padding(.trailing, 35.75)
     }
-    .overlay(alignment: .topTrailing) {
-      Image(nsImage: app.source.supportState.statusImage)
-        .frame(width: 16, height: 16)
-        .opacity(showsSupportStatus && !isUpdating ? 1 : 0)
-        .help(app.source.supportState.label)
-        .accessibilityLabel(app.source.supportState.label)
-        .accessibilityHidden(!showsSupportStatus || isUpdating)
-        .padding(.top, 19)
-        .padding(.trailing, 36)
+    .overlay(alignment: .trailing) {
+      SidebarUpdateStatus(
+        app: app, selection: selection, showsSupportStatus: showsSupportStatus, updating: updating
+      )
+      .padding(.trailing, 32)
     }
     .overlay(alignment: .bottom) {
       UpdateRowSeparator(selection: selection)
     }
-    .task(id: observationKey) {
-      let key = observationKey
-      for await state in updating.states(for: app.identifier) {
-        guard !Task.isCancelled else { return }
-        let value = ObservedUpdate(key: key, isActive: Self.isActive(state))
-        if observedUpdate != value { observedUpdate = value }
-      }
-    }
-  }
-
-  private struct ObservationKey: Equatable {
-    let app: App.Bundle.Identifier
-    let service: ObjectIdentifier
-  }
-
-  private struct ObservedUpdate: Equatable {
-    let key: ObservationKey
-    let isActive: Bool
   }
 }
 
