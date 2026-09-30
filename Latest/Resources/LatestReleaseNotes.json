@@ -5,5 +5,6 @@
   "0.61": "Latest Dev 0.61\n\n• Redesigned the main window with a continuous sidebar, native search, and a clear Updates toolbar.\n• Balanced sidebar selection spacing and simplified the app details layout.\n• Added native WebKit release notes with consistent formatting and selectable text.\n• Reduced unnecessary UI updates and improved release-note rendering efficiency.",
   "0.62": "Latest Dev 0.62\n\n• Kept app section headers visible while scrolling.\n• Matched pinned headers and the sidebar with one opaque system background, preventing app icons and text from showing through.\n• Preserved nonselectable section headers and light and dark appearance support.",
   "0.63": "Latest Dev 0.63\n\n• Moved the sidebar background and release-note container to SwiftUI while preserving their appearance.\n• Kept native release-note selection, scrolling, and link handling.\n• Simplified view ownership and avoided reloading unchanged release notes.",
-  "0.64": "Latest Dev 0.64\n\n• Aligned sidebar update progress indicators with the app status column."
+  "0.64": "Latest Dev 0.64\n\n• Aligned sidebar update progress indicators with the app status column.",
+  "0.65": "Latest Dev 0.65\n\n• Moved sidebar search, app rows, section headings, and update progress controls to SwiftUI.\n• Restored the Updates title and improved keyboard focus and arrow-key navigation.\n• Reduced unnecessary redraws and release-note loading during rapid selection.\n• Simplified update-state handling while preserving cancellation and error behavior."
 }
