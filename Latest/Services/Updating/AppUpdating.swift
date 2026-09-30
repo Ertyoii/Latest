@@ -33,7 +33,6 @@ enum UpdateProgressState: Sendable {
 typealias UpdateStateFeed = (
   current: UpdateProgressState, changes: AsyncStream<UpdateProgressState>
 )
-typealias UpdateStateObserver = @MainActor (UpdateProgressState) -> Void
 
 /// Feature-facing update boundary. State observation stays on the main actor;
 /// queue lookups and actions are safe from any caller.
@@ -44,10 +43,6 @@ protocol AppUpdating: AnyObject, Sendable {
   func state(for identifier: App.Bundle.Identifier) -> UpdateProgressState
   @MainActor func states(for identifier: App.Bundle.Identifier) -> AsyncStream<UpdateProgressState>
   @MainActor func stateChanges(for identifier: App.Bundle.Identifier) -> UpdateStateFeed
-  @MainActor func addObserver(
-    _ observer: NSObject, to identifier: App.Bundle.Identifier,
-    handler: @escaping UpdateStateObserver)
-  func removeObserver(_ observer: NSObject, for identifier: App.Bundle.Identifier)
 }
 
 extension AppUpdating {
@@ -75,12 +70,5 @@ final class AppUpdateService: AppUpdating {
   { queue.states(for: identifier) }
   @MainActor func stateChanges(for identifier: App.Bundle.Identifier) -> UpdateStateFeed {
     queue.stateChanges(for: identifier)
-  }
-  @MainActor func addObserver(
-    _ observer: NSObject, to identifier: App.Bundle.Identifier,
-    handler: @escaping UpdateStateObserver
-  ) { queue.addObserver(observer, to: identifier, handler: handler) }
-  func removeObserver(_ observer: NSObject, for identifier: App.Bundle.Identifier) {
-    queue.removeObserver(observer, for: identifier)
   }
 }

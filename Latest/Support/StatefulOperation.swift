@@ -47,7 +47,7 @@ class StatefulOperation: Operation, @unchecked Sendable {
   /// The actual state of the operation
   private var state: State {
     get {
-      return self.stateLock.withCriticalScope(block: {
+      return self.stateLock.withLock({
         return self._state
       })
     }
@@ -55,7 +55,7 @@ class StatefulOperation: Operation, @unchecked Sendable {
     set(newState) {
       self.willChangeValue(forKey: "state")
 
-      self.stateLock.withCriticalScope {
+      self.stateLock.withLock {
         guard _state != .finished else {
           return
         }
@@ -117,23 +117,6 @@ class StatefulOperation: Operation, @unchecked Sendable {
   func finish(with error: Error) {
     storedError.withLock { $0 = error }
     self.finish()
-  }
-
-}
-
-extension NSLock {
-
-  func withCriticalScope<T>(block: (() -> T)) -> T {
-    self.lock()
-    let value = block()
-    self.unlock()
-    return value
-  }
-
-  func withCriticalScope(block: () -> Void) {
-    self.lock()
-    block()
-    self.unlock()
   }
 
 }

@@ -100,14 +100,25 @@ struct ReleaseNotesDetailSurface: View {
     if case .text(let text) = contentState { return text }
     return nil
   }
-
 }
 
 struct ReleaseNotesHeaderView: View {
   let app: App
-  var showsSupportStatus = true
-  var updating: any AppUpdating = AppUpdateService.shared
+  let showsSupportStatus: Bool
+  let updating: any AppUpdating
+  // App equality compares URLs; refreshed metadata/actions need object identity.
+  private let appIdentity: ObjectIdentifier
   @State private var icon: NSImage?
+
+  init(
+    app: App, showsSupportStatus: Bool = true,
+    updating: any AppUpdating = AppUpdateService.shared
+  ) {
+    self.app = app
+    self.showsSupportStatus = showsSupportStatus
+    self.updating = updating
+    appIdentity = ObjectIdentifier(app)
+  }
 
   var body: some View {
     HStack(spacing: 5) {
@@ -154,7 +165,7 @@ struct ReleaseNotesHeaderView: View {
       .layoutPriority(1)
 
       UpdateActionView(app: app, updating: updating)
-        .id(app.identifier)
+        .id(appIdentity)
 
     }
     .padding(.horizontal, VisualMetrics.detailHeaderHorizontalPadding)
@@ -165,9 +176,9 @@ struct ReleaseNotesHeaderView: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("release-notes.header")
-    .task(id: app.identifier) {
+    .task(id: appIdentity) {
       let loadedIcon = await IconCache.shared.icon(for: app)
-      guard !Task.isCancelled, app.identifier == self.app.identifier else { return }
+      guard !Task.isCancelled else { return }
       icon = loadedIcon
     }
   }

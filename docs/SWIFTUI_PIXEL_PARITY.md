@@ -380,3 +380,126 @@ Full test bundle: `build/Latest-Tests-20260930-142640.xcresult`. Benchmark repor
 passed before migration; the new rendered-state and real mouse-action checks
 passed after migration. These timings measure work, not presented FPS. No version
 bump, push, release, or installed-app replacement is part of this change.
+
+## Detail capsule migration and code cleanup
+
+On 2026-09-30, the user authorized migrating the detail capsule and then
+simplifying and optimizing the existing code. The starting checkout was clean
+at `bcd7c18`. Before production edits, `./script/test.sh` passed 259 tests,
+six skipped, zero failures. A Release migration benchmark established the
+current keyboard, scrolling, selection, and memory baseline.
+
+### Capsule rendering and input
+
+The Update, Open, and error capsule now uses a SwiftUI `Button` and a small
+`ButtonStyle`. Its 59 x 24-point frame, circular corners, 0.25-point horizontal
+inset, colors, font, rectangular mouse hit area, and normal/pressed behavior
+are preserved. The error symbol remains an `NSImage` data asset. The native
+button, cell, hosting view, coordinator, and target/action bridge were removed.
+The detail waiting/progress indicators and error alert already used SwiftUI.
+
+Before editing, six normal and six pressed light/dark captures were saved from
+the native renderer in 160 x 80-point windows. The native pressed reference was
+captured using its highlight API. The candidate captures exercise real held
+mouse-down and mouse-up events. The same test verifies painted blue title/symbol
+ink, pill fill, pressed fill, and exactly one action per click for all six
+appearance/action combinations. Disconnecting Update caused the test to fail
+at both Update action assertions; restoring the action passed.
+
+- [Original capsules](visual-evidence/detail-capsule-before.png)
+- [SwiftUI capsules](visual-evidence/detail-capsule-after.png)
+- [All twelve RGBA comparisons](visual-evidence/detail-capsule-parity.json)
+
+All twelve comparisons have **zero changed pixels outside the capsule region**.
+Normal captures differ at 3,344-3,667 pixels; pressed captures at 4,213-4,328.
+Most changes are small channel differences, with additional differences in
+glyph coverage and curved-edge antialiasing. Normal captures have 131-558
+pixels with a channel difference greater than 12/255. The largest channel
+difference across all captures is 169/255. This is a close visual match,
+**not exact pixel parity**. No existing baseline or tolerance was changed,
+and these candidate images are evidence, not replacement references.
+
+### Cleanup scope and ownership
+
+The review covered all 92 production Swift files through a type/function caller
+inventory, the complexity scanner's 80 leads, and inspection of the UI, state,
+queue, discovery, cache, and rendering owners. Callback/async-loop flags were
+inspected as leads, not assumed to be quadratic work. The remaining top-level
+types have production callers or framework entry points. Required native
+selection, responder, scrolling, window configuration, macOS services, bounded
+streams, cancellation, and cache invalidation were retained.
+
+Removed or simplified:
+
+- The callback-observer API, observer dictionary, adapter methods, and observer
+  type alias left unused after the sidebar migrated to async feeds.
+- Unused published status text and its formatting. All 38 plural-message files
+  contained only that unused key; six additional plural files were empty.
+  All 44 files and their Xcode resource objects were removed. Other localized
+  strings remain in their existing files.
+- The search-resign command path left unused by the SwiftUI search migration.
+  Focus now uses one optional request counter. Command-F, typing, Clear, Escape,
+  and returning to table focus are covered through real window input.
+- The refresh button's test-only action wrapper and constant exports. A real
+  mouse test verifies that enabled clicks run the action and disabled clicks do
+  not, alongside the command-routing test.
+- The unused identifier-selection overload, unused off-main markup helper,
+  forwarding display-key helper, and custom lock extensions. Existing locks
+  now use Foundation's `NSLocking.withLock`.
+- Repeated equivalent detail presentations no longer publish another change.
+  `Observable.swift` was renamed to `MainActorAsyncStreamRegistry.swift`, matching
+  its actual owner; its two production consumers and lifecycle behavior remain.
+
+The deleted observer-registration, focus-request, identifier-overload, and
+constant-only capsule tests existed for the corresponding old APIs or renderer.
+Async feed/current-state/lifecycle tests, real search and keyboard input,
+stable snapshot lookup, and painted capsule/action checks remain at their
+behavior owners. No test-only production seam was introduced.
+
+### Refreshed detail action repair
+
+A new real mouse-input regression reproduced stale actions after replacing an
+app object at the same URL: the old action fired twice and the refreshed action
+never fired. App equality compares URLs, so the header now stores object identity
+as a view input, uses that identity for the action state owner, and restarts icon
+loading when the object is refreshed. The regression failed before the repair
+and passed after it. This identity is required behavior, not an unused cache.
+
+### Table diff optimization and validation
+
+The table diff now checks identities and changes in one pass and skips building
+display-state values when the immutable app object is unchanged. Complexity
+remains O(n); the improvement removes extra passes and temporary values.
+Existing append/removal/content-change coverage remains, with additional
+same-size changed-row and reordered-identity cases at the diff owner.
+
+| Release measurement | Before | After |
+| --- | ---: | ---: |
+| 100 unchanged diffs over 1,500 apps, p95 | 41.755 ms | 6.772 ms |
+| Populated-sidebar startup, p50 | 33.861 ms | 33.660 ms |
+| Keyboard selection/render work, p95 | 6.878 ms | 6.749 ms |
+| Continuous scroll work, p95 | 2.075 ms | 2.301 ms |
+| Selection to detail, p95 | 3.245 ms | 2.815 ms |
+
+The diff benchmark is about 6.2 times faster. Keyboard maximum was 7.513 ms,
+all 120 steps were preserved, and repeated-selection memory growth was 8.81 MiB.
+All absolute complexity/migration gates and relative startup, scroll, and
+selection gates passed; runtime-warning count was zero. These are work timings,
+not presented FPS.
+
+Final `./script/test.sh`: 257 tests, six skipped, zero failures
+(`build/Latest-Tests-20260930-175014.xcresult`). Formatting, structure, project
+syntax, diff checks, and the Release artifact audit passed. The artifact audit
+now permits only the three remaining production view bridges: sidebar table,
+search window reader, and window configuration. Production Swift is net 239
+lines smaller, including the renamed file; the removed plural resources contain
+958 additional lines. Changes are local and uncommitted; no release/version
+bump or installed-app replacement was requested for this step.
+
+The checkout Debug build was launched with `script/build_and_run.sh --verify`.
+The running executable resolves to
+`build/DerivedData/Build/Products/Debug/Latest Dev.app/Contents/MacOS/Latest Dev`.
+Live row clicks and Up/Down input verified the selected detail moving through
+Latest Dev, ChatGPT, and Discord, with the corresponding Open/Update accessibility
+labels. A full-window screenshot confirmed the Update capsule and Updates title
+are both painted. The checkout build remains running for review.

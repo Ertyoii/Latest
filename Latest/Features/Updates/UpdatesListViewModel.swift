@@ -48,7 +48,6 @@ final class UpdatesListViewModel: ObservableObject {
   }
   var isKeyboardSelection: Bool { selection.isKeyboardSelection }
   @Published var searchQuery = ""
-  @Published private(set) var statusText = ""
 
   private var observationTasks = [Task<Void, Never>]()
   private var selectionWasUserInitiated = false
@@ -75,7 +74,7 @@ final class UpdatesListViewModel: ObservableObject {
         filterQuery: nil,
         settings: settings
       )
-    updateTitleAndBadge()
+    updateDockBadge()
   }
 
   func startObserving() {
@@ -100,7 +99,7 @@ final class UpdatesListViewModel: ObservableObject {
               settings: self.settings
             ))
           self.maintainSelectionAfterSnapshotChange()
-          self.updateTitleAndBadge()
+          self.updateDockBadge()
         }
       },
     ]
@@ -129,10 +128,6 @@ final class UpdatesListViewModel: ObservableObject {
       MigrationTelemetry.shared.selectionStarted(appName: app.name)
     }
     selection.set(app, isKeyboardSelection: isKeyboardSelection)
-  }
-
-  func select(identifier: App.Bundle.Identifier?) {
-    select(snapshot.app(withIdentifier: identifier))
   }
 
   func update(_ app: App) {
@@ -166,7 +161,7 @@ final class UpdatesListViewModel: ObservableObject {
   private func refreshSnapshot() {
     replaceSnapshot(with: snapshot.updated(with: normalizedSearchQuery))
     maintainSelectionAfterSnapshotChange()
-    updateTitleAndBadge()
+    updateDockBadge()
   }
 
   private func replaceSnapshot(with snapshot: AppListSnapshot) {
@@ -194,7 +189,7 @@ final class UpdatesListViewModel: ObservableObject {
     selectedApp = snapshot.sections.first?.apps.first
   }
 
-  private func updateTitleAndBadge() {
+  private func updateDockBadge() {
     let showExternalUpdates = settings.includeAppsWithLimitedSupport
     let count = appProvider.countOfAvailableUpdates { app in
       showExternalUpdates || app.usesBuiltInUpdater
@@ -204,9 +199,5 @@ final class UpdatesListViewModel: ObservableObject {
       count == 0
         ? nil
         : Self.badgeNumberFormatter.string(from: count as NSNumber))
-
-    let format = NSLocalizedString(
-      "NumberOfUpdatesAvailable", comment: "number of updates available")
-    statusText = String.localizedStringWithFormat(format, count)
   }
 }

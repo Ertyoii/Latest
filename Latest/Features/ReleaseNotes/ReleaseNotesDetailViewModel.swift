@@ -82,7 +82,7 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
 
   func display(_ app: App?, waitForSelectionToSettle: Bool = false) {
     if self.app !== app { self.app = app }
-    let nextKey = app.map(Self.displayKey(for:))
+    let nextKey = app.map { ReleaseNotesCacheKey(app: $0).stableIdentifier }
     guard nextKey != displayedKey else { return }
     displayedKey = nextKey
 
@@ -142,7 +142,4 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
     }
   }
 
-  static func displayKey(for app: App) -> String {
-    ReleaseNotesCacheKey(app: app).stableIdentifier
-  }
 }

@@ -166,7 +166,7 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
 
   /// Prevents results from the previous generation from being published while a manual rescan is collecting bundles.
   private func invalidateActiveUpdateCheck() {
-    updateCheckSchedulingLock.withCriticalScope {
+    updateCheckSchedulingLock.withLock {
       _ = updateCheckGeneration.begin()
       activeUpdateCheckTasks.values.forEach { $0.cancel() }
       activeUpdateCheckTasks.removeAll(keepingCapacity: true)
@@ -264,7 +264,7 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
   }
 
   private func removeActiveTask(_ taskID: UUID) {
-    updateCheckSchedulingLock.withCriticalScope {
+    updateCheckSchedulingLock.withLock {
       activeUpdateCheckTasks[taskID] = nil
     }
   }

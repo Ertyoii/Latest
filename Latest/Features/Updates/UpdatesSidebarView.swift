@@ -85,15 +85,9 @@ struct UpdatesSidebarHeaderView: View {
     .padding(.vertical, 8)
     .background(SearchWindowReader(tracker: focusTracker))
     .onChange(of: searchFocusController.request, initial: true) { _, request in
-      switch request {
-      case .none:
-        break
-      case .focus:
-        if !searchIsFocused { focusTracker.rememberFirstResponder() }
-        searchIsFocused = true
-      case .resign:
-        restorePreviousFocus()
-      }
+      guard request != nil else { return }
+      if !searchIsFocused { focusTracker.rememberFirstResponder() }
+      searchIsFocused = true
     }
   }
 

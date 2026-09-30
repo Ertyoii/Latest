@@ -22,44 +22,24 @@ struct TableViewSnapshotDiff {
   let change: Change?
 
   init(from oldEntries: [AppListSnapshot.Entry], to newEntries: [AppListSnapshot.Entry]) {
-    if oldEntries.count == newEntries.count, oldEntries.identityMatches(newEntries) {
-      let indexes = oldEntries.reloadIndexes(comparedTo: newEntries)
-      change = indexes.isEmpty ? nil : .reload(indexes)
-      return
+    var reloads = IndexSet()
+    for index in 0..<min(oldEntries.count, newEntries.count) {
+      guard oldEntries[index].isSimilar(to: newEntries[index]) else {
+        change = .reloadAll
+        return
+      }
+      if oldEntries[index].needsReload(comparedTo: newEntries[index]) { reloads.insert(index) }
     }
 
-    if oldEntries.exactlyMatchesPrefix(of: newEntries) {
+    if oldEntries.count == newEntries.count {
+      change = reloads.isEmpty ? nil : .reload(reloads)
+    } else if !reloads.isEmpty {
+      change = .reloadAll
+    } else if oldEntries.count < newEntries.count {
       change = .append(IndexSet(oldEntries.count..<newEntries.count))
-      return
-    }
-
-    if newEntries.exactlyMatchesPrefix(of: oldEntries) {
+    } else {
       change = .remove(IndexSet(newEntries.count..<oldEntries.count))
-      return
     }
-
-    change = .reloadAll
-  }
-}
-extension Array where Element == AppListSnapshot.Entry {
-  fileprivate func identityMatches(_ other: [Element]) -> Bool {
-    guard count == other.count else { return false }
-    return zip(self, other).allSatisfy { $0.isSimilar(to: $1) }
-  }
-
-  fileprivate func exactlyMatchesPrefix(of other: [Element]) -> Bool {
-    guard count <= other.count else { return false }
-    return zip(self, other).allSatisfy {
-      $0.isSimilar(to: $1) && !$0.needsReload(comparedTo: $1)
-    }
-  }
-
-  fileprivate func reloadIndexes(comparedTo other: [Element]) -> IndexSet {
-    var indexes = IndexSet()
-    for index in indices where self[index].needsReload(comparedTo: other[index]) {
-      indexes.insert(index)
-    }
-    return indexes
   }
 }
 
@@ -69,7 +49,7 @@ extension AppListSnapshot.Entry {
     case (.section(let section), .section(let otherSection)):
       return section != otherSection
     case (.app(let app), .app(let otherApp)):
-      return AppRowDisplayState(app: app) != AppRowDisplayState(app: otherApp)
+      return app !== otherApp && AppRowDisplayState(app: app) != AppRowDisplayState(app: otherApp)
     default:
       return true
     }

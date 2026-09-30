@@ -94,7 +94,7 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
   }
 
   private func markCompletionNotificationPending() -> Bool {
-    completionNotificationLock.withCriticalScope {
+    completionNotificationLock.withLock {
       guard !didPostCompletionNotification else {
         return false
       }

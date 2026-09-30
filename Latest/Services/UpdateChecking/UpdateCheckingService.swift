@@ -45,10 +45,6 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
     return Double(checkedApps) / Double(totalApps)
   }
 
-  var hasUpdatesAvailable: Bool {
-    !coordinator.appProvider.updatableApps.isEmpty
-  }
-
   func startReportingProgress() {
     coordinator.progressDelegate = self
   }

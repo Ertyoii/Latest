@@ -153,26 +153,6 @@ enum ReleaseNotesMarkup {
   }
 
   @MainActor
-  static func plainTextAttributedStringByPreparingOffMain(
-    fromHTML html: String,
-    baseURL: URL?,
-    relevantVersion: String?
-  ) async -> ReleaseNotesProvider.ReleaseNotes? {
-    let preparedMarkup = await prepareOffMain {
-      guard let text = plainText(fromHTML: html),
-        isUsefulReleaseNotesText(text, relevantVersion: relevantVersion)
-      else {
-        return nil
-      }
-      return prepare(text, baseURL: baseURL, relevantVersion: relevantVersion)
-    }
-    guard let preparedMarkup else { return nil }
-    let result = render(preparedMarkup)
-    guard case .success = result else { return nil }
-    return result
-  }
-
-  @MainActor
   static func attributedStringFromChangelogByPreparingOffMain(
     fromHTML html: String,
     baseURL: URL,

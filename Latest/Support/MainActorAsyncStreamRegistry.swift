@@ -1,5 +1,5 @@
 //
-//  Observable.swift
+//  MainActorAsyncStreamRegistry.swift
 //  Latest
 //
 //  Created by Max Langer on 20.01.22.

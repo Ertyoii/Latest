@@ -10,6 +10,7 @@
 
 import AppKit
 import SwiftUI
+import Synchronization
 import WebKit
 import XCTest
 
@@ -156,34 +157,6 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testCommandFPublishesSystemSidebarSearchFocusRequest() {
-    let focusController = SearchFocusController()
-    let viewModel = UpdatesListViewModel()
-    let commands = AppCommands(
-      updateCheckingService: UpdateCheckingService(),
-      updatesListViewModel: viewModel,
-      searchFocusController: focusController
-    )
-    commands.focusSearch()
-    guard case .focus = focusController.request else {
-      return XCTFail("Expected Command-F to publish a focus request")
-    }
-  }
-
-  @MainActor
-  func testExplicitSearchResignPublishesANewFocusRequest() {
-    let focusController = SearchFocusController()
-    focusController.focus()
-    let focusRequest = focusController.request
-
-    focusController.resignFocus()
-    XCTAssertNotEqual(focusController.request, focusRequest)
-    guard case .resign = focusController.request else {
-      return XCTFail("Expected an explicit resign request")
-    }
-  }
-
-  @MainActor
   func testSidebarSearchAcceptsTypingClearAndEscapeRestoresTableFocus() async throws {
     let app = makeApp(name: "Notes", version: "1", remoteVersion: "2")
     let viewModel = UpdatesListViewModel(
@@ -203,7 +176,10 @@ final class MigrationInteractionContractTest: XCTestCase {
     let table = try XCTUnwrap(host.descendant(of: NSTableView.self))
     XCTAssertTrue(window.makeFirstResponder(table))
 
-    focusController.focus()
+    AppCommands(
+      updateCheckingService: UpdateCheckingService(),
+      updatesListViewModel: viewModel, searchFocusController: focusController
+    ).focusSearch()
     try await Task.sleep(for: .milliseconds(100))
     host.layoutSubtreeIfNeeded()
     let search = try XCTUnwrap(host.descendant(of: NSTextField.self))
@@ -224,7 +200,10 @@ final class MigrationInteractionContractTest: XCTestCase {
     XCTAssertTrue(window.firstResponder === table)
     XCTAssertEqual(viewModel.searchQuery, "Notes")
 
-    focusController.focus()
+    AppCommands(
+      updateCheckingService: UpdateCheckingService(),
+      updatesListViewModel: viewModel, searchFocusController: focusController
+    ).focusSearch()
     try await Task.sleep(for: .milliseconds(50))
     let searchFrame = search.convert(search.bounds, to: nil)
     let clearLocation = NSPoint(x: searchFrame.maxX + 7, y: searchFrame.midY)
@@ -286,17 +265,50 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testIdentifierSelectionUsesStableApplicationURLs() {
-    let first = makeApp(name: "Discord", version: "1", remoteVersion: "2")
-    let second = makeApp(name: "Cursor", version: "3", remoteVersion: "4")
-    let viewModel = UpdatesListViewModel(
-      snapshot: AppListSnapshot(withApps: [first, second], filterQuery: nil)
-    )
-
-    viewModel.select(identifier: second.identifier)
-    XCTAssertEqual(viewModel.selectedApp?.identifier, second.identifier)
-    viewModel.select(identifier: URL(fileURLWithPath: "/Applications/Missing.app"))
-    XCTAssertNil(viewModel.selectedApp)
+  func testDetailActionUsesRefreshedAppAtSameURL() async throws {
+    let calls = Mutex([0, 0])
+    let bundle = makeApp(name: "Example", version: "1").bundle
+    let apps = ["2", "3"].enumerated().map { index, version in
+      App(
+        bundle: bundle,
+        update: .success(
+          App.Update(
+            app: bundle,
+            remoteVersion: Version(versionNumber: version, buildNumber: nil),
+            minimumOSVersion: nil, source: .sparkle, date: nil, releaseNotes: nil,
+            updateAction: .external(label: "Vendor") { _ in calls.withLock { $0[index] += 1 } })),
+        isIgnored: false)
+    }
+    let host = NSHostingView(rootView: ReleaseNotesHeaderView(app: apps[0]))
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 460, height: 79),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    window.orderFront(nil)
+    defer { window.close() }
+    for app in apps {
+      host.rootView = ReleaseNotesHeaderView(app: app)
+      try await Task.sleep(for: .milliseconds(150))
+      host.layoutSubtreeIfNeeded()
+      let down = try XCTUnwrap(
+        NSEvent.mouseEvent(
+          with: .leftMouseDown,
+          location: NSPoint(x: 406.5, y: 46.5), modifierFlags: [],
+          timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+          context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+      let up = try XCTUnwrap(
+        NSEvent.mouseEvent(
+          with: .leftMouseUp,
+          location: down.locationInWindow, modifierFlags: [], timestamp: down.timestamp + 0.05,
+          windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1,
+          pressure: 0))
+      NSApp.postEvent(up, atStart: false)
+      window.sendEvent(down)
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    XCTAssertEqual(calls.withLock { $0[0] }, 1, "The old app's action must be retired")
+    XCTAssertEqual(calls.withLock { $0[1] }, 1, "Use the refreshed app at the same URL")
   }
 
   @MainActor

@@ -64,18 +64,13 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     }
 
     operation.progressHandler = { [weak self] identifier in
-      self?.notifyObservers(for: identifier)
+      self?.publishState(for: identifier)
     }
 
     super.addOperation(op)
   }
 
-  // MARK: - Observer Handling
-
-  /// A mapping of observers associated with apps.
-  @MainActor private var observers = [
-    App.Bundle.Identifier: [ObjectIdentifier: UpdateStateObserver]
-  ]()
+  // MARK: - State Feeds
 
   /// Bounded structured-concurrency feeds used by SwiftUI rows.
   @MainActor private var stateContinuations = [
@@ -119,33 +114,11 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     return (currentState, stream)
   }
 
-  /// Adds or replaces the observer and immediately delivers the current state.
-  @MainActor
-  func addObserver(
-    _ observer: NSObject, to identifier: App.Bundle.Identifier,
-    handler: @escaping UpdateStateObserver
-  ) {
-    observers[identifier, default: [:]][ObjectIdentifier(observer)] = handler
-    handler(state(for: identifier))
-  }
-
-  /// Removes the observer.
-  func removeObserver(_ observer: NSObject, for identifier: App.Bundle.Identifier) {
-    let observerIdentifier = ObjectIdentifier(observer)
-    Task { @MainActor in
-      self.observers[identifier]?.removeValue(forKey: observerIdentifier)
-      if self.observers[identifier]?.isEmpty == true {
-        self.observers.removeValue(forKey: identifier)
-      }
-    }
-  }
-
-  /// Notifies observers about state changes.
-  private func notifyObservers(for identifier: App.Bundle.Identifier) {
+  /// Delivers progress to the app's bounded state feeds.
+  private func publishState(for identifier: App.Bundle.Identifier) {
     let state = self.state(for: identifier)
 
     Task { @MainActor in
-      self.observers[identifier]?.values.forEach { $0(state) }
       if let continuations = self.stateContinuations[identifier] {
         for continuation in continuations.values {
           continuation.yield(state)
@@ -168,7 +141,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 
   /// Returns the operation for the given app.
   private func operation(for identifier: App.Bundle.Identifier) -> UpdateOperation? {
-    operationIndexLock.withCriticalScope {
+    operationIndexLock.withLock {
       guard let operation = operationsByIdentifier[identifier] else {
         return nil
       }
@@ -183,7 +156,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   }
 
   private func index(_ operation: UpdateOperation) -> Bool {
-    operationIndexLock.withCriticalScope {
+    operationIndexLock.withLock {
       if let existingOperation = operationsByIdentifier[operation.appIdentifier],
         !existingOperation.isFinished
       {
@@ -196,7 +169,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   }
 
   private func removeIndexedOperation(_ operation: UpdateOperation) {
-    operationIndexLock.withCriticalScope {
+    operationIndexLock.withLock {
       guard operationsByIdentifier[operation.appIdentifier] === operation else {
         return
       }

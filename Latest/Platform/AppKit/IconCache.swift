@@ -28,8 +28,8 @@ class IconCache {
 
   /// Loads an icon immediately for a row that is being materialized. The
   /// AppKit renderer always had the icon before its cell was displayed; using
-  /// the same contract prevents a first-frame blank while LazyVStack keeps the
-  /// number of materialized rows bounded to the visible viewport.
+  /// the same contract prevents a first-frame blank in the native table's
+  /// visible rows.
   func iconImmediately(for app: App) -> NSImage {
     loadIcon(for: app)
   }

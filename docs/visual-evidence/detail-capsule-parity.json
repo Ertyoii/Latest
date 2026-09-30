@@ -1,0 +1,149 @@
+{
+  "comparison": "Original native renderer and migrated SwiftUI renderer on the same macOS 27 host; no candidate references substituted.",
+  "captures": [
+    {
+      "file": "dark-error-pressed.png",
+      "dimensions": [
+        320,
+        160
+      ],
+      "changed_pixels": 4214,
+      "changed_outside_capsule": 0,
+      "max_channel_difference": 138,
+      "rms_channel_difference": 3.9546,
+      "pixels_over_12": 610
+    },
+    {
+      "file": "dark-error.png",
+      "dimensions": [
+        320,
+        160
+      ],
+      "changed_pixels": 3360,
+      "changed_outside_capsule": 0,
+      "max_channel_difference": 169,
+      "rms_channel_difference": 3.8293,
+      "pixels_over_12": 311
+    },
+    {
+      "file": "dark-open-pressed.png",
+      "dimensions": [
+        320,
+        160
+      ],
+      "changed_pixels": 4282,
+      "changed_outside_capsule": 0,
+      "max_channel_difference": 136,
+      "rms_channel_difference": 4.2579,
+      "pixels_over_12": 787
+    },
+    {
+      "file": "dark-open.png",
+      "dimensions": [
+        320,
+        160
+      ],
+      "changed_pixels": 3667,
+      "changed_outside_capsule": 0,
+      "max_channel_difference": 160,
+      "rms_channel_difference": 4.4592,
+      "pixels_over_12": 558
+    },
+    {
+      "file": "dark-update-pressed.png",
+      "dimensions": [
+        320,
+        160
+      ],
+      "changed_pixels": 4328,
+      "changed_outside_capsule": 0,
+      "max_channel_difference": 100,
+      "rms_channel_difference": 4.3579,
+      "pixels_over_12": 934
+    },
+    {
+      "file": "dark-update.png",
+      "dimensions": [
+        320,
+        160
+      ],
+      "changed_pixels": 3659,
+      "changed_outside_capsule": 0,
+      "max_channel_difference": 118,
+      "rms_channel_difference": 4.127,
+      "pixels_over_12": 438
+    },
+    {
+      "file": "light-error-pressed.png",
+      "dimensions": [
+        320,
+        160
+      ],
+      "changed_pixels": 4213,
+      "changed_outside_capsule": 0,
+      "max_channel_difference": 134,
+      "rms_channel_difference": 2.6884,
+      "pixels_over_12": 526
+    },
+    {
+      "file": "light-error.png",
+      "dimensions": [
+        320,
+        160
+      ],
+      "changed_pixels": 3344,
+      "changed_outside_capsule": 0,
+      "max_channel_difference": 169,
+      "rms_channel_difference": 1.9191,
+      "pixels_over_12": 131
+    },
+    {
+      "file": "light-open-pressed.png",
+      "dimensions": [
+        320,
+        160
+      ],
+      "changed_pixels": 4281,
+      "changed_outside_capsule": 0,
+      "max_channel_difference": 90,
+      "rms_channel_difference": 3.3467,
+      "pixels_over_12": 705
+    },
+    {
+      "file": "light-open.png",
+      "dimensions": [
+        320,
+        160
+      ],
+      "changed_pixels": 3652,
+      "changed_outside_capsule": 0,
+      "max_channel_difference": 96,
+      "rms_channel_difference": 2.8833,
+      "pixels_over_12": 376
+    },
+    {
+      "file": "light-update-pressed.png",
+      "dimensions": [
+        320,
+        160
+      ],
+      "changed_pixels": 4324,
+      "changed_outside_capsule": 0,
+      "max_channel_difference": 90,
+      "rms_channel_difference": 3.4732,
+      "pixels_over_12": 833
+    },
+    {
+      "file": "light-update.png",
+      "dimensions": [
+        320,
+        160
+      ],
+      "changed_pixels": 3644,
+      "changed_outside_capsule": 0,
+      "max_channel_difference": 96,
+      "rms_channel_difference": 2.5877,
+      "pixels_over_12": 256
+    }
+  ]
+}

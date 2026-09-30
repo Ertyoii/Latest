@@ -140,6 +140,21 @@ final class AppListSnapshotTest: XCTestCase {
     }
   }
 
+  func testTableDiffReloadsChangedRowsAndRejectsReorderedIdentities() {
+    let original = makeApp(name: "Alpha", versionNumber: "1.0")
+    let refreshed = makeApp(name: "Alpha", versionNumber: "2.0", appURL: original.fileURL)
+    let other = makeApp(name: "Beta", versionNumber: "1.0")
+    let entries: [AppListSnapshot.Entry] = [.app(original), .app(other)]
+    XCTAssertNil(TableViewSnapshotDiff(from: entries, to: entries).change)
+    let changed = TableViewSnapshotDiff(from: entries, to: [.app(refreshed), .app(other)])
+    guard case .reload(let rows) = changed.change else { return XCTFail("Expected row reload") }
+    XCTAssertEqual(rows, IndexSet(integer: 0), "Keep the unaffected row intact")
+    let reordered = TableViewSnapshotDiff(from: entries, to: [.app(other), .app(original)])
+    guard case .reloadAll = reordered.change else {
+      return XCTFail("Expected reordered rows to reload")
+    }
+  }
+
   private func section(at index: Int, in snapshot: AppListSnapshot) -> AppListSnapshot.Section? {
     guard case .section(let section) = snapshot.entries[index] else { return nil }
     return section

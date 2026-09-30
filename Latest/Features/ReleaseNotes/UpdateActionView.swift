@@ -113,7 +113,8 @@ final class UpdateActionViewModel: ObservableObject {
     observationTask = Task { [weak self] in
       for await state in feed.changes {
         guard !Task.isCancelled, let self else { break }
-        self.presentation = .make(for: app, progressState: state)
+        let next = UpdateActionPresentation.make(for: app, progressState: state)
+        if self.presentation != next { self.presentation = next }
       }
     }
   }
@@ -248,6 +249,8 @@ enum UpdateActionVisualStyle {
     blue: 0.8403512836,
     alpha: 1
   )
+  static let errorImage = NSImage(
+    systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
   static let capsuleHorizontalInset: CGFloat = 0.25
   static let progressDiameter: CGFloat = 20
   static let progressLineWidth: CGFloat = 2.5
@@ -265,17 +268,17 @@ private struct UpdateActionControl: View {
   var body: some View {
     switch presentation {
     case .update:
-      UpdateActionCapsuleButton(
-        content: .title(NSLocalizedString("UpdateAction", comment: "Action to update an app")),
-        accessibilityLabel: "Update \(appName)",
-        performAction: performAction
+      Button(
+        NSLocalizedString("UpdateAction", comment: "Action to update an app"), action: performAction
       )
+      .buttonStyle(UpdateActionCapsuleStyle())
+      .accessibilityLabel("Update \(appName)")
     case .open:
-      UpdateActionCapsuleButton(
-        content: .title(NSLocalizedString("OpenAction", comment: "Action to open an app")),
-        accessibilityLabel: "Open \(appName)",
-        performAction: performAction
+      Button(
+        NSLocalizedString("OpenAction", comment: "Action to open an app"), action: performAction
       )
+      .buttonStyle(UpdateActionCapsuleStyle())
+      .accessibilityLabel("Open \(appName)")
     case .waiting(let status):
       UpdateActionIndeterminateIndicator(pausesAnimations: pausesAnimations)
         .help(status)
@@ -291,151 +294,39 @@ private struct UpdateActionControl: View {
       .accessibilityLabel(status)
       .accessibilityHint("Cancel update")
     case .failed:
-      UpdateActionCapsuleButton(
-        content: .image(
-          NSImage(
-            systemSymbolName: "exclamationmark.triangle.fill",
-            accessibilityDescription: nil
-          )),
-        accessibilityLabel: NSLocalizedString(
+      Button(action: performAction) {
+        if let image = UpdateActionVisualStyle.errorImage {
+          Image(nsImage: image).offset(x: -0.25, y: -0.5)
+        }
+      }
+      .buttonStyle(UpdateActionCapsuleStyle())
+      .accessibilityLabel(
+        NSLocalizedString(
           "ErrorButtonAccessibilityTitle",
-          comment: "Description of button that opens an error dialogue"
-        ),
-        performAction: performAction
-      )
+          comment: "Description of button that opens an error dialogue"))
     }
   }
 }
 
-/// Narrow public-AppKit drawing bridge for the established action capsule.
-/// SwiftUI continues to own state and actions; AppKit is used only for the
-/// reference title, symbol, pill, and pressed-state rasterization.
-private struct UpdateActionCapsuleButton: NSViewRepresentable {
-  enum Content {
-    case title(String)
-    case image(NSImage?)
-  }
-
-  let content: Content
-  let accessibilityLabel: String
-  let performAction: () -> Void
-
-  func makeCoordinator() -> Coordinator {
-    Coordinator(performAction: performAction)
-  }
-
-  func makeNSView(context: Context) -> CapsuleHostView {
-    let button = PixelMatchedActionButton(frame: .zero)
-    button.cell = PixelMatchedActionButtonCell()
-    button.target = context.coordinator
-    button.action = #selector(Coordinator.performAction(_:))
-    button.isBordered = false
-    button.contentTintColor = .controlAccentColor
-    configure(button)
-    return CapsuleHostView(button: button)
-  }
-
-  func updateNSView(_ hostView: CapsuleHostView, context: Context) {
-    context.coordinator.performAction = performAction
-    configure(hostView.button)
-  }
-
-  private func configure(_ button: PixelMatchedActionButton) {
-    button.backgroundColor = UpdateActionVisualStyle.backgroundColor
-    button.setAccessibilityLabel(accessibilityLabel)
-    switch content {
-    case .title(let title):
-      button.title = title
-      button.image = nil
-    case .image(let image):
-      button.title = ""
-      button.image = image
-    }
-  }
-
-  @MainActor
-  final class CapsuleHostView: NSView {
-    let button: PixelMatchedActionButton
-
-    init(button: PixelMatchedActionButton) {
-      self.button = button
-      super.init(frame: .zero)
-      addSubview(button)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-      fatalError("init(coder:) has not been implemented")
-    }
-
-    override func layout() {
-      super.layout()
-      button.frame = bounds.insetBy(dx: UpdateActionVisualStyle.capsuleHorizontalInset, dy: 0)
-    }
-  }
-
-  @MainActor
-  final class Coordinator: NSObject {
-    var performAction: () -> Void
-
-    init(performAction: @escaping () -> Void) {
-      self.performAction = performAction
-    }
-
-    @objc func performAction(_ sender: Any?) {
-      performAction()
-    }
-  }
-}
-
-@MainActor
-private final class PixelMatchedActionButton: NSButton {
-  var backgroundColor = UpdateActionVisualStyle.backgroundColor {
-    didSet { needsDisplay = true }
-  }
-}
-
-private final class PixelMatchedActionButtonCell: NSButtonCell {
-  override func highlight(_ flag: Bool, withFrame cellFrame: NSRect, in controlView: NSView) {
-    super.highlight(flag, withFrame: cellFrame, in: controlView)
-    guard let button = controlView as? PixelMatchedActionButton else { return }
-    button.backgroundColor =
-      flag
-      ? UpdateActionVisualStyle.highlightedBackgroundColor
-      : UpdateActionVisualStyle.backgroundColor
-  }
-
-  override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
-    guard let button = controlView as? PixelMatchedActionButton else { return }
-    let radius = cellFrame.height / 2
-    button.backgroundColor.setFill()
-    NSBezierPath(roundedRect: cellFrame, xRadius: radius, yRadius: radius).fill()
-    super.drawInterior(withFrame: cellFrame, in: controlView)
-  }
-
-  override func drawTitle(
-    _ title: NSAttributedString,
-    withFrame frame: NSRect,
-    in controlView: NSView
-  ) -> NSRect {
-    let string = NSMutableAttributedString(attributedString: title)
-    let range = NSRange(location: 0, length: string.length)
-    string.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: range)
-    let pointSize = font?.pointSize ?? NSFont.systemFontSize
-    string.addAttribute(
-      .font,
-      value: NSFont.systemFont(ofSize: pointSize - 1, weight: .medium),
-      range: range
-    )
-    var adjustedFrame = frame
-    adjustedFrame.origin.y -= 1
-    return super.drawTitle(string, withFrame: adjustedFrame, in: controlView)
-  }
-
-  override func drawImage(_ image: NSImage, withFrame frame: NSRect, in controlView: NSView) {
-    var adjustedFrame = frame
-    adjustedFrame.origin.y -= 1
-    super.drawImage(image, withFrame: adjustedFrame, in: controlView)
+private struct UpdateActionCapsuleStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .font(.system(size: NSFont.systemFontSize - 1, weight: .medium))
+      .foregroundStyle(Color(nsColor: .controlAccentColor))
+      .offset(x: -0.25, y: -0.5)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background {
+        Capsule(style: .circular)
+          .fill(
+            Color(
+              nsColor: configuration.isPressed
+                ? UpdateActionVisualStyle.highlightedBackgroundColor
+                : UpdateActionVisualStyle.backgroundColor)
+          )
+          .offset(x: -0.25)
+      }
+      .padding(.horizontal, UpdateActionVisualStyle.capsuleHorizontalInset)
+      .contentShape(Rectangle())
   }
 }
 

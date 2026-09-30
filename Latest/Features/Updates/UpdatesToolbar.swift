@@ -28,16 +28,12 @@ struct UpdatesToolbar: ToolbarContent {
 }
 
 struct RefreshToolbarButton: View {
-  static let accessibilityIdentifier = "toolbar.refresh"
-  static let accessibilityLabel = "Check for Updates"
-  static let systemImageName = "arrow.clockwise"
-
   let isEnabled: Bool
   let action: () -> Void
 
   var body: some View {
-    Button(action: performAction) {
-      Label(Self.accessibilityLabel, systemImage: Self.systemImageName)
+    Button(action: action) {
+      Label("Check for Updates", systemImage: "arrow.clockwise")
     }
     .labelStyle(.iconOnly)
     .help(
@@ -47,14 +43,8 @@ struct RefreshToolbarButton: View {
       )
     )
     .disabled(!isEnabled)
-    .accessibilityIdentifier(Self.accessibilityIdentifier)
-    .accessibilityLabel(Self.accessibilityLabel)
-  }
-
-  /// Kept as a small test seam because SwiftUI controls intentionally do not
-  /// promise a one-to-one AppKit view hierarchy.
-  func performAction() {
-    action()
+    .accessibilityIdentifier("toolbar.refresh")
+    .accessibilityLabel("Check for Updates")
   }
 }
 

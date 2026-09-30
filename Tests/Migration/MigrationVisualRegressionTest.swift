@@ -475,6 +475,83 @@ private enum VisualRegressionError: LocalizedError {
 /// strict full-frame comparison without accepting any changed RGBA pixels.
 final class ProductionVisualParityTest: XCTestCase {
   @MainActor
+  func testDetailCapsulePaintsAndRoutesMouseActions() async throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+    let set =
+      (try? String(
+        contentsOf: root.appendingPathComponent("build/detail-capsule-capture-set"),
+        encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "current"
+    let output = root.appendingPathComponent("build/detail-capsule-\(set)")
+    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+    let app = LocalUATFixture.apps[0]
+    let states: [(String, UpdateActionPresentation)] = [
+      ("update", .update), ("open", .open), ("error", .failed("Fixture failure")),
+    ]
+    for dark in [false, true] {
+      for (name, presentation) in states {
+        var actions = 0
+        let host = NSHostingView(
+          rootView:
+            UpdateActionSurface(
+              app: app, presentation: presentation, performAction: { actions += 1 }
+            )
+            .frame(width: 160, height: 80)
+            .background(Color(nsColor: .textBackgroundColor)))
+        let window = NSWindow(
+          contentRect: NSRect(x: 0, y: 0, width: 160, height: 80),
+          styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.close() }
+        try await Task.sleep(for: .milliseconds(150))
+        host.layoutSubtreeIfNeeded()
+        let filename = "\(dark ? "dark" : "light")-\(name)"
+        let bitmap = try await captureWindowBitmap(window)
+        try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
+          to: output.appendingPathComponent("\(filename).png"))
+        // Independently inspect the original 59 x 24pt capsule and its blue ink.
+        var bluePixels = 0
+        for y in 56..<104 {
+          for x in 101..<219 {
+            let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+            if color.blueComponent - color.redComponent > 0.3 { bluePixels += 1 }
+          }
+        }
+        XCTAssertGreaterThan(bluePixels, 25, filename)
+        let center = try XCTUnwrap(bitmap.colorAt(x: 160, y: 58)?.usingColorSpace(.sRGB))
+        XCTAssertGreaterThan(center.redComponent, 0.9, filename)
+        XCTAssertLessThan(center.redComponent, 0.98, filename)
+        XCTAssertGreaterThan(center.blueComponent - center.redComponent, 0.01, filename)
+        let down = try XCTUnwrap(
+          NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: 80, y: 40), modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+        let up = try XCTUnwrap(
+          NSEvent.mouseEvent(
+            with: .leftMouseUp,
+            location: down.locationInWindow, modifierFlags: [], timestamp: down.timestamp + 0.05,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1,
+            pressure: 0))
+        window.sendEvent(down)
+        try await Task.sleep(for: .milliseconds(50))
+        let pressed = try await captureWindowBitmap(window)
+        try XCTUnwrap(pressed.representation(using: .png, properties: [:])).write(
+          to: output.appendingPathComponent("\(filename)-pressed.png"))
+        let pressedFill = try XCTUnwrap(pressed.colorAt(x: 160, y: 58)?.usingColorSpace(.sRGB))
+        XCTAssertLessThan(pressedFill.redComponent, center.redComponent - 0.1, filename)
+        window.sendEvent(up)
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(actions, 1, "\(filename) must invoke the displayed action exactly once")
+      }
+    }
+  }
+
+  @MainActor
   func testSidebarProgressActionCancelsOnlyItsInjectedOperation() async throws {
     let queue = UpdateQueue()
     queue.isSuspended = true

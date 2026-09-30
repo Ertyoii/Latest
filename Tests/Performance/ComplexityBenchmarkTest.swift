@@ -161,6 +161,18 @@ final class ComplexityBenchmarkTest: XCTestCase {
       return checksum
     }
 
+    benchmark("table_snapshot_unchanged_diff", iterations: 30) {
+      var unchanged = 0
+      for _ in 0..<100 {
+        if TableViewSnapshotDiff(from: searchSnapshot.entries, to: searchSnapshot.entries).change
+          == nil
+        {
+          unchanged += 1
+        }
+      }
+      return unchanged
+    }
+
     benchmark("app_list_search_refilter", iterations: 30) {
       var checksum = 0
       for query in searchQueries {

@@ -12,22 +12,9 @@ import Combine
 
 @MainActor
 final class SearchFocusController: ObservableObject {
-  enum Request: Equatable {
-    case none
-    case focus(UInt)
-    case resign(UInt)
-  }
-
-  @Published private(set) var request: Request = .none
-  private var generation: UInt = 0
+  @Published private(set) var request: UInt?
 
   func focus() {
-    generation &+= 1
-    request = .focus(generation)
-  }
-
-  func resignFocus() {
-    generation &+= 1
-    request = .resign(generation)
+    request = (request ?? 0) &+ 1
   }
 }

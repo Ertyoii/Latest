@@ -82,20 +82,6 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
   }
 
   @MainActor
-  func testUpdateActionKeepsOriginalDrawingMetrics() throws {
-    XCTAssertEqual(UpdateActionVisualStyle.capsuleHorizontalInset, 0.25)
-    XCTAssertEqual(UpdateActionVisualStyle.progressDiameter, 20)
-    XCTAssertEqual(UpdateActionVisualStyle.progressLineWidth, 2.5)
-    XCTAssertEqual(UpdateActionVisualStyle.pauseBarSize, CGSize(width: 2, height: 8))
-    XCTAssertEqual(UpdateActionVisualStyle.pauseBarSpacing, 2)
-
-    let background = try XCTUnwrap(UpdateActionVisualStyle.backgroundColor.usingColorSpace(.sRGB))
-    XCTAssertEqual(background.redComponent, 0.9488552213, accuracy: 0.0001)
-    XCTAssertEqual(background.greenComponent, 0.9487094283, accuracy: 0.0001)
-    XCTAssertEqual(background.blueComponent, 0.9693081975, accuracy: 0.0001)
-  }
-
-  @MainActor
   func testLocationsLabelKeepsOriginalAsymmetricAlignment() {
     XCTAssertEqual(VisualMetrics.locationsLabelOffset, CGSize(width: -2, height: 1))
   }
@@ -247,22 +233,38 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
   }
 
   @MainActor
-  func testSwiftUIRefreshToolbarButtonRunsActionAndExposesAccessibilityContract() {
-    var invocationCount = 0
-    let button = RefreshToolbarButton(isEnabled: true) {
-      invocationCount += 1
+  func testRefreshButtonHonorsEnabledStateForMouseInput() async throws {
+    for enabled in [true, false] {
+      var calls = 0
+      let host = NSHostingView(
+        rootView: RefreshToolbarButton(isEnabled: enabled) { calls += 1 }
+          .frame(width: 160, height: 80))
+      let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 160, height: 80),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
+      window.contentView = host
+      window.orderFront(nil)
+      defer { window.close() }
+      try await Task.sleep(for: .milliseconds(100))
+      host.layoutSubtreeIfNeeded()
+      let down = try XCTUnwrap(
+        NSEvent.mouseEvent(
+          with: .leftMouseDown,
+          location: NSPoint(x: 80, y: 40), modifierFlags: [],
+          timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+          context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+      let up = try XCTUnwrap(
+        NSEvent.mouseEvent(
+          with: .leftMouseUp,
+          location: down.locationInWindow, modifierFlags: [], timestamp: down.timestamp + 0.05,
+          windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1,
+          pressure: 0))
+      NSApp.postEvent(up, atStart: false)
+      window.sendEvent(down)
+      try await Task.sleep(for: .milliseconds(50))
+      XCTAssertEqual(calls, enabled ? 1 : 0)
     }
-
-    XCTAssertTrue(button.isEnabled)
-    XCTAssertEqual(RefreshToolbarButton.accessibilityIdentifier, "toolbar.refresh")
-    XCTAssertEqual(RefreshToolbarButton.accessibilityLabel, "Check for Updates")
-    XCTAssertNotNil(
-      NSImage(
-        systemSymbolName: RefreshToolbarButton.systemImageName,
-        accessibilityDescription: RefreshToolbarButton.accessibilityLabel
-      ))
-    button.performAction()
-    XCTAssertEqual(invocationCount, 1)
   }
 
   @MainActor
