@@ -51,6 +51,17 @@ struct LatestRootView: View {
         .ignoresSafeArea(.container, edges: .top)
     }
     .toolbar {
+      ToolbarItem(placement: .navigation) {
+        Text(NSLocalizedString("Updates", comment: "Main toolbar title"))
+          .font(.system(size: 15, weight: .semibold))
+          // Navigation placement starts 96 points from the window's leading edge.
+          .padding(
+            .leading,
+            VisualMetrics.sidebarIdealWidth + VisualMetrics.detailHeaderHorizontalPadding - 96
+          )
+          .accessibilityIdentifier("toolbar.title")
+      }
+      .sharedBackgroundVisibility(.hidden)
       UpdatesToolbar(service: environment.updateCheckingService) {
         environment.commands.reload()
       }

@@ -84,7 +84,6 @@
 		51A001082FC3000000000001 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000082FC3000000000001 /* WindowAccessor.swift */; };
 		51A001092FC3000000000001 /* UpdatesListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000092FC3000000000001 /* UpdatesListViewModel.swift */; };
 		51A0010A2FC3000000000001 /* SearchFocusController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A0000A2FC3000000000001 /* SearchFocusController.swift */; };
-		51A0010B2FC3000000000001 /* SearchFieldRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A0000B2FC3000000000001 /* SearchFieldRepresentable.swift */; };
 		51A0010F2FC3000000000001 /* UpdateSectionHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */; };
 		51A001102FC3000000000001 /* UpdateRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000102FC3000000000001 /* UpdateRowView.swift */; };
 		51A001112FC3000000000001 /* UpdatesSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000112FC3000000000001 /* UpdatesSidebarView.swift */; };
@@ -395,7 +394,6 @@
 		51A000082FC3000000000001 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WindowAccessor.swift"; sourceTree = "<group>"; };
 		51A000092FC3000000000001 /* UpdatesListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UpdatesListViewModel.swift"; sourceTree = "<group>"; };
 		51A0000A2FC3000000000001 /* SearchFocusController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SearchFocusController.swift"; sourceTree = "<group>"; };
-		51A0000B2FC3000000000001 /* SearchFieldRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SearchFieldRepresentable.swift"; sourceTree = "<group>"; };
 		51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UpdateSectionHeaderView.swift"; sourceTree = "<group>"; };
 		51A000102FC3000000000001 /* UpdateRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UpdateRowView.swift"; sourceTree = "<group>"; };
 		51A000112FC3000000000001 /* UpdatesSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UpdatesSidebarView.swift"; sourceTree = "<group>"; };
@@ -783,7 +781,6 @@
 				508323E0257824A9000BBA13 /* DisplayLink.swift */,
 				5058BA3921202BA7003F332B /* IconCache.swift */,
 				52A000082FE0000000000001 /* MainWindowConfiguration.swift */,
-				51A0000B2FC3000000000001 /* SearchFieldRepresentable.swift */,
 				5073755A278B0A7400F371D8 /* TableViewSnapshotDiff.swift */,
 				508323E1257824A9000BBA13 /* UpdateButton.swift */,
 				508323E2257824AA000BBA13 /* UpdateButtonCell.swift */,
@@ -1185,7 +1182,6 @@
 				51C100012FC6000000000001 /* LatestApplication.swift in Sources */,
 				51A001092FC3000000000001 /* UpdatesListViewModel.swift in Sources */,
 				51A0010A2FC3000000000001 /* SearchFocusController.swift in Sources */,
-				51A0010B2FC3000000000001 /* SearchFieldRepresentable.swift in Sources */,
 				51F100032FD0000000000001 /* SidebarInteractionPolicy.swift in Sources */,
 				51F1000C2FD0000000000001 /* UpdatesTableBridge.swift in Sources */,
 				51A0010F2FC3000000000001 /* UpdateSectionHeaderView.swift in Sources */,

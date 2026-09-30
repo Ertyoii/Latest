@@ -9,6 +9,7 @@
 //  Licensed under GPL-3.0; see LICENSE.md.
 
 import AppKit
+import ScreenCaptureKit
 import SwiftUI
 import XCTest
 
@@ -138,35 +139,56 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
   }
 
   @MainActor
-  func testToolbarTitleStaysAlignedAndCleansUp() throws {
+  func testToolbarTitleIsVisibleInHostedMainWindow() async throws {
+    let environment = AppEnvironment.localUATFixture(
+      settings: try isolatedAppListSettings(for: self))
+    let host = NSHostingView(rootView: LatestRootView(environment: environment))
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 768, height: 516),
       styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
       backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
-    window.toolbar = NSToolbar(identifier: "title-test")
+    window.appearance = NSAppearance(named: .darkAqua)
+    window.toolbarStyle = .unified
+    window.toolbar = NSToolbar(identifier: "hosted-title-test")
+    window.contentView = host
+    window.makeKeyAndOrderFront(nil)
     defer { window.close() }
-    let accessor = ToolbarTitleView()
-    let content = try XCTUnwrap(window.contentView)
-    accessor.frame = content.bounds
-    accessor.autoresizingMask = [.width, .height]
-    content.addSubview(accessor)
-    for width in [768.0, 1000.0] {
-      window.setContentSize(NSSize(width: width, height: 516))
-      window.layoutIfNeeded()
-      accessor.updateTitle()
-      let title = try XCTUnwrap(
-        accessor.subviews.compactMap { $0 as? NSTextField }.first {
-          $0.accessibilityIdentifier() == "toolbar.title"
-        })
-      XCTAssertEqual(title.stringValue, "Updates")
-      XCTAssertEqual(
-        title.convert(title.bounds, to: nil).minX,
-        VisualMetrics.sidebarIdealWidth + VisualMetrics.detailHeaderHorizontalPadding)
-      XCTAssertNil(title.hitTest(.zero))
+    window.layoutIfNeeded()
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(150))
+    window.layoutIfNeeded()
+    host.layoutSubtreeIfNeeded()
+
+    let shareable = try await SCShareableContent.currentProcess
+    let capturedWindow = try XCTUnwrap(
+      shareable.windows.first { $0.windowID == window.windowNumber })
+    let configuration = SCStreamConfiguration()
+    configuration.width = 1536
+    configuration.height = 1032
+    configuration.showsCursor = false
+    let image = try await SCScreenshotManager.captureImage(
+      contentFilter: SCContentFilter(desktopIndependentWindow: capturedWindow),
+      configuration: configuration)
+    let bitmap = NSBitmapImageRep(cgImage: image)
+    let scale = CGFloat(bitmap.pixelsWide) / window.frame.width
+    let titleStart = VisualMetrics.sidebarIdealWidth + VisualMetrics.detailHeaderHorizontalPadding
+    let titleRegion = NSRect(x: titleStart - 4, y: 14, width: 100, height: 26)
+    var brightPixels = 0
+    var leftmostBrightPixel = bitmap.pixelsWide
+    for y in Int(titleRegion.minY * scale)..<Int(titleRegion.maxY * scale) {
+      for x in Int(titleRegion.minX * scale)..<Int(titleRegion.maxX * scale) {
+        guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
+          color.brightnessComponent > 0.55
+        else { continue }
+        brightPixels += 1
+        leftmostBrightPixel = min(leftmostBrightPixel, x)
+      }
     }
-    accessor.removeTitle()
-    XCTAssertFalse(accessor.subviews.contains { $0.accessibilityIdentifier() == "toolbar.title" })
+    XCTAssertGreaterThan(brightPixels, 25, "Updates must be painted in the titlebar")
+    XCTAssertLessThan(
+      CGFloat(leftmostBrightPixel) / scale, titleStart + 20,
+      "The title should align with the detail panel")
   }
 
   @MainActor
@@ -202,14 +224,6 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 
     window.layoutIfNeeded()
     hostingView.layoutSubtreeIfNeeded()
-    let search = try XCTUnwrap(
-      hostingView.descendantTextFields().compactMap { $0 as? NSSearchField }.first)
-    XCTAssertTrue(search.isEditable)
-    XCTAssertTrue(search.isSelectable)
-    search.stringValue = "Notes"
-    search.sendAction(search.action, to: search.target)
-    XCTAssertEqual(environment.updatesListViewModel.searchQuery, "Notes")
-
     for size in [NSSize(width: 768, height: 516), NSSize(width: 1000, height: 700)] {
       window.setContentSize(size)
       window.layoutIfNeeded()

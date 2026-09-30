@@ -9,6 +9,7 @@
 //  Licensed under GPL-3.0; see LICENSE.md.
 
 import AppKit
+import ScreenCaptureKit
 import SwiftUI
 import WebKit
 import XCTest
@@ -522,6 +523,13 @@ final class ProductionVisualParityTest: XCTestCase {
           table.layoutSubtreeIfNeeded()
           try await Task.sleep(for: .milliseconds(100))
         }
+        let captureMarker = root.appendingPathComponent("build/sidebar-window-capture-set")
+        if let captureSet = try? String(contentsOf: captureMarker, encoding: .utf8)
+          .trimmingCharacters(in: .whitespacesAndNewlines), !captureSet.isEmpty
+        {
+          try await captureCompleteWindow(
+            window, set: captureSet, name: "window-\(state)-\(dark ? "dark" : "light").png")
+        }
         let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         view.cacheDisplay(in: view.bounds, to: bitmap)
         let name = "production-\(state)-\(dark ? "dark" : "light").png"
@@ -549,6 +557,27 @@ final class ProductionVisualParityTest: XCTestCase {
           output: output, reference: reference, comparesReference: comparesReference)
       }
     }
+  }
+
+  @MainActor
+  private func captureCompleteWindow(_ window: NSWindow, set: String, name: String) async throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+    let output = root.appendingPathComponent("build/sidebar-window-\(set)", isDirectory: true)
+    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+    let shareable = try await SCShareableContent.currentProcess
+    let capturedWindow = try XCTUnwrap(
+      shareable.windows.first { $0.windowID == window.windowNumber })
+    let configuration = SCStreamConfiguration()
+    configuration.width = Int(window.frame.width * 2)
+    configuration.height = Int(window.frame.height * 2)
+    configuration.showsCursor = false
+    let image = try await SCScreenshotManager.captureImage(
+      contentFilter: SCContentFilter(desktopIndependentWindow: capturedWindow),
+      configuration: configuration)
+    let bitmap = NSBitmapImageRep(cgImage: image)
+    try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
+      to: output.appendingPathComponent(name), options: .atomic)
   }
 
   @MainActor

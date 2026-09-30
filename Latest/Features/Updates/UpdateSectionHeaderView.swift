@@ -9,23 +9,28 @@
 //  Licensed under GPL-3.0; see LICENSE.md.
 
 import AppKit
+import SwiftUI
 
-final class AppKitUpdateSectionHeaderContentView: NSView {
+/// The table still owns pinned group-row behavior; SwiftUI draws its content.
+struct UpdateSectionHeaderView: View {
+  let section: AppListSnapshot.Section
+
+  var body: some View {
+    Text(Self.title(for: section))
+      .lineLimit(1)
+      .truncationMode(.tail)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .frame(height: VisualMetrics.sectionHeaderHeight - 10)
+      .padding(.leading, 22)
+      .padding(.trailing, 38)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .offset(y: 1.5)
+  }
+
   private static let numberFormatter = NumberFormatter()
-  private let titleField = NSTextField(labelWithString: "")
 
-  override init(frame frameRect: NSRect) {
-    super.init(frame: frameRect)
-    setupView()
-  }
-
-  required init?(coder: NSCoder) {
-    super.init(coder: coder)
-    setupView()
-  }
-
-  func update(section: AppListSnapshot.Section) {
-    let count = Self.numberFormatter.string(from: section.numberOfApps as NSNumber) ?? "0"
+  private static func title(for section: AppListSnapshot.Section) -> AttributedString {
+    let count = numberFormatter.string(from: section.numberOfApps as NSNumber) ?? "0"
     let format = NSLocalizedString(
       "SectionTitle",
       comment:
@@ -41,8 +46,13 @@ final class AppKitUpdateSectionHeaderContentView: NSView {
           .characterEncoding: String.Encoding.utf8.rawValue,
         ], documentAttributes: nil)
     else {
-      titleField.stringValue = section.title
-      return
+      return AttributedString(
+        NSAttributedString(
+          string: section.title,
+          attributes: [
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+          ]))
     }
 
     var countRange = NSRange(location: 0, length: 0)
@@ -65,25 +75,6 @@ final class AppKitUpdateSectionHeaderContentView: NSView {
         .foregroundColor: NSColor.tertiaryLabelColor,
         .font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize(for: .small)),
       ], range: countRange)
-    titleField.attributedStringValue = formattedText
-  }
-
-  private func setupView() {
-    wantsLayer = true
-    layer?.backgroundColor = NSColor.clear.cgColor
-
-    titleField.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-    titleField.textColor = .secondaryLabelColor
-    titleField.lineBreakMode = .byTruncatingTail
-    titleField.maximumNumberOfLines = 1
-    titleField.translatesAutoresizingMaskIntoConstraints = false
-    addSubview(titleField)
-
-    NSLayoutConstraint.activate([
-      titleField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
-      titleField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -38),
-      titleField.topAnchor.constraint(equalTo: topAnchor, constant: 6),
-      titleField.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
-    ])
+    return AttributedString(formattedText)
   }
 }

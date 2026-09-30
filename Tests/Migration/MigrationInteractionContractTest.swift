@@ -184,6 +184,64 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
+  func testSidebarSearchAcceptsTypingClearAndEscapeRestoresTableFocus() async throws {
+    let app = makeApp(name: "Notes", version: "1", remoteVersion: "2")
+    let viewModel = UpdatesListViewModel(
+      snapshot: AppListSnapshot(withApps: [app], filterQuery: nil))
+    let focusController = SearchFocusController()
+    let host = NSHostingView(
+      rootView: UpdatesSidebarView(viewModel: viewModel, searchFocusController: focusController))
+    host.frame = NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 420)
+    let window = NSWindow(
+      contentRect: host.bounds, styleMask: [.titled], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    window.makeKeyAndOrderFront(nil)
+    defer { window.close() }
+    window.layoutIfNeeded()
+    host.layoutSubtreeIfNeeded()
+    let table = try XCTUnwrap(host.descendant(of: NSTableView.self))
+    XCTAssertTrue(window.makeFirstResponder(table))
+
+    focusController.focus()
+    try await Task.sleep(for: .milliseconds(100))
+    host.layoutSubtreeIfNeeded()
+    let search = try XCTUnwrap(host.descendant(of: NSTextField.self))
+    XCTAssertTrue(search.currentEditor() === window.firstResponder)
+
+    search.currentEditor()?.insertText("Notes")
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertEqual(viewModel.searchQuery, "Notes")
+
+    let escape = try XCTUnwrap(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+        windowNumber: window.windowNumber, context: nil,
+        characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}",
+        isARepeat: false, keyCode: 53))
+    window.sendEvent(escape)
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertTrue(window.firstResponder === table)
+    XCTAssertEqual(viewModel.searchQuery, "Notes")
+
+    focusController.focus()
+    try await Task.sleep(for: .milliseconds(50))
+    let searchFrame = search.convert(search.bounds, to: nil)
+    let clearLocation = NSPoint(x: searchFrame.maxX + 7, y: searchFrame.midY)
+    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+      let event = try XCTUnwrap(
+        NSEvent.mouseEvent(
+          with: type, location: clearLocation, modifierFlags: [], timestamp: 0,
+          windowNumber: window.windowNumber, context: nil,
+          eventNumber: 0, clickCount: 1, pressure: 1))
+      window.sendEvent(event)
+    }
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertEqual(viewModel.searchQuery, "")
+    XCTAssertTrue(search.currentEditor() === window.firstResponder)
+  }
+
+  @MainActor
   func testShippingTableArrowMovementSkipsSectionHeaders() throws {
     let (window, table, viewModel) = try makeShippingSidebar()
     defer { window.close() }

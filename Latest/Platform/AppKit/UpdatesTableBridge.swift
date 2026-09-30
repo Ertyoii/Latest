@@ -220,10 +220,10 @@ struct UpdatesTableBridge: NSViewRepresentable {
         let identifier = NSUserInterfaceItemIdentifier("LatestSwiftUISectionCell")
         let view =
           tableView.makeView(withIdentifier: identifier, owner: self)
-          as? AppKitUpdateSectionHeaderContentView
-          ?? AppKitUpdateSectionHeaderContentView()
+          as? NSHostingView<UpdateSectionHeaderView>
+          ?? NSHostingView(rootView: UpdateSectionHeaderView(section: section))
         view.identifier = identifier
-        view.update(section: section)
+        view.rootView = UpdateSectionHeaderView(section: section)
         return view
 
       case .app(let app):
