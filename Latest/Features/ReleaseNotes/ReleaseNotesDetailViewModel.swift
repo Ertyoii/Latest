@@ -67,6 +67,7 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
 
   private let releaseNotesProvider: ReleaseNotesProviding
   private var loadingTask: Task<Void, Never>?
+  private var requestTask: Task<Void, Never>?
   private var displayRequestID = UUID()
   private var displayedKey: String?
 
@@ -76,9 +77,10 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
 
   deinit {
     loadingTask?.cancel()
+    requestTask?.cancel()
   }
 
-  func display(_ app: App?) {
+  func display(_ app: App?, waitForSelectionToSettle: Bool = false) {
     if self.app !== app { self.app = app }
     let nextKey = app.map(Self.displayKey(for:))
     guard nextKey != displayedKey else { return }
@@ -88,6 +90,8 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
     let requestID = displayRequestID
     loadingTask?.cancel()
     loadingTask = nil
+    requestTask?.cancel()
+    requestTask = nil
     MigrationTelemetry.shared.detailCommitted()
 
     guard let app else {
@@ -104,6 +108,19 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
       self.contentState = .loading
     }
 
+    if waitForSelectionToSettle {
+      requestTask = Task { [weak self] in
+        try? await Task.sleep(for: .milliseconds(60))
+        guard !Task.isCancelled, let self, self.displayRequestID == requestID else { return }
+        self.requestTask = nil
+        self.requestNotes(for: app, requestID: requestID)
+      }
+    } else {
+      requestNotes(for: app, requestID: requestID)
+    }
+  }
+
+  private func requestNotes(for app: App, requestID: UUID) {
     releaseNotesProvider.releaseNotes(for: app) { [weak self] result in
       guard let self,
         self.displayRequestID == requestID,

@@ -16,6 +16,20 @@ import XCTest
 
 @testable import Latest
 
+@MainActor
+func captureWindowBitmap(_ window: NSWindow) async throws -> NSBitmapImageRep {
+  let shareable = try await SCShareableContent.currentProcess
+  let capturedWindow = try XCTUnwrap(shareable.windows.first { $0.windowID == window.windowNumber })
+  let configuration = SCStreamConfiguration()
+  configuration.width = Int(window.frame.width * 2)
+  configuration.height = Int(window.frame.height * 2)
+  configuration.showsCursor = false
+  let image = try await SCScreenshotManager.captureImage(
+    contentFilter: SCContentFilter(desktopIndependentWindow: capturedWindow),
+    configuration: configuration)
+  return NSBitmapImageRep(cgImage: image)
+}
+
 final class MigrationVisualRegressionTest: XCTestCase {
   @MainActor
   func testMigrationGalleryGeometryContracts() {
@@ -37,7 +51,7 @@ final class MigrationVisualRegressionTest: XCTestCase {
   }
 
   @MainActor
-  func testProductionSidebarUsesMeasuredOriginalTableGeometryAndRealIcons() throws {
+  func testProductionSidebarUsesMeasuredOriginalTableGeometryAndRealIcons() async throws {
     let environment = AppEnvironment.localUATFixture(
       settings: try isolatedAppListSettings(for: self))
     let viewModel = environment.updatesListViewModel
@@ -60,10 +74,11 @@ final class MigrationVisualRegressionTest: XCTestCase {
     )
     window.isReleasedWhenClosed = false
     window.contentView = hostingView
+    window.orderFront(nil)
     defer { window.close() }
     window.layoutIfNeeded()
     hostingView.layoutSubtreeIfNeeded()
-    RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.15))
+    try await Task.sleep(for: .milliseconds(150))
 
     let tableView = try XCTUnwrap(hostingView.firstDescendant(of: NSTableView.self))
     XCTAssertEqual(tableView.rowHeight, 60)
@@ -86,22 +101,31 @@ final class MigrationVisualRegressionTest: XCTestCase {
       _ = tableView.view(atColumn: 0, row: row, makeIfNecessary: true)
     }
     tableView.layoutSubtreeIfNeeded()
-    let populatedIcons = tableView.allDescendants(of: NSImageView.self).filter { $0.image != nil }
-    XCTAssertGreaterThanOrEqual(
-      populatedIcons.count,
-      3,
-      "Visible production rows must materialize real file icons on their first frame."
-    )
-
     let cell = try XCTUnwrap(
-      tableView.view(atColumn: 0, row: firstAppRow, makeIfNecessary: false)
-        as? AppKitUpdateRowContentView)
+      tableView.view(atColumn: 0, row: firstAppRow, makeIfNecessary: false))
     cell.layoutSubtreeIfNeeded()
-    let updateButton = try XCTUnwrap(cell.subviews.compactMap { $0 as? UpdateButton }.first)
-    let supportStatus = try XCTUnwrap(
-      cell.subviews.compactMap { $0 as? NSImageView }.first { $0.toolTip != nil })
-    XCTAssertEqual(updateButton.frame.midX, supportStatus.frame.midX, accuracy: 0.5)
-    XCTAssertEqual(updateButton.frame.midY, cell.bounds.midY, accuracy: 0.5)
+    XCTAssertTrue(cell.accessibilityLabel()?.contains(viewModel.snapshot.apps[0].name) == true)
+    let updateButton = try XCTUnwrap(cell.firstDescendant(of: UpdateButton.self))
+    let buttonFrame = updateButton.convert(updateButton.bounds, to: cell)
+    XCTAssertEqual(buttonFrame.midX, cell.bounds.maxX - 44, accuracy: 0.5)
+    XCTAssertEqual(buttonFrame.midY, cell.bounds.midY, accuracy: 0.5)
+    let rendered = try await captureWindowBitmap(window)
+    let icon = cell.convert(
+      NSRect(x: 0, y: cell.bounds.midY - 25, width: 50, height: 50), to: nil)
+    var goldenIconPixels = 0
+    for y in Int((window.frame.height - icon.maxY) * 2)..<Int((window.frame.height - icon.minY) * 2)
+    {
+      for x in Int(icon.minX * 2)..<Int(icon.maxX * 2) {
+        let color = try XCTUnwrap(rendered.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
+        if color.redComponent - color.blueComponent > 0.15,
+          color.greenComponent - color.blueComponent > 0.1
+        {
+          goldenIconPixels += 1
+        }
+      }
+    }
+    XCTAssertGreaterThan(
+      goldenIconPixels, 100, "The Notes fixture must paint its real yellow icon on the first frame")
   }
 
   @MainActor
@@ -545,8 +569,6 @@ final class ProductionVisualParityTest: XCTestCase {
           _ = table.view(atColumn: 0, row: row, makeIfNecessary: true)
         }
         table.layoutSubtreeIfNeeded()
-        XCTAssertFalse(
-          table.allDescendants(of: NSImageView.self).filter { $0.image != nil }.isEmpty)
         let bounds = table.visibleRect
         XCTAssertGreaterThan(bounds.width, 0)
         XCTAssertGreaterThan(bounds.height, 0)
@@ -565,17 +587,7 @@ final class ProductionVisualParityTest: XCTestCase {
       .deletingLastPathComponent().deletingLastPathComponent()
     let output = root.appendingPathComponent("build/sidebar-window-\(set)", isDirectory: true)
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-    let shareable = try await SCShareableContent.currentProcess
-    let capturedWindow = try XCTUnwrap(
-      shareable.windows.first { $0.windowID == window.windowNumber })
-    let configuration = SCStreamConfiguration()
-    configuration.width = Int(window.frame.width * 2)
-    configuration.height = Int(window.frame.height * 2)
-    configuration.showsCursor = false
-    let image = try await SCScreenshotManager.captureImage(
-      contentFilter: SCContentFilter(desktopIndependentWindow: capturedWindow),
-      configuration: configuration)
-    let bitmap = NSBitmapImageRep(cgImage: image)
+    let bitmap = try await captureWindowBitmap(window)
     try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
       to: output.appendingPathComponent(name), options: .atomic)
   }

@@ -259,9 +259,24 @@ final class MigrationInteractionContractTest: XCTestCase {
           characters: character, charactersIgnoringModifiers: character,
           isARepeat: false, keyCode: keyCode
         ))
-      table.keyDown(with: event)
+      window.firstResponder?.keyDown(with: event)
     }
-    window.makeFirstResponder(table)
+    let cell = try XCTUnwrap(table.view(atColumn: 0, row: appRows[0], makeIfNecessary: true))
+    let point = cell.convert(NSPoint(x: 70, y: cell.bounds.midY), to: cell.superview)
+    let target = try XCTUnwrap(cell.hitTest(point))
+    let location = cell.convert(NSPoint(x: 70, y: cell.bounds.midY), to: nil)
+    let mouseDown = try XCTUnwrap(
+      NSEvent.mouseEvent(
+        with: .leftMouseDown, location: location, modifierFlags: [], timestamp: 0,
+        windowNumber: window.windowNumber, context: nil,
+        eventNumber: 0, clickCount: 1, pressure: 1))
+    let mouseUp = try XCTUnwrap(
+      NSEvent.mouseEvent(
+        with: .leftMouseUp, location: location, modifierFlags: [], timestamp: 0,
+        windowNumber: window.windowNumber, context: nil,
+        eventNumber: 1, clickCount: 1, pressure: 0))
+    NSApp.postEvent(mouseUp, atStart: true)
+    target.mouseDown(with: mouseDown)
     try pressArrow(keyCode: 125, character: "\u{F701}")
     XCTAssertEqual(table.selectedRow, appRows[1])
     XCTAssertEqual(
@@ -489,14 +504,29 @@ final class MigrationInteractionContractTest: XCTestCase {
     let table = try XCTUnwrap(host.descendant(of: NSTableView.self))
     let row = try XCTUnwrap(model.snapshot.firstIndex(of: app))
     let cell = try XCTUnwrap(table.view(atColumn: 0, row: row, makeIfNecessary: true))
-    let status = try XCTUnwrap(
-      cell.allDescendants().compactMap { $0 as? NSImageView }.first { $0.toolTip != nil })
-    XCTAssertFalse(status.isHidden)
-    for visible in [false, true] {
+    for visible in [true, false, true] {
       host.rootView = UpdatesTableBridge(viewModel: model, showsSupportStatusOverride: visible)
       host.layoutSubtreeIfNeeded()
       try await Task.sleep(for: .milliseconds(100))
-      XCTAssertEqual(status.isHidden, !visible)
+      let bitmap = try await captureWindowBitmap(window)
+      let cellFrame = cell.convert(cell.bounds, to: nil)
+      var greenPixels = 0
+      for y in max(
+        0, Int((window.frame.height - cellFrame.maxY) * 2))..<min(
+          bitmap.pixelsHigh, Int((window.frame.height - cellFrame.minY) * 2))
+      {
+        for x in max(0, Int(cellFrame.minX * 2))..<min(bitmap.pixelsWide, Int(cellFrame.maxX * 2)) {
+          let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
+          if color.greenComponent - max(color.redComponent, color.blueComponent) > 0.2 {
+            greenPixels += 1
+          }
+        }
+      }
+      if visible {
+        XCTAssertGreaterThan(greenPixels, 20, "Supported app must paint the support dot")
+      } else {
+        XCTAssertEqual(greenPixels, 0, "Disabling support indicators must remove the painted dot")
+      }
       XCTAssertTrue(table.view(atColumn: 0, row: row, makeIfNecessary: false) === cell)
     }
   }
@@ -558,6 +588,31 @@ final class MigrationInteractionContractTest: XCTestCase {
       UpdateActionPresentation.make(for: updatable, progressState: .error(error)),
       .failed("The update failed")
     )
+  }
+
+  @MainActor
+  func testRapidSelectionRequestsNotesOnlyForTheSettledApp() async throws {
+    let provider = ReleaseNotesProviderProbe()
+    let viewModel = ReleaseNotesDetailViewModel(releaseNotesProvider: provider)
+    let first = makeApp(name: "Discord", version: "1", remoteVersion: "2")
+    let second = makeApp(name: "Cursor", version: "3", remoteVersion: "4")
+
+    viewModel.display(first, waitForSelectionToSettle: true)
+    viewModel.display(second, waitForSelectionToSettle: true)
+    XCTAssertTrue(viewModel.app === second, "The header must follow selection immediately")
+    XCTAssertTrue(provider.requests.isEmpty, "Passing a row must not start expensive notes work")
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(provider.requests.count, 1)
+    XCTAssertTrue(provider.requests.last?.app === second)
+
+    viewModel.display(first, waitForSelectionToSettle: true)
+    viewModel.display(nil)
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(provider.requests.count, 1, "Clearing selection must cancel queued notes work")
+    guard case .message(let message) = viewModel.contentState else {
+      return XCTFail("Expected no-selection content")
+    }
+    XCTAssertEqual(message, .noSelection)
   }
 
   @MainActor

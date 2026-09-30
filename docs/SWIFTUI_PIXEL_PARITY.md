@@ -111,3 +111,199 @@ and clicking Clear. `./script/test.sh` passed 258 tests with six skips and no
 failures. The Release benchmark passed its absolute gates, and comparison with
 the pre-search `swiftui_header` run passed all relative startup, scroll, and
 selection gates. No release, installed-app replacement, or push was performed.
+
+## Accepted sidebar app row migration
+
+The completed heading, title, and search work was committed as `fa12730` on
+2026-09-30 before starting this step. The unchanged rows passed the full suite:
+258 tests, six skipped, zero failures. Twelve complete light/dark window
+captures were saved before editing the row renderer.
+
+`UpdateRowView` now uses SwiftUI for the app icon, title, installed and new
+versions, date, support image, and separator. A small `NSTableCellView` hosts
+the content, forwards native selection emphasis, and retains the existing
+progress button. The table still owns selection, scrolling, context menus,
+and swipe actions. Row height, icon size, metadata positions, inactive icon
+dimming, and selected-row separator behavior are preserved.
+
+- Dark: [before](visual-evidence/rows-before-dark.png) and
+  [after](visual-evidence/rows-after-dark.png)
+- Light: [before](visual-evidence/rows-before-light.png) and
+  [after](visual-evidence/rows-after-light.png)
+
+In sampled row regions, the name, version lines, support dot, and separator
+have identical pixels. The 100×100 icon region differs only by small channel
+rounding (RMS 0.375/255 light and 0.594/255 dark; no differences greater than
+12/255). The 120×34 date region differs at 274 light and 272 dark pixels.
+The complete UI is therefore visually close, not pixel-identical. Twelve
+after captures also cover selection, filtering, progress, and pinned headers.
+
+The final `./script/test.sh` run passed 258 tests with six skips and no failures.
+Renderer-coupled text/image checks were replaced by painted-output checks for
+first-frame app icons, support preference changes, selection text color, and
+the complete long version string. A temporary 100pt version-width negative
+control correctly failed with 665 missing glyph pixels; it was restored.
+The native keyboard-selection and search typing/clear/Escape tests still pass.
+An initial synthetic mouse-selection test could not deliver selection even
+against unchanged AppKit rows in the settings-only test host, so it was not
+retained as evidence of mouse parity. The subsequent keyboard-focus regression
+and real running-app checks below cover the reported interaction failure.
+Formatting, structure, and diff checks passed.
+
+A fresh isolated AppKit control from `fa12730` and the final SwiftUI Release
+benchmark produced:
+
+| Metric | AppKit control | SwiftUI row |
+| --- | ---: | ---: |
+| Populated sidebar, p50 | 47.580 ms | 36.577 ms |
+| Scroll step, p95 | 1.629 ms | 2.344 ms |
+| Selection to detail, p95 | 3.486 ms | 3.066 ms |
+
+All absolute performance, memory, and runtime-warning gates passed. Scrolling
+increased by 0.715 ms (43.9%), exceeding the plan's 15% relative limit. The
+relative cutover script reports **blocked** for scrolling. On 2026-09-30 the
+user accepted the measured visual and performance differences. This is an
+accepted exception to the row cutover criteria, not a passing relative gate.
+No version bump, push, release, or installed-app replacement was performed.
+
+### Keyboard focus repair
+
+The user reported that Up/Down no longer navigated the sidebar. In the running
+checkout build, clicking hosted row content selected the app but did not give
+the native table keyboard focus. Both arrow keys left the selection unchanged.
+The existing keyboard test had bypassed this failure by explicitly focusing
+the table and calling `table.keyDown` directly.
+
+A narrow row hosting subclass now gives keyboard focus to its enclosing table
+after handling a mouse-down event. The regression test clicks the hit-tested
+row content and delivers Up/Down through the window's current responder. It
+failed before the repair (Down remained on Discord instead of selecting Cursor)
+and passed after it. Real running-app input also verified ChatGPT → Final Cut
+Pro → ChatGPT, skipping the section header to Discord, and repeated Down presses
+scrolling an offscreen selection into view (vertical scroller value 0.530).
+
+The final `./script/test.sh` run passed 258 tests, six skipped, zero failures.
+Formatting, structure, and diff checks passed. This repair changes input focus
+only; the accepted row layout and drawing remain the same.
+
+### Selection flicker and rapid keyboard navigation
+
+The user's 2026-09-30 recording showed dark text briefly appearing on the blue
+native highlight before the hosted text became white. Native selection now
+updates an observable row presentation directly, including selection emphasis
+and separator visibility. It resolves text colors during the native selection
+turn and reuses the existing icon, attributed name, version strings, and date.
+The coordinator refreshes row content for snapshot or support-preference changes,
+without rebuilding it for each selection or unchanged representable update.
+
+The painted-color test selects and emphasizes a real native parent row while
+leaving the hosted content's initial selection unchanged. It checks white text
+without another model-content update. Restoring the old cached-selection rule
+as a temporary negative control produced zero white glyph pixels and failed;
+the repair was restored. The inactive-text and long-version checks also pass.
+
+A new rapid-key case in the existing Release benchmark sends 120 repeated Down
+events through the native table's current responder and includes model delivery,
+layout, and drawing. Before the repair it reached row 87 instead of row 121:
+34 selection steps were undone. A deferred table update had captured an earlier
+selection and could restore it after another key event. Deferred updates now
+read the current model when applied. The benchmark checks that all 120 steps
+reach the expected row and selected app, and starts from an already visible row
+so its frame measurements exclude an unrelated initial long-distance jump.
+
+The final `row_selection_observed` Release run preserved all 120 steps:
+
+| Metric | Final result |
+| --- | ---: |
+| Keyboard selection and sidebar render, p95 | 7.857 ms |
+| Keyboard selection and sidebar render, maximum | 9.235 ms |
+| Continuous scroll step, p95 | 2.281 ms |
+| Selection to detail, p95 | 3.174 ms |
+
+The keyboard case now has a 16 ms p95 budget. Its timing covers the sidebar;
+asynchronous release-note retrieval is measured by the separate render cases.
+The benchmark's existing absolute gates and runtime-warning checks passed.
+The final full suite passed 258 tests, six skipped, zero failures; formatting,
+structure, shell syntax, and diff checks also passed. In the restarted checkout
+app, twelve rapid Down presses selected Delta from Discord, twelve Up presses
+returned to Discord, and the final selected row painted white text on blue.
+
+### Keyboard navigation optimization for a 120 Hz work budget
+
+The user requested optimization toward 120 FPS on a display currently limited
+to 60 Hz. Selection now uses property observation separately from the list's
+Combine publications. Selecting a row invalidates the selected-app detail,
+table selection input, and selected-app command buttons instead of rebuilding
+the root sidebar, search, and unrelated menus. The table skips deferred work
+when its native selection already matches the model. A fresh app object with
+the same identifier still invalidates detail metadata after a provider refresh.
+
+Row foreground colors and separator visibility now observe selection in small
+leaf views. The immutable icon, attributed name, versions, date, and geometry
+remain stable. Native selection still resolves foreground colors synchronously
+to preserve white text on the first highlighted frame.
+
+During keyboard Up/Down navigation, the detail header updates immediately and
+the notes request waits for a 60 ms pause. A subsequent selection cancels that
+pending request, so passing an app does not start unnecessary note retrieval or
+web-page rendering. Mouse and programmatic selections request notes immediately.
+The existing 200 ms loading indication and stale-result guards remain in place.
+This is a focused change across six production files, with no layout redesign.
+
+The new settled-selection test failed with the original immediate-request
+behavior, then passed after coalescing was implemented. The refreshed-object
+test also verifies observation of a replacement object with the same identifier.
+The final full suite, `build/Latest-Tests-20260930-122557.xcresult`, contains 259
+tests: 253 passed, six skipped, zero failures. Painted active/inactive selection,
+long versions, search/keyboard focus, menus, and web interaction checks passed.
+The test bundle records one priority-inversion runtime warning; the
+Release migration benchmark's warning gate passed. Formatting and structure
+checks passed.
+
+Final Release benchmark: `build/migration-benchmark-keyboard_settled_notes.txt`.
+The scroll and keyboard p95 work gates are now both **8.333 ms**, replacing the
+earlier 28 ms scroll and 16 ms keyboard thresholds.
+
+| Work metric | Final result |
+| --- | ---: |
+| Keyboard selection and sidebar rendering, p95 | 7.979 ms |
+| Keyboard selection and sidebar rendering, maximum | 9.107 ms |
+| Continuous scroll step, p95 | 3.034 ms |
+| Selection to detail, p95 | 3.973 ms |
+| Repeated selection memory growth | 13.56 MiB |
+
+All 120 native keyboard selection steps were preserved, and all absolute work,
+memory, and warning gates passed. These are main-thread workload timings, not
+presented FPS. The p95 work target passes, but the keyboard maximum still
+exceeds an 8.333 ms frame budget.
+
+Actual window captures used ScreenCaptureKit alongside Instruments' SwiftUI
+template. Both Release builds received the same paced 112-key workload:
+28 Down, 28 Up, repeated twice. Native tool calls can take longer than the
+requested 16.667 ms spacing; actual input rates are reported below. The window
+was 768×516 points in light appearance. The final app catalog changed after the
+interruption (Chrome updated and SamsungMagician appeared); this is a live-app
+comparison, not a frozen-fixture percentage gate.
+
+| Visible timing during input | Release before | Release final |
+| --- | ---: | ---: |
+| Actual inputs per second | 28.33 | 32.94 |
+| Visible sidebar changes per second | 17.87 | 36.37 |
+| Median gap between visible changes | 50.35 ms | 17.39 ms |
+| p95 gap between visible changes | 96.05 ms | 66.81 ms |
+| Maximum gap between visible changes | 183.69 ms | 100.28 ms |
+| App-attributed hitches during input | 69 | 22 |
+
+A final capture without Instruments measured 39.61 visible changes per second
+at 31.13 inputs per second, a 16.84 ms median gap, a 50.41 ms p95 gap, and a
+150.07 ms maximum. Visible changes include intermediate native scrolling frames,
+so their count can exceed the input count. Unchanged capture samples are not
+counted as app frames. Sampling itself remained near 16.67 ms throughout.
+
+The optimization improves visible pacing and reduces measured hitches. It does
+**not** establish a locked 60 FPS or certify 120 FPS; longer gaps remain and this
+display can present only 60 frames per second. The remaining profile includes
+SwiftUI layout/Core Animation transaction work in addition to synchronous row
+color updates. Evidence and reproduction commands are recorded in
+`build/keyboard-optimization-20260930.md` and its JSON report. The optimized
+Release checkout build was launched; no installed-app replacement was made.

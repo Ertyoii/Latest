@@ -313,55 +313,116 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
   }
 
   @MainActor
-  func testSidebarShowsLongInstalledVersionWithoutTruncationAtIdealWidth() throws {
+  func testSidebarShowsLongInstalledVersionWithoutTruncationAtIdealWidth() async throws {
     let app = makeApp(name: "Chrome", version: "151.0.7922.109")
     let expectedVersion = try XCTUnwrap(app.localizedVersionInformation?.current)
-    let row = AppKitUpdateRowContentView(
-      frame: NSRect(
-        x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: VisualMetrics.appRowHeight))
-    row.update(app: app, isSelected: false, filterQuery: nil, dateFormatter: DateFormatter())
-    row.layoutSubtreeIfNeeded()
-    let field = try XCTUnwrap(
-      row.descendantTextFields().first { $0.stringValue == expectedVersion })
-    XCTAssertFalse(field.isHidden)
-    XCTAssertGreaterThanOrEqual(field.bounds.width + 0.5, field.intrinsicContentSize.width)
+    let image = try await captureSidebarRow(app: app, referenceVersion: expectedVersion)
+    let bitmap = NSBitmapImageRep(cgImage: image)
+    var missingGlyphPixels = 0
+    var glyphPixels = 0
+    let backing = try XCTUnwrap(bitmap.colorAt(x: 600, y: 0)?.usingColorSpace(.deviceRGB))
+      .redComponent
+    for y in 62..<90 {
+      for x in 116..<540 {
+        let reference = try XCTUnwrap(bitmap.colorAt(x: x + 616, y: y)?.usingColorSpace(.deviceRGB))
+        guard backing - reference.redComponent > 0.08 else { continue }
+        glyphPixels += 1
+        // Text and NSTextField may snap coverage to adjacent pixels. Require
+        // every native glyph pixel to have matching ink within one pixel.
+        var foundInk = false
+        for dy in -1...1 {
+          for dx in -1...1 {
+            let actual = try XCTUnwrap(
+              bitmap.colorAt(x: x + dx, y: y + dy)?.usingColorSpace(.deviceRGB))
+            if backing - actual.redComponent > 0.08 { foundInk = true }
+          }
+        }
+        if !foundInk { missingGlyphPixels += 1 }
+      }
+    }
+    XCTAssertGreaterThan(
+      glyphPixels, 100, "Native text reference must contain the complete version")
+    XCTAssertEqual(
+      missingGlyphPixels, 0,
+      "The installed version must paint every glyph in the complete native reference")
   }
 
   @MainActor
-  func testAppKitSidebarTextColorsFollowSelectionEmphasis() throws {
-    let row = AppKitUpdateRowContentView(
-      frame: NSRect(
-        x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: VisualMetrics.appRowHeight)
-    )
-    let dateFormatter = DateFormatter()
-    dateFormatter.dateStyle = .short
-    dateFormatter.timeStyle = .none
+  func testSidebarTextColorsFollowSelectionEmphasis() async throws {
     let app = makeApp(name: "Discord", version: "0.0.398", remoteVersion: "0.0.399")
-
-    row.update(app: app, isSelected: true, filterQuery: nil, dateFormatter: dateFormatter)
-    row.backgroundStyle = .emphasized
-
-    let fields = row.descendantTextFields()
-    let nameField = try XCTUnwrap(fields.first(where: { $0.stringValue == "Discord" }))
-    let activeTitleColor = try XCTUnwrap(
-      nameField.attributedStringValue.attribute(.foregroundColor, at: 0, effectiveRange: nil)
-        as? NSColor
-    )
-    XCTAssertEqual(activeTitleColor, .alternateSelectedControlTextColor)
-    for field in fields where field !== nameField {
-      XCTAssertEqual(field.textColor, .alternateSelectedControlTextColor)
+    for emphasized in [true, false] {
+      let bitmap = NSBitmapImageRep(
+        cgImage: try await captureSidebarRow(app: app, emphasized: emphasized))
+      var expectedGlyphPixels = 0
+      // Blue active selection and gray inactive backing independently
+      // distinguish white and dark title glyphs from their backgrounds.
+      for y in 18..<46 {
+        for x in 116..<220 {
+          let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
+          if emphasized ? color.redComponent > 0.85 : color.redComponent < 0.15 {
+            expectedGlyphPixels += 1
+          }
+        }
+      }
+      XCTAssertGreaterThan(
+        expectedGlyphPixels, 50, "Incorrect title color with emphasis=\(emphasized)")
     }
+  }
 
-    row.backgroundStyle = .normal
-
-    let inactiveTitleColor = try XCTUnwrap(
-      nameField.attributedStringValue.attribute(.foregroundColor, at: 0, effectiveRange: nil)
-        as? NSColor
-    )
-    XCTAssertEqual(inactiveTitleColor, .labelColor)
-    for field in fields where field !== nameField {
-      XCTAssertEqual(field.textColor, .secondaryLabelColor)
+  @MainActor
+  private func captureSidebarRow(
+    app: Latest.App, emphasized: Bool = false, referenceVersion: String? = nil
+  ) async throws -> CGImage {
+    let row = UpdateRowHostingCell(
+      frame: NSRect(x: 0, y: 0, width: 308, height: 60))
+    let nativeRow = emphasized ? NSTableRowView(frame: row.bounds) : nil
+    let backing = NSView(
+      frame: NSRect(x: 0, y: 0, width: referenceVersion == nil ? 308 : 616, height: 60))
+    backing.wantsLayer = true
+    backing.layer?.backgroundColor = NSColor(calibratedWhite: 0.3, alpha: 1).cgColor
+    if let nativeRow {
+      nativeRow.backgroundColor = .clear
+      nativeRow.addSubview(row)
+      backing.addSubview(nativeRow)
+    } else {
+      backing.addSubview(row)
     }
+    if let referenceVersion {
+      let reference = NSTextField(labelWithString: referenceVersion)
+      reference.font = NSFont.systemFont(ofSize: 11)
+      reference.textColor = .secondaryLabelColor
+      // A standalone NSTextField includes 2pt of leading cell padding.
+      reference.frame = NSRect(x: 364, y: 15, width: 216, height: 14)
+      backing.addSubview(reference)
+    }
+    let window = NSWindow(
+      contentRect: backing.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.appearance = NSAppearance(named: .aqua)
+    window.contentView = backing
+    window.orderFront(nil)
+    defer { window.close() }
+    let formatter = DateFormatter()
+    formatter.dateStyle = .short
+    row.update(app: app, isSelected: nativeRow == nil, filterQuery: nil, dateFormatter: formatter)
+    // Native selection precedes the model's deferred row-content update.
+    // Its first painted frame must already use the selected text color.
+    nativeRow?.isSelected = true
+    nativeRow?.isEmphasized = emphasized
+    row.backgroundStyle = emphasized ? .emphasized : .normal
+    window.layoutIfNeeded()
+    row.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(100))
+    let shareable = try await SCShareableContent.currentProcess
+    let capturedWindow = try XCTUnwrap(
+      shareable.windows.first { $0.windowID == window.windowNumber })
+    let configuration = SCStreamConfiguration()
+    configuration.width = Int(backing.frame.width * 2)
+    configuration.height = 120
+    configuration.showsCursor = false
+    return try await SCScreenshotManager.captureImage(
+      contentFilter: SCContentFilter(desktopIndependentWindow: capturedWindow),
+      configuration: configuration)
   }
 
   private func makeApp(
@@ -414,17 +475,4 @@ extension NSView {
     }
   }
 
-  fileprivate func descendantTextFields() -> [NSTextField] {
-    subviews.flatMap { view -> [NSTextField] in
-      let current = (view as? NSTextField).map { [$0] } ?? []
-      return current + view.descendantTextFields()
-    }
-  }
-
-  fileprivate func descendantImageViews() -> [NSImageView] {
-    subviews.flatMap { view -> [NSImageView] in
-      let current = (view as? NSImageView).map { [$0] } ?? []
-      return current + view.descendantImageViews()
-    }
-  }
 }

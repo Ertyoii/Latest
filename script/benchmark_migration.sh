@@ -49,10 +49,13 @@ awk '
 BEGIN {
 	budgets["cold_launch_to_populated_sidebar_fixture"] = 65
 	statistics["cold_launch_to_populated_sidebar_fixture"] = "p50_ms"
-	budgets["sidebar_scroll_frame_main_thread"] = 28
+	# CPU work targets a 120-Hz frame budget; this does not measure presented FPS.
+	budgets["sidebar_scroll_frame_main_thread"] = 8.333
 	statistics["sidebar_scroll_frame_main_thread"] = "p95_ms"
 	budgets["sidebar_long_jump_main_thread"] = 50
 	statistics["sidebar_long_jump_main_thread"] = "p95_ms"
+	budgets["sidebar_keyboard_selection_frame_main_thread"] = 8.333
+	statistics["sidebar_keyboard_selection_frame_main_thread"] = "p95_ms"
 	budgets["selection_to_detail"] = 8
 	statistics["selection_to_detail"] = "p95_ms"
 	# Full provider-to-render paths: reserve a frame for a memory hit, and

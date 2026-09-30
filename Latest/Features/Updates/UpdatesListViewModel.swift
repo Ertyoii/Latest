@@ -10,6 +10,30 @@
 
 import Combine
 import Foundation
+import Observation
+
+/// Selection changes should invalidate only views that read the selection.
+@MainActor
+@Observable
+private final class UpdatesSelection {
+  // App equality compares identifiers. A refreshed object with that same
+  // identifier must still invalidate its notes and metadata.
+  private struct Value {
+    let app: App?
+    var isKeyboardSelection = false
+  }
+  private var value = Value(app: nil)
+  var app: App? {
+    get { value.app }
+    set { set(newValue, isKeyboardSelection: false) }
+  }
+  var isKeyboardSelection: Bool { value.isKeyboardSelection }
+
+  func set(_ app: App?, isKeyboardSelection: Bool) {
+    guard value.app !== app || value.isKeyboardSelection != isKeyboardSelection else { return }
+    value = Value(app: app, isKeyboardSelection: isKeyboardSelection)
+  }
+}
 
 @MainActor
 final class UpdatesListViewModel: ObservableObject {
@@ -17,7 +41,12 @@ final class UpdatesListViewModel: ObservableObject {
 
   @Published private(set) var snapshot: AppListSnapshot
   private(set) var snapshotRevision = 0
-  @Published var selectedApp: App?
+  private let selection = UpdatesSelection()
+  var selectedApp: App? {
+    get { selection.app }
+    set { selection.app = newValue }
+  }
+  var isKeyboardSelection: Bool { selection.isKeyboardSelection }
   @Published var searchQuery = ""
   @Published private(set) var statusText = ""
 
@@ -93,13 +122,13 @@ final class UpdatesListViewModel: ObservableObject {
     maintainSelectionAfterSnapshotChange()
   }
 
-  func select(_ app: App?) {
+  func select(_ app: App?, isKeyboardSelection: Bool = false) {
     guard app?.identifier != selectedApp?.identifier else { return }
     selectionWasUserInitiated = true
     if let app, app !== selectedApp {
       MigrationTelemetry.shared.selectionStarted(appName: app.name)
     }
-    selectedApp = app
+    selection.set(app, isKeyboardSelection: isKeyboardSelection)
   }
 
   func select(identifier: App.Bundle.Identifier?) {

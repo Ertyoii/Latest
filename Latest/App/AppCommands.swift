@@ -134,25 +134,7 @@ struct LatestCommands: Commands {
       .keyboardShortcut("u", modifiers: [.command, .shift])
       .disabled(!updatesViewModel.hasUpdatesAvailable)
 
-      Button(updateSelectedTitle) {
-        appCommands.updateSelectedApp()
-      }
-      .keyboardShortcut("u")
-      .disabled(!appCommands.canUpdateSelectedApp)
-
-      Divider()
-
-      Button("Open") {
-        appCommands.openSelectedApp()
-      }
-      .keyboardShortcut("o", modifiers: [.command, .shift])
-      .disabled(!appCommands.canOpenSelectedApp)
-
-      Button("Show in Finder") {
-        appCommands.revealSelectedAppInFinder()
-      }
-      .keyboardShortcut("r", modifiers: [.command, .shift])
-      .disabled(!appCommands.canOpenSelectedApp)
+      SelectedAppCommandButtons(appCommands: appCommands)
     }
 
     CommandGroup(after: .textEditing) {
@@ -190,6 +172,47 @@ struct LatestCommands: Commands {
     }
   }
 
+  private var showInstalledApps: Binding<Bool> {
+    Binding(
+      get: { appCommands.showInstalledUpdates },
+      set: { appCommands.showInstalledUpdates = $0 }
+    )
+  }
+
+  private var showIgnoredApps: Binding<Bool> {
+    Binding(
+      get: { appCommands.showIgnoredUpdates },
+      set: { appCommands.showIgnoredUpdates = $0 }
+    )
+  }
+}
+
+/// Keep per-selection invalidation out of the other menus and commands.
+private struct SelectedAppCommandButtons: View {
+  let appCommands: AppCommands
+
+  var body: some View {
+    Button(updateSelectedTitle) {
+      appCommands.updateSelectedApp()
+    }
+    .keyboardShortcut("u")
+    .disabled(!appCommands.canUpdateSelectedApp)
+
+    Divider()
+
+    Button("Open") {
+      appCommands.openSelectedApp()
+    }
+    .keyboardShortcut("o", modifiers: [.command, .shift])
+    .disabled(!appCommands.canOpenSelectedApp)
+
+    Button("Show in Finder") {
+      appCommands.revealSelectedAppInFinder()
+    }
+    .keyboardShortcut("r", modifiers: [.command, .shift])
+    .disabled(!appCommands.canOpenSelectedApp)
+  }
+
   private var updateSelectedTitle: String {
     guard let app = appCommands.selectedApp else {
       return NSLocalizedString("UpdateAction", comment: "Action to update a given app.")
@@ -206,17 +229,4 @@ struct LatestCommands: Commands {
     return NSLocalizedString("UpdateAction", comment: "Action to update a given app.")
   }
 
-  private var showInstalledApps: Binding<Bool> {
-    Binding(
-      get: { appCommands.showInstalledUpdates },
-      set: { appCommands.showInstalledUpdates = $0 }
-    )
-  }
-
-  private var showIgnoredApps: Binding<Bool> {
-    Binding(
-      get: { appCommands.showIgnoredUpdates },
-      set: { appCommands.showIgnoredUpdates = $0 }
-    )
-  }
 }

@@ -113,6 +113,38 @@ final class MigrationPerformanceTest: XCTestCase {
       return Int(sidebarScrollView.contentView.bounds.origin.y)
     }
 
+    let keyboardTable = try XCTUnwrap(scrollHost.descendant(of: NSTableView.self))
+    let firstAppRow = try XCTUnwrap(
+      scrollSnapshot.entries.indices.first {
+        if case .app = scrollSnapshot.entries[$0] { return true }
+        return false
+      })
+    keyboardTable.selectRowIndexes(IndexSet(integer: firstAppRow), byExtendingSelection: false)
+    keyboardTable.scrollRowToVisible(firstAppRow)
+    scrollWindow.makeFirstResponder(keyboardTable)
+    RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+    scrollHost.layoutSubtreeIfNeeded()
+    scrollHost.displayIfNeeded()
+    let down = try XCTUnwrap(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: [.function, .numericPad],
+        timestamp: 0, windowNumber: scrollWindow.windowNumber, context: nil,
+        characters: "\u{F701}", charactersIgnoringModifiers: "\u{F701}",
+        isARepeat: true, keyCode: 125))
+    benchmarkSamples("sidebar_keyboard_selection_frame_main_thread", values: Array(0..<120)) { _ in
+      scrollWindow.firstResponder?.keyDown(with: down)
+      // Include the deferred SwiftUI/model work that direct clip scrolling omits.
+      RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.001))
+      scrollHost.layoutSubtreeIfNeeded()
+      scrollHost.displayIfNeeded()
+      return keyboardTable.selectedRow
+    }
+    XCTAssertEqual(keyboardTable.selectedRow, firstAppRow + 120)
+    guard case .app(let keyboardSelectedApp) = scrollSnapshot.entries[firstAppRow + 120] else {
+      return XCTFail("Keyboard benchmark must navigate app rows")
+    }
+    XCTAssertEqual(scrollViewModel.selectedApp?.identifier, keyboardSelectedApp.identifier)
+
     let detailApps = Array(populatedApps.prefix(80))
     let detailViewModel = UpdatesListViewModel(
       snapshot: AppListSnapshot(withApps: detailApps, filterQuery: nil, settings: settings),

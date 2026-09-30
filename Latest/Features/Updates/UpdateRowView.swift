@@ -9,255 +9,170 @@
 //  Licensed under GPL-3.0; see LICENSE.md.
 
 import AppKit
+import Observation
+import SwiftUI
 
+/// Presentation of the native table's selection, without rebuilding row content.
 @MainActor
-final class AppKitUpdateRowContentView: NSTableCellView {
-  enum Layout {
-    // Source-list cells already have a leading inset. Avoid adding it twice;
-    // leave matching visual breathing room after the trailing date/status.
-    static let leftInset: CGFloat = 0
-    static let rightInset: CGFloat = 36
-    static let iconSize: CGFloat = 50
-    static let iconTextSpacing: CGFloat = 8
-    static let trailingWidth: CGFloat = 59
-    static let statusSize: CGFloat = 16
-
+@Observable
+final class UpdateRowSelection {
+  enum Style {
+    case unselected, inactive, active
   }
+  var style = Style.unselected
+  var isSelected: Bool { style != .unselected }
+  var usesActiveSelectionColors: Bool { style == .active }
+}
 
-  private var updating: any AppUpdating = AppUpdateService.shared
+struct UpdateRowView: View {
+  let app: App
+  let selection: UpdateRowSelection
+  let showsSupportStatus: Bool
+  let updating: any AppUpdating
+  private let icon: NSImage
+  private let name: AttributedString
+  private let versions: App.DisplayableVersionInformation?
+  private let formattedDate: AttributedString
+  @Environment(\.controlActiveState) private var controlActiveState
+  @State private var observedUpdate: ObservedUpdate?
 
-  private let iconView = NSImageView()
-  private let nameField = NSTextField(labelWithString: "")
-  private let currentVersionField = NSTextField(labelWithString: "")
-  private let newVersionField = NSTextField(labelWithString: "")
-  private let dateField = NSTextField(labelWithString: "")
-  private let updateButton = UpdateButton(frame: .zero)
-  private let supportStateImageView = NSImageView()
-  private let separator = NSBox()
-  private var representedIdentifier: App.Bundle.Identifier?
-  private var observedIdentifier: App.Bundle.Identifier?
-  private var updateStateTask: Task<Void, Never>?
-  private var displaysAsSelected = false
-
-  override var backgroundStyle: NSView.BackgroundStyle {
-    didSet {
-      updateTextColors()
-    }
-  }
-
-  override init(frame frameRect: NSRect) {
-    super.init(frame: frameRect)
-    setupView()
-  }
-
-  required init?(coder: NSCoder) {
-    super.init(coder: coder)
-    setupView()
-  }
-
-  deinit {
-    updateStateTask?.cancel()
-  }
-
-  func update(
-    app: App,
-    isSelected: Bool,
-    filterQuery: String?,
-    dateFormatter: DateFormatter,
-    showsSupportStatusOverride: Bool? = nil,
-    updating: any AppUpdating = AppUpdateService.shared
+  init(
+    app: App, selection: UpdateRowSelection,
+    filterQuery: String?, date: String, showsSupportStatus: Bool, updating: any AppUpdating
   ) {
-    if self.updating !== updating {
-      updateStateTask?.cancel()
-      observedIdentifier = nil
-    }
+    self.app = app
+    self.selection = selection
+    self.showsSupportStatus = showsSupportStatus
     self.updating = updating
-    updateButton.updating = updating
-    updateTitle(for: app, filterQuery: filterQuery)
+    icon = IconCache.shared.iconImmediately(for: app)
+    var title = AttributedString(app.highlightedName(for: filterQuery))
+    // The native row applies selection color to the entire attributed title.
+    // Let the SwiftUI foreground style do the same for filtered names.
+    title.foregroundColor = nil
+    name = title
+    versions = app.localizedVersionInformation
+    formattedDate = AttributedString(
+      NSAttributedString(
+        string: date,
+        attributes: [.font: NSFont.preferredFont(forTextStyle: .callout, options: [:])]
+      ))
+  }
 
-    if let versionInformation = app.localizedVersionInformation {
-      currentVersionField.stringValue = versionInformation.current
-      newVersionField.stringValue = versionInformation.new ?? ""
-      newVersionField.isHidden = !app.updateAvailable
-    } else {
-      currentVersionField.stringValue = ""
-      newVersionField.stringValue = ""
-      newVersionField.isHidden = true
+  private var observationKey: ObservationKey {
+    ObservationKey(app: app.identifier, service: ObjectIdentifier(updating))
+  }
+
+  private var isUpdating: Bool {
+    if let observedUpdate, observedUpdate.key == observationKey { return observedUpdate.isActive }
+    return Self.isActive(updating.state(for: app.identifier))
+  }
+
+  private static func isActive(_ state: UpdateProgressState) -> Bool {
+    switch state {
+    case .none, .error: false
+    default: true
     }
-    dateField.stringValue = dateFormatter.string(from: app.updateDate)
-    updateButton.app = app
-    observeUpdateState(for: app)
-    updateSupportState(for: app, showsSupportStatusOverride: showsSupportStatusOverride)
-    updateSelection(isSelected)
-    updateIcon(for: app)
-    setAccessibilityLabel(
-      SidebarInteractionPolicy.accessibilityLabel(for: app, dateFormatter: dateFormatter))
-    setAccessibilitySelected(isSelected)
   }
 
-  private func setupView() {
-    setAccessibilityElement(true)
-    setAccessibilityRole(.group)
+  var body: some View {
+    HStack(spacing: 8) {
+      Image(nsImage: icon)
+        .resizable()
+        .scaledToFit()
+        .frame(width: 50, height: 50)
+        .opacity(controlActiveState == .inactive ? 0.5 : 1)
+        .accessibilityHidden(true)
 
-    iconView.imageScaling = .scaleProportionallyUpOrDown
-    iconView.translatesAutoresizingMaskIntoConstraints = false
-    addSubview(iconView)
-    self.imageView = iconView
-
-    nameField.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-    nameField.textColor = .labelColor
-    nameField.lineBreakMode = .byTruncatingTail
-    nameField.maximumNumberOfLines = 1
-    nameField.allowsDefaultTighteningForTruncation = true
-
-    currentVersionField.font = NSFont.systemFont(ofSize: 11)
-    currentVersionField.textColor = .secondaryLabelColor
-    currentVersionField.lineBreakMode = .byTruncatingTail
-    currentVersionField.maximumNumberOfLines = 1
-
-    newVersionField.font = NSFont.systemFont(ofSize: 11)
-    newVersionField.textColor = .secondaryLabelColor
-    newVersionField.lineBreakMode = .byTruncatingTail
-    newVersionField.maximumNumberOfLines = 1
-
-    let textStack = NSStackView(views: [nameField, currentVersionField, newVersionField])
-    textStack.orientation = .vertical
-    textStack.alignment = .leading
-    textStack.spacing = 0
-    textStack.detachesHiddenViews = true
-    textStack.setContentHuggingPriority(.required, for: .vertical)
-    textStack.setContentCompressionResistancePriority(.required, for: .vertical)
-    textStack.translatesAutoresizingMaskIntoConstraints = false
-    addSubview(textStack)
-
-    dateField.font = NSFont.preferredFont(forTextStyle: .callout, options: [:])
-    dateField.textColor = .secondaryLabelColor
-    dateField.lineBreakMode = .byClipping
-    dateField.alignment = .right
-    dateField.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-    dateField.translatesAutoresizingMaskIntoConstraints = false
-    addSubview(dateField)
-
-    updateButton.cell = UpdateButtonCell()
-    updateButton.target = updateButton
-    updateButton.action = #selector(UpdateButton.performAction(_:))
-    updateButton.isBordered = false
-    updateButton.contentTintColor = UpdateButton.Style.tintColor
-    updateButton.showActionButton = false
-    updateButton.translatesAutoresizingMaskIntoConstraints = false
-    addSubview(updateButton)
-
-    supportStateImageView.imageScaling = .scaleProportionallyDown
-    supportStateImageView.translatesAutoresizingMaskIntoConstraints = false
-    addSubview(supportStateImageView)
-
-    separator.boxType = .separator
-    separator.translatesAutoresizingMaskIntoConstraints = false
-    addSubview(separator)
-
-    NSLayoutConstraint.activate([
-      iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Layout.leftInset),
-      iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
-      iconView.widthAnchor.constraint(equalToConstant: Layout.iconSize),
-      iconView.heightAnchor.constraint(equalToConstant: Layout.iconSize),
-
-      textStack.leadingAnchor.constraint(
-        equalTo: iconView.trailingAnchor, constant: Layout.iconTextSpacing),
-      textStack.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
-      textStack.trailingAnchor.constraint(lessThanOrEqualTo: dateField.trailingAnchor),
-      nameField.trailingAnchor.constraint(lessThanOrEqualTo: dateField.leadingAnchor),
-
-      dateField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.rightInset),
-      dateField.topAnchor.constraint(equalTo: topAnchor, constant: 4),
-      dateField.widthAnchor.constraint(equalToConstant: Layout.trailingWidth),
-
-      updateButton.centerXAnchor.constraint(equalTo: supportStateImageView.centerXAnchor),
-      updateButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-      updateButton.widthAnchor.constraint(equalToConstant: 24),
-      updateButton.heightAnchor.constraint(equalToConstant: 24),
-
-      supportStateImageView.trailingAnchor.constraint(equalTo: dateField.trailingAnchor),
-      supportStateImageView.topAnchor.constraint(equalTo: topAnchor, constant: 19),
-      supportStateImageView.widthAnchor.constraint(equalToConstant: Layout.statusSize),
-      supportStateImageView.heightAnchor.constraint(equalToConstant: Layout.statusSize),
-
-      separator.leadingAnchor.constraint(equalTo: textStack.leadingAnchor),
-      separator.trailingAnchor.constraint(equalTo: dateField.trailingAnchor),
-      separator.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0.5),
-    ])
-  }
-
-  private func updateTitle(for app: App, filterQuery: String?) {
-    let title = NSMutableAttributedString(attributedString: app.highlightedName(for: filterQuery))
-    title.addAttribute(
-      .font, value: NSFont.systemFont(ofSize: 13, weight: .semibold),
-      range: NSRange(location: 0, length: title.length))
-    nameField.attributedStringValue = title
-  }
-
-  private func updateIcon(for app: App) {
-    guard representedIdentifier != app.identifier else { return }
-    representedIdentifier = app.identifier
-    iconView.image = IconCache.shared.iconImmediately(for: app)
-  }
-
-  private var showsSupportStatusOverride: Bool?
-
-  private func updateSupportState(for app: App, showsSupportStatusOverride: Bool? = nil) {
-    if let showsSupportStatusOverride {
-      self.showsSupportStatusOverride = showsSupportStatusOverride
-    }
-    let showSupportState =
-      self.showsSupportStatusOverride
-      ?? true
-    let isUpdating =
-      switch updating.state(for: app.identifier) {
-      case .none, .error: false
-      default: true
+      VStack(alignment: .leading, spacing: 0) {
+        Text(name)
+          .font(.system(size: 13, weight: .semibold))
+          .modifier(UpdateRowTextStyle(selection: selection, secondary: false))
+          .frame(height: 16)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.trailing, 59)
+        Text(versions?.current ?? "")
+          .font(.system(size: 11))
+          .modifier(UpdateRowTextStyle(selection: selection, secondary: true))
+          .frame(height: 14)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        if app.updateAvailable, let versions {
+          Text(versions.new ?? "")
+            .font(.system(size: 11))
+            .modifier(UpdateRowTextStyle(selection: selection, secondary: true))
+            .frame(height: 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
       }
-
-    supportStateImageView.isHidden = !showSupportState || isUpdating
-    if showSupportState {
-      supportStateImageView.image = app.source.supportState.statusImage
-      supportStateImageView.toolTip = app.source.supportState.label
+      .lineLimit(1)
+      .truncationMode(.tail)
     }
-  }
-
-  private func updateSelection(_ isSelected: Bool) {
-    displaysAsSelected = isSelected
-    separator.isHidden = isSelected
-    updateTextColors()
-  }
-
-  private func updateTextColors() {
-    // AppKit changes a selected row from emphasized to normal when focus leaves the table.
-    let usesActiveSelectionColors = displaysAsSelected && backgroundStyle == .emphasized
-    let titleColor: NSColor =
-      usesActiveSelectionColors ? .alternateSelectedControlTextColor : .labelColor
-    let textColor: NSColor =
-      usesActiveSelectionColors ? .alternateSelectedControlTextColor : .secondaryLabelColor
-    let title = NSMutableAttributedString(attributedString: nameField.attributedStringValue)
-    if title.length > 0 {
-      title.addAttribute(
-        .foregroundColor, value: titleColor, range: NSRange(location: 0, length: title.length))
-      nameField.attributedStringValue = title
+    .padding(.trailing, 36)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .overlay(alignment: .topTrailing) {
+      Text(formattedDate)
+        .modifier(UpdateRowTextStyle(selection: selection, secondary: true))
+        .lineLimit(1)
+        .frame(width: 59, height: 16, alignment: .trailing)
+        .padding(.top, 3.5)
+        .padding(.trailing, 35.75)
     }
-    currentVersionField.textColor = textColor
-    newVersionField.textColor = textColor
-    dateField.textColor = textColor
-  }
-
-  private func observeUpdateState(for app: App) {
-    guard observedIdentifier != app.identifier else { return }
-    updateStateTask?.cancel()
-    observedIdentifier = app.identifier
-    updateStateTask = Task { [weak self, weak app, updating] in
-      guard let app else { return }
-      for await _ in updating.states(for: app.identifier) {
-        guard !Task.isCancelled, let self else { break }
-        self.updateSupportState(for: app)
+    .overlay(alignment: .topTrailing) {
+      Image(nsImage: app.source.supportState.statusImage)
+        .frame(width: 16, height: 16)
+        .opacity(showsSupportStatus && !isUpdating ? 1 : 0)
+        .help(app.source.supportState.label)
+        .accessibilityLabel(app.source.supportState.label)
+        .accessibilityHidden(!showsSupportStatus || isUpdating)
+        .padding(.top, 19)
+        .padding(.trailing, 36)
+    }
+    .overlay(alignment: .bottom) {
+      UpdateRowSeparator(selection: selection)
+    }
+    .task(id: observationKey) {
+      let key = observationKey
+      for await state in updating.states(for: app.identifier) {
+        guard !Task.isCancelled else { return }
+        let value = ObservedUpdate(key: key, isActive: Self.isActive(state))
+        if observedUpdate != value { observedUpdate = value }
       }
     }
   }
 
+  private struct ObservationKey: Equatable {
+    let app: App.Bundle.Identifier
+    let service: ObjectIdentifier
+  }
+
+  private struct ObservedUpdate: Equatable {
+    let key: ObservationKey
+    let isActive: Bool
+  }
+}
+
+/// Color changes leave the text's content and measured layout untouched.
+private struct UpdateRowTextStyle: ViewModifier {
+  let selection: UpdateRowSelection
+  let secondary: Bool
+
+  func body(content: Content) -> some View {
+    content.foregroundStyle(
+      Color(
+        nsColor: selection.usesActiveSelectionColors
+          ? .alternateSelectedControlTextColor : (secondary ? .secondaryLabelColor : .labelColor)))
+  }
+}
+
+private struct UpdateRowSeparator: View {
+  let selection: UpdateRowSelection
+
+  var body: some View {
+    Rectangle()
+      .fill(Color(nsColor: .separatorColor))
+      .frame(height: 1)
+      .padding(.leading, 58)
+      .padding(.trailing, 36)
+      .opacity(selection.isSelected ? 0 : 1)
+      .accessibilityHidden(true)
+  }
 }

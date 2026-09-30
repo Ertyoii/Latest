@@ -13,8 +13,23 @@ import SwiftUI
 
 /// Shipping sidebar renderer. NSTableView owns row geometry, selection, and
 /// scrolling; SwiftUI owns feature state, search, and surrounding composition.
-struct UpdatesTableBridge: NSViewRepresentable {
+struct UpdatesTableBridge: View {
   @ObservedObject var viewModel: UpdatesListViewModel
+  let showsSupportStatusOverride: Bool?
+
+  var body: some View {
+    UpdatesTableView(
+      viewModel: viewModel,
+      snapshotRevision: viewModel.snapshotRevision,
+      selectedIdentifier: viewModel.selectedApp?.identifier,
+      showsSupportStatusOverride: showsSupportStatusOverride)
+  }
+}
+
+private struct UpdatesTableView: NSViewRepresentable {
+  let viewModel: UpdatesListViewModel
+  let snapshotRevision: Int
+  let selectedIdentifier: App.Bundle.Identifier?
   let showsSupportStatusOverride: Bool?
 
   func makeCoordinator() -> Coordinator {
@@ -75,7 +90,9 @@ struct UpdatesTableBridge: NSViewRepresentable {
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     (scrollView.documentView as? SwiftUIUpdateTableView)?.sizeToViewport()
     context.coordinator.showsSupportStatusOverride = showsSupportStatusOverride
-    context.coordinator.scheduleApply(viewModel: viewModel)
+    context.coordinator.scheduleApply(
+      viewModel: viewModel, snapshotRevision: snapshotRevision,
+      selectedIdentifier: selectedIdentifier)
   }
 
   @MainActor
@@ -89,7 +106,7 @@ struct UpdatesTableBridge: NSViewRepresentable {
     private var selectedIdentifier: App.Bundle.Identifier?
     private var selectedRowIndex: Int?
     private var snapshotRevision: Int?
-    private var pendingUpdate: TableUpdate?
+    private var appliedShowsSupportStatusOverride: Bool?
     private var isUpdateScheduled = false
     private var isSynchronizingSelection = false
     var showsSupportStatusOverride: Bool?
@@ -133,25 +150,27 @@ struct UpdatesTableBridge: NSViewRepresentable {
       apply(TableUpdate(viewModel: viewModel), viewModel: viewModel)
     }
 
-    func scheduleApply(viewModel: UpdatesListViewModel) {
+    func scheduleApply(
+      viewModel: UpdatesListViewModel, snapshotRevision: Int,
+      selectedIdentifier: App.Bundle.Identifier?
+    ) {
       self.viewModel = viewModel
-      let update = TableUpdate(viewModel: viewModel)
-      pendingUpdate = update
-
+      // Native selection already updated these rows during the key event.
+      guard
+        self.snapshotRevision != snapshotRevision
+          || self.selectedIdentifier != selectedIdentifier
+          || appliedShowsSupportStatusOverride != showsSupportStatusOverride
+      else { return }
       guard !isUpdateScheduled else { return }
       isUpdateScheduled = true
 
-      Task { @MainActor [weak self, weak viewModel] in
-        guard let self, let viewModel else { return }
-        self.applyPendingUpdate(viewModel: viewModel)
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        self.isUpdateScheduled = false
+        // Read current selection here: a captured selection can be obsolete
+        // after another key event and move the native table backwards.
+        self.apply(viewModel: self.viewModel)
       }
-    }
-
-    private func applyPendingUpdate(viewModel: UpdatesListViewModel) {
-      isUpdateScheduled = false
-      guard let update = pendingUpdate else { return }
-      pendingUpdate = nil
-      apply(update, viewModel: viewModel)
     }
 
     private func apply(_ update: TableUpdate, viewModel: UpdatesListViewModel) {
@@ -160,6 +179,7 @@ struct UpdatesTableBridge: NSViewRepresentable {
       let previousRevision = snapshotRevision
       let previousSelectedRowIndex = selectedRowIndex
       let needsContentUpdate = previousRevision != update.snapshotRevision
+      let needsSupportUpdate = appliedShowsSupportStatusOverride != showsSupportStatusOverride
       let tableChange =
         needsContentUpdate
         ? TableViewSnapshotDiff(from: previousEntries, to: update.snapshot.entries).change : nil
@@ -168,19 +188,21 @@ struct UpdatesTableBridge: NSViewRepresentable {
       selectedIdentifier = update.selectedIdentifier
       selectedRowIndex = update.selectedRowIndex
       snapshotRevision = update.snapshotRevision
+      appliedShowsSupportStatusOverride = showsSupportStatusOverride
       menuController.update(viewModel: viewModel, entries: entries)
 
       if previousRevision == nil {
         tableView?.reloadData()
       } else if needsContentUpdate {
         apply(tableChange)
-      } else if previousSelectedRowIndex != update.selectedRowIndex {
-        refreshRows(at: [previousSelectedRowIndex, update.selectedRowIndex].compactMap { $0 })
-      } else {
+      } else if needsSupportUpdate {
         refreshVisibleRows()
       }
 
       syncSelection()
+      if previousSelectedRowIndex != update.selectedRowIndex {
+        refreshSelection(at: [previousSelectedRowIndex, update.selectedRowIndex].compactMap { $0 })
+      }
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
@@ -229,8 +251,8 @@ struct UpdatesTableBridge: NSViewRepresentable {
       case .app(let app):
         let identifier = NSUserInterfaceItemIdentifier("LatestSwiftUIUpdateCell")
         let view =
-          tableView.makeView(withIdentifier: identifier, owner: self) as? AppKitUpdateRowContentView
-          ?? AppKitUpdateRowContentView()
+          tableView.makeView(withIdentifier: identifier, owner: self) as? UpdateRowHostingCell
+          ?? UpdateRowHostingCell()
         view.identifier = identifier
         view.update(
           app: app,
@@ -251,12 +273,26 @@ struct UpdatesTableBridge: NSViewRepresentable {
     }
 
     func selectRow(at row: Int) {
-      guard row >= 0, row < entries.count else {
-        viewModel.select(nil)
-        return
-      }
-      if case .app(let app) = entries[row] {
-        viewModel.select(app)
+      let app = SidebarInteractionPolicy(entries: entries, updating: viewModel.updating).app(
+        at: row)
+      let previousSelectedRowIndex = selectedRowIndex
+      selectedIdentifier = app?.identifier
+      selectedRowIndex = app == nil ? nil : row
+      refreshSelection(at: [previousSelectedRowIndex, selectedRowIndex].compactMap { $0 })
+      let event = NSApp.currentEvent
+      let isKeyboardSelection = event?.type == .keyDown && [125, 126].contains(event?.keyCode)
+      viewModel.select(app, isKeyboardSelection: isKeyboardSelection)
+    }
+
+    private func refreshSelection(at rows: [Int]) {
+      guard let tableView else { return }
+      for row in Set(rows) {
+        guard row >= 0, row < tableView.numberOfRows else { continue }
+        guard
+          let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false)
+            as? UpdateRowHostingCell
+        else { continue }
+        cell.updateSelection(row == selectedRowIndex)
       }
     }
 
@@ -352,7 +388,7 @@ struct UpdatesTableBridge: NSViewRepresentable {
         guard row >= 0, row < entries.count, case .app(let app) = entries[row] else { continue }
         guard
           let view = tableView.view(atColumn: 0, row: row, makeIfNecessary: false)
-            as? AppKitUpdateRowContentView
+            as? UpdateRowHostingCell
         else { continue }
         view.update(
           app: app,
@@ -409,5 +445,101 @@ struct UpdatesTableBridge: NSViewRepresentable {
       formatter.doesRelativeDateFormatting = true
       return formatter
     }()
+  }
+}
+
+/// NSTableCellView forwards native selection emphasis to SwiftUI row content.
+final class UpdateRowHostingCell: NSTableCellView {
+  private var host: UpdateRowHostingView?
+  private let selection = UpdateRowSelection()
+  private let updateButton = UpdateButton(frame: .zero)
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    updateButton.cell = UpdateButtonCell()
+    updateButton.target = updateButton
+    updateButton.action = #selector(UpdateButton.performAction(_:))
+    updateButton.isBordered = false
+    updateButton.contentTintColor = UpdateButton.Style.tintColor
+    updateButton.showActionButton = false
+    addSubview(updateButton)
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func layout() {
+    super.layout()
+    updateButton.frame = NSRect(x: bounds.maxX - 56, y: bounds.midY - 12, width: 24, height: 24)
+  }
+
+  override var backgroundStyle: NSView.BackgroundStyle {
+    didSet {
+      updateSelectionEmphasis()
+    }
+  }
+
+  func update(
+    app: App,
+    isSelected: Bool,
+    filterQuery: String?,
+    dateFormatter: DateFormatter,
+    showsSupportStatusOverride: Bool? = nil,
+    updating: any AppUpdating = AppUpdateService.shared
+  ) {
+    updateButton.updating = updating
+    updateButton.app = app
+    selection.style =
+      isSelected ? (backgroundStyle == .emphasized ? .active : .inactive) : .unselected
+    let content = UpdateRowView(
+      app: app, selection: selection,
+      filterQuery: filterQuery, date: dateFormatter.string(from: app.updateDate),
+      showsSupportStatus: showsSupportStatusOverride ?? true, updating: updating)
+    if let host {
+      host.rootView = content
+    } else {
+      let host = UpdateRowHostingView(rootView: content)
+      host.sizingOptions = []
+      host.frame = bounds
+      host.autoresizingMask = [.width, .height]
+      addSubview(host, positioned: .below, relativeTo: updateButton)
+      self.host = host
+    }
+    setAccessibilityElement(true)
+    setAccessibilityRole(.group)
+    setAccessibilityLabel(
+      SidebarInteractionPolicy.accessibilityLabel(for: app, dateFormatter: dateFormatter))
+    setAccessibilitySelected(isSelected)
+  }
+
+  private func updateSelectionEmphasis() {
+    let selected =
+      backgroundStyle == .emphasized
+      || ((superview as? NSTableRowView)?.isSelected ?? selection.isSelected)
+    updateSelection(selected)
+  }
+
+  func updateSelection(_ selected: Bool) {
+    guard let host else { return }
+    let emphasized = selected && backgroundStyle == .emphasized
+    let style: UpdateRowSelection.Style =
+      selected ? (emphasized ? .active : .inactive) : .unselected
+    guard selection.style != style else { return }
+    let changesTextColor = selection.usesActiveSelectionColors != emphasized
+    selection.style = style
+    setAccessibilitySelected(selected)
+    // Resolve SwiftUI text colors in the same turn as the native highlight.
+    if changesTextColor { host.layoutSubtreeIfNeeded() }
+  }
+}
+
+/// Passive SwiftUI content handles the click without focusing its native table.
+/// Keep keyboard navigation with the table after clicking a hosted row.
+private final class UpdateRowHostingView: NSHostingView<UpdateRowView> {
+  override func mouseDown(with event: NSEvent) {
+    super.mouseDown(with: event)
+    if let table = enclosingScrollView?.documentView as? NSTableView {
+      window?.makeFirstResponder(table)
+    }
   }
 }

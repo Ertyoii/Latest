@@ -8,6 +8,7 @@
 //  Licensed under GPL-3.0; see LICENSE.md.
 
 import Combine
+import Observation
 import XCTest
 
 @testable import Latest
@@ -72,12 +73,14 @@ final class AppDependencyBoundaryTest: XCTestCase {
     )
     viewModel.select(original)
     let selectionRefreshed = expectation(description: "Selected app refreshed")
-    let observation = viewModel.$selectedApp.sink { app in
-      if app === refreshed { selectionRefreshed.fulfill() }
+    let observedSelection = withObservationTracking {
+      viewModel.selectedApp
+    } onChange: {
+      selectionRefreshed.fulfill()
     }
+    XCTAssertTrue(observedSelection === original)
     viewModel.startObserving()
     defer {
-      observation.cancel()
       viewModel.stopObserving()
     }
     wait(for: [selectionRefreshed], timeout: 2)

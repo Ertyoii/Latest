@@ -34,7 +34,9 @@ struct ReleaseNotesDetailView: View {
       updating: updatesViewModel.updating
     )
     .task(id: selectionKey) {
-      detailViewModel.display(updatesViewModel.selectedApp)
+      detailViewModel.display(
+        updatesViewModel.selectedApp,
+        waitForSelectionToSettle: updatesViewModel.isKeyboardSelection)
     }
     .transaction { transaction in
       transaction.animation = nil
