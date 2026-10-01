@@ -175,7 +175,8 @@ struct ProductionParityDriver {
         "-destination", "platform=macOS", "-derivedDataPath", "build/ProductionCaptureDerivedData",
         "-disableAutomaticPackageResolution", "-onlyUsePackageVersionsFromResolvedFile",
         "CLANG_MODULE_CACHE_PATH=build/ModuleCache", "CODE_SIGNING_ALLOWED=NO",
-        "CODE_SIGNING_REQUIRED=NO", "CODE_SIGN_IDENTITY=", "CLANG_ENABLE_CODE_COVERAGE=NO", "build",
+        "CODE_SIGNING_REQUIRED=NO", "CODE_SIGN_IDENTITY=", "CLANG_ENABLE_CODE_COVERAGE=NO",
+        "ENABLE_CODE_COVERAGE=NO", "build",
       ], at: root, log: log)
     return root.appendingPathComponent(
       "build/ProductionCaptureDerivedData/Build/Products/Debug/Latest Visual Capture.app/Contents/MacOS/Latest Visual Capture"
