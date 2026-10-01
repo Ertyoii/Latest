@@ -8,7 +8,6 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-07-18.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
-import AppKit
 import Foundation
 
 enum ReleaseNotesProvenance: String, Sendable {

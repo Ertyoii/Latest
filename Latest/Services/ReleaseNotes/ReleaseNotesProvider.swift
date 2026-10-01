@@ -8,8 +8,8 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-08-29.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
-import AppKit
 import CryptoKit
+import Foundation
 import OSLog
 
 let releaseNotesLogger = Logger(

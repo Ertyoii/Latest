@@ -128,16 +128,16 @@ private struct SidebarIndicatorGlyph: View, Animatable {
           let maxY = ceil((center.y + radius) * displayScale) / displayScale
           cg.setStrokeColor(Color(nsColor: .tertiaryLabelColor).resolve(in: environment).cgColor)
           cg.addPath(
-            NSBezierPath(ovalIn: CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY))
-              .cgPath)
+            SidebarIndicatorPaths.ring(
+              in: CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            )
+            .cgPath)
           cg.strokePath()
           cg.setFillColor(resolvedTint)
           for offset in [-2.0, 2.0] {
             cg.addPath(
-              NSBezierPath(
-                roundedRect:
-                  CGRect(x: center.x + offset - 1, y: center.y - 4, width: 2, height: 8),
-                xRadius: 1, yRadius: 1
+              SidebarIndicatorPaths.pauseMark(
+                at: CGPoint(x: center.x + offset, y: center.y)
               ).cgPath)
             cg.fillPath()
           }
@@ -145,13 +145,79 @@ private struct SidebarIndicatorGlyph: View, Animatable {
         }
         cg.setLineCap(.round)
         cg.setStrokeColor(resolvedTint)
-        let arc = NSBezierPath()
-        arc.appendArc(
-          withCenter: center, radius: radius, startAngle: angle,
-          endAngle: angle + (fraction.map { $0 * 360 } ?? 270))
+        let arc = SidebarIndicatorPaths.arc(
+          center: center, radii: CGSize(width: radius, height: radius), angle: angle,
+          sweep: fraction.map { $0 * 360 } ?? 270)
         cg.addPath(arc.cgPath)
         cg.strokePath()
       }
     }
+  }
+}
+
+/// SwiftUI paths with the original cubic curves. Building the backing CGPath
+/// keeps double precision; Path's mutating builders round points to Float.
+enum SidebarIndicatorPaths {
+  static func ring(in rect: CGRect) -> Path {
+    arc(
+      center: CGPoint(x: rect.midX, y: rect.midY),
+      radii: CGSize(width: rect.width / 2, height: rect.height / 2), angle: -45, sweep: 360)
+  }
+
+  static func pauseMark(at center: CGPoint) -> Path {
+    let path = CGMutablePath()
+    let x = center.x
+    let y = center.y
+    // The original rounded rectangle uses this five-decimal cubic coefficient.
+    let curve = 0.55228
+    path.move(to: CGPoint(x: x, y: y + 4))
+    path.addCurve(
+      to: CGPoint(x: x - 1, y: y + 3),
+      control1: CGPoint(x: x - curve, y: y + 4),
+      control2: CGPoint(x: x - 1, y: y + 3 + curve))
+    path.addLine(to: CGPoint(x: x - 1, y: y - 3))
+    path.addCurve(
+      to: CGPoint(x: x, y: y - 4),
+      control1: CGPoint(x: x - 1, y: y - 3 - curve),
+      control2: CGPoint(x: x - curve, y: y - 4))
+    path.addLine(to: CGPoint(x: x, y: y - 4))
+    path.addCurve(
+      to: CGPoint(x: x + 1, y: y - 3),
+      control1: CGPoint(x: x + curve, y: y - 4),
+      control2: CGPoint(x: x + 1, y: y - 3 - curve))
+    path.addLine(to: CGPoint(x: x + 1, y: y + 3))
+    path.addCurve(
+      to: CGPoint(x: x, y: y + 4),
+      control1: CGPoint(x: x + 1, y: y + 3 + curve),
+      control2: CGPoint(x: x + curve, y: y + 4))
+    path.closeSubpath()
+    return Path(path)
+  }
+
+  static func arc(center: CGPoint, radii: CGSize, angle: Double, sweep: Double) -> Path {
+    let path = CGMutablePath()
+    var theta = angle * .pi / 180
+    let end = (angle + sweep) * .pi / 180
+    func point(_ angle: Double) -> CGPoint {
+      CGPoint(
+        x: center.x + radii.width * cos(angle), y: center.y + radii.height * sin(angle))
+    }
+    path.move(to: point(theta))
+    while theta < end {
+      let next = min(theta + .pi / 2, end)
+      let tangent = 4 / 3.0 * tan((next - theta) / 4)
+      let startPoint = point(theta)
+      let endPoint = point(next)
+      path.addCurve(
+        to: endPoint,
+        control1: CGPoint(
+          x: startPoint.x - radii.width * sin(theta) * tangent,
+          y: startPoint.y + radii.height * cos(theta) * tangent),
+        control2: CGPoint(
+          x: endPoint.x + radii.width * sin(next) * tangent,
+          y: endPoint.y - radii.height * cos(next) * tangent))
+      theta = next
+    }
+    return Path(path)
   }
 }

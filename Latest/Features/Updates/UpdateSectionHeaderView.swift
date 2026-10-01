@@ -38,43 +38,22 @@ struct UpdateSectionHeaderView: View {
     )
     let sectionText = String(format: format, section.title, count)
 
-    guard let htmlData = sectionText.data(using: .utf8),
-      let text = try? NSAttributedString(
-        data: htmlData,
-        options: [
-          .documentType: NSAttributedString.DocumentType.html,
-          .characterEncoding: String.Encoding.utf8.rawValue,
-        ], documentAttributes: nil)
+    // Localizations mark the count with <u>; keep their ordering and punctuation
+    // while applying SwiftUI attributes within a single text baseline.
+    guard let opening = sectionText.range(of: "<u>"),
+      let closing = sectionText.range(of: "</u>", range: opening.upperBound..<sectionText.endIndex)
     else {
-      return AttributedString(
-        NSAttributedString(
-          string: section.title,
-          attributes: [
-            .foregroundColor: NSColor.secondaryLabelColor,
-            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-          ]))
+      return styled(sectionText, count: false)
     }
+    return styled(String(sectionText[..<opening.lowerBound]), count: false)
+      + styled(String(sectionText[opening.upperBound..<closing.lowerBound]), count: true)
+      + styled(String(sectionText[closing.upperBound...]), count: false)
+  }
 
-    var countRange = NSRange(location: 0, length: 0)
-    text.enumerateAttribute(.underlineStyle, in: NSRange(location: 0, length: text.length)) {
-      value, range, stop in
-      if value != nil {
-        countRange = range
-        stop.pointee = true
-      }
-    }
-
-    let formattedText = NSMutableAttributedString(string: text.string)
-    formattedText.addAttributes(
-      [
-        .foregroundColor: NSColor.secondaryLabelColor,
-        .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-      ], range: NSRange(location: 0, length: formattedText.length))
-    formattedText.setAttributes(
-      [
-        .foregroundColor: NSColor.tertiaryLabelColor,
-        .font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize(for: .small)),
-      ], range: countRange)
-    return AttributedString(formattedText)
+  private static func styled(_ text: String, count: Bool) -> AttributedString {
+    var text = AttributedString(text)
+    text.font = .system(size: count ? 11 : 13, weight: count ? .bold : .medium)
+    text.foregroundColor = Color(nsColor: count ? .tertiaryLabelColor : .secondaryLabelColor)
+    return text
   }
 }

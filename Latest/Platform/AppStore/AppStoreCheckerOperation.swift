@@ -6,7 +6,7 @@
 //  Copyright © 2019 Max Langer. All rights reserved.
 //
 
-import Cocoa
+import AppKit
 import ServiceManagement
 
 private let malformedURLError = NSError(domain: NSURLErrorDomain, code: NSURLErrorUnsupportedURL)

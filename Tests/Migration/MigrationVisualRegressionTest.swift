@@ -31,6 +31,64 @@ func captureWindowBitmap(_ window: NSWindow) async throws -> NSBitmapImageRep {
 }
 
 final class MigrationVisualRegressionTest: XCTestCase {
+  func testSidebarIndicatorPathsMatchOriginalRasterAtBackingScales() throws {
+    // Independently rasterize the shipping Bezier geometry and the replacement
+    // paths. This catches curve/precision changes even between animation frames.
+    func raster(_ path: CGPath, scale: CGFloat, fill: Bool = false) throws -> Data {
+      let pixels = Int(24 * scale)
+      let context = try XCTUnwrap(
+        CGContext(
+          data: nil, width: pixels, height: pixels, bitsPerComponent: 8,
+          bytesPerRow: pixels * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+      context.scaleBy(x: scale, y: scale)
+      let tint = CGColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1)
+      context.setStrokeColor(tint)
+      context.setFillColor(tint)
+      context.setLineWidth(2.5)
+      context.setLineCap(.round)
+      context.addPath(path)
+      if fill { context.fillPath() } else { context.strokePath() }
+      return Data(bytes: try XCTUnwrap(context.data), count: pixels * pixels * 4)
+    }
+
+    let center = CGPoint(x: 12, y: 12)
+    let radius = 24.0 * 0.4
+    for scale: CGFloat in [1, 2, 3] {
+      let minimum = floor((12 - radius) * scale) / scale
+      let maximum = ceil((12 + radius) * scale) / scale
+      let rect = CGRect(
+        x: minimum, y: minimum, width: maximum - minimum, height: maximum - minimum)
+      XCTAssertEqual(
+        try raster(NSBezierPath(ovalIn: rect).cgPath, scale: scale),
+        try raster(SidebarIndicatorPaths.ring(in: rect).cgPath, scale: scale))
+      for offset in [-2.0, 2.0] {
+        let rect = CGRect(x: 12 + offset - 1, y: 8, width: 2, height: 8)
+        XCTAssertEqual(
+          try raster(
+            NSBezierPath(roundedRect: rect, xRadius: 1, yRadius: 1).cgPath,
+            scale: scale, fill: true),
+          try raster(
+            SidebarIndicatorPaths.pauseMark(at: CGPoint(x: 12 + offset, y: 12)).cgPath,
+            scale: scale, fill: true))
+      }
+      for angle in stride(from: -90.0, to: 360, by: 1) {
+        for sweep in [0.01, 0.5, 1, 9.6, 45, 90, 151.2, 180, 270, 359.9, 360] {
+          let reference = NSBezierPath()
+          reference.appendArc(
+            withCenter: center, radius: radius, startAngle: angle, endAngle: angle + sweep)
+          let candidate = SidebarIndicatorPaths.arc(
+            center: center, radii: CGSize(width: radius, height: radius),
+            angle: angle, sweep: sweep)
+          XCTAssertEqual(
+            try raster(reference.cgPath, scale: scale),
+            try raster(candidate.cgPath, scale: scale),
+            "scale=\(scale) angle=\(angle) sweep=\(sweep)")
+        }
+      }
+    }
+  }
+
   @MainActor
   func testMigrationGalleryGeometryContracts() {
     let defaultSize = MigrationGalleryMetrics.defaultWindowSize

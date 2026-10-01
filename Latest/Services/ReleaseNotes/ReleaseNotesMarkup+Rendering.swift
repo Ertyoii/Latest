@@ -1,6 +1,6 @@
 // Copyright © 2026 ertyoii. Licensed under GPL-3.0; see LICENSE.md.
 
-import AppKit
+import Foundation
 
 extension ReleaseNotesMarkup {
   static func attributedString(fromMarkdown markdown: String, baseURL: URL? = nil)

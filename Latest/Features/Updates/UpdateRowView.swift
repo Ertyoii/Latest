@@ -31,9 +31,8 @@ struct UpdateRowView: View {
   let updating: any AppUpdating
   let accessibilityLabel: String
   private let icon: NSImage
-  private let name: AttributedString
   private let versions: App.DisplayableVersionInformation?
-  private let formattedDate: AttributedString
+  private let date: String
   @Environment(\.controlActiveState) private var controlActiveState
 
   init(
@@ -45,11 +44,6 @@ struct UpdateRowView: View {
     self.showsSupportStatus = showsSupportStatus
     self.updating = updating
     icon = IconCache.shared.iconImmediately(for: app)
-    var title = AttributedString(app.highlightedName(for: filterQuery))
-    // The native row applies selection color to the entire attributed title.
-    // Let the SwiftUI foreground style do the same for filtered names.
-    title.foregroundColor = nil
-    name = title
     let versions = app.localizedVersionInformation
     self.versions = versions
     accessibilityLabel = [
@@ -58,11 +52,7 @@ struct UpdateRowView: View {
       app.updateAvailable
         ? NSLocalizedString("UpdateAction", comment: "Action to update a given app.") : nil,
     ].compactMap { $0 }.joined(separator: ", ")
-    formattedDate = AttributedString(
-      NSAttributedString(
-        string: date,
-        attributes: [.font: NSFont.preferredFont(forTextStyle: .callout, options: [:])]
-      ))
+    self.date = date
   }
 
   var body: some View {
@@ -75,7 +65,7 @@ struct UpdateRowView: View {
         .accessibilityHidden(true)
 
       VStack(alignment: .leading, spacing: 0) {
-        Text(name)
+        Text(verbatim: app.name)
           .font(.system(size: 13, weight: .semibold))
           .modifier(UpdateRowTextStyle(selection: selection, secondary: false))
           .frame(height: 16)
@@ -100,7 +90,8 @@ struct UpdateRowView: View {
     .padding(.trailing, 36)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .overlay(alignment: .topTrailing) {
-      Text(formattedDate)
+      Text(verbatim: date)
+        .font(.callout)
         .modifier(UpdateRowTextStyle(selection: selection, secondary: true))
         .lineLimit(1)
         .frame(width: 59, height: 16, alignment: .trailing)

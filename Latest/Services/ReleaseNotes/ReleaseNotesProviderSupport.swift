@@ -7,7 +7,7 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-09-04.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
-import AppKit
+import Foundation
 
 enum ReleaseNotesProviderConstants {
   static let downloadExtensions: Set<String> = [

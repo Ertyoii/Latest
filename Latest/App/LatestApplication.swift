@@ -7,20 +7,9 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-08-29.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
-import AppKit
 import SwiftUI
 
-@MainActor
-final class ApplicationLifecycleDelegate: NSObject, NSApplicationDelegate {
-  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-    true
-  }
-}
-
 struct LatestApplication: SwiftUI.App {
-  @NSApplicationDelegateAdaptor(ApplicationLifecycleDelegate.self)
-  private var lifecycleDelegate
-
   @AppStorage(ApplicationAppearance.storageKey)
   private var appearanceRawValue = ApplicationAppearance.system.rawValue
 

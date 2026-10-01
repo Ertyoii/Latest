@@ -6,7 +6,7 @@
 //  Copyright © 2022 Max Langer. All rights reserved.
 //
 
-import Cocoa
+import Foundation
 
 /// Async update checking via Homebrew. The historical type name is retained to
 /// avoid needless source churn, but checking is no longer an Operation.

@@ -11,22 +11,6 @@ import AppKit
 
 extension App {
 
-  /// Returns an attributed string that highlights a given search query within this app's name.
-  func highlightedName(for query: String?) -> NSAttributedString {
-    let attributedName = NSMutableAttributedString(string: name)
-
-    if let query, let selectedRange = name.range(of: query, options: .caseInsensitive) {
-      attributedName.addAttribute(
-        .foregroundColor,
-        value: NSColor(resource: .fadedSearchText),
-        range: NSRange(name.startIndex..<name.endIndex, in: name)
-      )
-      attributedName.removeAttribute(.foregroundColor, range: NSRange(selectedRange, in: name))
-    }
-
-    return attributedName
-  }
-
   /// Localized version information suitable for display in the interface.
   struct DisplayableVersionInformation {
     private(set) var rawCurrent: String
