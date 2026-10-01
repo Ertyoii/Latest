@@ -265,6 +265,105 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
+  func testHeldArrowNavigationKeepsRowsVisibleAndSeparate() async throws {
+    let settings = try isolatedAppListSettings(for: self)
+    let apps = (0..<40).map {
+      makeApp(name: String(format: "App %02d", $0), version: "1", remoteVersion: "2")
+    }
+    let viewModel = UpdatesListViewModel(
+      snapshot: AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings),
+      settings: settings)
+    let host = NSHostingView(
+      rootView: UpdatesSidebarView(
+        viewModel: viewModel, searchFocusController: SearchFocusController()))
+    host.frame = NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 420)
+    let window = NSWindow(
+      contentRect: host.bounds, styleMask: [.titled], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    window.makeKeyAndOrderFront(nil)
+    defer { window.close() }
+    try await Task.sleep(for: .milliseconds(100))
+    let table = try XCTUnwrap(host.descendant(of: NSTableView.self))
+    let scroll = try XCTUnwrap(table.enclosingScrollView)
+    table.selectRowIndexes(IndexSet(integer: 10), byExtendingSelection: false)
+    table.scrollRowToVisible(10)
+    window.makeFirstResponder(table)
+    try await Task.sleep(for: .milliseconds(100))
+    func presentedY() -> CGFloat {
+      scroll.contentView.layer?.presentation()?.bounds.minY ?? scroll.contentView.bounds.minY
+    }
+    func press(_ key: UInt16) throws {
+      let character = key == 125 ? "\u{F701}" : "\u{F700}"
+      let event = try XCTUnwrap(
+        NSEvent.keyEvent(
+          with: .keyDown, location: .zero, modifierFlags: [.function, .numericPad],
+          timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+          context: nil, characters: character, charactersIgnoringModifiers: character,
+          isARepeat: true, keyCode: key))
+      window.sendEvent(event)
+    }
+    try press(125)
+    XCTAssertEqual(table.selectedRow, 11, "Selection must respond immediately.")
+    XCTAssertTrue(viewModel.isKeyboardSelection, "Held arrows must coalesce release-note requests.")
+    XCTAssertTrue(table.visibleRect.contains(table.rect(ofRow: 11)))
+    var positions = [presentedY()]
+    var largestOverlap: CGFloat = 0
+    func paintedRow(_ index: Int) -> NSRect {
+      var rect = table.rect(ofRow: index)
+      if let layer = table.rowView(atRow: index, makeIfNecessary: false)?.layer {
+        rect.origin.y += (layer.presentation()?.position.y ?? layer.position.y) - layer.position.y
+      }
+      return rect
+    }
+    for index in 0..<24 {
+      try await Task.sleep(for: .milliseconds(8))
+      positions.append(presentedY())
+      largestOverlap = max(
+        largestOverlap,
+        paintedRow(table.selectedRow - 1).maxY - paintedRow(table.selectedRow).minY)
+      if index == 3 { try press(125) }
+    }
+    XCTAssertLessThanOrEqual(
+      largestOverlap, 0.5, "Selection must not cover the preceding row's version lines.")
+    XCTAssertEqual(table.selectedRow, 12)
+    XCTAssertEqual(viewModel.selectedApp?.identifier, apps[11].identifier)
+    XCTAssertTrue(
+      zip(positions, positions.dropFirst()).allSatisfy { $1 >= $0 - 0.5 },
+      "Held Down must not restore an obsolete scroll position.")
+    XCTAssertTrue(
+      table.visibleRect.contains(table.rect(ofRow: 12)), "The final selected row must be visible.")
+
+    // Reversing toward a row already in view stops the pending forward scroll.
+    try press(125)
+    try await Task.sleep(for: .milliseconds(16))
+    try press(126)
+    XCTAssertEqual(table.selectedRow, 12)
+    let reversedPosition = presentedY()
+    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertEqual(
+      presentedY(), reversedPosition, accuracy: 0.5,
+      "Changing direction must not keep moving toward the previous selection.")
+
+    // Programmatic navigation must remain stable after the keyboard event.
+    try press(125)
+    table.scrollRowToVisible(1)
+    let interruptedPosition = scroll.contentView.bounds.origin.y
+    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertEqual(scroll.contentView.bounds.origin.y, interruptedPosition, accuracy: 0.5)
+
+    // Filtering must not leave the viewport beyond rows that disappeared.
+    table.selectRowIndexes(IndexSet(integer: 10), byExtendingSelection: false)
+    table.scrollRowToVisible(10)
+    try press(125)
+    viewModel.setSearchQuery("App 00")
+    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertEqual(table.numberOfRows, 2)
+    XCTAssertEqual(scroll.contentView.bounds.origin.y, 0, accuracy: 0.5)
+    XCTAssertEqual(viewModel.selectedApp?.identifier, apps[0].identifier)
+  }
+
+  @MainActor
   func testDetailActionUsesRefreshedAppAtSameURL() async throws {
     let calls = Mutex([0, 0])
     let bundle = makeApp(name: "Example", version: "1").bundle
@@ -345,7 +444,7 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testSidebarRowBuildsACombinedVoiceOverLabel() {
+  func testSidebarRowBuildsACombinedVoiceOverLabel() throws {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.dateFormat = "yyyy-MM-dd"
@@ -356,7 +455,9 @@ final class MigrationInteractionContractTest: XCTestCase {
       date: Date(timeIntervalSince1970: 1_750_000_000)
     )
 
-    let label = SidebarInteractionPolicy.accessibilityLabel(for: app, dateFormatter: formatter)
+    let row = UpdateRowHostingCell(frame: NSRect(x: 0, y: 0, width: 308, height: 60))
+    row.update(app: app, isSelected: false, filterQuery: nil, dateFormatter: formatter)
+    let label = try XCTUnwrap(row.accessibilityLabel())
     XCTAssertTrue(label.contains("Discord"))
     XCTAssertTrue(label.contains("1"))
     XCTAssertTrue(label.contains("2"))
@@ -610,16 +711,23 @@ final class MigrationInteractionContractTest: XCTestCase {
     let second = makeApp(name: "Cursor", version: "3", remoteVersion: "4")
 
     viewModel.display(first, waitForSelectionToSettle: true)
+    // The user's held keys repeat about every 83ms. Back-to-back calls hid
+    // notes work that started between real repeat events.
+    try await Task.sleep(for: .milliseconds(80))
+    XCTAssertTrue(provider.requests.isEmpty, "Held navigation must not fetch each passing row")
     viewModel.display(second, waitForSelectionToSettle: true)
     XCTAssertTrue(viewModel.app === second, "The header must follow selection immediately")
     XCTAssertTrue(provider.requests.isEmpty, "Passing a row must not start expensive notes work")
-    try await Task.sleep(for: .milliseconds(100))
+    let deadline = ContinuousClock.now + .seconds(1)
+    while provider.requests.isEmpty && ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(10))
+    }
     XCTAssertEqual(provider.requests.count, 1)
     XCTAssertTrue(provider.requests.last?.app === second)
 
     viewModel.display(first, waitForSelectionToSettle: true)
     viewModel.display(nil)
-    try await Task.sleep(for: .milliseconds(100))
+    try await Task.sleep(for: .milliseconds(250))
     XCTAssertEqual(provider.requests.count, 1, "Clearing selection must cancel queued notes work")
     guard case .message(let message) = viewModel.contentState else {
       return XCTFail("Expected no-selection content")

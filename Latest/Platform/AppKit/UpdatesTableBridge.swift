@@ -82,13 +82,12 @@ private struct UpdatesTableView: NSViewRepresentable {
 
     context.coordinator.tableView = tableView
     context.coordinator.observeLiveScrolling(in: scrollView)
-    (scrollView.documentView as? SwiftUIUpdateTableView)?.sizeToViewport()
+    tableView.sizeToViewport()
     context.coordinator.apply(viewModel: viewModel)
     return scrollView
   }
 
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
-    (scrollView.documentView as? SwiftUIUpdateTableView)?.sizeToViewport()
     context.coordinator.showsSupportStatusOverride = showsSupportStatusOverride
     context.coordinator.scheduleApply(
       viewModel: viewModel, snapshotRevision: snapshotRevision,
@@ -97,7 +96,7 @@ private struct UpdatesTableView: NSViewRepresentable {
 
   @MainActor
   final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
-    weak var tableView: NSTableView? {
+    weak var tableView: SwiftUIUpdateTableView? {
       didSet { menuController.tableView = tableView }
     }
     private var viewModel: UpdatesListViewModel
@@ -146,10 +145,6 @@ private struct UpdatesTableView: NSViewRepresentable {
       MigrationTelemetry.shared.endSidebarScroll()
     }
 
-    func apply(viewModel: UpdatesListViewModel) {
-      apply(TableUpdate(viewModel: viewModel), viewModel: viewModel)
-    }
-
     func scheduleApply(
       viewModel: UpdatesListViewModel, snapshotRevision: Int,
       selectedIdentifier: App.Bundle.Identifier?
@@ -173,21 +168,25 @@ private struct UpdatesTableView: NSViewRepresentable {
       }
     }
 
-    private func apply(_ update: TableUpdate, viewModel: UpdatesListViewModel) {
+    func apply(viewModel: UpdatesListViewModel) {
       self.viewModel = viewModel
+      let snapshot = viewModel.snapshot
+      let nextSelectedApp = viewModel.selectedApp
+      let nextSelectedRowIndex = nextSelectedApp.flatMap { snapshot.firstIndex(of: $0) }
+      let nextRevision = viewModel.snapshotRevision
       let previousEntries = entries
       let previousRevision = snapshotRevision
       let previousSelectedRowIndex = selectedRowIndex
-      let needsContentUpdate = previousRevision != update.snapshotRevision
+      let needsContentUpdate = previousRevision != nextRevision
       let needsSupportUpdate = appliedShowsSupportStatusOverride != showsSupportStatusOverride
       let tableChange =
         needsContentUpdate
-        ? TableViewSnapshotDiff(from: previousEntries, to: update.snapshot.entries).change : nil
-      entries = update.snapshot.entries
-      filterQuery = update.snapshot.filterQuery
-      selectedIdentifier = update.selectedIdentifier
-      selectedRowIndex = update.selectedRowIndex
-      snapshotRevision = update.snapshotRevision
+        ? TableViewSnapshotDiff(from: previousEntries, to: snapshot.entries).change : nil
+      entries = snapshot.entries
+      filterQuery = snapshot.filterQuery
+      selectedIdentifier = nextSelectedApp?.identifier
+      selectedRowIndex = nextSelectedRowIndex
+      snapshotRevision = nextRevision
       appliedShowsSupportStatusOverride = showsSupportStatusOverride
       menuController.update(viewModel: viewModel, entries: entries)
 
@@ -200,8 +199,9 @@ private struct UpdatesTableView: NSViewRepresentable {
       }
 
       syncSelection()
-      if previousSelectedRowIndex != update.selectedRowIndex {
-        refreshSelection(at: [previousSelectedRowIndex, update.selectedRowIndex].compactMap { $0 })
+      if previousSelectedRowIndex != nextSelectedRowIndex {
+        refreshSelection(at: previousSelectedRowIndex)
+        refreshSelection(at: nextSelectedRowIndex)
       }
     }
 
@@ -275,25 +275,23 @@ private struct UpdatesTableView: NSViewRepresentable {
     func selectRow(at row: Int) {
       let app = SidebarInteractionPolicy(entries: entries, updating: viewModel.updating).app(
         at: row)
+      let nextRowIndex = app == nil ? nil : row
+      guard selectedRowIndex != nextRowIndex else { return }
       let previousSelectedRowIndex = selectedRowIndex
       selectedIdentifier = app?.identifier
-      selectedRowIndex = app == nil ? nil : row
-      refreshSelection(at: [previousSelectedRowIndex, selectedRowIndex].compactMap { $0 })
-      let event = NSApp.currentEvent
-      let isKeyboardSelection = event?.type == .keyDown && [125, 126].contains(event?.keyCode)
+      selectedRowIndex = nextRowIndex
+      refreshSelection(at: previousSelectedRowIndex)
+      refreshSelection(at: nextRowIndex)
+      let isKeyboardSelection = tableView?.isHandlingArrowKey ?? false
       viewModel.select(app, isKeyboardSelection: isKeyboardSelection)
     }
 
-    private func refreshSelection(at rows: [Int]) {
-      guard let tableView else { return }
-      for row in Set(rows) {
-        guard row >= 0, row < tableView.numberOfRows else { continue }
-        guard
-          let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false)
-            as? UpdateRowHostingCell
-        else { continue }
-        cell.updateSelection(row == selectedRowIndex)
-      }
+    private func refreshSelection(at row: Int?) {
+      guard let tableView, let row, row >= 0, row < tableView.numberOfRows,
+        let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false)
+          as? UpdateRowHostingCell
+      else { return }
+      cell.updateSelection(row == selectedRowIndex)
     }
 
     func tableView(
@@ -379,12 +377,7 @@ private struct UpdatesTableView: NSViewRepresentable {
       let visibleRows = tableView.rows(in: tableView.visibleRect)
       guard visibleRows.location != NSNotFound else { return }
 
-      refreshRows(at: Array(visibleRows.location..<NSMaxRange(visibleRows)))
-    }
-
-    private func refreshRows(at rows: [Int]) {
-      guard let tableView else { return }
-      for row in Set(rows) {
+      for row in visibleRows.location..<NSMaxRange(visibleRows) {
         guard row >= 0, row < entries.count, case .app(let app) = entries[row] else { continue }
         guard
           let view = tableView.view(atColumn: 0, row: row, makeIfNecessary: false)
@@ -419,22 +412,6 @@ private struct UpdatesTableView: NSViewRepresentable {
         tableView.removeRows(at: indexes, withAnimation: [])
       case .reloadAll:
         tableView.reloadData()
-      }
-    }
-
-    @MainActor private struct TableUpdate {
-      let snapshot: AppListSnapshot
-      let selectedIdentifier: App.Bundle.Identifier?
-      let selectedRowIndex: Int?
-      let snapshotRevision: Int
-
-      init(viewModel: UpdatesListViewModel) {
-        self.snapshot = viewModel.snapshot
-        self.selectedIdentifier = viewModel.selectedApp?.identifier
-        self.selectedRowIndex = viewModel.selectedApp.flatMap {
-          viewModel.snapshot.firstIndex(of: $0)
-        }
-        self.snapshotRevision = viewModel.snapshotRevision
       }
     }
 
@@ -490,8 +467,7 @@ final class UpdateRowHostingCell: NSTableCellView {
     }
     setAccessibilityElement(true)
     setAccessibilityRole(.group)
-    setAccessibilityLabel(
-      SidebarInteractionPolicy.accessibilityLabel(for: app, dateFormatter: dateFormatter))
+    setAccessibilityLabel(content.accessibilityLabel)
     setAccessibilitySelected(isSelected)
   }
 

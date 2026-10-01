@@ -29,6 +29,7 @@ struct UpdateRowView: View {
   let selection: UpdateRowSelection
   let showsSupportStatus: Bool
   let updating: any AppUpdating
+  let accessibilityLabel: String
   private let icon: NSImage
   private let name: AttributedString
   private let versions: App.DisplayableVersionInformation?
@@ -49,7 +50,14 @@ struct UpdateRowView: View {
     // Let the SwiftUI foreground style do the same for filtered names.
     title.foregroundColor = nil
     name = title
-    versions = app.localizedVersionInformation
+    let versions = app.localizedVersionInformation
+    self.versions = versions
+    accessibilityLabel = [
+      app.name, versions?.combined(includeNew: app.updateAvailable), date,
+      app.source.supportState.label,
+      app.updateAvailable
+        ? NSLocalizedString("UpdateAction", comment: "Action to update a given app.") : nil,
+    ].compactMap { $0 }.joined(separator: ", ")
     formattedDate = AttributedString(
       NSAttributedString(
         string: date,

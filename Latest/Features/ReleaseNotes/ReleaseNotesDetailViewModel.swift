@@ -68,7 +68,7 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
   private let releaseNotesProvider: ReleaseNotesProviding
   private var loadingTask: Task<Void, Never>?
   private var requestTask: Task<Void, Never>?
-  private var displayRequestID = UUID()
+  private var displayRequestID: UInt64 = 0
   private var displayedKey: String?
 
   init(releaseNotesProvider: ReleaseNotesProviding = ReleaseNotesProvider()) {
@@ -86,7 +86,7 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
     guard nextKey != displayedKey else { return }
     displayedKey = nextKey
 
-    displayRequestID = UUID()
+    displayRequestID &+= 1
     let requestID = displayRequestID
     loadingTask?.cancel()
     loadingTask = nil
@@ -99,18 +99,12 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
       return
     }
 
-    loadingTask = Task { [weak self] in
-      try? await Task.sleep(for: .milliseconds(200))
-      guard !Task.isCancelled,
-        let self,
-        self.displayRequestID == requestID
-      else { return }
-      self.contentState = .loading
-    }
-
     if waitForSelectionToSettle {
+      // Wait beyond the real repeat interval; passing rows update the header
+      // immediately but never start notes decoding or a loading timer.
+      let quietInterval = max(0.12, NSEvent.keyRepeatInterval * 1.5)
       requestTask = Task { [weak self] in
-        try? await Task.sleep(for: .milliseconds(60))
+        try? await Task.sleep(for: .seconds(quietInterval))
         guard !Task.isCancelled, let self, self.displayRequestID == requestID else { return }
         self.requestTask = nil
         self.requestNotes(for: app, requestID: requestID)
@@ -120,7 +114,15 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
     }
   }
 
-  private func requestNotes(for app: App, requestID: UUID) {
+  private func requestNotes(for app: App, requestID: UInt64) {
+    loadingTask = Task { [weak self] in
+      try? await Task.sleep(for: .milliseconds(200))
+      guard !Task.isCancelled,
+        let self,
+        self.displayRequestID == requestID
+      else { return }
+      self.contentState = .loading
+    }
     releaseNotesProvider.releaseNotes(for: app) { [weak self] result in
       guard let self,
         self.displayRequestID == requestID,

@@ -64,16 +64,4 @@ struct SidebarInteractionPolicy {
     }
   }
 
-  static func accessibilityLabel(for app: App, dateFormatter: DateFormatter) -> String {
-    var components = [app.name]
-    if let version = app.localizedVersionInformation?.combined(includeNew: app.updateAvailable) {
-      components.append(version)
-    }
-    components.append(dateFormatter.string(from: app.updateDate))
-    components.append(app.source.supportState.label)
-    if app.updateAvailable {
-      components.append(NSLocalizedString("UpdateAction", comment: "Action to update a given app."))
-    }
-    return components.joined(separator: ", ")
-  }
 }

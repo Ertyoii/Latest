@@ -157,6 +157,40 @@ enum SidebarUpdateActionTitle {
 }
 
 final class SwiftUIUpdateTableView: NSTableView {
+  private(set) var isHandlingArrowKey = false
+
+  override func keyDown(with event: NSEvent) {
+    isHandlingArrowKey =
+      [125, 126].contains(event.keyCode)
+      && event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
+    defer { isHandlingArrowKey = false }
+    super.keyDown(with: event)
+  }
+
+  override func scrollRowToVisible(_ row: Int) {
+    guard isHandlingArrowKey, row >= 0, row < numberOfRows,
+      let scroll = enclosingScrollView
+    else {
+      super.scrollRowToVisible(row)
+      return
+    }
+    // Commit selection and viewport together. Keep a row of breathing room
+    // at the navigation edge without moving row layers out of their slots.
+    let clip = scroll.contentView
+    let rect = rect(ofRow: row)
+    var target = clip.bounds
+    let margin = min(rowHeight, target.height / 4)
+    if rect.maxY > target.maxY - margin {
+      target.origin.y = rect.maxY + margin - target.height
+    } else if rect.minY < target.minY + margin {
+      target.origin.y = rect.minY - margin
+    }
+    let origin = clip.constrainBoundsRect(target).origin
+    guard origin != clip.bounds.origin else { return }
+    clip.scroll(to: origin)
+    scroll.reflectScrolledClipView(clip)
+  }
+
   override func menu(for event: NSEvent) -> NSMenu? {
     let clickedPoint = convert(event.locationInWindow, from: nil)
     let clickedRow = row(at: clickedPoint)

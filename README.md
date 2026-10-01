@@ -1,84 +1,59 @@
 # Latest
 
-A macOS utility that finds updates for App Store, Sparkle, and Homebrew applications. This independently maintained fork by [ertyoii](https://github.com/Ertyoii) targets macOS 26+ and is built from source.
+A macOS utility that finds updates for App Store, Sparkle, and Homebrew applications. This fork is maintained by [ertyoii](https://github.com/Ertyoii) and targets macOS 26+.
 
 ![Latest](latest.png)
 
-## Build
+## Development
 
-Requires macOS 26, Xcode 26.6, and `ripgrep`.
+Requires Xcode 26.6 or later and `ripgrep`. Use the `Latest` scheme in `Latest.xcodeproj`, or run:
 
 ```sh
 brew install ripgrep
 ./script/build_and_run.sh
-```
-
-Open `Latest.xcodeproj` and use the `Latest` scheme to work in Xcode. Run the architecture, behavior, and visual checks with:
-
-```sh
 ./script/test.sh
+./script/format.sh --check
 ```
 
-Run the opt-in performance suites with:
+`test.sh` checks architecture, behavior, and visual regressions. CI also compares reviewed macOS 26 references in [Tests/VisualBaselines](Tests/VisualBaselines/macos-26/README.md). Compare UI changes with the original on the same system before updating a reference.
+
+Run `./script/format.sh` to format Swift sources. Use the same Xcode toolchain for reproducible output; `.swift-format` defines the formatting rules.
+
+## Architecture and SwiftUI migration
+
+- `Latest/App`: assembly and lifecycle through `AppEnvironment`
+- `Latest/Features`: SwiftUI presentation and feature state
+- `Latest/Domain`: framework-independent models and version rules
+- `Latest/Services`: discovery, updates, and release notes
+- `Latest/Platform`: AppKit, App Store, Sparkle, and installer integrations
+- `Latest/Support`: shared infrastructure and presentation helpers
+
+Search, section headings, app rows, progress/error controls, and detail action buttons use SwiftUI. `UpdatesTableBridge` retains native table selection, scrolling, pinned headers, menus, and accessibility. Release notes use WebKit inside a SwiftUI container; window access remains AppKit.
+
+Arrow navigation commits selection and scrolling together, keeping rows contiguous. The detail header follows immediately; notes load after keyboard selection settles. Mouse selection loads notes immediately.
+
+Features depend on `AppUpdating`. Sparkle is pinned through Swift Package Manager. `UpdateInstaller` and the headers/module maps in `Frameworks` are required for App Store updates over XPC.
+
+## Performance checks
 
 ```sh
 ./script/benchmark_complexity.sh
 ./script/benchmark_migration.sh current
+./script/benchmark_frames.sh current
 ```
 
-These use optimized Release builds with testability enabled and coverage disabled.
-Small workloads collect 30 samples; scrolling and repeated selection collect more.
-The migration report includes cold, disk-cache, and memory-cache selection through
-SwiftUI, the real release-notes provider, and the rendered text view, plus resident
-memory and live heap bytes/blocks. Cold means an empty application cache with
-embedded HTML, not a cold OS filesystem cache or a live network request.
-The sleeping-task scheduler fixture and immediate-provider selection fixture remain
-separate from the full selection-to-render measurements. The overlap fixture
-measures generation acceptance and store writes under concurrent refreshes.
-Compare results only under the same build configuration, hardware, and workload;
-Debug measurements are not a Release baseline. Live heap deltas are retained
-allocations, not total allocation churn or peak memory.
+These use Release builds without coverage. Compare runs on the same hardware and workload. The frame benchmark captures a visible production window with 300 offline apps, tests held arrows at system repeat/30/60 keys per second, and saves measurements and reports under `build/`. Keep its window focused and unobstructed.
 
-GitHub CI is optional for local development. The existing workflow runs the checks on a clean macOS runner, including exact visual comparisons with a fixed reference. Keep it enabled for independent regression checks; it is not needed to launch the app locally.
+Native row steps follow the keyboard repeat rate. About 60 changed frames per second was measured with 60 keys per second on a 60 Hz display; ordinary held keys do not produce continuous 60 FPS motion. The strict one-frame input-delay gate remains unmet. Benchmark exit failures must be investigated; 120 Hz presentation has not been verified.
 
-The app's release menu opens this fork's GitHub releases. It does not use the original project's automatic update feed. Automatic self-updates require a separately configured, signed appcast for this fork. Latest Dev reads its offline notes from `Latest/Resources/LatestReleaseNotes.json`, matched to the installed version. Add an entry there when bumping the app version.
+## Release notes
 
-## Architecture
+Add each app version to `Latest/Resources/LatestReleaseNotes.json` for offline Latest Dev notes. The release menu opens this fork's GitHub releases; automatic self-updates require a separately configured signed appcast.
 
-- `Latest/App`: application assembly and lifecycle
-- `Latest/Features`: SwiftUI presentation and feature state
-- `Latest/Domain`: framework-independent models and version rules
-- `Latest/Services`: discovery, update orchestration, and release notes
-- `Latest/Platform`: AppKit, App Store, Sparkle, and install-helper integrations
-- `Latest/Support`: shared infrastructure and presentation helpers
-
-Dependencies are assembled in `AppEnvironment`. Features use the `AppUpdating` boundary instead of update queue implementations. The shipping sidebar is `UpdatesTableBridge`; its AppKit behavior and geometry are intentional.
-
-Sparkle is pinned through Swift Package Manager. `Frameworks/CommerceKit` and `Frameworks/StoreFoundation` are required for App Store integration.
-
-`UpdateInstaller` is a separate privileged helper target that installs App Store update packages and writes their receipts. The main app communicates with it over XPC. `Frameworks` contains headers and module maps for the macOS App Store frameworks; both folders are required by the current implementation.
-
-## Release-note checks
-
-`./script/audit_release_notes.sh` runs the deterministic release-note regression suite. To check every mapped app against current upstream pages, download the public Homebrew cask JSON and run `./script/audit_release_notes.sh --catalog /path/to/cask.json`. The live check writes `build/release-notes-catalog-audit.json` with per-app results and `build/catalog-rendered/*.html` using the app's release-note renderer for formatting review. Network failures and rejected content are recorded, rather than treated as successful coverage.
-
-`./script/audit_release_note_coverage.sh /path/to/cask.json` measures available source routes; a route does not guarantee that an upstream page supplies usable release notes. `--installed` on the audit script separately checks locally installed apps.
-
-## Swift formatting
-
-Use the Swift toolchain's `swift-format` through Xcode (`xcrun swift-format`). The checked-in `.swift-format` records the defaults from version 6.3.0: two-space indentation, a 100-column line-length target, sorted imports, and trailing commas in multiline collections. Multiline string contents are not reflowed.
-
-```sh
-./script/format.sh         # Format all tracked project Swift files
-./script/format.sh --check # Verify formatting without changing files
-```
-
-The scope includes the app, tests, installer helper, and Swift scripts. Generated files and downloaded dependencies are excluded. The check compares formatter output; broader naming and refactoring lint rules are separate from formatting. Use the same Xcode toolchain for reproducible results.
+`./script/audit_release_notes.sh` runs offline regression tests. Add `--catalog /path/to/cask.json` for a live Homebrew catalog audit, or `--installed` for installed apps. Reports and rendered HTML go under `build/`. `audit_release_note_coverage.sh` checks source routes, which do not guarantee usable notes.
 
 ## License
 
-Based on [Latest by Max Langer and contributors](https://github.com/mangerlahn/Latest). Thank you to the original authors for making this project available.
+Based on [Latest by Max Langer and contributors](https://github.com/mangerlahn/Latest). Fork modifications © 2026 ertyoii; upstream and dependency notices are retained.
 
-Fork development and modifications © 2026 ertyoii. This modified version includes changes through September 6, 2026. Existing upstream and third-party copyright notices are retained; Git history records individual contributions. File creation credit does not imply sole authorship of derived code.
-
-Distributed under GNU GPL version 3; see [LICENSE.md](LICENSE.md). When distributing binaries, provide the corresponding source under the GPL. This software comes without warranty. Dependency notices are included in the app's About credits.
+Distributed under [GPL version 3](LICENSE.md). Binary distributions must include corresponding source. This software comes without warranty.

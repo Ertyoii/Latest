@@ -100,6 +100,7 @@
 		51F100042FD0000000000001 /* MigrationInteractionContractTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100132FD0000000000001 /* MigrationInteractionContractTest.swift */; };
 		51F100052FD0000000000001 /* MigrationTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100142FD0000000000001 /* MigrationTelemetry.swift */; };
 		51F100062FD0000000000001 /* MigrationPerformanceTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100152FD0000000000001 /* MigrationPerformanceTest.swift */; };
+		51F400012FD0000000000001 /* MigrationFrameCadenceTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F400022FD0000000000001 /* MigrationFrameCadenceTest.swift */; };
 		51F100072FD0000000000001 /* ReleaseNotesDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100162FD0000000000001 /* ReleaseNotesDetailViewModel.swift */; };
 		51F100082FD0000000000001 /* ReleaseNotesWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100172FD0000000000001 /* ReleaseNotesWebView.swift */; };
 		51F100092FD0000000000001 /* SupportStatusInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100182FD0000000000001 /* SupportStatusInfoView.swift */; };
@@ -373,6 +374,7 @@
 		51F100132FD0000000000001 /* MigrationInteractionContractTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MigrationInteractionContractTest.swift"; sourceTree = "<group>"; };
 		51F100142FD0000000000001 /* MigrationTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MigrationTelemetry.swift"; sourceTree = "<group>"; };
 		51F100152FD0000000000001 /* MigrationPerformanceTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MigrationPerformanceTest.swift"; sourceTree = "<group>"; };
+		51F400022FD0000000000001 /* MigrationFrameCadenceTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MigrationFrameCadenceTest.swift"; sourceTree = "<group>"; };
 		51F100162FD0000000000001 /* ReleaseNotesDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesDetailViewModel.swift"; sourceTree = "<group>"; };
 		51F100172FD0000000000001 /* ReleaseNotesWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesWebView.swift"; sourceTree = "<group>"; };
 		51F100182FD0000000000001 /* SupportStatusInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupportStatusInfoView.swift"; sourceTree = "<group>"; };
@@ -867,6 +869,7 @@
 				51F100102FD0000000000001 /* MigrationGallery.swift */,
 				51F100132FD0000000000001 /* MigrationInteractionContractTest.swift */,
 				51F100152FD0000000000001 /* MigrationPerformanceTest.swift */,
+				51F400022FD0000000000001 /* MigrationFrameCadenceTest.swift */,
 				51F100112FD0000000000001 /* MigrationVisualRegressionTest.swift */,
 			);
 			path = Migration;
@@ -1259,6 +1262,7 @@
 				51F100022FD0000000000001 /* MigrationVisualRegressionTest.swift in Sources */,
 				51F100042FD0000000000001 /* MigrationInteractionContractTest.swift in Sources */,
 				51F100062FD0000000000001 /* MigrationPerformanceTest.swift in Sources */,
+				51F400012FD0000000000001 /* MigrationFrameCadenceTest.swift in Sources */,
 				51F1000D2FD0000000000001 /* MigrationGallery.swift in Sources */,
 				53D000012FF0000000000001 /* AppFixtures.swift in Sources */,
 			);
@@ -1505,7 +1509,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1436;
+				CURRENT_PROJECT_VERSION = 1437;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = D87N659XLV;
@@ -1524,7 +1528,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.66;
+				MARKETING_VERSION = 0.67;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1547,7 +1551,7 @@
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1436;
+				CURRENT_PROJECT_VERSION = 1437;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = D87N659XLV;
@@ -1567,7 +1571,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.66;
+				MARKETING_VERSION = 0.67;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
