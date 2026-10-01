@@ -53,9 +53,10 @@ struct UpdatesSidebarHeaderView: View {
 
       TextField(
         "Search",
+        // An explicit setter avoids an actor-isolation thunk crash in Xcode 26.6.
         text: Binding(
           get: { viewModel.searchQuery },
-          set: viewModel.setSearchQuery
+          set: { viewModel.setSearchQuery($0) }
         )
       )
       .textFieldStyle(.plain)

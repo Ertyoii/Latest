@@ -12,3 +12,4 @@
 - When replacement is requested, check for unshipped features or fixes. If present, bump the version, update release notes, run required checks, commit the relevant changes, and push successfully before rebuilding and replacing the installed app. The replacement request authorizes this sequence. If the changes are already shipped, avoid an unnecessary version bump or commit.
 - Verify the installed version and running app path after replacement.
 - Run checks appropriate to the change; use `./script/test.sh` for app changes. Repeat or broaden checks only for new changes, failures, or unresolved concerns.
+- Local test success does not establish compatibility with CI's pinned Xcode/macOS. When publishing app or CI changes, inspect the hosted run and resolve failures before reporting CI validation complete; distinguish local skips from hosted checks.
