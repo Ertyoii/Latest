@@ -8,7 +8,9 @@ import Foundation
 struct ProductionParityDriver {
   typealias Gate = ProductionVisualReference
 
-  static func run(_ arguments: [String], at root: URL, log: URL? = nil) throws -> String {
+  static func run(
+    _ arguments: [String], at root: URL, log: URL? = nil, timeout: TimeInterval? = nil
+  ) throws -> String {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     process.arguments = arguments
@@ -17,6 +19,11 @@ struct ProductionParityDriver {
     process.standardOutput = output
     process.standardError = output
     try process.run()
+    let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
+    if let timeout {
+      DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: watchdog)
+    }
+    defer { watchdog.cancel() }
     let data = output.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
     if let log { try data.write(to: log) }
@@ -237,7 +244,7 @@ struct ProductionParityDriver {
       root: root, log: output.appendingPathComponent("build.log"))
     _ = try run(
       [executable.path, "-AppleLanguages", "(en)", "-AppleLocale", "en_US"],
-      at: root, log: output.appendingPathComponent("capture.log"))
+      at: root, log: output.appendingPathComponent("capture.log"), timeout: 120)
     let final = try self.provenance(root: root)
     try Gate.require(
       final.revision == provenance.revision

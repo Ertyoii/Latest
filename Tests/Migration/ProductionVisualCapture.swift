@@ -145,7 +145,8 @@ private struct ProductionVisualCapture {
       "position": "main visible-frame origin + (100,100)",
       "nativeLocale": Locale.current.identifier,
       "timezone": NSTimeZone.default.identifier,
-      "settling": "web fonts+2RAF; 5 equal composited frames at 80ms",
+      "settling":
+        "web fonts+2RAF; 1200ms native titlebar activation; 5 equal composited frames at 80ms",
       "pinnedInput":
         "pixel wheel -240 at sidebar content (140,170 from top); unchanged selection; exact stationary painted header band",
       "scrollPositions": "notes 0,160",
@@ -457,6 +458,9 @@ private struct ProductionVisualCapture {
         try await configureCaptureWindow(
           window, dark: dark, contentSize: NSSize(width: width, height: 360))
         defer { window.close() }
+        // Native titlebar controls finish activation after content first paints.
+        // Equal WebKit frames alone can precede their delayed emphasis update.
+        try await Task.sleep(for: .milliseconds(1200))
         // Inspect the rendering engine, not a particular representable or SwiftUI wrapper.
         var renderer: WKWebView?
         for _ in 0..<200 {
@@ -477,6 +481,9 @@ private struct ProductionVisualCapture {
           let scrollY = try await web.evaluateJavaScript("window.scrollY") as? Int
           try ProductionVisualReference.require(
             scrollY == (scrolled ? 160 : 0), "Notes scroll input must reach the requested position")
+          print(
+            "PRODUCTION_CAPTURE notes pointer=\(NSStringFromPoint(NSEvent.mouseLocation)) frame=\(NSStringFromRect(window.frame)) key=\(window.isKeyWindow) main=\(window.isMainWindow) zoomHighlighted=\(window.standardWindowButton(.zoomButton)?.isHighlighted == true)"
+          )
           let name = "web-\(width)-\(dark ? "dark" : "light")-\(scrolled ? "scrolled" : "top").png"
           try record(try await settledWindowBitmap(window, name: name), name)
         }
@@ -513,7 +520,13 @@ private struct ProductionVisualCapture {
 }
 
 private final class VisualCaptureOperation: UpdateOperation, @unchecked Sendable {
-  var didStart: Bool { isExecuting }
+  private let startedLock = NSLock()
+  private var started = false
+  var didStart: Bool { startedLock.withLock { started } }
+  override func execute() {
+    super.execute()
+    startedLock.withLock { started = true }
+  }
   init(app: App) {
     super.init(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
   }
