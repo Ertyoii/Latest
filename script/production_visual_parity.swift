@@ -338,11 +338,11 @@ struct ProductionParityDriver {
         let bitmap = try Gate.bitmap(at: imageURL)
         // An opaque RGB interior pixel round-trips losslessly through PNG.
         let before = try Gate.rgba(bitmap)
-        let color = bitmap.colorAt(x: 100, y: 100)!.usingColorSpace(.sRGB)!
-        bitmap.setColor(
-          NSColor(
-            srgbRed: color.redComponent > 0.5 ? 0 : 1,
-            green: color.greenComponent, blue: color.blueComponent, alpha: 1), atX: 100, y: 100)
+        var components = [UInt](repeating: 0, count: bitmap.samplesPerPixel)
+        bitmap.getPixel(&components, atX: 100, y: 100)
+        let maximum = UInt((1 << bitmap.bitsPerSample) - 1)
+        components[0] = components[0] > maximum / 2 ? 0 : maximum
+        bitmap.setPixel(&components, atX: 100, y: 100)
         try bitmap.representation(using: .png, properties: [:])!.write(to: imageURL)
         let modified = try Gate.bitmap(at: imageURL)
         let after = try Gate.rgba(modified)
