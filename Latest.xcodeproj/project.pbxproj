@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		53CA10012FD0000000000001 /* LocalUATFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53CA10022FD0000000000001 /* LocalUATFixture.swift */; };
 		04DB211D3099FDA076EC8F2F /* ReleaseNotesVersionSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A492B900BB42DB5CA9C73A45 /* ReleaseNotesVersionSelection.swift */; };
 		4F5BE2A6B6B58FB29F49877C /* NavicatReleaseNotesExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5421DAACBA730AEEB29C717F /* NavicatReleaseNotesExtractor.swift */; };
 		501AA0012FC4000000000001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501AA0002FC4000000000001 /* main.swift */; };
@@ -183,6 +184,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		53CA10022FD0000000000001 /* LocalUATFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalUATFixture.swift; sourceTree = "<group>"; };
 		29A88F89296B7DC2000A5EDE /* fa */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fa; path = fa.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		29A88F8B296B7DC2000A5EDE /* fa */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fa; path = fa.lproj/Localizable.strings; sourceTree = "<group>"; };
 		3FDE96FFFEC9B3854A230E64 /* ReleaseNotesHTMLExtraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesHTMLExtraction.swift"; sourceTree = "<group>"; };
@@ -887,6 +889,7 @@
 			isa = PBXGroup;
 			children = (
 				53D000022FF0000000000001 /* AppFixtures.swift */,
+				53CA10022FD0000000000001 /* LocalUATFixture.swift */,
 				52E100012FE1000000000001 /* AppDependencyBoundaryTest.swift */,
 			);
 			path = App;
@@ -1265,6 +1268,7 @@
 				51F400012FD0000000000001 /* MigrationFrameCadenceTest.swift in Sources */,
 				51F1000D2FD0000000000001 /* MigrationGallery.swift in Sources */,
 				53D000012FF0000000000001 /* AppFixtures.swift in Sources */,
+				53CA10012FD0000000000001 /* LocalUATFixture.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

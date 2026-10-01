@@ -26,12 +26,35 @@ struct LatestApplication: SwiftUI.App {
 
   @StateObject private var environment: AppEnvironment
   @StateObject private var appUpdateController = AppUpdateController()
-  private let startsLiveServices: Bool
 
   init() {
     _environment = StateObject(wrappedValue: .live())
-    startsLiveServices = true
   }
+
+  var body: some Scene {
+    LatestMainWindowScene(
+      environment: environment, appearance: appearance, appUpdateController: appUpdateController,
+      start: environment.start, stop: environment.stop)
+
+    Settings {
+      SettingsRootView(viewModel: environment.settingsViewModel)
+        .modifier(ApplicationAppearanceModifier(appearance: appearance))
+    }
+  }
+
+  private var appearance: ApplicationAppearance {
+    ApplicationAppearance.resolve(appearanceRawValue)
+  }
+}
+
+/// The runnable app and capture app share one window composition.
+/// Lifecycle actions belong to the composition owner, alongside its services.
+struct LatestMainWindowScene: Scene {
+  let environment: AppEnvironment
+  let appearance: ApplicationAppearance
+  let appUpdateController: AppUpdateController
+  let start: () -> Void
+  let stop: () -> Void
 
   var body: some Scene {
     Window("Latest", id: "main") {
@@ -42,12 +65,10 @@ struct LatestApplication: SwiftUI.App {
           minHeight: VisualMetrics.mainWindowMinHeight
         )
         .onAppear {
-          if startsLiveServices {
-            environment.start()
-          }
+          start()
         }
         .onDisappear {
-          environment.stop()
+          stop()
         }
     }
     .defaultSize(
@@ -64,14 +85,5 @@ struct LatestApplication: SwiftUI.App {
         appUpdateController: appUpdateController
       )
     }
-
-    Settings {
-      SettingsRootView(viewModel: environment.settingsViewModel)
-        .modifier(ApplicationAppearanceModifier(appearance: appearance))
-    }
-  }
-
-  private var appearance: ApplicationAppearance {
-    ApplicationAppearance.resolve(appearanceRawValue)
   }
 }

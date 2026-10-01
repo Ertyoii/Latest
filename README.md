@@ -17,6 +17,16 @@ brew install ripgrep
 
 `test.sh` checks architecture, behavior, and visual regressions. CI also compares reviewed macOS 26 references in [Tests/VisualBaselines](Tests/VisualBaselines/macos-26/README.md). Compare UI changes with the original on the same system before updating a reference.
 
+For a migration, freeze the unchanged original on this machine, then run required exact comparison:
+
+```sh
+./script/production_visual_parity.sh capture-original build/original-reference ORIGINAL_COMMIT
+./script/production_visual_parity.sh verify-required build/original-reference build/candidate-captures
+./script/production_visual_parity.sh negative-controls build/original-reference build/candidate-captures build/negative-controls
+```
+
+Recording requires the specified original HEAD and unchanged production files, and refuses an existing destination. Verification requires all 20 composited window images and compatible provenance; it never records a fallback. The driver derives a separate capture app from the production Xcode target, preserving its sources, resources, dependencies and build settings while replacing only the entrypoint with offline support under `Tests/`. The runnable app and capture app use `LatestMainWindowScene`, including its real `Window`, toolbar, sizing and commands. The 20-image matrix covers initial, selection, search, downloading, pinned and toolbar states in light/dark, plus rich notes at two widths/scroll positions. Full live-service lifecycle, dialogs, rotating progress, and broader interaction/performance coverage remain separate gates. Ordinary XCTest fixtures do not establish migration parity.
+
 Run `./script/format.sh` to format Swift sources. Use the same Xcode toolchain for reproducible output; `.swift-format` defines the formatting rules.
 
 ## Architecture and SwiftUI migration
