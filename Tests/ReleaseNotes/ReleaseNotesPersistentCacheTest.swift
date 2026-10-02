@@ -19,13 +19,10 @@ final class ReleaseNotesPersistentCacheTest: XCTestCase {
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directoryURL) }
     let cache = ReleaseNotesPersistentCache(directoryURL: directoryURL)
-    let source = NSMutableAttributedString(
-      string: "Version 2.0\nFixed repeated release-note parsing.")
-    source.addAttribute(
-      .link,
-      value: URL(string: "https://example.com/releases/2.0")!,
-      range: NSRange(location: 0, length: 11)
-    )
+    let source = ReleaseNotesContent(runs: [
+      .init(text: "Version 2.0", link: URL(string: "https://example.com/releases/2.0")!),
+      .init(text: "\nFixed repeated release-note parsing."),
+    ])
     let resolved = ResolvedReleaseNotes(content: source, quality: .genuine, provenance: .changelog)
     let payload = try XCTUnwrap(ReleaseNotesPersistentCache.payload(from: resolved))
 
@@ -38,7 +35,10 @@ final class ReleaseNotesPersistentCacheTest: XCTestCase {
     XCTAssertEqual(restored.content.string, source.string)
     XCTAssertEqual(restored.quality, .genuine)
     XCTAssertEqual(restored.provenance, .changelog)
-    XCTAssertNotNil(restored.content.attribute(.link, at: 0, effectiveRange: nil))
+    XCTAssertEqual(
+      restored.content.runs.first?.link, URL(string: "https://example.com/releases/2.0"))
+    XCTAssertTrue(storedPayload.richTextData.isEmpty, "New cache entries must not serialize RTF")
+    XCTAssertNotNil(storedPayload.semanticContent)
   }
 
   func testExpiredPayloadIsRemovedWithoutRenewingIt() async throws {

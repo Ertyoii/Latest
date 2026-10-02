@@ -199,8 +199,8 @@ enum ReleaseNotesDocument {
 }
 
 /// Semantic formatting survives preparation without constructing AppKit text objects.
-struct ReleaseNotesStyle: Hashable, Sendable {
-  struct Paragraph: Hashable, Sendable {
+struct ReleaseNotesStyle: Codable, Hashable, Sendable {
+  struct Paragraph: Codable, Hashable, Sendable {
     let spacing: Double
     let spacingBefore: Double
     let headIndent: Double
@@ -216,4 +216,63 @@ struct ReleaseNotesStyle: Hashable, Sendable {
 struct ReleaseNotesStyleKey: AttributedStringKey {
   typealias Value = ReleaseNotesStyle
   static let name = "Latest.ReleaseNotesStyle"
+}
+
+/// Immutable semantic content shared by preparation, caching and WebKit.
+/// Reference identity preserves the page's existing reload/scroll-reset contract.
+final class ReleaseNotesContent: Codable, Sendable {
+  struct Run: Codable, Hashable, Sendable {
+    var text: String
+    let style: ReleaseNotesStyle?
+    let link: URL?
+
+    init(text: String, style: ReleaseNotesStyle? = nil, link: URL? = nil) {
+      self.text = text
+      self.style = style
+      self.link = link
+    }
+  }
+
+  let runs: [Run]
+  let string: String
+  let length: Int
+
+  init(runs: [Run]) {
+    self.runs = runs
+    string = runs.map(\.text).joined()
+    length = string.utf16.count
+  }
+
+  convenience init(string: String) {
+    self.init(runs: [Run(text: string)])
+  }
+
+  convenience init(_ text: AttributedString) {
+    var runs: [Run] = []
+    for run in text.runs {
+      let next = Run(
+        text: String(text[run.range].characters),
+        style: run[ReleaseNotesStyleKey.self], link: run.link)
+      // The former NSMutableAttributedString merged adjacent equal attributes.
+      // Keep that segmentation so generated HTML stays byte-identical.
+      if let previous = runs.last, previous.style == next.style, previous.link == next.link {
+        runs[runs.count - 1].text += next.text
+      } else {
+        runs.append(next)
+      }
+    }
+    self.init(runs: runs)
+  }
+
+  private enum CodingKeys: String, CodingKey { case runs }
+
+  convenience init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(runs: container.decode([Run].self, forKey: .runs))
+  }
+
+  func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(runs, forKey: .runs)
+  }
 }

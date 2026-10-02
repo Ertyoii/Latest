@@ -32,8 +32,8 @@ enum ReleaseNotesQuality: Int, Comparable, Sendable {
   }
 }
 
-struct ResolvedReleaseNotes: @unchecked Sendable {
-  let content: NSAttributedString
+struct ResolvedReleaseNotes: Sendable {
+  let content: ReleaseNotesContent
   let quality: ReleaseNotesQuality
   let provenance: ReleaseNotesProvenance
 }

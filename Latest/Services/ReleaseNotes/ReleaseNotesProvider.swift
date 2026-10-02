@@ -32,7 +32,7 @@ private let sharedReleaseNotesPersistentCache = ReleaseNotesPersistentCache()
 class ReleaseNotesProvider {
 
   /// The return value, containing either the desired release notes, or an error if unavailable.
-  typealias ReleaseNotes = Result<NSAttributedString, Error>
+  typealias ReleaseNotes = Result<ReleaseNotesContent, Error>
   typealias Completion = @MainActor (ReleaseNotes) -> Void
   typealias ResolvedCompletion = @MainActor (Result<ResolvedReleaseNotes, Error>) -> Void
 
@@ -79,7 +79,7 @@ class ReleaseNotesProvider {
       completion(
         .success(
           ResolvedReleaseNotes(
-            content: NSAttributedString(string: notes), quality: .genuine,
+            content: ReleaseNotesContent(string: notes), quality: .genuine,
             provenance: .bundledFallback
           )))
       return
@@ -249,7 +249,7 @@ class ReleaseNotesProvider {
     }
   }
 
-  private nonisolated static func isEffectivelyEmpty(_ text: NSAttributedString) -> Bool {
+  private nonisolated static func isEffectivelyEmpty(_ text: ReleaseNotesContent) -> Bool {
     text.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 

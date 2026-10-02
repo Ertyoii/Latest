@@ -151,7 +151,7 @@ final class MigrationPerformanceTest: XCTestCase {
       settings: settings)
     let detailState = ReleaseNotesDetailViewModel(
       releaseNotesProvider: ImmediateReleaseNotesProvider(
-        text: NSAttributedString(string: "Migration benchmark release notes")
+        text: ReleaseNotesContent(string: "Migration benchmark release notes")
       )
     )
     let detailHost = NSHostingView(
@@ -183,21 +183,15 @@ final class MigrationPerformanceTest: XCTestCase {
     )
 
     let markup = makeReleaseNotesMarkup(sectionCount: 220)
-    try benchmark("rich_text_normalization_layout", iterations: 30) {
+    try benchmark("rich_text_normalization_serialization", iterations: 30) {
       let text = try ReleaseNotesMarkup.attributedString(
         from: markup,
         baseURL: URL(string: "https://example.com/changelog"),
         relevantVersion: "220.0"
       ).get()
-      let storage = NSTextStorage(attributedString: text)
-      let layoutManager = NSLayoutManager()
-      let container = NSTextContainer(
-        size: NSSize(width: 680, height: CGFloat.greatestFiniteMagnitude))
-      container.widthTracksTextView = false
-      storage.addLayoutManager(layoutManager)
-      layoutManager.addTextContainer(container)
-      layoutManager.ensureLayout(for: container)
-      return layoutManager.glyphRange(for: container).length
+      // Measure the shipping serializer; WebKit paint is covered below by
+      // provider-to-render measurements rather than an unrelated text layout.
+      return ReleaseNotesWebDocument.html(for: text).utf8.count
     }
 
     let environment = AppEnvironment(
@@ -246,7 +240,7 @@ final class MigrationPerformanceTest: XCTestCase {
         Task { @MainActor in
           for app in apps {
             let resolved = ResolvedReleaseNotes(
-              content: NSAttributedString(string: "Cached notes for \(app.name)"),
+              content: ReleaseNotesContent(string: "Cached notes for \(app.name)"),
               quality: .genuine, provenance: .changelog)
             if let payload = ReleaseNotesPersistentCache.payload(from: resolved) {
               await cache.store(payload, forKey: ReleaseNotesCacheKey(app: app).stableIdentifier)
@@ -473,9 +467,9 @@ final class MigrationPerformanceTest: XCTestCase {
 
 @MainActor
 private final class ImmediateReleaseNotesProvider: ReleaseNotesProviding {
-  private let text: NSAttributedString
+  private let text: ReleaseNotesContent
 
-  init(text: NSAttributedString) {
+  init(text: ReleaseNotesContent) {
     self.text = text
   }
 

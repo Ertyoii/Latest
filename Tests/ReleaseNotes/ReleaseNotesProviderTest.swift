@@ -164,12 +164,12 @@ final class ReleaseNotesProviderTest: XCTestCase {
     XCTAssertEqual(provider.completions.count, 1)
     model.display(changed)
     XCTAssertEqual(provider.completions.count, 2)
-    provider.completions[1](.success(NSAttributedString(string: "New")))
-    provider.completions[0](.success(NSAttributedString(string: "Old")))
+    provider.completions[1](.success(ReleaseNotesContent(string: "New")))
+    provider.completions[0](.success(ReleaseNotesContent(string: "Old")))
     guard case .text(let text) = model.contentState else { return XCTFail("Expected text") }
     XCTAssertEqual(text.string, "New")
     model.display(nil)
-    provider.completions[1](.success(NSAttributedString(string: "Late")))
+    provider.completions[1](.success(ReleaseNotesContent(string: "Late")))
     guard case .message = model.contentState else { return XCTFail("Selection was cleared") }
   }
 
@@ -181,12 +181,12 @@ final class ReleaseNotesProviderTest: XCTestCase {
     let app = makeReleaseNotesApp(html: "<p>Unused source.</p>")
     let key = ReleaseNotesCacheKey(app: app).stableIdentifier
     let resolved = ResolvedReleaseNotes(
-      content: NSAttributedString(string: "Cached notes"),
+      content: ReleaseNotesContent(string: "Cached notes"),
       quality: .genuine, provenance: .changelog)
     let encoded = try XCTUnwrap(ReleaseNotesPersistentCache.payload(from: resolved))
     let storedAt = Date(timeIntervalSinceNow: -3600)
     let payload = ReleaseNotesPersistentPayload(
-      richTextData: encoded.richTextData,
+      richTextData: encoded.richTextData, semanticContent: encoded.semanticContent,
       qualityRawValue: encoded.qualityRawValue, provenanceRawValue: encoded.provenanceRawValue,
       storedAt: storedAt)
     await cache.store(payload, forKey: key)
@@ -213,7 +213,7 @@ final class ReleaseNotesProviderTest: XCTestCase {
 
   @MainActor
   private func releaseNotes(for app: App, provider: ReleaseNotesProvider) async throws
-    -> NSAttributedString
+    -> ReleaseNotesContent
   {
     var result: ReleaseNotesProvider.ReleaseNotes?
     let expectation = expectation(description: "release notes completion")

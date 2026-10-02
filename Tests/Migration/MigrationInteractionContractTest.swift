@@ -829,12 +829,13 @@ final class MigrationInteractionContractTest: XCTestCase {
       ], range: fullRange)
     source.addAttribute(.link, value: URL(string: "https://example.com/release")!, range: linkRange)
 
-    let html = ReleaseNotesWebDocument.html(for: source)
+    let html = ReleaseNotesWebDocument.html(for: ReleaseNotesLegacyBridge.content(from: source))
     XCTAssertTrue(html.contains("<strong>"))
     XCTAssertFalse(html.contains("background-color"))
     XCTAssertFalse(html.contains("22px"))
 
-    let hostingView = NSHostingView(rootView: ReleaseNotesWebView(text: source))
+    let hostingView = NSHostingView(
+      rootView: ReleaseNotesWebView(text: ReleaseNotesLegacyBridge.content(from: source)))
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 480, height: 280),
       styleMask: [.titled, .resizable], backing: .buffered, defer: false)
@@ -863,8 +864,8 @@ final class MigrationInteractionContractTest: XCTestCase {
 
   @MainActor
   func testReleaseNotesWebViewReusesRendererAndResetsScrollOnSelection() async throws {
-    let short = NSAttributedString(string: "Short release notes")
-    let long = NSAttributedString(
+    let short = ReleaseNotesContent(string: "Short release notes")
+    let long = ReleaseNotesContent(
       string: Array(repeating: "Long release notes", count: 150)
         .joined(separator: "\n"))
     let host = NSHostingView(
@@ -907,7 +908,7 @@ final class MigrationInteractionContractTest: XCTestCase {
   func testReleaseNotesWebDocumentEscapesMarkupAndRejectsScriptLinks() {
     let text = NSMutableAttributedString(string: "<script>alert('x')</script> & notes")
     text.addAttribute(.link, value: "javascript:alert(1)", range: NSRange(location: 0, length: 8))
-    let html = ReleaseNotesWebDocument.html(for: text)
+    let html = ReleaseNotesWebDocument.html(for: ReleaseNotesLegacyBridge.content(from: text))
     XCTAssertTrue(html.contains("&lt;script&gt;"))
     XCTAssertFalse(html.contains("<script>"))
     XCTAssertFalse(html.contains("href=\"javascript:"))
@@ -915,7 +916,7 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   func testReleaseNotesSerializationPreservesUnicodeAndSharesLinkPolicy() {
-    let source = NSAttributedString(string: "<&>\"\t👩🏽‍💻 e\u{301} 中文")
+    let source = ReleaseNotesContent(string: "<&>\"\t👩🏽‍💻 e\u{301} 中文")
     let html = ReleaseNotesWebDocument.html(for: source)
     XCTAssertTrue(html.contains("&lt;&amp;&gt;&quot; 👩🏽‍💻 e\u{301} 中文"))
     for scheme in ["https", "http", "mailto"] {
@@ -1078,7 +1079,7 @@ final class MigrationInteractionContractTest: XCTestCase {
       return XCTFail("Expected delayed loading state.")
     }
 
-    let firstText = NSAttributedString(string: "First release notes")
+    let firstText = ReleaseNotesContent(string: "First release notes")
     provider.completeRequest(at: 0, with: .success(firstText))
     guard case .text(let displayedText) = viewModel.contentState else {
       return XCTFail("Expected release notes text.")
@@ -1087,13 +1088,13 @@ final class MigrationInteractionContractTest: XCTestCase {
 
     viewModel.display(secondApp)
     XCTAssertEqual(provider.requests.count, 2)
-    provider.completeRequest(at: 0, with: .success(NSAttributedString(string: "Stale text")))
+    provider.completeRequest(at: 0, with: .success(ReleaseNotesContent(string: "Stale text")))
     guard case .text(let textAfterStaleCompletion) = viewModel.contentState else {
       return XCTFail("A stale request must not replace the current detail state.")
     }
     XCTAssertEqual(textAfterStaleCompletion.string, firstText.string)
 
-    provider.completeRequest(at: 1, with: .success(NSAttributedString(string: "  \n")))
+    provider.completeRequest(at: 1, with: .success(ReleaseNotesContent(string: "  \n")))
     guard case .message(let emptyMessage) = viewModel.contentState else {
       return XCTFail("Expected an empty release note response to become an unavailable message.")
     }

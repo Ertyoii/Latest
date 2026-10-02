@@ -64,7 +64,7 @@ final class ReleaseNotesMarkupTest: XCTestCase {
       <details>
       ```
       """
-    let text = ReleaseNotesLegacyBridge.attributedString(from: ReleaseNotesDocument.prepare(source))
+    let text = ReleaseNotesContent(ReleaseNotesDocument.prepare(source))
       .string
     XCTAssertTrue(text.contains("Contributors"))
     XCTAssertTrue(text.contains("Fixed console zooming"))
@@ -78,9 +78,8 @@ final class ReleaseNotesMarkupTest: XCTestCase {
       from: "See [details](details.md) for the crash fix.",
       baseURL: URL(string: "https://example.com/releases/4.0.md")!
     ).get()
-    let range = (rendered.string as NSString).range(of: "details")
     XCTAssertEqual(
-      rendered.attribute(.link, at: range.location, effectiveRange: nil) as? URL,
+      rendered.runs.first(where: { $0.text == "details" })?.link,
       URL(string: "https://example.com/releases/details.md"))
   }
 
@@ -151,8 +150,8 @@ final class ReleaseNotesMarkupTest: XCTestCase {
   }
 
   func testListContinuationDoesNotRepeatBullet() {
-    let text = ReleaseNotesLegacyBridge.attributedString(
-      from: ReleaseNotesDocument.prepare(
+    let text = ReleaseNotesContent(
+      ReleaseNotesDocument.prepare(
         "- First paragraph.\n\n  Continuation paragraph.\n\n- Next item."))
     XCTAssertEqual(text.string.filter { $0 == "•" }.count, 2)
   }
@@ -174,19 +173,13 @@ final class ReleaseNotesMarkupTest: XCTestCase {
     let htmlText = try ReleaseNotesMarkup.attributedString(from: html, baseURL: nil).get()
     let markdownText = try ReleaseNotesMarkup.attributedString(from: markdown, baseURL: nil).get()
     XCTAssertEqual(htmlText.string, markdownText.string)
-    let text = htmlText
-    let editor = (text.string as NSString).range(of: "editor")
     XCTAssertEqual(
-      text.attribute(.link, at: editor.location, effectiveRange: nil) as? URL,
+      htmlText.runs.first(where: { $0.text == "editor" })?.link,
       URL(string: "https://example.com/issues/1"))
-    let code = (text.string as NSString).range(of: "code_names")
     XCTAssertTrue(
-      (text.attribute(.font, at: code.location, effectiveRange: nil) as? NSFont)?.fontDescriptor
-        .symbolicTraits.contains(.monoSpace) == true)
-    let nested = (text.string as NSString).range(of: "Keep")
+      htmlText.runs.first(where: { $0.text == "code_names" })?.style?.monospaced == true)
     let paragraph = try XCTUnwrap(
-      text.attribute(.paragraphStyle, at: nested.location, effectiveRange: nil) as? NSParagraphStyle
-    )
+      htmlText.runs.first(where: { $0.text.contains("Keep") })?.style?.paragraph)
     XCTAssertGreaterThan(paragraph.firstLineHeadIndent, 0)
     XCTAssertGreaterThan(paragraph.headIndent, paragraph.firstLineHeadIndent)
   }

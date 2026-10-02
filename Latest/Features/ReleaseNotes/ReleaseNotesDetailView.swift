@@ -96,7 +96,7 @@ struct ReleaseNotesDetailSurface: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
-  private var displayedText: NSAttributedString? {
+  private var displayedText: ReleaseNotesContent? {
     if case .text(let text) = contentState { return text }
     return nil
   }

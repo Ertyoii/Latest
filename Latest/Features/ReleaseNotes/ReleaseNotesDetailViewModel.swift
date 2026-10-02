@@ -47,7 +47,7 @@ struct ReleaseNotesMessage: Equatable {
 enum ReleaseNotesDetailContentState {
   case message(ReleaseNotesMessage)
   case loading
-  case text(NSAttributedString)
+  case text(ReleaseNotesContent)
 }
 
 @MainActor

@@ -3,76 +3,54 @@
 import AppKit
 import Foundation
 
-/// Compatibility boundary for WebKit's existing rich-text input and the v2 RTF cache.
-/// Parsing and semantic preparation belong to ReleaseNotesDocument.
+/// Read-only compatibility for existing RTF caches and non-UTF8 vendor notes.
+/// Newly prepared content and cache writes use semantic runs without AppKit.
 enum ReleaseNotesLegacyBridge {
-  static func attributedString(from text: AttributedString) -> NSAttributedString {
-    let result = NSMutableAttributedString()
-    var styles: [ReleaseNotesStyle: [NSAttributedString.Key: Any]] = [:]
-    for run in text.runs {
-      var attributes: [NSAttributedString.Key: Any] = [:]
-      if let style = run[ReleaseNotesStyleKey.self] {
-        attributes = styles[style] ?? nativeAttributes(for: style)
-        styles[style] = attributes
+  static func content(from text: NSAttributedString) -> ReleaseNotesContent {
+    let plainText = text.string as NSString
+    var runs: [ReleaseNotesContent.Run] = []
+    text.enumerateAttributes(in: NSRange(location: 0, length: text.length)) {
+      attributes, range, _ in
+      let traits = (attributes[.font] as? NSFont)?.fontDescriptor.symbolicTraits ?? []
+      let paragraph = (attributes[.paragraphStyle] as? NSParagraphStyle).map {
+        ReleaseNotesStyle.Paragraph(
+          spacing: $0.paragraphSpacing, spacingBefore: $0.paragraphSpacingBefore,
+          headIndent: $0.headIndent, firstLineHeadIndent: $0.firstLineHeadIndent)
       }
-      if let link = run.link { attributes[.link] = link }
-      result.append(
-        NSAttributedString(string: String(text[run.range].characters), attributes: attributes))
+      let style = ReleaseNotesStyle(
+        bold: traits.contains(.bold), italic: traits.contains(.italic),
+        monospaced: traits.contains(.monoSpace),
+        strikethrough: (attributes[.strikethroughStyle] as? Int ?? 0) != 0,
+        paragraph: paragraph)
+      let link: URL?
+      switch attributes[.link] {
+      case let url as URL: link = url
+      case let string as String: link = URL(string: string)
+      default: link = nil
+      }
+      runs.append(.init(text: plainText.substring(with: range), style: style, link: link))
     }
-    return result
-  }
-
-  private static func nativeAttributes(for style: ReleaseNotesStyle)
-    -> [NSAttributedString.Key: Any]
-  {
-    let base =
-      style.monospaced
-      ? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-      : NSFont.systemFont(ofSize: 13)
-    var traits: NSFontDescriptor.SymbolicTraits = []
-    if style.bold { traits.insert(.bold) }
-    if style.italic { traits.insert(.italic) }
-    var attributes: [NSAttributedString.Key: Any] = [
-      .font: NSFont(
-        descriptor: base.fontDescriptor.withSymbolicTraits(traits), size: base.pointSize)
-        ?? base
-    ]
-    if let paragraph = style.paragraph {
-      let native = NSMutableParagraphStyle()
-      native.paragraphSpacing = paragraph.spacing
-      native.paragraphSpacingBefore = paragraph.spacingBefore
-      native.headIndent = paragraph.headIndent
-      native.firstLineHeadIndent = paragraph.firstLineHeadIndent
-      native.lineSpacing = 2
-      attributes[.paragraphStyle] = native
-      attributes[.foregroundColor] = NSColor.labelColor
-    }
-    if style.strikethrough { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
-    return attributes
+    return ReleaseNotesContent(runs: runs)
   }
 
   /// Retains Foundation's legacy encoding detection for non-UTF8 vendor notes.
-  static func decode(_ data: Data) throws -> NSAttributedString {
+  static func decode(_ data: Data) throws -> ReleaseNotesContent {
     var options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
       .documentType: NSAttributedString.DocumentType.html
     ]
     let text = try NSAttributedString(data: data, options: options, documentAttributes: nil)
     if text.string.split(separator: "\n").count == 1 {
       options[.documentType] = NSAttributedString.DocumentType.plain
-      return try NSAttributedString(data: data, options: options, documentAttributes: nil)
+      return content(
+        from: try NSAttributedString(data: data, options: options, documentAttributes: nil))
     }
-    return text
+    return content(from: text)
   }
 
-  static func rtf(from text: NSAttributedString) throws -> Data {
-    try text.data(
-      from: NSRange(location: 0, length: text.length),
-      documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
-  }
-
-  static func decodeRTF(_ data: Data) throws -> NSAttributedString {
-    try NSAttributedString(
-      data: data, options: [.documentType: NSAttributedString.DocumentType.rtf],
-      documentAttributes: nil)
+  static func decodeRTF(_ data: Data) throws -> ReleaseNotesContent {
+    content(
+      from: try NSAttributedString(
+        data: data, options: [.documentType: NSAttributedString.DocumentType.rtf],
+        documentAttributes: nil))
   }
 }

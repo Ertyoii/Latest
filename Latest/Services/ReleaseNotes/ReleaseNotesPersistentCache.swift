@@ -19,9 +19,21 @@ enum ReleaseNotesStableDigest {
 
 struct ReleaseNotesPersistentPayload: Codable, Sendable {
   let richTextData: Data
+  let semanticContent: ReleaseNotesContent?
   let qualityRawValue: Int
   let provenanceRawValue: String
   let storedAt: Date
+
+  init(
+    richTextData: Data = Data(), semanticContent: ReleaseNotesContent? = nil,
+    qualityRawValue: Int, provenanceRawValue: String, storedAt: Date
+  ) {
+    self.richTextData = richTextData
+    self.semanticContent = semanticContent
+    self.qualityRawValue = qualityRawValue
+    self.provenanceRawValue = provenanceRawValue
+    self.storedAt = storedAt
+  }
 }
 
 actor ReleaseNotesPersistentCache {
@@ -62,10 +74,10 @@ actor ReleaseNotesPersistentCache {
   }
 
   func store(_ payload: ReleaseNotesPersistentPayload, forKey key: String) {
-    guard payload.richTextData.count <= maximumStoredBytes else { return }
     do {
-      try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
       let data = try PropertyListEncoder().encode(payload)
+      guard data.count <= maximumStoredBytes else { return }
+      try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
       try data.write(to: fileURL(forKey: key), options: .atomic)
       trimToLimits()
     } catch {
@@ -76,13 +88,8 @@ actor ReleaseNotesPersistentCache {
 
   @MainActor
   static func payload(from releaseNotes: ResolvedReleaseNotes) -> ReleaseNotesPersistentPayload? {
-    guard
-      let richTextData = try? ReleaseNotesLegacyBridge.rtf(from: releaseNotes.content)
-    else {
-      return nil
-    }
     return ReleaseNotesPersistentPayload(
-      richTextData: richTextData,
+      semanticContent: releaseNotes.content,
       qualityRawValue: releaseNotes.quality.rawValue,
       provenanceRawValue: releaseNotes.provenance.rawValue,
       storedAt: Date()
@@ -95,7 +102,8 @@ actor ReleaseNotesPersistentCache {
   {
     guard let quality = ReleaseNotesQuality(rawValue: payload.qualityRawValue),
       let provenance = ReleaseNotesProvenance(rawValue: payload.provenanceRawValue),
-      let content = try? ReleaseNotesLegacyBridge.decodeRTF(payload.richTextData)
+      let content = payload.semanticContent
+        ?? (try? ReleaseNotesLegacyBridge.decodeRTF(payload.richTextData))
     else {
       return nil
     }

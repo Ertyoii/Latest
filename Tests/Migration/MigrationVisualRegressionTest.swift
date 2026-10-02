@@ -838,7 +838,7 @@ final class ProductionVisualParityTest: XCTestCase {
     for dark in [false, true] {
       for width in [460, 680] {
         let host = NSHostingView(
-          rootView: ReleaseNotesWebView(text: text)
+          rootView: ReleaseNotesWebView(text: ReleaseNotesLegacyBridge.content(from: text))
             .environment(\.colorScheme, dark ? .dark : .light))
         let window = NSWindow(
           contentRect: NSRect(x: 0, y: 0, width: width, height: 360),

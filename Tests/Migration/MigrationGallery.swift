@@ -378,7 +378,7 @@ private struct MigrationDetailFixture: View {
     return App(bundle: bundle, update: nil, isIgnored: false)
   }
 
-  private var fixtureReleaseNotes: NSAttributedString {
+  private var fixtureReleaseNotes: ReleaseNotesContent {
     let text = NSMutableAttributedString(string: "Improvements to Cursor\n\n")
     text.addAttribute(
       .font,
@@ -405,7 +405,7 @@ private struct MigrationDetailFixture: View {
         string: "Read the full changelog",
         attributes: [.link: URL(string: "https://example.com/changelog")!]
       ))
-    return text
+    return ReleaseNotesLegacyBridge.content(from: text)
   }
 }
 

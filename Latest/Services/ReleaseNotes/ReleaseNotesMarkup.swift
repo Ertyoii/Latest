@@ -228,7 +228,7 @@ enum ReleaseNotesMarkup {
   }
 
   private static func render(_ text: AttributedString) -> ReleaseNotesProvider.ReleaseNotes {
-    .success(ReleaseNotesLegacyBridge.attributedString(from: text))
+    .success(ReleaseNotesContent(text))
   }
 
   static func attributedString(from data: Data, baseURL: URL?, relevantVersion: String? = nil)
@@ -239,7 +239,7 @@ enum ReleaseNotesMarkup {
       return Self.attributedString(from: markup, baseURL: baseURL, relevantVersion: relevantVersion)
     }
 
-    let string: NSAttributedString
+    let string: ReleaseNotesContent
     do {
       string = try ReleaseNotesLegacyBridge.decode(data)
     } catch {
@@ -302,7 +302,7 @@ extension String {
 
 }
 
-extension NSAttributedString {
+extension ReleaseNotesContent {
   func mapToResolved(
     quality: ReleaseNotesQuality,
     provenance: ReleaseNotesProvenance

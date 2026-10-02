@@ -8,14 +8,13 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-08-01.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
-import AppKit
 import Combine
 import SwiftUI
 import WebKit
 
 /// SwiftUI owns the page lifetime; WebKit retains native text selection and scrolling.
 struct ReleaseNotesWebView: View {
-  let text: NSAttributedString?
+  let text: ReleaseNotesContent?
   @StateObject private var renderer = ReleaseNotesPage()
 
   var body: some View {
@@ -34,7 +33,7 @@ struct ReleaseNotesWebView: View {
 @MainActor
 private final class ReleaseNotesPage: ObservableObject {
   let page: WebPage
-  private var displayedText: NSAttributedString?
+  private var displayedText: ReleaseNotesContent?
 
   init() {
     var configuration = WebPage.Configuration()
@@ -43,7 +42,7 @@ private final class ReleaseNotesPage: ObservableObject {
     page = WebPage(configuration: configuration, navigationDecider: ReleaseNotesNavigationDecider())
   }
 
-  func display(_ text: NSAttributedString?) {
+  func display(_ text: ReleaseNotesContent?) {
     guard let text, displayedText !== text else { return }
     displayedText = text
     page.load(html: ReleaseNotesWebDocument.html(for: text))
@@ -62,7 +61,7 @@ private struct ReleaseNotesNavigationDecider: WebPage.NavigationDeciding {
     if action.navigationType == .linkActivated,
       let url = ReleaseNotesWebDocument.externalURL(action.request.url)
     {
-      NSWorkspace.shared.open(url)
+      MacApplicationWorkspace.shared.open(url)
     }
     return action.navigationType == .other && action.request.url?.absoluteString == "about:blank"
       ? .allow : .cancel
@@ -72,21 +71,18 @@ private struct ReleaseNotesNavigationDecider: WebPage.NavigationDeciding {
 /// Serializes only the prepared rich text. No vendor scripts, styles, embeds or
 /// network resources enter the display web view.
 enum ReleaseNotesWebDocument {
-  static func html(for text: NSAttributedString) -> String {
-    let plainText = text.string as NSString
+  static func html(for text: ReleaseNotesContent) -> String {
     var body = ""
-    body.reserveCapacity(plainText.length)
-    text.enumerateAttributes(in: NSRange(location: 0, length: text.length)) {
-      attributes, range, _ in
-      var run = escape(plainText.substring(with: range), normalizingTabs: true)
-      if let font = attributes[.font] as? NSFont {
-        let traits = font.fontDescriptor.symbolicTraits
-        if traits.contains(.bold) { run = "<strong>" + run + "</strong>" }
-        if traits.contains(.italic) { run = "<em>" + run + "</em>" }
-        if traits.contains(.monoSpace) { run = "<code>" + run + "</code>" }
+    body.reserveCapacity(text.length)
+    for segment in text.runs {
+      var run = escape(segment.text, normalizingTabs: true)
+      if let style = segment.style {
+        if style.bold { run = "<strong>" + run + "</strong>" }
+        if style.italic { run = "<em>" + run + "</em>" }
+        if style.monospaced { run = "<code>" + run + "</code>" }
+        if style.strikethrough { run = "<s>" + run + "</s>" }
       }
-      if (attributes[.strikethroughStyle] as? Int ?? 0) != 0 { run = "<s>" + run + "</s>" }
-      if let url = externalURL(attributes[.link]) {
+      if let url = externalURL(segment.link) {
         run = "<a href=\"" + escape(url.absoluteString) + "\">" + run + "</a>"
       }
       body += run
