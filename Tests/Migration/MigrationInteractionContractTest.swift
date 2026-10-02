@@ -889,6 +889,22 @@ final class MigrationInteractionContractTest: XCTestCase {
     try await Task.sleep(for: .milliseconds(100))
     let marker = try await web.evaluateJavaScript("window.rendererReuseMarker") as? Int
     XCTAssertEqual(marker, 42, "Unchanged notes must not reload the page")
+    // A different selection can have identical text. Its new content identity
+    // must still reset scroll while the same content object above stays loaded.
+    host.rootView = ReleaseNotesDetailSurface(
+      app: nil, contentState: .text(ReleaseNotesContent(string: long.string)))
+    host.layoutSubtreeIfNeeded()
+    var reloaded = false
+    for _ in 0..<100 {
+      reloaded =
+        (try await web.evaluateJavaScript("typeof window.rendererReuseMarker === 'undefined'")
+          as? Bool) == true
+      if reloaded { break }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    XCTAssertTrue(reloaded, "Distinct notes with equal text must reload the page")
+    let equalTextScroll = try await web.evaluateJavaScript("window.scrollY") as? Double
+    XCTAssertEqual(equalTextScroll, 0)
     host.rootView = ReleaseNotesDetailSurface(app: nil, contentState: .loading)
     host.layoutSubtreeIfNeeded()
     XCTAssertTrue(host.descendant(of: WKWebView.self) === web)
