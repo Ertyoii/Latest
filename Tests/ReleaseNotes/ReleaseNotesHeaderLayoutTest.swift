@@ -105,26 +105,6 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
   }
 
   @MainActor
-  func testMainWindowConfigurationUsesPublicWindowBehaviorWithoutMutatingContent() throws {
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 768, height: 516),
-      styleMask: [.titled, .closable, .resizable],
-      backing: .buffered,
-      defer: false
-    )
-    let sentinelView = NSView(frame: NSRect(x: 8, y: 8, width: 40, height: 40))
-    let contentView = try XCTUnwrap(window.contentView)
-    contentView.addSubview(sentinelView)
-    let subviewsBeforeConfiguration = contentView.subviews
-
-    MainWindowConfiguration.apply(to: window)
-
-    XCTAssertEqual(window.titlebarSeparatorStyle, .none)
-    XCTAssertEqual(contentView.subviews, subviewsBeforeConfiguration)
-    XCTAssertTrue(contentView.subviews.contains { $0 === sentinelView })
-  }
-
-  @MainActor
   func testToolbarTitleIsVisibleInHostedMainWindow() async throws {
     let environment = AppEnvironment.localUATFixture(
       settings: try isolatedAppListSettings(for: self))

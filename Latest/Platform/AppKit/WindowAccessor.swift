@@ -3,11 +3,12 @@ import AppKit
 import SwiftUI
 
 struct WindowAccessor: NSViewRepresentable {
-  func makeNSView(context: Context) -> WindowConfigurationView { WindowConfigurationView() }
-  func updateNSView(_ view: WindowConfigurationView, context: Context) {}
+  func makeNSView(context: Context) -> WindowSheetObserverView { WindowSheetObserverView() }
+  func updateNSView(_ view: WindowSheetObserverView, context: Context) {}
 }
 
-final class WindowConfigurationView: NSView {
+/// Preserves suppression choices when native SwiftUI alerts end with Cancel or Escape.
+final class WindowSheetObserverView: NSView {
   private weak var presentedSheet: NSWindow?
   deinit { NotificationCenter.default.removeObserver(self) }
 
@@ -19,7 +20,6 @@ final class WindowConfigurationView: NSView {
     super.viewDidMoveToWindow()
     NotificationCenter.default.removeObserver(self)
     if let window {
-      MainWindowConfiguration.apply(to: window)
       NotificationCenter.default.addObserver(
         self, selector: #selector(sheetWillBegin(_:)),
         name: NSWindow.willBeginSheetNotification, object: window)

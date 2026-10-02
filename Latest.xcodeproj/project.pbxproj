@@ -114,7 +114,6 @@
 		52A001052FE0000000000001 /* ApplicationAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000052FE0000000000001 /* ApplicationAppearance.swift */; };
 		52A001062FE0000000000001 /* LatestRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000062FE0000000000001 /* LatestRootView.swift */; };
 		52A001072FE0000000000001 /* UpdatesToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000072FE0000000000001 /* UpdatesToolbar.swift */; };
-		52A001082FE0000000000001 /* MainWindowConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000082FE0000000000001 /* MainWindowConfiguration.swift */; };
 		52A001092FE0000000000001 /* ReleaseNotesSourceExtractors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000092FE0000000000001 /* ReleaseNotesSourceExtractors.swift */; };
 		52B001012FE0000000000001 /* ReleaseNotesPersistentCacheTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B000012FE0000000000001 /* ReleaseNotesPersistentCacheTest.swift */; };
 		52B001022FE0000000000001 /* UpdateRepositoryTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B000022FE0000000000001 /* UpdateRepositoryTest.swift */; };
@@ -388,7 +387,6 @@
 		52A000052FE0000000000001 /* ApplicationAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ApplicationAppearance.swift"; sourceTree = "<group>"; };
 		52A000062FE0000000000001 /* LatestRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LatestRootView.swift"; sourceTree = "<group>"; };
 		52A000072FE0000000000001 /* UpdatesToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UpdatesToolbar.swift"; sourceTree = "<group>"; };
-		52A000082FE0000000000001 /* MainWindowConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MainWindowConfiguration.swift"; sourceTree = "<group>"; };
 		52A000092FE0000000000001 /* ReleaseNotesSourceExtractors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesSourceExtractors.swift"; sourceTree = "<group>"; };
 		52B000012FE0000000000001 /* ReleaseNotesPersistentCacheTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesPersistentCacheTest.swift"; sourceTree = "<group>"; };
 		52B000022FE0000000000001 /* UpdateRepositoryTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UpdateRepositoryTest.swift"; sourceTree = "<group>"; };
@@ -743,7 +741,6 @@
 				E45390A9AC334B3F99000103 /* ReleaseNotesLegacyBridge.swift */,
 				52E000012FE1000000000001 /* ApplicationWorkspace.swift */,
 				5058BA3921202BA7003F332B /* IconCache.swift */,
-				52A000082FE0000000000001 /* MainWindowConfiguration.swift */,
 				5073755A278B0A7400F371D8 /* TableViewSnapshotDiff.swift */,
 				51F1001B2FD0000000000001 /* UpdatesTableBridge.swift */,
 				52F000032FE2000000000001 /* UpdatesTableSupport.swift */,
@@ -1223,7 +1220,6 @@
 				52A001052FE0000000000001 /* ApplicationAppearance.swift in Sources */,
 				52A001062FE0000000000001 /* LatestRootView.swift in Sources */,
 				52A001072FE0000000000001 /* UpdatesToolbar.swift in Sources */,
-				52A001082FE0000000000001 /* MainWindowConfiguration.swift in Sources */,
 				51E000012FC8000000000001 /* ReleaseNotesPipeline.swift in Sources */,
 				51E000032FC8000000000001 /* ReleaseNotesCatalog.swift in Sources */,
 				509C4ABC2AD1FFCC00E9C2E1 /* FailableDecodable.swift in Sources */,
