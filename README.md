@@ -30,9 +30,11 @@ Run `./script/format.sh` to format Swift sources. Use the same Xcode toolchain f
 - `Latest/Platform`: AppKit, App Store, Sparkle, and installer integrations
 - `Latest/Support`: shared infrastructure and presentation helpers
 
-Search, section headings, app rows, progress/error controls, and detail action buttons use SwiftUI. `UpdatesTableBridge` retains native table selection, scrolling, pinned headers, menus, and accessibility. Release notes use WebKit inside a SwiftUI container; window access remains AppKit.
+Search, section headings, app rows, progress/error controls, and detail action buttons use SwiftUI. `UpdatesTableBridge` retains native table selection, scrolling, pinned headers, menus, and accessibility. Release notes use WebKit inside a SwiftUI container. SwiftUI controls the main window's toolbar chrome; `WindowAccessor` only preserves helper-alert suppression choices on Cancel and Escape.
 
 Release-note preparation, display and new cache entries share immutable semantic text runs. Existing RTF caches and legacy vendor encodings are decoded through a narrow AppKit compatibility reader.
+
+Application-wide appearance, system icons, Finder actions and Dock badges retain narrow AppKit integrations. A window's `preferredColorScheme` does not apply the app's chosen appearance to every native panel. Sidebar replacements must match the original selection paint and pinned-header compositing as well as row geometry before replacing the native table.
 
 Arrow navigation commits selection and scrolling together, keeping rows contiguous. The detail header follows immediately; notes load after keyboard selection settles. Mouse selection loads notes immediately.
 
