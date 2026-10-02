@@ -7,7 +7,6 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-08-29.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
-import AppKit
 import Foundation
 import OSLog
 
@@ -16,18 +15,6 @@ struct StructuredArticle: Decodable {
 }
 
 enum ReleaseNotesMarkup {
-  private struct PreparedMarkup: Sendable {
-    enum Kind: Sendable {
-      case markdown
-      case plainText
-      case html
-    }
-
-    let string: String
-    let kind: Kind
-    let baseURL: URL?
-  }
-
   enum Regexes {
     static let omittedElements = try! NSRegularExpression(
       pattern: #"(?is)<(script|style|noscript|svg)\b.*?</\1>"#)
@@ -147,9 +134,7 @@ enum ReleaseNotesMarkup {
       return prepare(renderedMarkup, baseURL: baseURL, relevantVersion: nil)
     }
     guard let preparedMarkup else { return nil }
-    let result = render(preparedMarkup)
-    guard case .success = result else { return nil }
-    return result
+    return render(preparedMarkup)
   }
 
   @MainActor
@@ -175,14 +160,15 @@ enum ReleaseNotesMarkup {
   }
 
   private static func prepareOffMain(
-    _ operation: @escaping @Sendable () -> PreparedMarkup?
-  ) async -> PreparedMarkup? {
+    _ operation: @escaping @Sendable () -> AttributedString?
+  ) async -> AttributedString? {
     let preparationTask = Task.detached(priority: .userInitiated) {
-      guard !Task.isCancelled else { return Optional<PreparedMarkup>.none }
+      guard !Task.isCancelled else { return Optional<AttributedString>.none }
       let signpostID = releaseNotesSignposter.makeSignpostID()
       let interval = releaseNotesSignposter.beginInterval("Prepare Release Notes", id: signpostID)
       defer { releaseNotesSignposter.endInterval("Prepare Release Notes", interval) }
-      return operation()
+      let text = operation()
+      return Task.isCancelled ? nil : text
     }
     return await withTaskCancellationHandler {
       await preparationTask.value
@@ -192,7 +178,7 @@ enum ReleaseNotesMarkup {
   }
 
   private static func prepare(_ markup: String, baseURL: URL?, relevantVersion: String?)
-    -> PreparedMarkup?
+    -> AttributedString?
   {
 
     let trimmedMarkup = markup.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -215,8 +201,7 @@ enum ReleaseNotesMarkup {
         ?? sourceMarkup
     }
 
-    let displayMarkup = markup
-    let normalizedMarkup = Self.removingDuplicateLeadingLines(displayMarkup)
+    let normalizedMarkup = Self.removingDuplicateLeadingLines(markup)
     let isValidatedZedArticle =
       baseURL?.host?.localizedCaseInsensitiveContains("zed.dev") == true
       && ZedReleaseNotesExtractor.isUsefulZedReleaseArticleText(normalizedMarkup)
@@ -227,28 +212,23 @@ enum ReleaseNotesMarkup {
       return nil
     }
 
+    let markdown: String
     if Self.prefersMarkdown(normalizedMarkup) {
-      return PreparedMarkup(string: normalizedMarkup, kind: .markdown, baseURL: baseURL)
+      markdown = Self.structuredMarkdown(normalizedMarkup)
+    } else if !normalizedMarkup.containsHTMLTag {
+      markdown = normalizedMarkup.replacingOccurrences(of: "\n", with: "  \n")
+    } else {
+      guard
+        let converted = ReleaseNotesDocument.markdown(fromHTML: normalizedMarkup, baseURL: baseURL),
+        isUsefulReleaseNotesText(converted)
+      else { return nil }
+      markdown = converted
     }
-
-    if !normalizedMarkup.containsHTMLTag {
-      return PreparedMarkup(string: normalizedMarkup, kind: .plainText, baseURL: baseURL)
-    }
-
-    return PreparedMarkup(string: normalizedMarkup, kind: .html, baseURL: baseURL)
+    return ReleaseNotesDocument.prepare(markdown, baseURL: baseURL)
   }
 
-  private static func render(_ preparedMarkup: PreparedMarkup) -> ReleaseNotesProvider.ReleaseNotes
-  {
-    switch preparedMarkup.kind {
-    case .markdown:
-      return .success(
-        Self.attributedString(fromMarkdown: preparedMarkup.string, baseURL: preparedMarkup.baseURL))
-    case .plainText:
-      return .success(Self.attributedString(fromPlainText: preparedMarkup.string))
-    case .html:
-      return Self.attributedString(fromHTML: preparedMarkup.string, baseURL: preparedMarkup.baseURL)
-    }
+  private static func render(_ text: AttributedString) -> ReleaseNotesProvider.ReleaseNotes {
+    .success(ReleaseNotesLegacyBridge.attributedString(from: text))
   }
 
   static func attributedString(from data: Data, baseURL: URL?, relevantVersion: String? = nil)
@@ -259,28 +239,11 @@ enum ReleaseNotesMarkup {
       return Self.attributedString(from: markup, baseURL: baseURL, relevantVersion: relevantVersion)
     }
 
-    var options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
-      .documentType: NSAttributedString.DocumentType.html
-    ]
-
-    var string: NSAttributedString
+    let string: NSAttributedString
     do {
-      string = try NSAttributedString(data: data, options: options, documentAttributes: nil)
-    } catch let error {
+      string = try ReleaseNotesLegacyBridge.decode(data)
+    } catch {
       return .failure(error)
-    }
-
-    // Having only one line means that the text was no HTML but plain text. Therefore we instantiate the attributed string as plain text again.
-    // The initialization with HTML enabled removes all new lines
-    // If anyone has a better idea for checking if the data is valid HTML or plain text, feel free to fix.
-    if string.string.split(separator: "\n").count == 1 {
-      options[.documentType] = NSAttributedString.DocumentType.plain
-
-      do {
-        string = try NSAttributedString(data: data, options: options, documentAttributes: nil)
-      } catch let error {
-        return .failure(error)
-      }
     }
 
     guard Self.isUsefulReleaseNotesText(string.string, relevantVersion: relevantVersion) else {

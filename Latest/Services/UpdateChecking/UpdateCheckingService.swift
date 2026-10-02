@@ -75,7 +75,10 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
       } catch {
         guard let updatesPage = ExternalURL.updatesPage else { return }
         if !appStoreUpdateService.alwaysUsesManualUpdates {
-          UpdateInstallHelperAlert.present(with: error, fallbackURL: updatesPage)
+          UpdateInstallHelperAlert.present(with: error, fallbackURL: updatesPage) { [weak self] in
+            self?.updateAll()
+          }
+          return
         } else {
           workspace.open(updatesPage)
         }

@@ -103,17 +103,20 @@ class AppStoreCheckerOperationTest: XCTestCase {
   }
 
   func testInstallationReplyGateResumesContinuationOnlyOnce() async throws {
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+    let expected = URL(fileURLWithPath: "/Applications/Updated.app")
+    let installed = try await withCheckedThrowingContinuation {
+      (continuation: CheckedContinuation<URL, Error>) in
       let replyGate = InstallationReplyGate(continuation: continuation)
-      replyGate.resume(with: .success(()))
+      replyGate.resume(with: .success(expected))
       replyGate.resume(with: .failure(LatestError.installHelperCommunicationFailed))
     }
+    XCTAssertEqual(installed, expected)
   }
 
   func testInstallationReplyGateTimesOutWhenHelperNeverReplies() async {
     do {
-      try await withCheckedThrowingContinuation {
-        (continuation: CheckedContinuation<Void, Error>) in
+      let _: URL = try await withCheckedThrowingContinuation {
+        (continuation: CheckedContinuation<URL, Error>) in
         let replyGate = InstallationReplyGate(continuation: continuation)
         replyGate.scheduleTimeout(after: .milliseconds(10))
       }
@@ -121,6 +124,50 @@ class AppStoreCheckerOperationTest: XCTestCase {
     } catch {
       XCTAssertNotNil(error as? LatestError)
     }
+  }
+
+  func testDownloadedArtifactsSurviveRemovalAndRefreshWhenInodeChanges() throws {
+    let folder = temporaryAppURL().deletingPathExtension()
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let package = folder.appendingPathComponent("update.pkg")
+    let receipt = folder.appendingPathComponent("receipt")
+    try Data("partial".utf8).write(to: package)
+    try Data("receipt-1".utf8).write(to: receipt)
+    var artifacts = AppStoreDownloadArtifacts()
+    defer {
+      artifacts.removeAll()
+      try? FileManager.default.removeItem(at: folder)
+    }
+    try artifacts.refresh(in: folder)
+    let oldLink = try XCTUnwrap(artifacts.packageURL)
+    // App Store atomically replaces a partial package and receipt.
+    try Data("complete".utf8).write(to: package, options: .atomic)
+    try Data("receipt-2".utf8).write(to: receipt, options: .atomic)
+    try artifacts.refresh(in: folder)
+    XCTAssertNotEqual(artifacts.packageURL, oldLink)
+    try FileManager.default.removeItem(at: folder)
+    XCTAssertEqual(try Data(contentsOf: XCTUnwrap(artifacts.packageURL)), Data("complete".utf8))
+    XCTAssertEqual(try Data(contentsOf: XCTUnwrap(artifacts.receiptURL)), Data("receipt-2".utf8))
+  }
+
+  func testManualInstallRepairsOnlyPackageKitEntitlementFailure() {
+    XCTAssertTrue(
+      AppStoreDownloadArtifacts.requiresPackageInstallation(
+        NSError(domain: "PKInstallErrorDomain", code: 201)))
+    XCTAssertTrue(
+      AppStoreDownloadArtifacts.requiresPackageInstallation(
+        NSError(
+          domain: "wrapper", code: 1,
+          userInfo: [
+            NSUnderlyingErrorKey:
+              NSError(domain: "PKInstallErrorDomain", code: 201)
+          ])))
+    XCTAssertFalse(
+      AppStoreDownloadArtifacts.requiresPackageInstallation(
+        NSError(domain: "PKInstallErrorDomain", code: 202)))
+    XCTAssertFalse(
+      AppStoreDownloadArtifacts.requiresPackageInstallation(
+        NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)))
   }
 
   private func temporaryAppURL() -> URL {

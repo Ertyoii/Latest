@@ -15,6 +15,12 @@ struct UpdatesSidebarView: View {
   @ObservedObject var viewModel: UpdatesListViewModel
   @ObservedObject var searchFocusController: SearchFocusController
   let showsSupportStatusOverride: Bool?
+  @FocusState private var focus: SidebarFocus?
+  @Environment(\.windowFocus) private var windowFocus
+  @State private var previousFocus = SidebarFocus.list
+  @State private var keyboardFocusRequest: UInt = 0
+
+  private var activeFocus: FocusState<SidebarFocus?>.Binding { windowFocus ?? $focus }
 
   init(
     viewModel: UpdatesListViewModel,
@@ -28,19 +34,46 @@ struct UpdatesSidebarView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      UpdatesSidebarHeaderView(viewModel: viewModel, searchFocusController: searchFocusController)
+      UpdatesSidebarHeaderView(
+        viewModel: viewModel, searchFocusController: searchFocusController,
+        restoreFocus: restorePreviousFocus)
       UpdatesTableBridge(
-        viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride)
+        viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride,
+        keyboardFocusRequest: keyboardFocusRequest,
+        keyboardFocusDidBegin: { previousFocus = .list }
+      )
+    }
+    .onChange(of: activeFocus.wrappedValue) { _, new in
+      if let new { previousFocus = new }
     }
     .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea(.container, edges: .top))
   }
+
+  private func restorePreviousFocus() {
+    activeFocus.wrappedValue = previousFocus == .releaseNotes ? .releaseNotes : nil
+    if previousFocus == .list {
+      // The native table owns its responder through its existing bridge.
+      keyboardFocusRequest &+= 1
+    }
+  }
+
+}
+
+enum SidebarFocus: Hashable {
+  case list
+  case releaseNotes
+}
+
+extension EnvironmentValues {
+  @Entry var windowFocus: FocusState<SidebarFocus?>.Binding?
 }
 
 struct UpdatesSidebarHeaderView: View {
   @ObservedObject var viewModel: UpdatesListViewModel
   @ObservedObject var searchFocusController: SearchFocusController
+  // Preserve the native placeholder raster in full-size-content toolbar windows.
   @FocusState private var searchIsFocused: Bool
-  @State private var focusTracker = SearchFocusTracker()
+  let restoreFocus: () -> Void
 
   var body: some View {
     HStack(spacing: 1) {
@@ -64,7 +97,10 @@ struct UpdatesSidebarHeaderView: View {
       .focused($searchIsFocused)
       .accessibilityIdentifier("updates.search")
       .accessibilityLabel("Search Apps")
-      .onExitCommand(perform: restorePreviousFocus)
+      .onExitCommand {
+        searchIsFocused = false
+        Task { @MainActor in restoreFocus() }
+      }
 
       if !viewModel.searchQuery.isEmpty {
         Button {
@@ -84,66 +120,9 @@ struct UpdatesSidebarHeaderView: View {
     .glassEffect(.regular, in: .capsule)
     .padding(.horizontal, 12)
     .padding(.vertical, 8)
-    .background(SearchWindowReader(tracker: focusTracker))
     .onChange(of: searchFocusController.request, initial: true) { _, request in
       guard request != nil else { return }
-      if !searchIsFocused { focusTracker.rememberFirstResponder() }
       searchIsFocused = true
     }
   }
-
-  private func restorePreviousFocus() {
-    searchIsFocused = false
-    Task { @MainActor in
-      focusTracker.restoreFirstResponder()
-    }
-  }
-}
-
-@MainActor
-private final class SearchFocusTracker {
-  weak var window: NSWindow?
-  weak var previousFirstResponder: NSResponder?
-
-  func rememberFirstResponder() {
-    guard let current = window?.firstResponder else { return }
-    if let editor = current as? NSTextView, let control = editor.delegate as? NSControl {
-      previousFirstResponder = control
-    } else {
-      previousFirstResponder = current
-    }
-  }
-
-  func restoreFirstResponder() {
-    let previous = previousFirstResponder
-    previousFirstResponder = nil
-    if let previous, window?.makeFirstResponder(previous) == true { return }
-    window?.makeFirstResponder(nil)
-  }
-}
-
-private struct SearchWindowReader: NSViewRepresentable {
-  let tracker: SearchFocusTracker
-
-  func makeNSView(context: Context) -> SearchWindowView { SearchWindowView(tracker: tracker) }
-  func updateNSView(_ view: SearchWindowView, context: Context) { view.tracker = tracker }
-}
-
-private final class SearchWindowView: NSView {
-  var tracker: SearchFocusTracker
-
-  init(tracker: SearchFocusTracker) {
-    self.tracker = tracker
-    super.init(frame: .zero)
-  }
-
-  @available(*, unavailable)
-  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-  override func viewDidMoveToWindow() {
-    super.viewDidMoveToWindow()
-    tracker.window = window
-  }
-
-  override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

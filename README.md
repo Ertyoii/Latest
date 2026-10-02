@@ -32,7 +32,7 @@ Search, section headings, app rows, progress/error controls, and detail action b
 
 Arrow navigation commits selection and scrolling together, keeping rows contiguous. The detail header follows immediately; notes load after keyboard selection settles. Mouse selection loads notes immediately.
 
-Features depend on `AppUpdating`. Sparkle is pinned through Swift Package Manager. `UpdateInstaller` and the headers/module maps in `Frameworks` are required for App Store updates over XPC.
+Features depend on `AppUpdating`. Sparkle is pinned through Swift Package Manager. Native Mac App Store apps update within Latest; on macOS 26.1 and newer a privileged helper installs the App Store package. Wrapped iOS apps use the native App Store. Helper registration errors are shown, and a pending update resumes after approval in System Settings. The app and embedded helper must share a valid signing identity; use `./script/build_and_run.sh --verify --signed` for a signed local build. Unsigned test builds can run but cannot enable the helper.
 
 ## Performance checks
 

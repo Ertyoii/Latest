@@ -55,6 +55,7 @@ final class SettingsViewModel: ObservableObject {
   @Published private(set) var directoryURLs: [URL] = []
   @Published var selectedDirectory: URL?
   @Published private(set) var showsInstallHelperBanner = false
+  @Published var helperRegistrationError: String?
 
   private let settings: any AppListSettingsProviding
   private let installHelperService: any InstallHelperServicing
@@ -108,7 +109,14 @@ final class SettingsViewModel: ObservableObject {
   }
 
   func registerInstallHelper() {
-    try? installHelperService.register()
+    do {
+      try installHelperService.register()
+    } catch {
+      helperRegistrationError = [
+        error.localizedDescription, (error as? LocalizedError)?.failureReason,
+      ]
+      .compactMap { $0 }.joined(separator: "\n\n")
+    }
     refreshInstallHelperAvailability()
   }
 

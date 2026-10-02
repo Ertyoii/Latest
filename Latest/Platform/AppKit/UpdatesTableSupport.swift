@@ -158,6 +158,18 @@ enum SidebarUpdateActionTitle {
 
 final class SwiftUIUpdateTableView: NSTableView {
   private(set) var isHandlingArrowKey = false
+  var keyboardFocusDidBegin: (() -> Void)?
+
+  override func becomeFirstResponder() -> Bool {
+    let accepted = super.becomeFirstResponder()
+    if accepted {
+      Task { @MainActor [weak self] in
+        guard let self, window?.firstResponder === self else { return }
+        keyboardFocusDidBegin?()
+      }
+    }
+    return accepted
+  }
 
   override func keyDown(with event: NSEvent) {
     isHandlingArrowKey =

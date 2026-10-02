@@ -16,13 +16,17 @@ import SwiftUI
 struct UpdatesTableBridge: View {
   @ObservedObject var viewModel: UpdatesListViewModel
   let showsSupportStatusOverride: Bool?
+  var keyboardFocusRequest: UInt = 0
+  var keyboardFocusDidBegin: (() -> Void)?
 
   var body: some View {
     UpdatesTableView(
       viewModel: viewModel,
       snapshotRevision: viewModel.snapshotRevision,
       selectedIdentifier: viewModel.selectedApp?.identifier,
-      showsSupportStatusOverride: showsSupportStatusOverride)
+      showsSupportStatusOverride: showsSupportStatusOverride,
+      keyboardFocusRequest: keyboardFocusRequest,
+      keyboardFocusDidBegin: keyboardFocusDidBegin)
   }
 }
 
@@ -31,6 +35,8 @@ private struct UpdatesTableView: NSViewRepresentable {
   let snapshotRevision: Int
   let selectedIdentifier: App.Bundle.Identifier?
   let showsSupportStatusOverride: Bool?
+  let keyboardFocusRequest: UInt
+  let keyboardFocusDidBegin: (() -> Void)?
 
   func makeCoordinator() -> Coordinator {
     Coordinator(
@@ -41,6 +47,7 @@ private struct UpdatesTableView: NSViewRepresentable {
 
   func makeNSView(context: Context) -> NSScrollView {
     let tableView = SwiftUIUpdateTableView()
+    tableView.keyboardFocusDidBegin = keyboardFocusDidBegin
     tableView.delegate = context.coordinator
     tableView.dataSource = context.coordinator
     tableView.menu = context.coordinator.tableViewMenu
@@ -84,10 +91,13 @@ private struct UpdatesTableView: NSViewRepresentable {
     context.coordinator.observeLiveScrolling(in: scrollView)
     tableView.sizeToViewport()
     context.coordinator.apply(viewModel: viewModel)
+    context.coordinator.requestKeyboardFocus(keyboardFocusRequest)
     return scrollView
   }
 
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
+    context.coordinator.tableView?.keyboardFocusDidBegin = keyboardFocusDidBegin
+    context.coordinator.requestKeyboardFocus(keyboardFocusRequest)
     context.coordinator.showsSupportStatusOverride = showsSupportStatusOverride
     context.coordinator.scheduleApply(
       viewModel: viewModel, snapshotRevision: snapshotRevision,
@@ -99,6 +109,7 @@ private struct UpdatesTableView: NSViewRepresentable {
     weak var tableView: SwiftUIUpdateTableView? {
       didSet { menuController.tableView = tableView }
     }
+    private var lastKeyboardFocusRequest: UInt = 0
     private var viewModel: UpdatesListViewModel
     private var entries: [AppListSnapshot.Entry] = []
     private var filterQuery: String?
@@ -120,6 +131,15 @@ private struct UpdatesTableView: NSViewRepresentable {
 
     deinit {
       NotificationCenter.default.removeObserver(self)
+    }
+
+    func requestKeyboardFocus(_ request: UInt) {
+      guard request != lastKeyboardFocusRequest else { return }
+      lastKeyboardFocusRequest = request
+      Task { @MainActor [weak tableView] in
+        guard let tableView else { return }
+        tableView.window?.makeFirstResponder(tableView)
+      }
     }
 
     func observeLiveScrolling(in scrollView: NSScrollView) {

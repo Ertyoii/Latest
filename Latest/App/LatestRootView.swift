@@ -12,6 +12,7 @@ import SwiftUI
 struct LatestRootView: View {
   let environment: AppEnvironment
 
+  @FocusState private var focus: SidebarFocus?
   @ObservedObject private var updatesViewModel: UpdatesListViewModel
   init(environment: AppEnvironment) {
     self.environment = environment
@@ -35,6 +36,7 @@ struct LatestRootView: View {
         updatesViewModel: updatesViewModel,
         showsSupportStatus: updatesViewModel.showsSupportStatus
       )
+      .focused($focus, equals: .releaseNotes)
       .frame(minWidth: VisualMetrics.detailMinWidth)
       .overlay(alignment: .top) {
         Rectangle()
@@ -43,6 +45,8 @@ struct LatestRootView: View {
           .allowsHitTesting(false)
       }
     }
+    .environment(\.windowFocus, $focus)
+    .modifier(UpdateInstallHelperPresentation())
     .navigationTitle("Latest")
     .toolbar(removing: .title)
     .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)

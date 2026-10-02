@@ -7,21 +7,12 @@
 //
 
 import Foundation
+import Security
 import ServiceManagement
 import Synchronization
 
 /// Manages the privileged helper daemon used to install App Store updates via XPC.
-actor InstallHelper {
-
-  /// The shared instance used for installing packages.
-  static let shared = InstallHelper()
-
-  private static let installHelperName = "com.max-langer.latest.UpdateInstaller"
-  private static let availabilityRefreshLifetime: TimeInterval = 5 * 60
-  private var lastAvailabilityRefresh: Date?
-  private var availabilityRefreshTask: Task<Void, Error>?
-
-  private init() {}
+enum InstallHelper {
 
   // MARK: - Helper Registration
 
@@ -41,10 +32,12 @@ actor InstallHelper {
 
   /// Registers the helper or opens System Settings if approval is required.
   static func installHelper() throws {
+    try verifySigning()
     let service = helperService
     switch service.status {
     case .notFound, .notRegistered:
       try service.register()
+      if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
     case .requiresApproval:
       SMAppService.openSystemSettingsLoginItems()
     case .enabled:
@@ -55,57 +48,51 @@ actor InstallHelper {
   }
 
   private static var helperService: SMAppService {
-    SMAppService.daemon(plistName: installHelperName + ".plist")
+    SMAppService.daemon(plistName: UpdateInstallerIdentity.service + ".plist")
   }
 
-  /// Re-registers the helper to ensure it is available for use.
-  private func ensureAvailability() async throws {
-    try Self.verifyAvailability()
-
-    if let lastAvailabilityRefresh,
-      Date().timeIntervalSince(lastAvailabilityRefresh) < Self.availabilityRefreshLifetime
-    {
-      return
-    }
-
-    if let availabilityRefreshTask {
-      try await availabilityRefreshTask.value
-      return
-    }
-
-    let refreshTask = Task {
-      let service = Self.helperService
-      try await service.unregister()
-      try await Task.sleep(for: .seconds(0.5))
-      try service.register()
-    }
-    availabilityRefreshTask = refreshTask
-    defer { availabilityRefreshTask = nil }
-
-    do {
-      try await refreshTask.value
-      lastAvailabilityRefresh = Date()
-    } catch {
-      lastAvailabilityRefresh = nil
-      throw error
+  /// A root daemon must have a stable Apple-issued signing identity. Do not
+  /// weaken its launch or peer requirements for unsigned development builds.
+  static func verifySigning() throws {
+    let helperURL = Bundle.main.bundleURL.appendingPathComponent(
+      "Contents/Resources/LatestUpdateInstaller")
+    for (url, text) in [
+      (Bundle.main.bundleURL, UpdateInstallerIdentity.appRequirement),
+      (helperURL, UpdateInstallerIdentity.helperRequirement),
+    ] {
+      var code: SecStaticCode?
+      var policy: SecRequirement?
+      guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess,
+        SecRequirementCreateWithString(text as CFString, [], &policy) == errSecSuccess,
+        let code, let policy,
+        SecStaticCodeCheckValidity(code, [], policy) == errSecSuccess
+      else {
+        throw LatestError.custom(
+          title: "Update Helper Requires a Signed Build",
+          description:
+            "This copy of Latest or its helper does not have the required code signature. Use a signed build of Latest, then enable the helper again."
+        )
+      }
     }
   }
 
   // MARK: - Package Installation
 
   /// Installs an App Store update package at the given target URL via the privileged helper.
-  func installPackage(at url: URL, targetURL: String, receiptData: Data, receiptURL: URL)
-    async throws
+  static func installPackage(at url: URL, appURL: URL, receiptData: Data)
+    async throws -> URL
   {
-    try await ensureAvailability()
+    try Self.verifyAvailability()
 
-    let connection = NSXPCConnection(machServiceName: Self.installHelperName)
+    let connection = NSXPCConnection(
+      machServiceName: UpdateInstallerIdentity.service, options: .privileged)
+    connection.setCodeSigningRequirement(UpdateInstallerIdentity.helperRequirement)
     connection.remoteObjectInterface = NSXPCInterface(with: UpdateInstallerProtocol.self)
 
-    connection.activate()
     defer { connection.invalidate() }
 
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+    return try await withCheckedThrowingContinuation {
+      (continuation: CheckedContinuation<URL, Error>) in
       let replyGate = InstallationReplyGate(continuation: continuation)
       replyGate.scheduleTimeout()
       connection.interruptionHandler = {
@@ -114,6 +101,7 @@ actor InstallHelper {
       connection.invalidationHandler = {
         replyGate.resume(with: .failure(LatestError.installHelperCommunicationFailed))
       }
+      connection.activate()
 
       guard
         let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
@@ -125,12 +113,14 @@ actor InstallHelper {
       }
 
       proxy.performInstallation(
-        ofPackageAt: url, targetURL: targetURL, receiptData: receiptData, receiptURL: receiptURL
-      ) { error in
+        ofPackageAt: url, appURL: appURL, receiptData: receiptData
+      ) { installedURL, error in
         if let error {
           replyGate.resume(with: .failure(error))
+        } else if let installedURL {
+          replyGate.resume(with: .success(installedURL))
         } else {
-          replyGate.resume(with: .success(()))
+          replyGate.resume(with: .failure(LatestError.installHelperCommunicationFailed))
         }
       }
     }
@@ -139,13 +129,13 @@ actor InstallHelper {
 
 final class InstallationReplyGate: Sendable {
   private struct State {
-    var continuation: CheckedContinuation<Void, Error>?
+    var continuation: CheckedContinuation<URL, Error>?
     var timeoutTask: Task<Void, Never>?
   }
 
   private let state: Mutex<State>
 
-  init(continuation: CheckedContinuation<Void, Error>) {
+  init(continuation: CheckedContinuation<URL, Error>) {
     state = Mutex(State(continuation: continuation))
   }
 
@@ -170,9 +160,9 @@ final class InstallationReplyGate: Sendable {
     }
   }
 
-  func resume(with result: Result<Void, Error>) {
+  func resume(with result: Result<URL, Error>) {
     let completion = state.withLock {
-      state -> (CheckedContinuation<Void, Error>, Task<Void, Never>?)? in
+      state -> (CheckedContinuation<URL, Error>, Task<Void, Never>?)? in
       guard let continuation = state.continuation else { return nil }
       state.continuation = nil
       let timeoutTask = state.timeoutTask
@@ -182,12 +172,7 @@ final class InstallationReplyGate: Sendable {
     guard let (continuation, timeoutTask) = completion else { return }
 
     timeoutTask?.cancel()
-    switch result {
-    case .success:
-      continuation.resume()
-    case .failure(let error):
-      continuation.resume(throwing: error)
-    }
+    continuation.resume(with: result)
   }
 }
 

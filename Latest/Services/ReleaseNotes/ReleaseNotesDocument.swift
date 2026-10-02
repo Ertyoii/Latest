@@ -1,7 +1,7 @@
 // Copyright © 2026 ertyoii. Licensed under GPL-3.0; see LICENSE.md.
 
-import AppKit
 import Foundation
+import SwiftUI
 
 /// A shared semantic input for HTML, Markdown and plain-text release notes.
 /// Foundation parses Markdown inline/block intents; vendor CSS never reaches the view.
@@ -92,7 +92,7 @@ enum ReleaseNotesDocument {
     }
   }
 
-  static func render(_ markdown: String, baseURL: URL? = nil) -> NSAttributedString {
+  static func prepare(_ markdown: String, baseURL: URL? = nil) -> AttributedString {
     var fence: String?
     var inComment = false
     var source = markdown.components(separatedBy: .newlines).compactMap { line -> String? in
@@ -124,16 +124,18 @@ enum ReleaseNotesDocument {
       let parsed = try? AttributedString(
         markdown: source, options: .init(interpretedSyntax: .full), baseURL: baseURL)
     else {
-      return NSAttributedString(
-        string: markdown, attributes: [.font: NSFont.systemFont(ofSize: 13)])
+      var text = AttributedString(markdown)
+      text[ReleaseNotesStyleKey.self] = ReleaseNotesStyle()
+      text.font = .system(size: 13)
+      return text
     }
-    let result = NSMutableAttributedString()
+    var result = AttributedString()
     var previousBlock: Int?
     var emittedListItems = Set<Int>()
     for run in parsed.runs {
       let components = run.presentationIntent?.components ?? []
       let block = components.first?.identity
-      let newBlock = block != previousBlock || result.length == 0
+      let newBlock = block != previousBlock || result.characters.isEmpty
       let heading = components.contains {
         if case .header = $0.kind { return true }
         return false
@@ -143,35 +145,31 @@ enum ReleaseNotesDocument {
         return false
       }
       let lists = components.filter { $0.kind == .orderedList || $0.kind == .unorderedList }
-      let paragraph = NSMutableParagraphStyle()
-      paragraph.paragraphSpacing = lists.isEmpty ? 8 : 4
-      paragraph.paragraphSpacingBefore = heading && result.length > 0 ? 5 : 0
-      paragraph.headIndent = lists.isEmpty ? 0 : CGFloat(lists.count - 1) * 16 + 14
-      paragraph.firstLineHeadIndent = lists.isEmpty ? 0 : CGFloat(lists.count - 1) * 16
-      paragraph.lineSpacing = 2
-      var traits: NSFontDescriptor.SymbolicTraits = []
       let inline = run.inlinePresentationIntent ?? []
-      if heading || inline.contains(.stronglyEmphasized) { traits.insert(.bold) }
-      if inline.contains(.emphasized) { traits.insert(.italic) }
-      let baseFont =
-        code || inline.contains(.code)
-        ? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular) : NSFont.systemFont(ofSize: 13)
-      let font =
-        NSFont(
-          descriptor: baseFont.fontDescriptor.withSymbolicTraits(traits), size: baseFont.pointSize)
-        ?? baseFont
-      var attributes: [NSAttributedString.Key: Any] = [
-        .font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: paragraph,
-      ]
+      var style = ReleaseNotesStyle(
+        bold: heading || inline.contains(.stronglyEmphasized),
+        italic: inline.contains(.emphasized),
+        monospaced: code || inline.contains(.code),
+        strikethrough: inline.contains(.strikethrough),
+        paragraph: .init(
+          spacing: lists.isEmpty ? 8 : 4,
+          spacingBefore: heading && !result.characters.isEmpty ? 5 : 0,
+          headIndent: lists.isEmpty ? 0 : Double(lists.count - 1) * 16 + 14,
+          firstLineHeadIndent: lists.isEmpty ? 0 : Double(lists.count - 1) * 16))
+      var attributes = AttributeContainer()
+      attributes[ReleaseNotesStyleKey.self] = style
+      var font = Font.system(
+        size: style.monospaced ? 12 : 13, design: style.monospaced ? .monospaced : .default)
+      if style.bold { font = font.bold() }
+      if style.italic { font = font.italic() }
+      attributes.font = font
+      attributes.foregroundColor = .primary
       if let link = run.link, ["https", "http", "mailto"].contains(link.scheme?.lowercased() ?? "")
       {
-        attributes[.link] = link.absoluteURL
-      }
-      if inline.contains(.strikethrough) {
-        attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+        attributes.link = link.absoluteURL
       }
       if newBlock {
-        if result.length > 0 { result.append(NSAttributedString(string: "\n")) }
+        if !result.characters.isEmpty { result.append(AttributedString("\n")) }
         if let list = lists.first,
           let item = components.first(where: {
             if case .listItem = $0.kind { return true }
@@ -180,18 +178,42 @@ enum ReleaseNotesDocument {
         {
           if emittedListItems.insert(item.identity).inserted {
             result.append(
-              NSAttributedString(
-                string: list.kind == .orderedList ? "\(ordinal). " : "• ", attributes: attributes))
+              AttributedString(
+                list.kind == .orderedList ? "\(ordinal). " : "• ", attributes: attributes))
           } else {
-            paragraph.firstLineHeadIndent = paragraph.headIndent
+            if var paragraph = style.paragraph {
+              paragraph.firstLineHeadIndent = paragraph.headIndent
+              style.paragraph = paragraph
+            }
+            attributes[ReleaseNotesStyleKey.self] = style
           }
         }
       }
       result.append(
-        NSAttributedString(string: String(parsed[run.range].characters), attributes: attributes))
+        AttributedString(String(parsed[run.range].characters), attributes: attributes))
       previousBlock = block
     }
-    if result.length > 0 { result.append(NSAttributedString(string: "\n")) }
+    if !result.characters.isEmpty { result.append(AttributedString("\n")) }
     return result
   }
+}
+
+/// Semantic formatting survives preparation without constructing AppKit text objects.
+struct ReleaseNotesStyle: Hashable, Sendable {
+  struct Paragraph: Hashable, Sendable {
+    let spacing: Double
+    let spacingBefore: Double
+    let headIndent: Double
+    var firstLineHeadIndent: Double
+  }
+  var bold = false
+  var italic = false
+  var monospaced = false
+  var strikethrough = false
+  var paragraph: Paragraph?
+}
+
+struct ReleaseNotesStyleKey: AttributedStringKey {
+  typealias Value = ReleaseNotesStyle
+  static let name = "Latest.ReleaseNotesStyle"
 }

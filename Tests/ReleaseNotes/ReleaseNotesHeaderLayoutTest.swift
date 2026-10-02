@@ -146,17 +146,7 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
     window.layoutIfNeeded()
     host.layoutSubtreeIfNeeded()
 
-    let shareable = try await SCShareableContent.currentProcess
-    let capturedWindow = try XCTUnwrap(
-      shareable.windows.first { $0.windowID == window.windowNumber })
-    let configuration = SCStreamConfiguration()
-    configuration.width = 1536
-    configuration.height = 1032
-    configuration.showsCursor = false
-    let image = try await SCScreenshotManager.captureImage(
-      contentFilter: SCContentFilter(desktopIndependentWindow: capturedWindow),
-      configuration: configuration)
-    let bitmap = NSBitmapImageRep(cgImage: image)
+    let bitmap = try await captureWindowBitmap(window)
     let scale = CGFloat(bitmap.pixelsWide) / window.frame.width
     let titleStart = VisualMetrics.sidebarIdealWidth + VisualMetrics.detailHeaderHorizontalPadding
     let titleRegion = NSRect(x: titleStart - 4, y: 14, width: 100, height: 26)
@@ -415,16 +405,8 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
     window.layoutIfNeeded()
     row.layoutSubtreeIfNeeded()
     try await Task.sleep(for: .milliseconds(100))
-    let shareable = try await SCShareableContent.currentProcess
-    let capturedWindow = try XCTUnwrap(
-      shareable.windows.first { $0.windowID == window.windowNumber })
-    let configuration = SCStreamConfiguration()
-    configuration.width = Int(backing.frame.width * 2)
-    configuration.height = 120
-    configuration.showsCursor = false
-    return try await SCScreenshotManager.captureImage(
-      contentFilter: SCContentFilter(desktopIndependentWindow: capturedWindow),
-      configuration: configuration)
+    let bitmap = try await captureWindowBitmap(window)
+    return try XCTUnwrap(bitmap.cgImage)
   }
 
   private func makeApp(

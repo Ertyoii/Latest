@@ -55,7 +55,6 @@ else
 fi
 
 allowed_bridges=(
-	"Latest/Features/Updates/UpdatesSidebarView.swift"
 	"Latest/Platform/AppKit/UpdatesTableBridge.swift"
 	"Latest/Platform/AppKit/WindowAccessor.swift"
 )

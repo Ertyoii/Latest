@@ -7,6 +7,13 @@ PROJECT="Latest.xcodeproj"
 SCHEME="Latest"
 CONFIGURATION="Debug"
 BUNDLE_ID="com.max-langer.Latest.dev"
+SIGNING_ARGS=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="")
+if [[ "${2:-}" == "--signed" ]]; then
+  SIGNING_ARGS=(CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY="Apple Development")
+elif [[ -n "${2:-}" ]]; then
+  echo "error: second argument must be --signed" >&2
+  exit 2
+fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
@@ -29,9 +36,7 @@ xcodebuild \
   -derivedDataPath "$DERIVED_DATA" \
   -resultBundlePath "$RESULT_BUNDLE" \
   CLANG_MODULE_CACHE_PATH="$MODULE_CACHE" \
-  CODE_SIGNING_ALLOWED=NO \
-  CODE_SIGNING_REQUIRED=NO \
-  CODE_SIGN_IDENTITY="" \
+  "${SIGNING_ARGS[@]}" \
   build
 
 open_app() {
@@ -66,7 +71,7 @@ case "$MODE" in
     pgrep -x "$APP_NAME" >/dev/null
     ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--uat]" >&2
+    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--uat] [--signed]" >&2
     exit 2
     ;;
 esac

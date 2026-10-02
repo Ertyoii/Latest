@@ -27,6 +27,254 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
+  func testHelperRegistrationResumesPendingUpdateAfterApprovalOnlyOnce() {
+    let stored = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
+    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
+    defer { AppStoreUpdateSettings.alwaysPerformManualUpdates.active = stored }
+    let helper = HelperRegistrationFixture()
+    let presenter = UpdateInstallHelperAlert(helper: helper)
+    var resumed = 0
+    presenter.present(.installHelperNotRegistered, fallbackURL: URL(string: "https://example.com")!)
+    { resumed += 1 }
+    presenter.enableHelper()
+    XCTAssertEqual(helper.registrations, 1)
+    XCTAssertEqual(resumed, 0)
+    helper.enabled = true
+    presenter.resumeIfAvailable()
+    presenter.resumeIfAvailable()
+    XCTAssertEqual(resumed, 1)
+    XCTAssertFalse(presenter.isPresented)
+  }
+
+  @MainActor
+  func testHelperRegistrationFailureIsVisibleAndCancelDoesNotRetry() async {
+    let stored = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
+    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
+    defer { AppStoreUpdateSettings.alwaysPerformManualUpdates.active = stored }
+    let helper = HelperRegistrationFixture()
+    helper.failure = NSError(
+      domain: "registration", code: 1,
+      userInfo: [NSLocalizedDescriptionKey: "Signing does not match"])
+    let presenter = UpdateInstallHelperAlert(helper: helper)
+    var resumed = false
+    presenter.present(.installHelperNotRegistered, fallbackURL: URL(string: "https://example.com")!)
+    { resumed = true }
+    presenter.enableHelper()
+    await Task.yield()
+    XCTAssertTrue(presenter.isPresented)
+    XCTAssertTrue(presenter.message.contains("Signing does not match"))
+    presenter.cancel()
+    helper.enabled = true
+    presenter.resumeIfAvailable()
+    XCTAssertFalse(resumed)
+  }
+
+  @MainActor
+  func testHelperInstallButtonPresentsRegistrationFailure() async throws {
+    let stored = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
+    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
+    defer { AppStoreUpdateSettings.alwaysPerformManualUpdates.active = stored }
+    let helper = HelperRegistrationFixture()
+    helper.failure = NSError(
+      domain: "registration", code: 1,
+      userInfo: [NSLocalizedDescriptionKey: "Signing does not match"])
+    let presenter = UpdateInstallHelperAlert(helper: helper)
+    let host = NSHostingView(
+      rootView: Color(nsColor: .windowBackgroundColor)
+        .background(WindowAccessor())
+        .modifier(UpdateInstallHelperPresentation(presenter: presenter)))
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+      styleMask: [.titled], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    window.makeKeyAndOrderFront(nil)
+    defer { window.close() }
+    presenter.present(
+      .installHelperNotRegistered, fallbackURL: URL(string: "https://example.com")!, retry: {})
+    for _ in 0..<80 {
+      if window.attachedSheet != nil { break }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    let sheet = try XCTUnwrap(window.attachedSheet)
+    let install = try XCTUnwrap(
+      sheet.contentView?.allDescendants().compactMap { $0 as? NSButton }
+        .first { $0.title == presenter.primaryTitle })
+    install.performClick(nil)
+    var displayedMessages: [String] = []
+    for _ in 0..<80 {
+      displayedMessages =
+        window.attachedSheet?.contentView?.allDescendants()
+        .compactMap { ($0 as? NSTextField)?.stringValue } ?? []
+      if displayedMessages.contains(where: { $0.contains("Signing does not match") }) { break }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    XCTAssertEqual(helper.registrations, 1)
+    XCTAssertTrue(
+      displayedMessages.contains(where: { $0.contains("Signing does not match") }),
+      "Install Helper must show its failure in a new visible dialog")
+    presenter.cancel()
+  }
+
+  @MainActor
+  func testSwiftUIHelperAlertMatchesOriginalSheetPixelsAndSuppression() async throws {
+    let stored = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
+    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
+    defer { AppStoreUpdateSettings.alwaysPerformManualUpdates.active = stored }
+    NSApplication.shared.activate()
+    let presenter = UpdateInstallHelperAlert(helper: HelperRegistrationFixture())
+    let host = NSHostingView(
+      rootView: Color(nsColor: .windowBackgroundColor)
+        .background(WindowAccessor())
+        .modifier(UpdateInstallHelperPresentation(presenter: presenter)))
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+      styleMask: [.titled], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    window.makeKeyAndOrderFront(nil)
+    // SwiftUI's first dialog activates this test host asynchronously. Warm it
+    // before capturing the independent AppKit reference so activation matches.
+    presenter.present(
+      .installHelperNotRegistered, fallbackURL: URL(string: "https://example.com")!, retry: {})
+    for _ in 0..<80 {
+      if window.attachedSheet != nil { break }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    try await Task.sleep(for: .milliseconds(600))
+    presenter.cancel()
+    for _ in 0..<80 {
+      if window.attachedSheet == nil { break }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    try await Task.sleep(for: .milliseconds(100))
+    defer { window.close() }
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent("build/helper-alert-parity", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    for dark in [false, true] {
+      window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+      for error in [InstallHelperError.installHelperNotRegistered, .installHelperRequiresApproval] {
+        let original = NSAlert(error: error)
+        original.alertStyle = .informational
+        original.messageText = NSLocalizedString("UpdateInstallHelperAlert.Title", comment: "")
+        original.informativeText = error.errorDescription ?? ""
+        original.showsSuppressionButton = true
+        original.suppressionButton?.title = NSLocalizedString(
+          "UpdateInstallHelperAlert.SuppressionTitle", comment: "")
+        original.addButton(
+          withTitle: NSLocalizedString(
+            error == .installHelperNotRegistered
+              ? "UpdateInstallHelperAlert.Primary.InstallHelper"
+              : "UpdateInstallHelperAlert.Primary.OpenSettings", comment: ""))
+        original.addButton(
+          withTitle: NSLocalizedString("UpdateInstallHelperAlert.Secondary.AppStore", comment: ""))
+        original.addButton(
+          withTitle: NSLocalizedString("UpdateInstallHelperAlert.Cancel", comment: ""))
+        original.beginSheetModal(for: window) { _ in }
+        original.window.makeKey()
+        try await Task.sleep(for: .milliseconds(600))
+        let originalFrame = original.window.frame
+        let before = try await captureHelperSheet(original.window, parent: window)
+        window.endSheet(original.window)
+        original.window.orderOut(nil)
+        for _ in 0..<80 {
+          if window.attachedSheet == nil { break }
+          try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertNil(window.attachedSheet, "Original sheet must finish dismissal")
+        presenter.present(error, fallbackURL: URL(string: "https://example.com")!, retry: {})
+        var sheet: NSWindow?
+        for _ in 0..<40 {
+          sheet = window.attachedSheet
+          if let sheet, sheet !== original.window, sheet.isVisible { break }
+          try await Task.sleep(for: .milliseconds(25))
+        }
+        let candidate = try XCTUnwrap(sheet)
+        XCTAssertFalse(
+          candidate === original.window, "Compare distinct original and SwiftUI sheets")
+        candidate.makeKey()
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertEqual(candidate.frame, originalFrame, "Sheet geometry")
+        let after = try await captureHelperSheet(candidate, parent: window)
+        let name =
+          "\(dark ? "dark" : "light")-\(error == .installHelperNotRegistered ? "install" : "approval")"
+        try XCTUnwrap(before.representation(using: .png, properties: [:])).write(
+          to: root.appendingPathComponent("\(name)-before.png"))
+        try XCTUnwrap(after.representation(using: .png, properties: [:])).write(
+          to: root.appendingPathComponent("\(name)-after.png"))
+        XCTAssertEqual(after.pixelsWide, before.pixelsWide, name)
+        XCTAssertEqual(after.pixelsHigh, before.pixelsHigh, name)
+        XCTAssertEqual(try normalizedRGBABytes(after), try normalizedRGBABytes(before), name)
+        let buttons = candidate.contentView?.allDescendants().compactMap { $0 as? NSButton } ?? []
+        let suppression = try XCTUnwrap(
+          buttons.first {
+            $0.title == NSLocalizedString("UpdateInstallHelperAlert.SuppressionTitle", comment: "")
+          })
+        suppression.performClick(nil)
+        try await Task.sleep(for: .milliseconds(25))
+        let cancel = try XCTUnwrap(
+          buttons.first {
+            $0.title == NSLocalizedString("UpdateInstallHelperAlert.Cancel", comment: "")
+          })
+        if dark, error == .installHelperRequiresApproval {
+          let escape = try XCTUnwrap(
+            NSEvent.keyEvent(
+              with: .keyDown, location: .zero,
+              modifierFlags: [], timestamp: 0, windowNumber: candidate.windowNumber,
+              context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+              isARepeat: false, keyCode: 53))
+          candidate.sendEvent(escape)
+        } else {
+          cancel.performClick(nil)
+        }
+        for _ in 0..<80 {
+          if window.attachedSheet == nil { break }
+          try await Task.sleep(for: .milliseconds(25))
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertFalse(presenter.isPresented)
+        XCTAssertTrue(AppStoreUpdateSettings.alwaysPerformManualUpdates.active)
+        presenter.cancel()
+        AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
+        try await Task.sleep(for: .milliseconds(200))
+      }
+    }
+  }
+
+  @MainActor
+  private func captureHelperSheet(_ sheet: NSWindow, parent: NSWindow) async throws
+    -> NSBitmapImageRep
+  {
+    // ScreenCaptureKit groups a sheet with its parent. Capture at the parent's
+    // real scale, then crop the sheet's frame without resizing its pixels.
+    let bitmap = try await captureWindowBitmap(parent)
+    let frame = sheet.frame
+    let crop = CGRect(
+      x: (frame.minX - parent.frame.minX) * 2,
+      y: (parent.frame.maxY - frame.maxY) * 2,
+      width: frame.width * 2, height: frame.height * 2)
+    return NSBitmapImageRep(cgImage: try XCTUnwrap(bitmap.cgImage?.cropping(to: crop)))
+  }
+
+  private func normalizedRGBABytes(_ bitmap: NSBitmapImageRep) throws -> Data {
+    let image = try XCTUnwrap(bitmap.cgImage)
+    var data = Data(count: bitmap.pixelsWide * bitmap.pixelsHigh * 4)
+    try data.withUnsafeMutableBytes { bytes in
+      let context = try XCTUnwrap(
+        CGContext(
+          data: bytes.baseAddress,
+          width: bitmap.pixelsWide, height: bitmap.pixelsHigh, bitsPerComponent: 8,
+          bytesPerRow: bitmap.pixelsWide * 4, space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+      context.draw(
+        image, in: CGRect(x: 0, y: 0, width: bitmap.pixelsWide, height: bitmap.pixelsHigh))
+    }
+    return data
+  }
+
+  @MainActor
   func testApplicationAppearanceCanReturnFromDarkToSystem() {
     let application = NSApplication.shared
     let originalAppearance = application.appearance
@@ -158,6 +406,14 @@ final class MigrationInteractionContractTest: XCTestCase {
 
   @MainActor
   func testSidebarSearchAcceptsTypingClearAndEscapeRestoresTableFocus() async throws {
+    // FocusState and the native table settle on separate main-actor turns.
+    // Await the actual responder transition rather than a fixed 50-ms delay.
+    func waitForFocus(_ condition: () -> Bool) async throws {
+      for _ in 0..<100 {
+        if condition() { return }
+        try await Task.sleep(for: .milliseconds(10))
+      }
+    }
     let app = makeApp(name: "Notes", version: "1", remoteVersion: "2")
     let viewModel = UpdatesListViewModel(
       snapshot: AppListSnapshot(withApps: [app], filterQuery: nil))
@@ -189,6 +445,9 @@ final class MigrationInteractionContractTest: XCTestCase {
     try await Task.sleep(for: .milliseconds(50))
     XCTAssertEqual(viewModel.searchQuery, "Notes")
 
+    // Repeating Find while editing must not replace the restoration target.
+    focusController.focus()
+    try await Task.sleep(for: .milliseconds(50))
     let escape = try XCTUnwrap(
       NSEvent.keyEvent(
         with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
@@ -196,7 +455,7 @@ final class MigrationInteractionContractTest: XCTestCase {
         characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}",
         isARepeat: false, keyCode: 53))
     window.sendEvent(escape)
-    try await Task.sleep(for: .milliseconds(50))
+    try await waitForFocus { window.firstResponder === table }
     XCTAssertTrue(window.firstResponder === table)
     XCTAssertEqual(viewModel.searchQuery, "Notes")
 
@@ -204,7 +463,7 @@ final class MigrationInteractionContractTest: XCTestCase {
       updateCheckingService: UpdateCheckingService(),
       updatesListViewModel: viewModel, searchFocusController: focusController
     ).focusSearch()
-    try await Task.sleep(for: .milliseconds(50))
+    try await waitForFocus { search.currentEditor() === window.firstResponder }
     let searchFrame = search.convert(search.bounds, to: nil)
     let clearLocation = NSPoint(x: searchFrame.maxX + 7, y: searchFrame.midY)
     for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
@@ -217,7 +476,82 @@ final class MigrationInteractionContractTest: XCTestCase {
     }
     try await Task.sleep(for: .milliseconds(50))
     XCTAssertEqual(viewModel.searchQuery, "")
+    try await waitForFocus { search.currentEditor() === window.firstResponder }
     XCTAssertTrue(search.currentEditor() === window.firstResponder)
+    window.sendEvent(escape)
+    try await waitForFocus { window.firstResponder === table }
+    XCTAssertTrue(window.firstResponder === table)
+    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+      let event = try XCTUnwrap(
+        NSEvent.mouseEvent(
+          with: type,
+          location: NSPoint(x: searchFrame.midX, y: searchFrame.midY), modifierFlags: [],
+          timestamp: 0, windowNumber: window.windowNumber, context: nil,
+          eventNumber: 0, clickCount: 1, pressure: 1))
+      window.sendEvent(event)
+    }
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertTrue(search.currentEditor() === window.firstResponder)
+    window.sendEvent(escape)
+    try await waitForFocus { window.firstResponder === table }
+    XCTAssertTrue(
+      window.firstResponder === table, "Mouse entry must also restore sidebar navigation")
+    focusController.focus()
+    try await Task.sleep(for: .milliseconds(50))
+    search.currentEditor()?.insertText("No matching app")
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertTrue(viewModel.snapshot.sections.isEmpty)
+    window.sendEvent(escape)
+    try await waitForFocus { window.firstResponder === table }
+    XCTAssertTrue(
+      window.firstResponder === table, "An empty search result must still restore keyboard focus")
+  }
+
+  @MainActor
+  func testSearchEscapeRestoresReleaseNotesAfterRepeatedFindCommands() async throws {
+    let environment = AppEnvironment.localUATFixture(
+      settings: try isolatedAppListSettings(for: self))
+    let host = NSHostingView(rootView: LatestRootView(environment: environment))
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 768, height: 516),
+      styleMask: [.titled], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    window.makeKeyAndOrderFront(nil)
+    defer { window.close() }
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(100))
+    let web = try XCTUnwrap(host.descendant(of: WKWebView.self))
+    try await waitForWebContent(web, containing: "Offline acceptance fixture")
+    XCTAssertTrue(window.makeFirstResponder(web))
+    try await Task.sleep(for: .milliseconds(50))
+    environment.commands.focusSearch()
+    try await Task.sleep(for: .milliseconds(50))
+    let search = try XCTUnwrap(host.descendant(of: NSTextField.self))
+    XCTAssertTrue(search.currentEditor() === window.firstResponder)
+    environment.commands.focusSearch()
+    try await Task.sleep(for: .milliseconds(50))
+    let escape = try XCTUnwrap(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero,
+        modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+        characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53))
+    window.sendEvent(escape)
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertTrue(
+      window.firstResponder === web, "Escape must return to the previously focused release notes")
+    let table = try XCTUnwrap(host.descendant(of: NSTableView.self))
+    for destination: NSResponder in [table, web, table] {
+      XCTAssertTrue(window.makeFirstResponder(destination))
+      try await Task.sleep(for: .milliseconds(50))
+      environment.commands.focusSearch()
+      try await Task.sleep(for: .milliseconds(50))
+      window.sendEvent(escape)
+      try await Task.sleep(for: .milliseconds(50))
+      XCTAssertTrue(
+        window.firstResponder === destination,
+        "Escape must follow the latest focus destination when switching between list and notes")
+    }
   }
 
   @MainActor
@@ -899,5 +1233,19 @@ extension NSView {
 
   fileprivate func allDescendants() -> [NSView] {
     subviews + subviews.flatMap { $0.allDescendants() }
+  }
+}
+
+@MainActor
+private final class HelperRegistrationFixture: InstallHelperServicing {
+  var enabled = false
+  var failure: Error?
+  private(set) var registrations = 0
+  func verifyAvailability() throws {
+    if !enabled { throw InstallHelperError.installHelperRequiresApproval }
+  }
+  func register() throws {
+    registrations += 1
+    if let failure { throw failure }
   }
 }

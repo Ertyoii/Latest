@@ -31,6 +31,16 @@ struct GeneralSettingsView: View {
     .onAppear {
       viewModel.refreshInstallHelperAvailability()
     }
+    .alert(
+      "Unable to Enable Update Helper",
+      isPresented: Binding(
+        get: { viewModel.helperRegistrationError != nil },
+        set: { if !$0 { viewModel.helperRegistrationError = nil } })
+    ) {
+      Button("OK", role: .cancel) { viewModel.helperRegistrationError = nil }
+    } message: {
+      Text(viewModel.helperRegistrationError ?? "")
+    }
   }
 
   private var settingsForm: some View {

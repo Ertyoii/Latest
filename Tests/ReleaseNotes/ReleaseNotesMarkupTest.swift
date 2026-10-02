@@ -14,6 +14,43 @@ import XCTest
 @testable import Latest
 
 final class ReleaseNotesMarkupTest: XCTestCase {
+  @MainActor
+  func testPreparedRichTextMatchesOriginalHTMLAndLegacyCache() throws {
+    let cases = [
+      "# Release 2.0\n\n**Bold** *italic* ***both*** `code` ~~removed~~ [link](notes)\n\n- First item\n    - Nested item\n- Second item\n\n1. Ordered\n2. More\n\n```swift\nlet x = 1\nprint(x)\n```",
+      "## Changes\n\nCafé 中文 👩🏽‍💻 e\u{301} < & > \"\ttext.\n\n**Bold across\nlines**\n\n> Quote with *emphasis*\n\nPlain paragraph.",
+      "<h2>Release 2.0</h2><p>Fixed <b>bold</b> and <i>italic</i> with <code>code</code>.</p><ol start=\"3\"><li>First</li><li><a href=\"notes\">Relative link</a></li></ol><script>ignored()</script>",
+      "Fixed launch.\nImproved scrolling.\n\nLast paragraph.",
+    ]
+    let baseURL = URL(string: "https://example.com/releases/")!
+    let texts = try cases.map { source in
+      try ReleaseNotesMarkup.attributedString(from: source, baseURL: baseURL).get()
+    }
+    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("Fixtures/PreparedRichText")
+    for (index, text) in texts.enumerated() {
+      let originalHTML = try String(
+        contentsOf: directory.appendingPathComponent("notes-\(index).html"), encoding: .utf8)
+      XCTAssertEqual(
+        ReleaseNotesWebDocument.html(for: text), originalHTML,
+        "Prepared HTML must stay byte-identical")
+      let payload = try PropertyListDecoder().decode(
+        ReleaseNotesPersistentPayload.self,
+        from: Data(contentsOf: directory.appendingPathComponent("notes-\(index).plist")))
+      let cached = try XCTUnwrap(ReleaseNotesPersistentCache.resolvedReleaseNotes(from: payload))
+      XCTAssertEqual(
+        ReleaseNotesWebDocument.html(for: cached.content), originalHTML,
+        "Existing RTF cache remains compatible")
+      let newPayload = try XCTUnwrap(
+        ReleaseNotesPersistentCache.payload(
+          from:
+            ResolvedReleaseNotes(content: text, quality: .genuine, provenance: .changelog)))
+      let restored = try XCTUnwrap(
+        ReleaseNotesPersistentCache.resolvedReleaseNotes(from: newPayload))
+      XCTAssertEqual(ReleaseNotesWebDocument.html(for: restored.content), originalHTML)
+    }
+  }
+
   func testMarkdownDisclosureMarkupDoesNotLeakIntoNotes() {
     let source = """
       # Platform 4.41
@@ -27,7 +64,8 @@ final class ReleaseNotesMarkupTest: XCTestCase {
       <details>
       ```
       """
-    let text = ReleaseNotesDocument.render(source).string
+    let text = ReleaseNotesLegacyBridge.attributedString(from: ReleaseNotesDocument.prepare(source))
+      .string
     XCTAssertTrue(text.contains("Contributors"))
     XCTAssertTrue(text.contains("Fixed console zooming"))
     XCTAssertFalse(text.contains("<summary>"))
@@ -36,9 +74,10 @@ final class ReleaseNotesMarkupTest: XCTestCase {
   }
 
   func testMarkdownRelativeLinksResolveAgainstTheSourcePage() throws {
-    let rendered = ReleaseNotesMarkup.attributedString(
-      fromMarkdown: "See [details](details.md) for the crash fix.",
-      baseURL: URL(string: "https://example.com/releases/4.0.md")!)
+    let rendered = try ReleaseNotesMarkup.attributedString(
+      from: "See [details](details.md) for the crash fix.",
+      baseURL: URL(string: "https://example.com/releases/4.0.md")!
+    ).get()
     let range = (rendered.string as NSString).range(of: "details")
     XCTAssertEqual(
       rendered.attribute(.link, at: range.location, effectiveRange: nil) as? URL,
@@ -112,8 +151,9 @@ final class ReleaseNotesMarkupTest: XCTestCase {
   }
 
   func testListContinuationDoesNotRepeatBullet() {
-    let text = ReleaseNotesDocument.render(
-      "- First paragraph.\n\n  Continuation paragraph.\n\n- Next item.")
+    let text = ReleaseNotesLegacyBridge.attributedString(
+      from: ReleaseNotesDocument.prepare(
+        "- First paragraph.\n\n  Continuation paragraph.\n\n- Next item."))
     XCTAssertEqual(text.string.filter { $0 == "•" }.count, 2)
   }
 

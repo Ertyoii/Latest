@@ -7,22 +7,16 @@
 //
 
 import Foundation
-import os
-
-/// Code signing requirement for the main app: only Latest may connect to this daemon.
-private let appCodeSigningRequirement =
-  "identifier \"com.max-langer.Latest\" and certificate leaf[subject.OU] = \"VFABJ5RE5Q\""
 
 class ServiceDelegate: NSObject, NSXPCListenerDelegate {
   /// This method is where the NSXPCListener configures, accepts, and resumes a new incoming NSXPCConnection.
   func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection)
     -> Bool
   {
-    newConnection.setCodeSigningRequirement(appCodeSigningRequirement)
+    newConnection.setCodeSigningRequirement(UpdateInstallerIdentity.appRequirement)
     newConnection.exportedInterface = NSXPCInterface(with: UpdateInstallerProtocol.self)
 
-    let exportedObject = UpdateInstaller()
-    newConnection.exportedObject = exportedObject
+    newConnection.exportedObject = UpdateInstaller()
     newConnection.resume()
 
     return true
@@ -33,7 +27,7 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
 let delegate = ServiceDelegate()
 
 // Create and start the listener
-let listener = NSXPCListener(machServiceName: "com.max-langer.latest.UpdateInstaller")
+let listener = NSXPCListener(machServiceName: UpdateInstallerIdentity.service)
 listener.delegate = delegate
 listener.resume()
 

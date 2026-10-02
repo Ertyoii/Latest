@@ -7,7 +7,6 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-08-29.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
-import AppKit
 import CryptoKit
 import Foundation
 import OSLog
@@ -78,10 +77,7 @@ actor ReleaseNotesPersistentCache {
   @MainActor
   static func payload(from releaseNotes: ResolvedReleaseNotes) -> ReleaseNotesPersistentPayload? {
     guard
-      let richTextData = try? releaseNotes.content.data(
-        from: NSRange(location: 0, length: releaseNotes.content.length),
-        documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
-      )
+      let richTextData = try? ReleaseNotesLegacyBridge.rtf(from: releaseNotes.content)
     else {
       return nil
     }
@@ -99,11 +95,7 @@ actor ReleaseNotesPersistentCache {
   {
     guard let quality = ReleaseNotesQuality(rawValue: payload.qualityRawValue),
       let provenance = ReleaseNotesProvenance(rawValue: payload.provenanceRawValue),
-      let content = try? NSAttributedString(
-        data: payload.richTextData,
-        options: [.documentType: NSAttributedString.DocumentType.rtf],
-        documentAttributes: nil
-      )
+      let content = try? ReleaseNotesLegacyBridge.decodeRTF(payload.richTextData)
     else {
       return nil
     }

@@ -24,6 +24,7 @@ func captureWindowBitmap(_ window: NSWindow) async throws -> NSBitmapImageRep {
   configuration.width = Int(window.frame.width * 2)
   configuration.height = Int(window.frame.height * 2)
   configuration.showsCursor = false
+  configuration.scalesToFit = true
   let image = try await SCScreenshotManager.captureImage(
     contentFilter: SCContentFilter(desktopIndependentWindow: capturedWindow),
     configuration: configuration)

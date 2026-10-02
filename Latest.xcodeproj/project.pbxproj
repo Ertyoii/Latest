@@ -132,7 +132,7 @@
 		52F001032FE2000000000001 /* UpdatesTableSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000032FE2000000000001 /* UpdatesTableSupport.swift */; };
 		52F001042FE2000000000001 /* ReleaseNotesSourceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000042FE2000000000001 /* ReleaseNotesSourceCatalog.swift */; };
 		52F001052FE2000000000001 /* ElectronReleaseNotesSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000052FE2000000000001 /* ElectronReleaseNotesSource.swift */; };
-		52F001062FE2000000000001 /* ReleaseNotesMarkup+Rendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000062FE2000000000001 /* ReleaseNotesMarkup+Rendering.swift */; };
+		52F001062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift */; };
 		53D000012FF0000000000001 /* AppFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53D000022FF0000000000001 /* AppFixtures.swift */; };
 		951D8EE6E6131DF8B498FAED /* ZedReleaseNotesExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E573007060BA2A08246BCBD6 /* ZedReleaseNotesExtractor.swift */; };
 		98849C45CA55E4F4E92740CB /* ChromeReleaseNotesExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F7D497DE3A7D3B325C635EA /* ChromeReleaseNotesExtractor.swift */; };
@@ -141,6 +141,7 @@
 		D691B34EE29B0FF98A22ED72 /* ReleaseNotesTextNormalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 903BBFF6BD25262BCF8BE89A /* ReleaseNotesTextNormalization.swift */; };
 		FA6C0E11A75026835D8C8DA0 /* ZoomReleaseNotesExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76F591149A1D25F98CE7FF78 /* ZoomReleaseNotesExtractor.swift */; };
 		E45390A9AC334B3F99000101 /* ReleaseNotesDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = E45390A9AC334B3F99000102 /* ReleaseNotesDocument.swift */; };
+		E45390A9AC334B3F99000104 /* ReleaseNotesLegacyBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = E45390A9AC334B3F99000103 /* ReleaseNotesLegacyBridge.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -405,7 +406,7 @@
 		52F000032FE2000000000001 /* UpdatesTableSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UpdatesTableSupport.swift"; sourceTree = "<group>"; };
 		52F000042FE2000000000001 /* ReleaseNotesSourceCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesSourceCatalog.swift"; sourceTree = "<group>"; };
 		52F000052FE2000000000001 /* ElectronReleaseNotesSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ElectronReleaseNotesSource.swift"; sourceTree = "<group>"; };
-		52F000062FE2000000000001 /* ReleaseNotesMarkup+Rendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesMarkup+Rendering.swift"; sourceTree = "<group>"; };
+		52F000062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesMarkup+Preparation.swift"; sourceTree = "<group>"; };
 		53D000022FF0000000000001 /* AppFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppFixtures.swift"; sourceTree = "<group>"; };
 		5421DAACBA730AEEB29C717F /* NavicatReleaseNotesExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NavicatReleaseNotesExtractor.swift"; sourceTree = "<group>"; };
 		76F591149A1D25F98CE7FF78 /* ZoomReleaseNotesExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ZoomReleaseNotesExtractor.swift"; sourceTree = "<group>"; };
@@ -415,6 +416,7 @@
 		A937EB19DC5A6BBCB6EF6BC6 /* AppUpdating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppUpdating.swift"; sourceTree = "<group>"; };
 		E573007060BA2A08246BCBD6 /* ZedReleaseNotesExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ZedReleaseNotesExtractor.swift"; sourceTree = "<group>"; };
 		E45390A9AC334B3F99000102 /* ReleaseNotesDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesDocument.swift; sourceTree = "<group>"; };
+		E45390A9AC334B3F99000103 /* ReleaseNotesLegacyBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesLegacyBridge.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -693,7 +695,7 @@
 				52F000042FE2000000000001 /* ReleaseNotesSourceCatalog.swift */,
 				52F000052FE2000000000001 /* ElectronReleaseNotesSource.swift */,
 				52A000032FE0000000000001 /* ReleaseNotesMarkup.swift */,
-				52F000062FE2000000000001 /* ReleaseNotesMarkup+Rendering.swift */,
+				52F000062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift */,
 				52A000092FE0000000000001 /* ReleaseNotesSourceExtractors.swift */,
 				76F591149A1D25F98CE7FF78 /* ZoomReleaseNotesExtractor.swift */,
 				E573007060BA2A08246BCBD6 /* ZedReleaseNotesExtractor.swift */,
@@ -738,6 +740,7 @@
 		52C0000D2FE0000000000001 /* AppKit */ = {
 			isa = PBXGroup;
 			children = (
+				E45390A9AC334B3F99000103 /* ReleaseNotesLegacyBridge.swift */,
 				52E000012FE1000000000001 /* ApplicationWorkspace.swift */,
 				5058BA3921202BA7003F332B /* IconCache.swift */,
 				52A000082FE0000000000001 /* MainWindowConfiguration.swift */,
@@ -1131,6 +1134,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E45390A9AC334B3F99000104 /* ReleaseNotesLegacyBridge.swift in Sources */,
 				509735502798D17E00FFE809 /* MainActorAsyncStreamRegistry.swift in Sources */,
 				51A001022FC3000000000001 /* AppEnvironment.swift in Sources */,
 				51A001032FC3000000000001 /* AppCommands.swift in Sources */,
@@ -1211,7 +1215,7 @@
 				52F001032FE2000000000001 /* UpdatesTableSupport.swift in Sources */,
 				52F001042FE2000000000001 /* ReleaseNotesSourceCatalog.swift in Sources */,
 				52F001052FE2000000000001 /* ElectronReleaseNotesSource.swift in Sources */,
-				52F001062FE2000000000001 /* ReleaseNotesMarkup+Rendering.swift in Sources */,
+				52F001062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift in Sources */,
 				52E001012FE1000000000001 /* ApplicationWorkspace.swift in Sources */,
 				52E001022FE1000000000001 /* AppStoreUpdateService.swift in Sources */,
 				52E001032FE1000000000001 /* InstallHelperService.swift in Sources */,
@@ -1506,10 +1510,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = App;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "Mac Developer";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1446;
+				CURRENT_PROJECT_VERSION = 1447;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = D87N659XLV;
@@ -1528,7 +1532,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.69;
+				MARKETING_VERSION = 0.70;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1548,10 +1552,10 @@
 				CLANG_COVERAGE_MAPPING = NO;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "Mac Developer";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1446;
+				CURRENT_PROJECT_VERSION = 1447;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = D87N659XLV;
@@ -1571,7 +1575,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.69;
+				MARKETING_VERSION = 0.70;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1606,6 +1610,7 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.latest.UpdateInstaller";
 				PRODUCT_NAME = LatestUpdateInstaller;
+				OTHER_CODE_SIGN_FLAGS = "--identifier com.max-langer.latest.UpdateInstaller";
 				SKIP_INSTALL = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -1637,6 +1642,7 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.latest.UpdateInstaller";
 				PRODUCT_NAME = LatestUpdateInstaller;
+				OTHER_CODE_SIGN_FLAGS = "--identifier com.max-langer.latest.UpdateInstaller";
 				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
@@ -1652,7 +1658,7 @@
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CODE_SIGN_IDENTITY = "Mac Developer";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
@@ -1682,7 +1688,7 @@
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CODE_SIGN_IDENTITY = "Mac Developer";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;

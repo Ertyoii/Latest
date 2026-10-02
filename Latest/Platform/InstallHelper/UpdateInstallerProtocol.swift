@@ -8,10 +8,19 @@
 
 import Foundation
 
-/// The protocol that this service will vend as its API. This protocol will also need to be visible to the process hosting the service.
+/// Shared by the app and its authenticated installer daemon.
 @objc protocol UpdateInstallerProtocol {
-  /// Replace the API of this protocol with an API appropriate to the service you are vending.
   func performInstallation(
-    ofPackageAt url: URL, targetURL: String, receiptData: Data, receiptURL: URL,
-    reply: @escaping (Error?) -> Void)
+    ofPackageAt url: URL, appURL: URL, receiptData: Data,
+    reply: @escaping (URL?, Error?) -> Void)
+}
+
+enum UpdateInstallerIdentity {
+  static let service = "com.max-langer.latest.UpdateInstaller"
+  static let appRequirement = requirement(for: "com.max-langer.Latest.dev")
+  static let helperRequirement = requirement(for: service)
+
+  private static func requirement(for identifier: String) -> String {
+    "anchor apple generic and identifier \"\(identifier)\" and certificate leaf[subject.OU] = \"D87N659XLV\""
+  }
 }

@@ -7,6 +7,7 @@
 //
 
 import CommerceKit
+import CoreServices
 import StoreFoundation
 
 /// Public boundary for App Store updates backed by private Apple frameworks.
@@ -30,211 +31,281 @@ enum AppStoreUpdater {
 
 }
 
-/// The operation updating Mac App Store apps.
-private class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
-
-  /// The purchase associated with the to be updated app.
-  private var purchase: SSPurchase!
-
-  /// The observer that observes the Mac App Store updater.
-  private var observerIdentifier: CKDownloadQueueObserver?
-
-  /// The app-store identifier for the related app.
+/// Owns App Store downloads while Latest displays progress. Apple downloads the
+/// purchased update; the signed helper handles PackageKit's entitlement failure.
+private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   private let itemIdentifier: UInt64
-
   private let installURL: URL
-
-  private var installerPackageURL: URL?
+  @MainActor private var observerIdentifier: CKDownloadQueueObserver?
+  @MainActor private var artifacts = AppStoreDownloadArtifacts()
+  @MainActor private var isInstalling = false
 
   init(
     bundleIdentifier: String, installURL: URL, appIdentifier: App.Bundle.Identifier,
     appStoreIdentifier: UInt64
   ) {
     self.installURL = installURL
-    self.itemIdentifier = appStoreIdentifier
+    itemIdentifier = appStoreIdentifier
     super.init(bundleIdentifier: bundleIdentifier, appIdentifier: appIdentifier)
   }
 
   static func prepareForUpdates() throws(InstallHelperError) {
-    // Framework can download and install apps automatically
-    if requiresManualInstallation {
-      try InstallHelper.verifyAvailability()
-    }
+    if requiresManualInstallation { try InstallHelper.verifyAvailability() }
   }
 
-  fileprivate static let requiresManualInstallation: Bool = {
-    ProcessInfo.processInfo.isOperatingSystemAtLeast(
-      .init(majorVersion: 26, minorVersion: 1, patchVersion: 0))
-  }()
-
-  // MARK: - Operation Overrides
+  static let requiresManualInstallation = ProcessInfo.processInfo.isOperatingSystemAtLeast(
+    .init(majorVersion: 26, minorVersion: 1, patchVersion: 0))
 
   override func execute() {
     super.execute()
-
-    // Construct purchase to receive update
-    let purchase = SSPurchase(itemIdentifier: self.itemIdentifier)
-    CKPurchaseController.shared().perform(purchase, withOptions: 0) {
-      [weak self] purchase, _, error, response in
-      guard let self = self else { return }
-
-      if let error = error {
-        self.finish(with: error)
+    Task { @MainActor in
+      guard !self.isCancelled else {
+        self.finish()
         return
       }
-
-      if let downloads = response?.downloads, downloads.count > 0, let purchase = purchase {
-        self.purchase = purchase
-        self.observerIdentifier = CKDownloadQueue.shared().add(self)
-      } else {
-        self.finish(with: LatestError.updateInfoUnavailable)
+      // Register before starting the purchase: small downloads can finish before
+      // its completion callback, and their package/receipt must be preserved.
+      self.observerIdentifier = CKDownloadQueue.shared().add(self)
+      let purchase = SSPurchase(itemIdentifier: self.itemIdentifier)
+      CKPurchaseController.shared().perform(purchase, withOptions: 0) {
+        [weak self] _, _, error, response in
+        let failure: Error? =
+          error ?? (response?.downloads.isEmpty != false ? LatestError.updateInfoUnavailable : nil)
+        if let failure {
+          Task { @MainActor in
+            guard let self, !self.isFinished, !self.isInstalling else { return }
+            self.finish(with: failure)
+          }
+        }
       }
     }
   }
 
   override func cancel() {
-    self.finish()
+    super.cancel()
+    Task { @MainActor in
+      if let download = CKDownloadQueue.shared().download(forItemIdentifier: self.itemIdentifier)
+        as? SSDownload
+      {
+        download.cancel(withStoreClient: ISStoreClient(storeClientType: 0))
+      }
+      // installer cannot safely be interrupted halfway through replacing an app.
+      if !self.isInstalling { self.finish() }
+    }
   }
 
   override func finish() {
-    if let observerIdentifier = self.observerIdentifier {
-      CKDownloadQueue.shared().remove(observerIdentifier)
-    }
+    Task { @MainActor in self.finishOnMain() }
+  }
 
+  @MainActor private func finishOnMain() {
+    guard !isFinished else { return }
+    if let observerIdentifier {
+      CKDownloadQueue.shared().remove(observerIdentifier)
+      self.observerIdentifier = nil
+    }
+    artifacts.removeAll()
     super.finish()
   }
 
-  // MARK: - Manual Installation
+  @MainActor private func preserveArtifacts() {
+    guard Self.requiresManualInstallation, !isFinished else { return }
+    let folder = URL(fileURLWithPath: CKDownloadDirectory(nil), isDirectory: true)
+      .appendingPathComponent(String(itemIdentifier), isDirectory: true)
+    do { try artifacts.refresh(in: folder) } catch {
+      // The folder is absent during initialization. If capture still fails at
+      // removal, report the missing package/receipt instead of claiming success.
+    }
+  }
 
-  /// Adds a link to the downloaded app store package to retrieve it at a later time.
-  fileprivate static func snapshotAppStorePackage(at path: String) -> URL? {
+  @MainActor private func removed(_ snapshot: AppStoreDownloadSnapshot) async {
+    guard !isFinished, !isInstalling else { return }
+    if isCancelled || snapshot.cancelled {
+      finish(with: snapshot.error ?? CancellationError())
+      return
+    }
+    guard snapshot.failed else {
+      finish()
+      return
+    }
+    guard let error = snapshot.error, AppStoreDownloadArtifacts.requiresPackageInstallation(error)
+    else {
+      finish(with: snapshot.error ?? LatestError.updateInfoUnavailable)
+      return
+    }
+    preserveArtifacts()
+    guard let package = artifacts.packageURL,
+      let receipt = artifacts.receiptURL.flatMap({ try? Data(contentsOf: $0) })
+        ?? snapshot.receiptData,
+      !receipt.isEmpty
+    else {
+      finish(
+        with: LatestError.custom(
+          title: "App Store Package Unavailable",
+          description:
+            "The App Store download did not provide a complete installer package and receipt. Please retry the update."
+        ))
+      return
+    }
+    isInstalling = true
+    defer { isInstalling = false }
+    progressState = .installing
     do {
-      let packageURL = URL(fileURLWithPath: path)
-      let fileManager = FileManager.default
-
-      let hardLinkURL = try fileManager.url(
-        for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: packageURL,
-        create: true
-      ).appending(path: packageURL.lastPathComponent, directoryHint: .notDirectory)
-      try fileManager.linkItem(at: packageURL, to: hardLinkURL)
-
-      return hardLinkURL
+      let installedURL = try await InstallHelper.installPackage(
+        at: package, appURL: installURL, receiptData: receipt)
+      // Refresh Spotlight and LaunchServices after restoring the App Store receipt.
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/mdimport")
+      process.arguments = [installedURL.path]
+      try? process.run()
+      LSRegisterURL(installedURL as CFURL, true)
+      finish()
     } catch {
-      return nil
+      finish(with: error)
     }
   }
 }
 
-// MARK: - Download Observer
+private struct AppStoreDownloadSnapshot: Sendable {
+  let failed: Bool
+  let cancelled: Bool
+  let error: Error?
+  let receiptData: Data?
+  let phase: Int64
+  let loaded: Int64
+  let total: Int64
+
+  init?(_ download: SSDownload, itemIdentifier: UInt64) {
+    guard download.metadata.itemIdentifier == itemIdentifier, let status = download.status else {
+      return nil
+    }
+    failed = status.isFailed
+    cancelled = status.isCancelled
+    error = status.error
+    receiptData = download.metadata.receiptData
+    phase = status.activePhase.phaseType
+    loaded = status.activePhase.progressValue
+    total = status.activePhase.totalProgressValue
+  }
+}
 
 extension AppStoreUpdateOperation: CKDownloadQueueObserver {
-
-  func downloadQueue(_ downloadQueue: CKDownloadQueue!, statusChangedFor download: SSDownload!) {
-    // Cancel download if the operation has been cancelled
-    if self.isCancelled {
-      download.cancel(withStoreClient: ISStoreClient(storeClientType: 0))
-      self.finish()
-      return
-    }
-
-    guard download.metadata.itemIdentifier == itemIdentifier, let status = download.status else {
-      return
-    }
-
-    // Nothing left to do, we wait for the install failure
-    guard self.installerPackageURL == nil else {
-      return
-    }
-
-    if Self.requiresManualInstallation && status.percentComplete >= 0.8 {
-      // Keep the installer alive by linking to it. Manual installation will follow once the automatic one failed.
-      self.progressState = .extracting(progress: 0.2)
-      self.installerPackageURL = Self.snapshotAppStorePackage(
-        at: download.primaryAsset.downloadPath)
-      self.progressState = .extracting(progress: 0.7)
-    } else {
-      switch status.activePhase.phaseType {
+  func downloadQueue(_ queue: CKDownloadQueue!, statusChangedFor download: SSDownload!) {
+    guard let download,
+      let snapshot = AppStoreDownloadSnapshot(download, itemIdentifier: itemIdentifier)
+    else { return }
+    Task { @MainActor in
+      guard !self.isFinished, !self.isInstalling, !self.isCancelled else { return }
+      self.preserveArtifacts()
+      switch snapshot.phase {
       case 0:
-        self.progressState = .downloading(
-          loadedSize: Int64(status.activePhase.progressValue),
-          totalSize: Int64(status.activePhase.totalProgressValue))
+        self.progressState = .downloading(loadedSize: snapshot.loaded, totalSize: snapshot.total)
       case 1:
         self.progressState = .extracting(
-          progress: Double(status.activePhase.progressValue)
-            / Double(status.activePhase.totalProgressValue))
-      default:
-        self.progressState = .initializing
+          progress: snapshot.total > 0 ? Double(snapshot.loaded) / Double(snapshot.total) : 0)
+      default: self.progressState = .initializing
       }
     }
   }
 
-  func downloadQueue(_ downloadQueue: CKDownloadQueue!, changedWithRemoval download: SSDownload!) {
-    guard download.metadata.itemIdentifier == self.purchase.itemIdentifier,
-      let status = download.status
-    else {
-      return
-    }
+  func downloadQueue(_ queue: CKDownloadQueue!, changedWithRemoval download: SSDownload!) {
+    guard let download,
+      let snapshot = AppStoreDownloadSnapshot(download, itemIdentifier: itemIdentifier)
+    else { return }
+    Task { @MainActor in await self.removed(snapshot) }
+  }
+  func downloadQueue(_ queue: CKDownloadQueue!, changedWithAddition download: SSDownload!) {
+    downloadQueue(queue, statusChangedFor: download)
+  }
+}
 
-    // Installed successfully
-    guard status.isFailed else {
-      self.finish()
-      return
-    }
+/// PackageKit's 201 restriction is the only failure a manual install can repair.
+/// Preserve the newest inode on every event: App Store replaces partial files.
+struct AppStoreDownloadArtifacts {
+  private(set) var packageURL: URL?
+  private(set) var receiptURL: URL?
 
-    // No manual installation possible, abort with error
-    guard let installerPackageURL, let receiptData = download.metadata.receiptData,
-      let bundle = Bundle(path: appIdentifier.path)
-    else {
-      self.finish(with: status.error)
-      return
-    }
-    let bundleURL = URL(fileURLWithPath: bundle.bundlePath, isDirectory: true)
-    let receiptURL = AppStoreReceipt.standardReceiptURL(forAppAt: bundleURL)
-
-    Task { [weak self] in
-      guard let self, !self.isCancelled else {
-        self?.finish()
-        return
+  mutating func refresh(in folder: URL) throws {
+    let keys: Set<URLResourceKey> = [
+      .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey,
+    ]
+    let children = try FileManager.default.contentsOfDirectory(
+      at: folder, includingPropertiesForKeys: Array(keys))
+    var package: (url: URL, date: Date)?
+    var receipt: URL?
+    for file in children {
+      guard file.pathExtension == "pkg" || file.lastPathComponent == "receipt",
+        let info = try? file.resourceValues(forKeys: keys),
+        info.isRegularFile == true, info.isSymbolicLink != true
+      else { continue }
+      if file.pathExtension == "pkg" {
+        let date = info.contentModificationDate ?? .distantPast
+        if let current = package, current.date >= date { continue }
+        package = (file, date)
+      } else {
+        receipt = file
       }
-
-      self.progressState = .installing
-
-      do {
-        try await InstallHelper.shared.installPackage(
-          at: installerPackageURL, targetURL: bundle.bundlePath, receiptData: receiptData,
-          receiptURL: receiptURL)
-        self.finish()
-      } catch {
-        self.finish(with: error)
+    }
+    // Capture the receipt even when a package link fails. Removal reports any
+    // incomplete artifacts rather than claiming the update succeeded.
+    defer {
+      if let receipt, let link = try? preserve(receipt, replacing: receiptURL) {
+        receiptURL = link
       }
+    }
+    if let package {
+      packageURL = try preserve(package.url, replacing: packageURL)
     }
   }
 
-  func downloadQueue(_ downloadQueue: CKDownloadQueue!, changedWithAddition download: SSDownload!) {
+  mutating func removeAll() {
+    for url in [packageURL, receiptURL].compactMap({ $0 }) {
+      try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+    }
+    packageURL = nil
+    receiptURL = nil
   }
 
+  static func requiresPackageInstallation(_ error: Error) -> Bool {
+    var cause = error as NSError
+    for _ in 0..<8 {
+      if cause.domain == "PKInstallErrorDomain", cause.code == 201 { return true }
+      guard let underlying = cause.userInfo[NSUnderlyingErrorKey] as? NSError else { return false }
+      cause = underlying
+    }
+    return false
+  }
+
+  private func preserve(_ source: URL, replacing existing: URL?) throws -> URL {
+    let key: Set<URLResourceKey> = [.fileResourceIdentifierKey]
+    if let existing,
+      let sourceID = try source.resourceValues(forKeys: key).fileResourceIdentifier,
+      let existingID = try existing.resourceValues(forKeys: key).fileResourceIdentifier,
+      sourceID.isEqual(existingID)
+    {
+      return existing
+    }
+    let directory = try FileManager.default.url(
+      for: .itemReplacementDirectory,
+      in: .userDomainMask, appropriateFor: source, create: true)
+    let link = directory.appendingPathComponent(source.lastPathComponent)
+    do { try FileManager.default.linkItem(at: source, to: link) } catch {
+      try? FileManager.default.removeItem(at: directory)
+      throw error
+    }
+    if let existing {
+      try? FileManager.default.removeItem(at: existing.deletingLastPathComponent())
+    }
+    return link
+  }
 }
 
 extension SSPurchase {
   fileprivate convenience init(itemIdentifier: UInt64) {
     self.init()
 
-    let parameters: [String: Any] = [
-      "productType": "C",
-      "price": 0,
-      "salableAdamId": itemIdentifier,
-      "pg": "default",
-      "appExtVrsId": 0,
-
-      // is redownload, use existing functionality
-      "pricingParameters": "STDRDL",
-    ]
-
     buyParameters =
-      parameters.map { key, value in
-        "\(key)=\(value)"
-      }
-      .joined(separator: "&")
+      "productType=C&price=0&salableAdamId=\(itemIdentifier)&pg=default&appExtVrsId=0&pricingParameters=STDRDL"
 
     let downloadMetadata = SSDownloadMetadata()
     downloadMetadata.kind = "software"
@@ -242,6 +313,8 @@ extension SSPurchase {
 
     self.downloadMetadata = downloadMetadata
     self.itemIdentifier = itemIdentifier
+    self.isUpdate = true
+    self.isRedownload = true
   }
 }
 

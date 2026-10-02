@@ -376,7 +376,9 @@ extension AppStoreUpdateCheckerOperation {
       AppStoreUpdater.enqueueUpdate(for: app, appStoreIdentifier: entry.appStoreIdentifier)
     } catch {
       Task { @MainActor in
-        UpdateInstallHelperAlert.present(with: error, fallbackURL: entry.pageURL)
+        UpdateInstallHelperAlert.present(with: error, fallbackURL: entry.pageURL) {
+          Self.updateApp(app, entry: entry)
+        }
       }
     }
   }
