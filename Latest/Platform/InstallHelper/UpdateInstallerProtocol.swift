@@ -11,7 +11,7 @@ import Foundation
 /// Shared by the app and its authenticated installer daemon.
 @objc protocol UpdateInstallerProtocol {
   func performInstallation(
-    ofPackageAt url: URL, appURL: URL, receiptData: Data,
+    ofPackage package: FileHandle, appURL: URL, receiptData: Data,
     reply: @escaping (URL?, Error?) -> Void)
 }
 

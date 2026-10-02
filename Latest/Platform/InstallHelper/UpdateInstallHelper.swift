@@ -84,6 +84,10 @@ enum InstallHelper {
   {
     try Self.verifyAvailability()
     try await HelperRegistration.shared.refreshIfNeeded()
+    // Transfer an open descriptor: the root daemon cannot reopen files in the
+    // user's protected temporary directory on current macOS releases.
+    let package = try FileHandle(forReadingFrom: url)
+    defer { try? package.close() }
 
     let connection = NSXPCConnection(
       machServiceName: UpdateInstallerIdentity.service, options: .privileged)
@@ -114,7 +118,7 @@ enum InstallHelper {
       }
 
       proxy.performInstallation(
-        ofPackageAt: url, appURL: appURL, receiptData: receiptData
+        ofPackage: package, appURL: appURL, receiptData: receiptData
       ) { installedURL, error in
         if let error {
           replyGate.resume(with: .failure(error))
@@ -153,6 +157,9 @@ enum InstallHelper {
         let service = InstallHelper.helperService
         // The asynchronous completion waits until the old process has exited.
         try await service.unregister()
+        // Background Task Management settles its enabled state separately.
+        // Keep the original delay, once per helper build rather than periodically.
+        try await Task.sleep(for: .milliseconds(500))
         try service.register()
         try InstallHelper.verifyAvailability()
         UserDefaults.standard.set(identity, forKey: key)

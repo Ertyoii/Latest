@@ -160,6 +160,9 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
     isInstalling = true
     defer { isInstalling = false }
     progressState = .installing
+    appStoreUpdateLogger.notice(
+      "Installing preserved package: bytes=\((try? package.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)"
+    )
     do {
       let installedURL = try await InstallHelper.installPackage(
         at: package, appURL: installURL, receiptData: receipt)

@@ -6,20 +6,43 @@ import Foundation
 /// authenticated by the listener; PackageKit validates the signed package.
 final class UpdateInstaller: NSObject, UpdateInstallerProtocol {
   func performInstallation(
-    ofPackageAt url: URL, appURL: URL, receiptData: Data,
+    ofPackage source: FileHandle, appURL: URL, receiptData: Data,
     reply: @escaping (URL?, Error?) -> Void
   ) {
+    defer { try? source.close() }
     do {
-      guard url.isFileURL, url.pathExtension == "pkg", appURL.isFileURL, !receiptData.isEmpty,
+      guard appURL.isFileURL, !receiptData.isEmpty,
         let expectedIdentifier = Bundle(url: appURL)?.bundleIdentifier
       else {
         throw failure("The App Store package, installed app, or receipt is unavailable.")
       }
       let volume =
         try appURL.resourceValues(forKeys: [.volumeURLKey]).volume ?? URL(fileURLWithPath: "/")
+      // installer runs outside the user's temporary-file context. Stage its
+      // input in the daemon's private directory and keep it until installation ends.
+      let fileManager = FileManager.default
+      let staging = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+        .appendingPathComponent("LatestUpdateInstaller-" + UUID().uuidString)
+      try fileManager.createDirectory(
+        at: staging, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+      defer { try? fileManager.removeItem(at: staging) }
+      let package = staging.appendingPathComponent("update.pkg")
+      guard
+        fileManager.createFile(
+          atPath: package.path, contents: nil, attributes: [.posixPermissions: 0o600])
+      else { throw failure("The installer could not create its package file.") }
+      do {
+        let output = try FileHandle(forWritingTo: package)
+        defer { try? output.close() }
+        guard
+          fcopyfile(
+            source.fileDescriptor, output.fileDescriptor, nil, copyfile_flags_t(COPYFILE_DATA))
+            == 0
+        else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+      }
       let output = try performCommand(
         "/usr/sbin/installer",
-        arguments: ["-dumplog", "-pkg", url.path, "-target", volume.path])
+        arguments: ["-dumplog", "-pkg", package.path, "-target", volume.path])
       let expression = try NSRegularExpression(
         pattern: "PackageKit: Registered bundle (\\S+) for uid 0")
       let range = NSRange(output.startIndex..<output.endIndex, in: output)
@@ -37,7 +60,6 @@ final class UpdateInstaller: NSObject, UpdateInstallerProtocol {
       // Derive the receipt path from the actual installed bundle. Never use a
       // caller-provided receipt path as an arbitrary privileged write target.
       let destination = installedURL.appendingPathComponent("Contents/_MASReceipt/receipt")
-      let fileManager = FileManager.default
       try fileManager.createDirectory(
         at: destination.deletingLastPathComponent(),
         withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
