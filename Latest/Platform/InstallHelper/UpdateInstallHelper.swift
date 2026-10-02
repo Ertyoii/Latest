@@ -83,6 +83,7 @@ enum InstallHelper {
     async throws -> URL
   {
     try Self.verifyAvailability()
+    try await HelperRegistration.shared.refreshIfNeeded()
 
     let connection = NSXPCConnection(
       machServiceName: UpdateInstallerIdentity.service, options: .privileged)
@@ -122,6 +123,44 @@ enum InstallHelper {
         } else {
           replyGate.resume(with: .failure(LatestError.installHelperCommunicationFailed))
         }
+      }
+    }
+  }
+
+  /// SMAppService does not replace an already-running executable automatically.
+  /// Persist the exact helper signature and bundle path, so replacement builds
+  /// refresh once while multiple updates share the same registration.
+  private actor HelperRegistration {
+    static let shared = HelperRegistration()
+    private var refreshTask: Task<Void, Error>?
+
+    func refreshIfNeeded() async throws {
+      if let refreshTask { return try await refreshTask.value }
+      let task = Task {
+        try InstallHelper.verifySigning()
+        let helperURL = Bundle.main.bundleURL.appendingPathComponent(
+          "Contents/Resources/LatestUpdateInstaller")
+        var code: SecStaticCode?
+        var information: CFDictionary?
+        guard SecStaticCodeCreateWithPath(helperURL as CFURL, [], &code) == errSecSuccess,
+          let code,
+          SecCodeCopySigningInformation(code, [], &information) == errSecSuccess,
+          let hash = (information as? [String: Any])?[kSecCodeInfoUnique as String] as? Data
+        else { throw LatestError.installHelperCommunicationFailed }
+        let identity = Bundle.main.bundleURL.path + ":" + hash.base64EncodedString()
+        let key = "RegisteredInstallHelperIdentity"
+        guard UserDefaults.standard.string(forKey: key) != identity else { return }
+        let service = InstallHelper.helperService
+        // The asynchronous completion waits until the old process has exited.
+        try await service.unregister()
+        try service.register()
+        try InstallHelper.verifyAvailability()
+        UserDefaults.standard.set(identity, forKey: key)
+      }
+      refreshTask = task
+      do { try await task.value } catch {
+        refreshTask = nil
+        throw error
       }
     }
   }

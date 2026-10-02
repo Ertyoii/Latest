@@ -170,6 +170,37 @@ class AppStoreCheckerOperationTest: XCTestCase {
         NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)))
   }
 
+  func testPackageKitRestrictionUsesHelperEvenWhenAppleMarksDownloadCancelled() {
+    let error = NSError(domain: "PKInstallErrorDomain", code: 201)
+    let result = AppStoreDownloadResult(
+      failed: true, cancelled: true, error: error, wasCancelled: false)
+    guard case .installPackage = result else {
+      return XCTFail("Apple's cancellation flag must not skip the PackageKit workaround")
+    }
+    let userCancelled = AppStoreDownloadResult(
+      failed: true, cancelled: true, error: error, wasCancelled: true)
+    guard case .failed(let failure) = userCancelled else {
+      return XCTFail("Cancelling in Latest must prevent installation")
+    }
+    XCTAssertTrue(failure is CancellationError)
+  }
+
+  func testDownloadRemovalDoesNotHideErrorsOrReportCancellationAsSuccess() {
+    let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)
+    let errored = AppStoreDownloadResult(
+      failed: false, cancelled: false, error: error, wasCancelled: false)
+    guard case .failed(let failure) = errored else {
+      return XCTFail("An error must take priority over Apple's failure flag")
+    }
+    XCTAssertEqual(failure as NSError, error)
+    let cancelled = AppStoreDownloadResult(
+      failed: false, cancelled: true, error: nil, wasCancelled: false)
+    guard case .failed(let cancellation) = cancelled else {
+      return XCTFail("A cancelled download must not report success")
+    }
+    XCTAssertTrue(cancellation is CancellationError)
+  }
+
   private func temporaryAppURL() -> URL {
     let url = FileManager.default.temporaryDirectory
       .appendingPathComponent(UUID().uuidString, isDirectory: true)

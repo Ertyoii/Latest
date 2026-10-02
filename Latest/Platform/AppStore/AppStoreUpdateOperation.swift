@@ -9,6 +9,10 @@
 import CommerceKit
 import CoreServices
 import StoreFoundation
+import os
+
+private let appStoreUpdateLogger = Logger(
+  subsystem: "com.max-langer.Latest.dev", category: "AppStoreUpdates")
 
 /// Public boundary for App Store updates backed by private Apple frameworks.
 enum AppStoreUpdater {
@@ -68,7 +72,10 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
       self.observerIdentifier = CKDownloadQueue.shared().add(self)
       let purchase = SSPurchase(itemIdentifier: self.itemIdentifier)
       CKPurchaseController.shared().perform(purchase, withOptions: 0) {
-        [weak self] _, _, error, response in
+        [weak self] _, completed, error, response in
+        appStoreUpdateLogger.notice(
+          "Purchase completed=\(completed), downloads=\(response?.downloads.count ?? 0), error=\((error as NSError?)?.domain ?? "none", privacy: .public):\((error as NSError?)?.code ?? 0)"
+        )
         let failure: Error? =
           error ?? (response?.downloads.isEmpty != false ? LatestError.updateInfoUnavailable : nil)
         if let failure {
@@ -120,18 +127,21 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
 
   @MainActor private func removed(_ snapshot: AppStoreDownloadSnapshot) async {
     guard !isFinished, !isInstalling else { return }
-    if isCancelled || snapshot.cancelled {
-      finish(with: snapshot.error ?? CancellationError())
-      return
-    }
-    guard snapshot.failed else {
+    appStoreUpdateLogger.notice(
+      "Download removed: failed=\(snapshot.failed), cancelled=\(snapshot.cancelled), error=\((snapshot.error as NSError?)?.domain ?? "none", privacy: .public):\((snapshot.error as NSError?)?.code ?? 0)"
+    )
+    switch AppStoreDownloadResult(
+      failed: snapshot.failed, cancelled: snapshot.cancelled, error: snapshot.error,
+      wasCancelled: isCancelled)
+    {
+    case .completed:
       finish()
       return
-    }
-    guard let error = snapshot.error, AppStoreDownloadArtifacts.requiresPackageInstallation(error)
-    else {
-      finish(with: snapshot.error ?? LatestError.updateInfoUnavailable)
+    case .failed(let error):
+      finish(with: error)
       return
+    case .installPackage:
+      break
     }
     preserveArtifacts()
     guard let package = artifacts.packageURL,
@@ -162,6 +172,30 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
       finish()
     } catch {
       finish(with: error)
+    }
+  }
+}
+
+/// PackageKit reports its entitlement restriction as both failed and cancelled.
+/// Only cancellation requested in Latest must prevent the installer workaround.
+enum AppStoreDownloadResult {
+  case completed
+  case installPackage
+  case failed(Error)
+
+  init(failed: Bool, cancelled: Bool, error: Error?, wasCancelled: Bool) {
+    if wasCancelled {
+      self = .failed(CancellationError())
+    } else if let error {
+      self =
+        AppStoreDownloadArtifacts.requiresPackageInstallation(error)
+        ? .installPackage : .failed(error)
+    } else if cancelled {
+      self = .failed(CancellationError())
+    } else if failed {
+      self = .failed(LatestError.updateInfoUnavailable)
+    } else {
+      self = .completed
     }
   }
 }
@@ -302,10 +336,10 @@ struct AppStoreDownloadArtifacts {
 
 extension SSPurchase {
   fileprivate convenience init(itemIdentifier: UInt64) {
-    self.init()
-
-    buyParameters =
-      "productType=C&price=0&salableAdamId=\(itemIdentifier)&pg=default&appExtVrsId=0&pricingParameters=STDRDL"
+    self.init(
+      buyParameters:
+        "productType=C&price=0&salableAdamId=\(itemIdentifier)&pg=default&appExtVrsId=0&pricingParameters=STDRDL"
+    )
 
     let downloadMetadata = SSDownloadMetadata()
     downloadMetadata.kind = "software"

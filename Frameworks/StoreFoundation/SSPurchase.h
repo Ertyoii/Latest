@@ -39,7 +39,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (id)purchasesGroupedByAccountIdentifierWithPurchases:(id)arg1;
 + (BOOL)supportsSecureCoding;
-+ (id)purchaseWithBuyParameters:(id)arg1;
++ (instancetype)purchaseWithBuyParameters:(NSString *)parameters;
 @property(retain) NSDictionary *dsidLessOptions; // @synthesize dsidLessOptions=_dsidLessOptions;
 @property BOOL isDSIDLessPurchase; // @synthesize isDSIDLessPurchase=_isDSIDLessPurchase;
 @property(copy) NSDictionary *responseDialog; // @synthesize responseDialog=_responseDialog;
