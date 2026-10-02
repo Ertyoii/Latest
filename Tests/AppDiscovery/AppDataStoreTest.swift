@@ -15,7 +15,7 @@ import XCTest
 
 final class AppDataStoreTest: XCTestCase {
   @MainActor
-  func testUpdateStreamYieldsInitialAndCoalescedState() async {
+  func testUpdateStreamYieldsInitialAndSubsequentState() async {
     let store = AppDataStore()
     var iterator = store.updates().makeAsyncIterator()
 

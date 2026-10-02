@@ -128,17 +128,9 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
   func testToolbarTitleIsVisibleInHostedMainWindow() async throws {
     let environment = AppEnvironment.localUATFixture(
       settings: try isolatedAppListSettings(for: self))
-    let host = NSHostingView(rootView: LatestRootView(environment: environment))
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 768, height: 516),
-      styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
-      backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.appearance = NSAppearance(named: .darkAqua)
-    window.toolbarStyle = .unified
-    window.toolbar = NSToolbar(identifier: "hosted-title-test")
-    window.contentView = host
-    window.makeKeyAndOrderFront(nil)
+    let window = try await makeLatestTestWindow(
+      environment: environment, dark: true, testCase: self)
+    let host = try XCTUnwrap(window.contentView)
     defer { window.close() }
     window.layoutIfNeeded()
     host.layoutSubtreeIfNeeded()

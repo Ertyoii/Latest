@@ -14,28 +14,6 @@ import XCTest
 
 final class ReleaseNotesPipelineTest: XCTestCase {
 
-  func testCurrentBetterDisplayRegressionUsesVersionedGitHubRelease() throws {
-    let bundle = App.Bundle(
-      version: Version(versionNumber: "4.3.4", buildNumber: nil),
-      name: "BetterDisplay",
-      bundleIdentifier: "pro.betterdisplay.BetterDisplay",
-      fileURL: URL(fileURLWithPath: "/Applications/BetterDisplay.app", isDirectory: true),
-      source: .sparkle
-    )
-
-    guard
-      case .githubRelease(let apiURL, _) = ReleaseNotesSourceCatalog.releaseNotes(
-        for: bundle,
-        remoteVersion: Version(versionNumber: "4.3.5", buildNumber: nil)
-      )
-    else {
-      return XCTFail("Expected BetterDisplay 4.3.5 GitHub release")
-    }
-    XCTAssertEqual(
-      apiURL.absoluteString,
-      "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v4.3.5")
-  }
-
   func testCurrentTelegramRegressionSelectsExactDesktopVersion() throws {
     let changelog = """
       7.0.3

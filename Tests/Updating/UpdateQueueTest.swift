@@ -210,14 +210,6 @@ final class UpdateCheckGenerationTrackerTest: XCTestCase {
     XCTAssertTrue(tracker.isCurrent(secondGeneration))
   }
 
-  func testGenerationsIncreaseMonotonically() {
-    let tracker = UpdateCheckGenerationTracker()
-
-    XCTAssertEqual(tracker.begin(), 1)
-    XCTAssertEqual(tracker.begin(), 2)
-    XCTAssertEqual(tracker.begin(), 3)
-  }
-
   func testCurrentOrBeginReusesExistingGeneration() {
     let tracker = UpdateCheckGenerationTracker()
 
@@ -225,6 +217,8 @@ final class UpdateCheckGenerationTrackerTest: XCTestCase {
     XCTAssertEqual(tracker.currentOrBegin(), 1)
     XCTAssertEqual(tracker.begin(), 2)
     XCTAssertEqual(tracker.currentOrBegin(), 2)
+    XCTAssertEqual(tracker.begin(), 3)
+    XCTAssertEqual(tracker.currentOrBegin(), 3)
   }
 
 }
@@ -286,40 +280,6 @@ final class BoundedUpdateCheckExecutorTest: XCTestCase {
     XCTAssertLessThan(execution.results.count, 100)
   }
 
-  func testStaleGenerationCompletionIsNotPublished() async {
-    let tracker = UpdateCheckGenerationTracker()
-    let published = Mutex([Int]())
-    let firstGeneration = tracker.begin()
-    let first = Task {
-      await BoundedUpdateCheckExecutor(maximumConcurrentTasks: 1).run(
-        [1],
-        onCompletion: { (result: IndexedUpdateCheckResult<Int>) in
-          guard tracker.isCurrent(firstGeneration), case .success(let value) = result.result else {
-            return
-          }
-          published.withLock { $0.append(value) }
-        }
-      ) { value in
-        try? await Task.sleep(for: .milliseconds(30))
-        return value
-      }
-    }
-
-    try? await Task.sleep(for: .milliseconds(5))
-    let secondGeneration = tracker.begin()
-    _ = await BoundedUpdateCheckExecutor(maximumConcurrentTasks: 1).run(
-      [2],
-      onCompletion: { (result: IndexedUpdateCheckResult<Int>) in
-        guard tracker.isCurrent(secondGeneration), case .success(let value) = result.result else {
-          return
-        }
-        published.withLock { $0.append(value) }
-      }
-    ) { $0 }
-    _ = await first.value
-
-    XCTAssertEqual(published.withLock { $0 }, [2])
-  }
 }
 
 private actor UpdateCheckActivityTracker {

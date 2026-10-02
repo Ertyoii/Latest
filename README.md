@@ -17,6 +17,8 @@ brew install ripgrep
 
 `test.sh` checks architecture, behavior, and visual regressions. CI also compares reviewed macOS 26 references in [Tests/VisualBaselines](Tests/VisualBaselines/macos-26/README.md). Compare UI changes with the original on the same system before updating a reference.
 
+Full-window tests open the production SwiftUI scene with offline data. They save settled native window captures under `build/production-visuals/main-window-scene` and compare every pixel when same-host original captures exist in `build/production-visual-reference/main-window-scene`. The gallery references cover component scenarios; they do not represent the complete production window.
+
 Run `./script/format.sh` to format Swift sources. Use the same Xcode toolchain for reproducible output; `.swift-format` defines the formatting rules.
 
 ## Architecture and SwiftUI migration

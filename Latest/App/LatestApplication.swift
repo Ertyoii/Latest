@@ -15,36 +15,22 @@ struct LatestApplication: SwiftUI.App {
 
   @StateObject private var environment: AppEnvironment
   @StateObject private var appUpdateController = AppUpdateController()
-  private let startsLiveServices: Bool
 
   init() {
     _environment = StateObject(wrappedValue: .live())
-    startsLiveServices = true
   }
 
   var body: some Scene {
-    Window("Latest", id: "main") {
+    LatestMainWindowScene(id: "main") {
       LatestRootView(environment: environment)
         .modifier(ApplicationAppearanceModifier(appearance: appearance))
-        .frame(
-          minWidth: VisualMetrics.mainWindowMinWidth,
-          minHeight: VisualMetrics.mainWindowMinHeight
-        )
         .onAppear {
-          if startsLiveServices {
-            environment.start()
-          }
+          environment.start()
         }
         .onDisappear {
           environment.stop()
         }
     }
-    .defaultSize(
-      width: VisualMetrics.mainWindowDefaultWidth,
-      height: VisualMetrics.mainWindowDefaultHeight
-    )
-    .windowResizability(.contentMinSize)
-    .windowToolbarStyle(.unified)
     .commands {
       LatestCommands(
         appCommands: environment.commands,
@@ -62,5 +48,26 @@ struct LatestApplication: SwiftUI.App {
 
   private var appearance: ApplicationAppearance {
     ApplicationAppearance.resolve(appearanceRawValue)
+  }
+}
+
+/// Shared by the runnable app and full-window tests so native window styling
+/// cannot drift into a separately maintained test approximation.
+struct LatestMainWindowScene<Content: View>: Scene {
+  let id: String
+  @ViewBuilder var content: Content
+
+  var body: some Scene {
+    Window("Latest", id: id) {
+      content.frame(
+        minWidth: VisualMetrics.mainWindowMinWidth,
+        minHeight: VisualMetrics.mainWindowMinHeight)
+    }
+    .defaultSize(
+      width: VisualMetrics.mainWindowDefaultWidth,
+      height: VisualMetrics.mainWindowDefaultHeight
+    )
+    .windowResizability(.contentMinSize)
+    .windowToolbarStyle(.unified)
   }
 }

@@ -22,19 +22,21 @@ final class ReleaseNotesCatalogTest: XCTestCase {
       source: .sparkle
     )
 
-    guard
-      case .githubRelease(let apiURL, let fallbackHTML) = ReleaseNotesSourceCatalog.releaseNotes(
-        for: bundle,
-        remoteVersion: Version(versionNumber: "4.3.4", buildNumber: "50021")
-      )
-    else {
-      return XCTFail("Expected BetterDisplay GitHub release API")
+    for (version, expectedURL, hasFallback) in [
+      ("4.3.4", "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v4.3.4", true),
+      ("4.3.5", "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v4.3.5", false),
+    ] {
+      guard
+        case .githubRelease(let apiURL, let fallbackHTML) = ReleaseNotesSourceCatalog.releaseNotes(
+          for: bundle, remoteVersion: Version(versionNumber: version, buildNumber: nil))
+      else { return XCTFail("Expected BetterDisplay \(version) GitHub release API") }
+      XCTAssertEqual(apiURL.absoluteString, expectedURL)
+      if hasFallback {
+        XCTAssertTrue(fallbackHTML?.contains("BetterDisplay 4.3.4") == true)
+      } else {
+        XCTAssertNil(fallbackHTML)
+      }
     }
-
-    XCTAssertEqual(
-      apiURL.absoluteString,
-      "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v4.3.4")
-    XCTAssertTrue(fallbackHTML?.contains("BetterDisplay 4.3.4") == true)
   }
 
   func testReleaseNotesSourceCatalogNormalizesBetterDisplaySparkleReleaseNotesLink() throws {

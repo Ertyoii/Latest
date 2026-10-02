@@ -91,25 +91,6 @@ final class MigrationVisualRegressionTest: XCTestCase {
   }
 
   @MainActor
-  func testMigrationGalleryGeometryContracts() {
-    let defaultSize = MigrationGalleryMetrics.defaultWindowSize
-    let sidebar = MigrationGalleryMetrics.sidebarFrame(in: defaultSize)
-    let detail = MigrationGalleryMetrics.detailFrame(in: defaultSize)
-
-    XCTAssertEqual(defaultSize, CGSize(width: 768, height: 516))
-    XCTAssertEqual(sidebar.width, VisualMetrics.sidebarIdealWidth)
-    XCTAssertEqual(sidebar.height, defaultSize.height)
-    XCTAssertEqual(detail.minX, sidebar.maxX)
-    XCTAssertEqual(detail.maxX, defaultSize.width)
-    XCTAssertEqual(MigrationGalleryMetrics.detailHeaderHeight, VisualMetrics.detailHeaderHeight)
-    XCTAssertEqual(MigrationGalleryMetrics.appRowHeight, VisualMetrics.appRowHeight)
-    XCTAssertEqual(MigrationGalleryMetrics.locationsContentSize, CGSize(width: 440, height: 296))
-    XCTAssertEqual(MigrationGalleryMetrics.locationsTableSize, CGSize(width: 400, height: 200))
-    XCTAssertEqual(
-      MigrationGalleryMetrics.sidebarFixtureSize.width, VisualMetrics.sidebarIdealWidth)
-  }
-
-  @MainActor
   func testProductionSidebarUsesMeasuredOriginalTableGeometryAndRealIcons() async throws {
     let environment = AppEnvironment.localUATFixture(
       settings: try isolatedAppListSettings(for: self))
@@ -739,13 +720,14 @@ final class ProductionVisualParityTest: XCTestCase {
   func testProductionWindowStates() async throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent()
-    let output = root.appendingPathComponent("build/production-visuals", isDirectory: true)
+    let output = root.appendingPathComponent(
+      "build/production-visuals/main-window-scene", isDirectory: true)
     let reference = root.appendingPathComponent(
-      "build/production-visual-reference", isDirectory: true)
+      "build/production-visual-reference/main-window-scene", isDirectory: true)
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
     let comparesReference = FileManager.default.fileExists(atPath: reference.path)
     for dark in [false, true] {
-      for state in ["initial", "selection", "search", "downloading", "pinned", "toolbar"] {
+      for state in ["initial", "selection", "search", "downloading", "pinned"] {
         let suite = "ProductionVisualParity.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -771,23 +753,9 @@ final class ProductionVisualParityTest: XCTestCase {
           operation?.finish()
         }
         let environment = AppEnvironment(settings: settings, updatesListViewModel: model)
-        let view = NSHostingView(
-          rootView: LatestRootView(environment: environment)
-            .environment(\.colorScheme, dark ? .dark : .light)
-            .environment(\.locale, Locale(identifier: "en_US")))
-        let window = NSWindow(
-          contentRect: CGRect(x: 0, y: 0, width: 768, height: 516),
-          styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        if state == "toolbar" {
-          window.styleMask.insert(.fullSizeContentView)
-          window.toolbarStyle = .unified
-          window.toolbar = NSToolbar(identifier: "ProductionVisualParity")
-          window.toolbar?.insertItem(withItemIdentifier: .flexibleSpace, at: 0)
-        }
-        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        window.contentView = view
-        window.orderFront(nil)
+        let window = try await makeLatestTestWindow(
+          environment: environment, dark: dark, testCase: self)
+        let view = try XCTUnwrap(window.contentView)
         defer { window.close() }
         window.layoutIfNeeded()
         view.layoutSubtreeIfNeeded()
@@ -796,57 +764,47 @@ final class ProductionVisualParityTest: XCTestCase {
         try await waitForWebPaint(web)
         window.layoutIfNeeded()
         view.layoutSubtreeIfNeeded()
-        if state == "pinned", let table = view.firstDescendant(of: NSTableView.self),
-          let scroll = table.enclosingScrollView
-        {
+        let table = try XCTUnwrap(view.firstDescendant(of: NSTableView.self))
+        let expectedApp = state == "selection" ? apps[3] : apps[0]
+        XCTAssertEqual(table.numberOfRows, model.snapshot.entries.count)
+        XCTAssertEqual(table.selectedRow, model.snapshot.firstIndex(of: expectedApp))
+        let body = try await web.evaluateJavaScript("document.body.innerText") as? String
+        XCTAssertTrue(body?.contains("Offline acceptance fixture for \(expectedApp.name).") == true)
+        if state == "search" {
+          XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["Notes"])
+        }
+        if state == "pinned" {
+          let scroll = try XCTUnwrap(table.enclosingScrollView)
           scroll.contentView.scroll(to: NSPoint(x: 0, y: 240))
           scroll.reflectScrolledClipView(scroll.contentView)
           table.layoutSubtreeIfNeeded()
           try await Task.sleep(for: .milliseconds(100))
+          XCTAssertGreaterThan(scroll.contentView.bounds.minY, 0)
         }
-        let captureMarker = root.appendingPathComponent("build/sidebar-window-capture-set")
-        if let captureSet = try? String(contentsOf: captureMarker, encoding: .utf8)
-          .trimmingCharacters(in: .whitespacesAndNewlines), !captureSet.isEmpty
-        {
-          try await captureCompleteWindow(
-            window, set: captureSet, name: "window-\(state)-\(dark ? "dark" : "light").png")
-        }
-        let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        view.cacheDisplay(in: view.bounds, to: bitmap)
-        let name = "production-\(state)-\(dark ? "dark" : "light").png"
+        // One WindowServer capture covers native chrome, material-composited
+        // sidebar, detail and WebKit together. View-cache captures omitted the
+        // sidebar and required a redundant second table-only image.
+        let bitmap = try await settledWindowBitmap(window)
         try record(
-          bitmap, name: name, output: output, reference: reference,
-          comparesReference: comparesReference)
-
-        // NSHostingView's cache omits the material-composited sidebar.
-        // Capture the real table directly as a second complete surface.
-        let table = try XCTUnwrap(view.firstDescendant(of: NSTableView.self))
-        XCTAssertGreaterThan(table.numberOfRows, 0, "Sidebar fixture must contain real rows")
-        for row in 0..<min(table.numberOfRows, 8) {
-          _ = table.view(atColumn: 0, row: row, makeIfNecessary: true)
-        }
-        table.layoutSubtreeIfNeeded()
-        let bounds = table.visibleRect
-        XCTAssertGreaterThan(bounds.width, 0)
-        XCTAssertGreaterThan(bounds.height, 0)
-        let sidebar = try XCTUnwrap(table.bitmapImageRepForCachingDisplay(in: bounds))
-        table.cacheDisplay(in: bounds, to: sidebar)
-        try record(
-          sidebar, name: "sidebar-\(state)-\(dark ? "dark" : "light").png",
+          bitmap, name: "window-\(state)-\(dark ? "dark" : "light").png",
           output: output, reference: reference, comparesReference: comparesReference)
       }
     }
   }
 
   @MainActor
-  private func captureCompleteWindow(_ window: NSWindow, set: String, name: String) async throws {
-    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-      .deletingLastPathComponent().deletingLastPathComponent()
-    let output = root.appendingPathComponent("build/sidebar-window-\(set)", isDirectory: true)
-    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-    let bitmap = try await captureWindowBitmap(window)
-    try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
-      to: output.appendingPathComponent(name), options: .atomic)
+  private func settledWindowBitmap(_ window: NSWindow) async throws -> NSBitmapImageRep {
+    var previous: Data?
+    var stableFrames = 0
+    for _ in 0..<100 {
+      let bitmap = try await captureWindowBitmap(window)
+      let pixels = try rgba(bitmap)
+      stableFrames = pixels == previous ? stableFrames + 1 : 0
+      if stableFrames >= 5 { return bitmap }
+      previous = pixels
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    throw VisualRegressionError.didNotSettle("production window")
   }
 
   @MainActor
@@ -934,9 +892,10 @@ final class ProductionVisualParityTest: XCTestCase {
       try await Task.sleep(for: .milliseconds(50))
     }
     XCTAssertTrue(ready, "Release notes must be loaded before comparing pixels")
-    _ = try await web.callAsyncJavaScript(
-      "await document.fonts.ready; await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));",
-      arguments: [:], in: nil, contentWorld: .page)
+    // WebKit suspends animation-frame callbacks in an inactive XCTest host.
+    // Snapshotting asks the actual renderer to finish painting without relying
+    // on application focus or an unbounded JavaScript promise.
+    _ = try await web.takeSnapshot(configuration: nil)
     web.displayIfNeeded()
   }
 

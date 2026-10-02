@@ -160,10 +160,6 @@ enum MigrationGalleryMetrics {
   static let sidebarFixtureSize = CGSize(width: sidebarWidth, height: 420)
   static let appRowHeight: CGFloat = 60
 
-  static func sidebarFrame(in size: CGSize) -> CGRect {
-    CGRect(x: 0, y: 0, width: min(sidebarWidth, size.width), height: size.height)
-  }
-
   static func detailFrame(in size: CGSize) -> CGRect {
     let sidebarWidth = min(self.sidebarWidth, size.width)
     return CGRect(

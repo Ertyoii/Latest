@@ -122,7 +122,9 @@ class AppStoreCheckerOperationTest: XCTestCase {
       }
       XCTFail("Expected the helper reply gate to time out")
     } catch {
-      XCTAssertNotNil(error as? LatestError)
+      guard case LatestError.installHelperCommunicationFailed = error else {
+        return XCTFail("Expected helper communication timeout, got \(error)")
+      }
     }
   }
 

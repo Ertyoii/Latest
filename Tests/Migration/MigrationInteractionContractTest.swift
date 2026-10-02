@@ -511,13 +511,8 @@ final class MigrationInteractionContractTest: XCTestCase {
   func testSearchEscapeRestoresReleaseNotesAfterRepeatedFindCommands() async throws {
     let environment = AppEnvironment.localUATFixture(
       settings: try isolatedAppListSettings(for: self))
-    let host = NSHostingView(rootView: LatestRootView(environment: environment))
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 768, height: 516),
-      styleMask: [.titled], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.contentView = host
-    window.makeKeyAndOrderFront(nil)
+    let window = try await makeLatestTestWindow(environment: environment, testCase: self)
+    let host = try XCTUnwrap(window.contentView)
     defer { window.close() }
     host.layoutSubtreeIfNeeded()
     try await Task.sleep(for: .milliseconds(100))

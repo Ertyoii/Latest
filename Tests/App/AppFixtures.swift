@@ -1,7 +1,9 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-09-06.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
+import AppKit
 import Foundation
+import SwiftUI
 import XCTest
 
 @testable import Latest
@@ -40,7 +42,7 @@ extension AppEnvironment {
 enum LocalUATFixture {
   /// Stable real bundle paths keep deterministic test renders tied to actual
   /// icon assets. This fixture is never selected by the runnable app.
-  static let apps: [App] = [
+  static let apps: [Latest.App] = [
     ("Notes", "26.4", "26.5", "/System/Applications/Notes.app"),
     ("Terminal", "2.14", "2.15", "/System/Applications/Utilities/Terminal.app"),
     ("TextEdit", "1.19", "1.20", "/System/Applications/TextEdit.app"),
@@ -85,4 +87,44 @@ enum LocalUATFixture {
     )
     return App(bundle: bundle, update: .success(update), isIgnored: false)
   }
+}
+
+/// Use the real SwiftUI scene, including its toolbar and native window geometry.
+/// Each fixture owns an isolated model and never starts live discovery.
+@MainActor
+func makeLatestTestWindow(
+  environment: AppEnvironment, dark: Bool = false, testCase: XCTestCase
+) async throws -> NSWindow {
+  let originalAppearanceName = NSApp.appearance?.name.rawValue
+  testCase.addTeardownBlock {
+    await MainActor.run {
+      NSApp.appearance = originalAppearanceName.flatMap { NSAppearance(named: .init($0)) }
+    }
+  }
+  (dark ? ApplicationAppearance.dark : .light).apply(to: NSApp)
+  let id = "latest-test-\(UUID().uuidString)"
+  let existingWindows = Set(NSApp.windows.map(ObjectIdentifier.init))
+  let scene = NSHostingSceneRepresentation {
+    LatestMainWindowScene(id: id) {
+      LatestRootView(environment: environment)
+        .environment(\.colorScheme, dark ? .dark : .light)
+        .environment(\.locale, Locale(identifier: "en_US"))
+    }
+  }
+  NSApp.addSceneRepresentation(scene)
+  scene.environment.openWindow(id: id)
+  for _ in 0..<100 {
+    if let window = NSApp.windows.first(where: {
+      !existingWindows.contains(ObjectIdentifier($0)) && $0.isVisible
+    }) {
+      window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+      NSApp.activate(ignoringOtherApps: true)
+      window.makeKeyAndOrderFront(nil)
+      window.makeFirstResponder(nil)
+      return window
+    }
+    try await Task.sleep(for: .milliseconds(20))
+  }
+  XCTFail("The production Latest scene did not open")
+  throw CocoaError(.coderInvalidValue)
 }

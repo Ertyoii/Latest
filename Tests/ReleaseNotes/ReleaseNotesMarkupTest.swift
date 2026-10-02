@@ -315,28 +315,19 @@ final class ReleaseNotesMarkupTest: XCTestCase {
 
   @MainActor
   func testOffMainReleaseNotesPreparationPreservesRenderedOutput() async throws {
-    let markup = """
-      <h2>Version 2.4.1</h2>
-      <ul>
-      \t<li>Improved update discovery performance.</li>
-      \t<li>Fixed release note selection.</li>
-      </ul>
-      <h2>Version 2.4.0</h2>
-      <p>Older release details.</p>
-      """
-
-    let synchronous = try ReleaseNotesMarkup.attributedString(
-      from: markup,
-      baseURL: URL(string: "https://example.com/changelog"),
-      relevantVersion: "2.4.1"
-    ).get()
+    // The immutable rich-text reference includes heading, font, code, list and
+    // relative-link semantics; plain-string equality would miss their loss.
+    let markup =
+      "<h2>Release 2.0</h2><p>Fixed <b>bold</b> and <i>italic</i> with <code>code</code>.</p><ol start=\"3\"><li>First</li><li><a href=\"notes\">Relative link</a></li></ol><script>ignored()</script><h2>Release 1.0</h2><p>Older release details.</p>"
     let preparedOffMain = try await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
       from: markup,
-      baseURL: URL(string: "https://example.com/changelog"),
-      relevantVersion: "2.4.1"
+      baseURL: URL(string: "https://example.com/releases/"), relevantVersion: "2.0"
     ).get()
-
-    XCTAssertEqual(preparedOffMain.string, synchronous.string)
+    let reference = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("Fixtures/PreparedRichText/notes-2.html")
+    XCTAssertEqual(
+      ReleaseNotesWebDocument.html(for: preparedOffMain),
+      try String(contentsOf: reference, encoding: .utf8))
   }
 
   func testMarkdownReleaseNotesStripFrontMatterAndInlineMarkup() throws {

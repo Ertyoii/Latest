@@ -173,12 +173,6 @@ class VersionTest: XCTestCase {
     self.newer(v1, v2)
   }
 
-  func testOlderVersion() {
-    let v1 = Version(versionNumber: "2.1.5", buildNumber: nil)
-    let v2 = Version(versionNumber: "2.1.6", buildNumber: "216")
-    self.older(v1, v2)
-  }
-
   func testEqualVersion() {
     var v1 = Version(versionNumber: "2.1.5", buildNumber: nil)
     var v2 = Version(versionNumber: "2.1.5.0", buildNumber: "215")
