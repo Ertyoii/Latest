@@ -8,7 +8,6 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-08-01.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
-import AppKit
 import SwiftUI
 
 struct SupportStatusButton: View {
@@ -31,7 +30,7 @@ struct SupportStatusButton: View {
       }
       .padding(.leading, 2)
       .padding(.trailing, 4)
-      .font(.system(size: NSFont.smallSystemFontSize, weight: .bold))
+      .font(.system(size: 11, weight: .bold))
       .foregroundStyle(.tint)
       .fixedSize()
       .offset(x: VisualMetrics.supportStatusHorizontalCorrection)
@@ -61,7 +60,7 @@ struct SupportStatusInfoView: View {
 
         VStack(alignment: .leading, spacing: 5) {
           Text(app.source.supportState.label)
-            .font(.system(size: NSFont.systemFontSize, weight: .semibold))
+            .font(.system(size: 13, weight: .semibold))
           Text(supportDescription)
             .fixedSize(horizontal: false, vertical: true)
         }

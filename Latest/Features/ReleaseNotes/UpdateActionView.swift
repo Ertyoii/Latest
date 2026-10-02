@@ -226,7 +226,7 @@ struct UpdateActionSurface: View {
             externalUpdaterName
           )
         )
-        .font(.system(size: NSFont.systemFontSize(for: .mini)))
+        .font(.system(size: 9))
         .lineLimit(1)
         .fixedSize(horizontal: true, vertical: false)
       }
@@ -237,17 +237,17 @@ struct UpdateActionSurface: View {
 
 @MainActor
 enum UpdateActionVisualStyle {
-  static let backgroundColor = NSColor(
-    srgbRed: 0.9488552213,
+  static let backgroundColor = Color(
+    .sRGB, red: 0.9488552213,
     green: 0.9487094283,
     blue: 0.9693081975,
-    alpha: 1
+    opacity: 1
   )
-  static let highlightedBackgroundColor = NSColor(
-    srgbRed: 0.7995074391,
+  static let highlightedBackgroundColor = Color(
+    .sRGB, red: 0.7995074391,
     green: 0.8113409281,
     blue: 0.8403512836,
-    alpha: 1
+    opacity: 1
   )
   static let errorImage = NSImage(
     systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
@@ -311,17 +311,16 @@ private struct UpdateActionControl: View {
 private struct UpdateActionCapsuleStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .font(.system(size: NSFont.systemFontSize - 1, weight: .medium))
+      .font(.system(size: 12, weight: .medium))
       .foregroundStyle(Color(nsColor: .controlAccentColor))
       .offset(x: -0.25, y: -0.5)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .background {
         Capsule(style: .circular)
           .fill(
-            Color(
-              nsColor: configuration.isPressed
-                ? UpdateActionVisualStyle.highlightedBackgroundColor
-                : UpdateActionVisualStyle.backgroundColor)
+            configuration.isPressed
+              ? UpdateActionVisualStyle.highlightedBackgroundColor
+              : UpdateActionVisualStyle.backgroundColor
           )
           .offset(x: -0.25)
       }

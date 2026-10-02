@@ -142,7 +142,7 @@ struct ReleaseNotesHeaderView: View {
         if let version = app.localizedVersionInformation?.combined(includeNew: app.updateAvailable)
         {
           Text(version)
-            .font(.system(size: NSFont.systemFontSize(for: .small)))
+            .font(.system(size: 11))
             .foregroundStyle(Color(nsColor: .secondaryLabelColor))
             .offset(y: VisualMetrics.detailMetadataLineVerticalCorrection)
             .lineLimit(1)
@@ -154,7 +154,7 @@ struct ReleaseNotesHeaderView: View {
         if let date = app.latestUpdateDate {
           GeometryReader { geometry in
             Text(date, format: .dateTime.year().month(.wide).day())
-              .font(.system(size: NSFont.systemFontSize(for: .small)))
+              .font(.system(size: 11))
               .foregroundStyle(Color(nsColor: .secondaryLabelColor))
               .lineLimit(1)
               .offset(y: geometry.size.height + VisualMetrics.detailMetadataLineVerticalCorrection)
