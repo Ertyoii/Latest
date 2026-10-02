@@ -203,6 +203,30 @@ class AppStoreCheckerOperationTest: XCTestCase {
     XCTAssertTrue(cancellation is CancellationError)
   }
 
+  func testRefreshDiscoversMacUpdateDespiteStaleHTTPCaches() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [AppStoreLookupURLProtocol.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let app = App.Bundle(
+      version: Version(versionNumber: "7.67", buildNumber: "1.472078.10"),
+      name: "Amazon Kindle", bundleIdentifier: "com.example.Kindle.\(UUID().uuidString)",
+      fileURL: temporaryAppURL(), source: .appStore)
+    let checker = AppStoreUpdateCheckerOperation(with: app, session: session)
+
+    let update = try await checker.check()
+    XCTAssertEqual(update.remoteVersion.versionNumber, "7.68")
+    XCTAssertTrue(update.updateAvailable, "The available Mac release must appear as an update")
+    XCTAssertEqual(update.minimumOSVersion?.majorVersion, 14)
+    XCTAssertEqual(update.date, ISO8601DateFormatter().date(from: "2026-10-02T03:19:36Z"))
+
+    // An explicit refresh must fetch current metadata again, beyond the actor cache.
+    await AppStoreUpdateCheckerOperation.invalidateLookupCache()
+    let refreshed = try await checker.check()
+    XCTAssertTrue(refreshed.updateAvailable)
+    XCTAssertEqual(refreshed.remoteVersion.versionNumber, "7.68")
+  }
+
   private func temporaryAppURL() -> URL {
     let url = FileManager.default.temporaryDirectory
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -219,4 +243,35 @@ class AppStoreCheckerOperationTest: XCTestCase {
     try Data().write(to: url)
   }
 
+}
+
+/// Models two independent stale layers: a URL-keyed CDN and URLSession's HTTP cache.
+private final class AppStoreLookupURLProtocol: URLProtocol, @unchecked Sendable {
+  override class func canInit(with request: URLRequest) -> Bool { true }
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+  override func startLoading() {
+    let url = request.url!
+    let items = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
+    let hasFreshURL = items.contains { $0.name == "t" && $0.value?.isEmpty == false }
+    let bypassesLocalCache = request.cachePolicy == .reloadIgnoringLocalCacheData
+    let fresh = hasFreshURL && bypassesLocalCache
+    let entity = items.first { $0.name == "entity" }?.value
+    // A newer iOS version must never replace a valid native Mac response.
+    let version = entity == "desktopSoftware" ? (fresh ? "7.68" : "7.67") : "7.68.1"
+    let body = """
+      {"results":[{"version":"\(version)","minimumOsVersion":"14.0",
+      "currentVersionReleaseDate":"2026-10-02T03:19:36Z",
+      "trackViewUrl":"https://apps.apple.com/us/app/id302584613","trackId":302584613}]}
+      """
+    client?.urlProtocol(
+      self,
+      didReceive: HTTPURLResponse(
+        url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+      cacheStoragePolicy: .notAllowed)
+    client?.urlProtocol(self, didLoad: Data(body.utf8))
+    client?.urlProtocolDidFinishLoading(self)
+  }
+
+  override func stopLoading() {}
 }

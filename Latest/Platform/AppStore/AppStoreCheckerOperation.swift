@@ -194,13 +194,17 @@ private final class AppStoreLookupClient: Sendable {
       URLQueryItem(name: "entity", value: entityType),
       URLQueryItem(name: "country", value: countryCode),
       URLQueryItem(name: "bundleId", value: bundleIdentifier),
+      // Apple's CDN can retain an older release at the canonical lookup URL.
+      // Keep coalescing in our actor cache, but give each HTTP lookup a fresh URL.
+      URLQueryItem(name: "t", value: UUID().uuidString),
     ]
     guard let url = components?.url else {
       throw malformedURLError
     }
 
     return try await cache.entry(for: cacheKey) {
-      let request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 20)
+      let request = URLRequest(
+        url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
       let (data, _) = try await self.session.data(for: request)
       guard let entry = try JSONDecoder().decode(EntryList.self, from: data).results.first else {
         throw LatestError.updateInfoUnavailable
@@ -224,9 +228,12 @@ final class AppStoreUpdateCheckerOperation: Sendable {
     return AppStoreReceipt.existingURL(forAppAt: url) != nil
   }
 
-  init(with app: App.Bundle) {
+  init(with app: App.Bundle, session: URLSession = .shared) {
     self.app = app
+    self.lookupClient = AppStoreLookupClient(session: session)
   }
+
+  private let lookupClient: AppStoreLookupClient
 
   /// The bundle to be checked for updates.
   fileprivate let app: App.Bundle
@@ -390,7 +397,7 @@ extension AppStoreUpdateCheckerOperation {
   /// Fetches update info using the App Store lookup entities in priority order.
   private func fetchAppInfo() async throws -> AppStoreEntry {
     // For native Mac apps, prefer `desktopSoftware` because `macSoftware` can return broader Catalyst or iOS metadata. Wrapped iOS apps skip the desktop request above.
-    try await AppStoreLookupClient.shared.lookup(
+    try await lookupClient.lookup(
       bundleIdentifiers: Self.lookupBundleIdentifiers(for: app.bundleIdentifier),
       entityTypes: Self.lookupEntityTypes(forAppAt: app.fileURL)
     )
