@@ -113,6 +113,40 @@ final class AppListSnapshotTest: XCTestCase {
     XCTAssertEqual(snapshot.firstIndex(of: refreshed), originalIndex)
   }
 
+  func testInstalledAppStoreAppsSortByDisplayedDateAfterLookup() throws {
+    let settings = try isolatedAppListSettings(for: self)
+    let day = 86_400.0
+    let apps = [
+      (name: "Amazon Kindle", source: App.Source.appStore, localDay: 1.0, releaseDay: 10.0),
+      (name: "WhatsApp", source: App.Source.appStore, localDay: 2.0, releaseDay: 9.0),
+      (name: "BetterDisplay", source: App.Source.sparkle, localDay: 8.0, releaseDay: nil),
+      (name: "Alpha", source: App.Source.appStore, localDay: 3.0, releaseDay: 10.0),
+    ].map { fixture -> App in
+      let bundle = App.Bundle(
+        version: Version(versionNumber: "1.0", buildNumber: nil), name: fixture.name,
+        bundleIdentifier: "com.example.\(fixture.name)",
+        fileURL: URL(fileURLWithPath: "/Applications/\(fixture.name).app"),
+        source: fixture.source,
+        modificationDate: Date(timeIntervalSince1970: fixture.localDay * day))
+      let update = fixture.releaseDay.map { releaseDay in
+        App.Update(
+          app: bundle, remoteVersion: bundle.version, minimumOSVersion: nil,
+          source: fixture.source, date: Date(timeIntervalSince1970: releaseDay * day),
+          releaseNotes: nil, updateAction: .builtIn { _ in })
+      }
+      return App(bundle: bundle, update: update.map { .success($0) }, isIgnored: false)
+    }
+    let snapshot = AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings)
+
+    XCTAssertEqual(snapshot.sections.count, 1)
+    XCTAssertEqual(
+      snapshot.sections[0].apps.map(\.name),
+      ["Alpha", "Amazon Kindle", "WhatsApp", "BetterDisplay"])
+    XCTAssertEqual(
+      snapshot.refiltered(with: "a").sections[0].apps.map(\.name),
+      ["Alpha", "Amazon Kindle", "WhatsApp", "BetterDisplay"])
+  }
+
   func testTableAppendReloadsWhenExistingAppContentChanged() {
     let original = makeApp(name: "Alpha", versionNumber: "1.0")
     let refreshed = makeApp(
