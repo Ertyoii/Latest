@@ -120,34 +120,66 @@ final class MigrationVisualRegressionTest: XCTestCase {
     hostingView.layoutSubtreeIfNeeded()
     try await Task.sleep(for: .milliseconds(150))
 
-    let tableView = try XCTUnwrap(hostingView.firstDescendant(of: NSTableView.self))
-    XCTAssertEqual(tableView.rowHeight, 60)
-    XCTAssertEqual(tableView.intercellSpacing, .zero)
-    XCTAssertEqual(tableView.style, .sourceList)
-    XCTAssertEqual(tableView.frame.minX, 0, accuracy: 0.5)
-    XCTAssertEqual(tableView.numberOfRows, viewModel.snapshot.entries.count)
+    let icon: NSRect
+    if let tableView = hostingView.firstDescendant(of: NSTableView.self) {
+      XCTAssertEqual(tableView.rowHeight, 60)
+      XCTAssertEqual(tableView.intercellSpacing, .zero)
+      XCTAssertEqual(tableView.style, .sourceList)
+      XCTAssertEqual(tableView.frame.minX, 0, accuracy: 0.5)
+      XCTAssertEqual(tableView.numberOfRows, viewModel.snapshot.entries.count)
 
-    let firstSectionRow = try XCTUnwrap(
-      viewModel.snapshot.entries.firstIndex(where: {
-        if case .section = $0 { return true }
-        return false
-      })
-    )
-    let firstAppRow = try XCTUnwrap(viewModel.snapshot.firstIndex(of: viewModel.snapshot.apps[0]))
-    XCTAssertEqual(tableView.rect(ofRow: firstSectionRow).height, VisualMetrics.sectionHeaderHeight)
-    XCTAssertEqual(tableView.rect(ofRow: firstAppRow).height, 60)
+      let firstSectionRow = try XCTUnwrap(
+        viewModel.snapshot.entries.firstIndex(where: {
+          if case .section = $0 { return true }
+          return false
+        })
+      )
+      let firstAppRow = try XCTUnwrap(viewModel.snapshot.firstIndex(of: viewModel.snapshot.apps[0]))
+      XCTAssertEqual(
+        tableView.rect(ofRow: firstSectionRow).height, VisualMetrics.sectionHeaderHeight)
+      XCTAssertEqual(tableView.rect(ofRow: firstAppRow).height, 60)
 
-    for row in firstAppRow..<min(tableView.numberOfRows, firstAppRow + 5) {
-      _ = tableView.view(atColumn: 0, row: row, makeIfNecessary: true)
+      for row in firstAppRow..<min(tableView.numberOfRows, firstAppRow + 5) {
+        _ = tableView.view(atColumn: 0, row: row, makeIfNecessary: true)
+      }
+      tableView.layoutSubtreeIfNeeded()
+      let cell = try XCTUnwrap(
+        tableView.view(atColumn: 0, row: firstAppRow, makeIfNecessary: false))
+      cell.layoutSubtreeIfNeeded()
+      XCTAssertTrue(cell.accessibilityLabel()?.contains(viewModel.snapshot.apps[0].name) == true)
+      icon = cell.convert(
+        NSRect(x: 0, y: cell.bounds.midY - 25, width: 50, height: 50), to: nil)
+    } else {
+      let sidebar = try SidebarInputFixture(window: window, model: viewModel)
+      let app = viewModel.snapshot.apps[0]
+      let rowIndex = try XCTUnwrap(viewModel.snapshot.firstIndex(of: app))
+      sidebar.scroll(to: max(0, sidebar.rowRect(rowIndex).minY - 37))
+      try await Task.sleep(for: .milliseconds(100))
+      // SwiftUI builds virtual accessibility children only after inspection is
+      // enabled. This is the same application attribute an AX client requests.
+      NSApp.accessibilitySetValue(true, forAttribute: .init(rawValue: "AXEnhancedUserInterface"))
+      let row = try XCTUnwrap(
+        sidebar.accessibilityElements().first {
+          $0.accessibilityIdentifier() == "updates.app.\(app.identifier)"
+            && $0.accessibilityFrame().intersects(window.frame)
+        })
+      XCTAssertEqual(row.accessibilityFrame().height, 60, accuracy: 0.5)
+      XCTAssertTrue(row.accessibilityLabel()?.contains(app.name) == true)
+      let rect = window.convertFromScreen(row.accessibilityFrame())
+      XCTAssertEqual(rect.minX, 0, accuracy: 0.5)
+      icon = NSRect(x: rect.minX + 16, y: rect.maxY - 55, width: 50, height: 50)
+      let paintedRows = sidebar.accessibilityElements().filter {
+        $0.accessibilityIdentifier()?.hasPrefix("updates.app.") == true
+          && $0.accessibilityFrame().intersects(window.frame)
+      }.sorted { $0.accessibilityFrame().minY > $1.accessibilityFrame().minY }
+      XCTAssertGreaterThan(paintedRows.count, 5)
+      for (first, second) in zip(paintedRows, paintedRows.dropFirst()) {
+        XCTAssertEqual(first.accessibilityFrame().height, 60, accuracy: 0.5)
+        XCTAssertEqual(
+          first.accessibilityFrame().minY - second.accessibilityFrame().minY, 60, accuracy: 0.5)
+      }
     }
-    tableView.layoutSubtreeIfNeeded()
-    let cell = try XCTUnwrap(
-      tableView.view(atColumn: 0, row: firstAppRow, makeIfNecessary: false))
-    cell.layoutSubtreeIfNeeded()
-    XCTAssertTrue(cell.accessibilityLabel()?.contains(viewModel.snapshot.apps[0].name) == true)
     let rendered = try await captureWindowBitmap(window)
-    let icon = cell.convert(
-      NSRect(x: 0, y: cell.bounds.midY - 25, width: 50, height: 50), to: nil)
     var goldenIconPixels = 0
     for y in Int((window.frame.height - icon.maxY) * 2)..<Int((window.frame.height - icon.minY) * 2)
     {
@@ -764,20 +796,17 @@ final class ProductionVisualParityTest: XCTestCase {
         try await waitForWebPaint(web)
         window.layoutIfNeeded()
         view.layoutSubtreeIfNeeded()
-        let table = try XCTUnwrap(view.firstDescendant(of: NSTableView.self))
+        let sidebar = try SidebarInputFixture(window: window, model: model)
         let expectedApp = state == "selection" ? apps[3] : apps[0]
-        XCTAssertEqual(table.numberOfRows, model.snapshot.entries.count)
-        XCTAssertEqual(table.selectedRow, model.snapshot.firstIndex(of: expectedApp))
+        XCTAssertEqual(sidebar.selectedRow, model.snapshot.firstIndex(of: expectedApp))
         let body = try await web.evaluateJavaScript("document.body.innerText") as? String
         XCTAssertTrue(body?.contains("Offline acceptance fixture for \(expectedApp.name).") == true)
         if state == "search" {
           XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["Notes"])
         }
         if state == "pinned" {
-          let scroll = try XCTUnwrap(table.enclosingScrollView)
-          scroll.contentView.scroll(to: NSPoint(x: 0, y: 240))
-          scroll.reflectScrolledClipView(scroll.contentView)
-          table.layoutSubtreeIfNeeded()
+          let scroll = sidebar.scroll
+          sidebar.scroll(to: 240)
           try await Task.sleep(for: .milliseconds(100))
           XCTAssertGreaterThan(scroll.contentView.bounds.minY, 0)
         }

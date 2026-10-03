@@ -36,23 +36,36 @@ struct UpdatesSidebarView: View {
     VStack(spacing: 0) {
       UpdatesSidebarHeaderView(
         viewModel: viewModel, searchFocusController: searchFocusController,
-        restoreFocus: restorePreviousFocus)
-      UpdatesTableBridge(
-        viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride,
-        keyboardFocusRequest: keyboardFocusRequest,
-        keyboardFocusDidBegin: { previousFocus = .list }
-      )
+        focus: activeFocus, restoreFocus: restorePreviousFocus)
+      #if compiler(>=6.4)
+        if #available(macOS 27.0, *) {
+          UpdatesScrollList(
+            viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride,
+            focus: activeFocus)
+        } else {
+          nativeList
+        }
+      #else
+        nativeList
+      #endif
     }
     .onChange(of: activeFocus.wrappedValue) { _, new in
-      if let new { previousFocus = new }
+      if let new, new != .search { previousFocus = new }
     }
     .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea(.container, edges: .top))
   }
 
+  private var nativeList: some View {
+    UpdatesTableBridge(
+      viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride,
+      keyboardFocusRequest: keyboardFocusRequest,
+      keyboardFocusDidBegin: { previousFocus = .list })
+  }
+
   private func restorePreviousFocus() {
-    activeFocus.wrappedValue = previousFocus == .releaseNotes ? .releaseNotes : nil
+    activeFocus.wrappedValue = previousFocus
     if previousFocus == .list {
-      // The native table owns its responder through its existing bridge.
+      // The macOS 26 compatibility renderer owns its native responder.
       keyboardFocusRequest &+= 1
     }
   }
@@ -61,6 +74,7 @@ struct UpdatesSidebarView: View {
 
 enum SidebarFocus: Hashable {
   case list
+  case search
   case releaseNotes
 }
 
@@ -71,8 +85,7 @@ extension EnvironmentValues {
 struct UpdatesSidebarHeaderView: View {
   @ObservedObject var viewModel: UpdatesListViewModel
   @ObservedObject var searchFocusController: SearchFocusController
-  // Preserve the native placeholder raster in full-size-content toolbar windows.
-  @FocusState private var searchIsFocused: Bool
+  let focus: FocusState<SidebarFocus?>.Binding
   let restoreFocus: () -> Void
 
   var body: some View {
@@ -94,11 +107,11 @@ struct UpdatesSidebarHeaderView: View {
       )
       .textFieldStyle(.plain)
       .font(.system(size: 13))
-      .focused($searchIsFocused)
+      .focused(focus, equals: .search)
       .accessibilityIdentifier("updates.search")
       .accessibilityLabel("Search Apps")
       .onExitCommand {
-        searchIsFocused = false
+        focus.wrappedValue = nil
         Task { @MainActor in restoreFocus() }
       }
 
@@ -122,7 +135,7 @@ struct UpdatesSidebarHeaderView: View {
     .padding(.vertical, 8)
     .onChange(of: searchFocusController.request, initial: true) { _, request in
       guard request != nil else { return }
-      searchIsFocused = true
+      focus.wrappedValue = .search
     }
   }
 }

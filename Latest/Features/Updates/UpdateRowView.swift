@@ -12,7 +12,7 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// Presentation of the native table's selection, without rebuilding row content.
+/// Selection presentation shared by both sidebar renderers.
 @MainActor
 @Observable
 final class UpdateRowSelection {

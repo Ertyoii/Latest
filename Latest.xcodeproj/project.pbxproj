@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A0FA00000000000000000003 /* SwiftUISidebarTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0FA00000000000000000004 /* SwiftUISidebarTest.swift */; };
+		A0FA00000000000000000001 /* UpdatesScrollList.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0FA00000000000000000002 /* UpdatesScrollList.swift */; };
 		04DB211D3099FDA076EC8F2F /* ReleaseNotesVersionSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A492B900BB42DB5CA9C73A45 /* ReleaseNotesVersionSelection.swift */; };
 		4F5BE2A6B6B58FB29F49877C /* NavicatReleaseNotesExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5421DAACBA730AEEB29C717F /* NavicatReleaseNotesExtractor.swift */; };
 		501AA0012FC4000000000001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501AA0002FC4000000000001 /* main.swift */; };
@@ -183,6 +185,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A0FA00000000000000000004 /* SwiftUISidebarTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftUISidebarTest.swift; sourceTree = "<group>"; };
+		A0FA00000000000000000002 /* UpdatesScrollList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatesScrollList.swift; sourceTree = "<group>"; };
 		29A88F89296B7DC2000A5EDE /* fa */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fa; path = fa.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		29A88F8B296B7DC2000A5EDE /* fa */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fa; path = fa.lproj/Localizable.strings; sourceTree = "<group>"; };
 		3FDE96FFFEC9B3854A230E64 /* ReleaseNotesHTMLExtraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesHTMLExtraction.swift"; sourceTree = "<group>"; };
@@ -610,6 +614,7 @@
 				51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */,
 				51A000092FC3000000000001 /* UpdatesListViewModel.swift */,
 				51A000112FC3000000000001 /* UpdatesSidebarView.swift */,
+				A0FA00000000000000000002 /* UpdatesScrollList.swift */,
 				52A000072FE0000000000001 /* UpdatesToolbar.swift */,
 			);
 			path = Updates;
@@ -868,6 +873,7 @@
 			children = (
 				51F100102FD0000000000001 /* MigrationGallery.swift */,
 				51F100132FD0000000000001 /* MigrationInteractionContractTest.swift */,
+				A0FA00000000000000000004 /* SwiftUISidebarTest.swift */,
 				51F100152FD0000000000001 /* MigrationPerformanceTest.swift */,
 				51F400022FD0000000000001 /* MigrationFrameCadenceTest.swift */,
 				51F100112FD0000000000001 /* MigrationVisualRegressionTest.swift */,
@@ -1148,6 +1154,7 @@
 				51A001102FC3000000000001 /* UpdateRowView.swift in Sources */,
 				51F100052FD0000000000001 /* MigrationTelemetry.swift in Sources */,
 				51A001112FC3000000000001 /* UpdatesSidebarView.swift in Sources */,
+				A0FA00000000000000000001 /* UpdatesScrollList.swift in Sources */,
 				51A001142FC3000000000001 /* ReleaseNotesDetailView.swift in Sources */,
 				51F100072FD0000000000001 /* ReleaseNotesDetailViewModel.swift in Sources */,
 				51F100082FD0000000000001 /* ReleaseNotesWebView.swift in Sources */,
@@ -1261,6 +1268,7 @@
 				508D4E722FC400000000001 /* ReleaseNotesHeaderLayoutTest.swift in Sources */,
 				51F100022FD0000000000001 /* MigrationVisualRegressionTest.swift in Sources */,
 				51F100042FD0000000000001 /* MigrationInteractionContractTest.swift in Sources */,
+				A0FA00000000000000000003 /* SwiftUISidebarTest.swift in Sources */,
 				51F100062FD0000000000001 /* MigrationPerformanceTest.swift in Sources */,
 				51F400012FD0000000000001 /* MigrationFrameCadenceTest.swift in Sources */,
 				51F1000D2FD0000000000001 /* MigrationGallery.swift in Sources */,

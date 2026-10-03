@@ -405,7 +405,34 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testSidebarSearchAcceptsTypingClearAndEscapeRestoresTableFocus() async throws {
+  func testSidebarSearchAcceptsTypingClearAndEscapeRestoresTableFocus() throws {
+    #if compiler(>=6.4)
+      if #available(macOS 27.0, *) {
+        try SwiftUISidebarChecks(testCase: self).verifySearch()
+        return
+      }
+    #endif
+    var failure: Error?
+    Task { @MainActor in
+      do {
+        try await self.checkNativeSidebarSearchAcceptsTypingClearAndEscapeRestoresTableFocus()
+      } catch { failure = error }
+      NSApp.stop(nil)
+      if let wake = NSEvent.otherEvent(
+        with: .applicationDefined, location: .zero,
+        modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+        subtype: 0, data1: 0, data2: 0)
+      {
+        NSApp.postEvent(wake, atStart: true)
+      }
+    }
+    NSApp.run()
+    if let failure { throw failure }
+  }
+
+  @MainActor
+  private func checkNativeSidebarSearchAcceptsTypingClearAndEscapeRestoresTableFocus() async throws
+  {
     // FocusState and the native table settle on separate main-actor turns.
     // Await the actual responder transition rather than a fixed 50-ms delay.
     func waitForFocus(_ condition: () -> Bool) async throws {
@@ -535,10 +562,11 @@ final class MigrationInteractionContractTest: XCTestCase {
     try await Task.sleep(for: .milliseconds(50))
     XCTAssertTrue(
       window.firstResponder === web, "Escape must return to the previously focused release notes")
-    let table = try XCTUnwrap(host.descendant(of: NSTableView.self))
-    for destination: NSResponder in [table, web, table] {
-      XCTAssertTrue(window.makeFirstResponder(destination))
+    let fixture = try SidebarInputFixture(window: window, model: environment.updatesListViewModel)
+    for listFocus in [true, false, true] {
+      if listFocus { try fixture.focus() } else { XCTAssertTrue(window.makeFirstResponder(web)) }
       try await Task.sleep(for: .milliseconds(50))
+      let destination = window.firstResponder
       environment.commands.focusSearch()
       try await Task.sleep(for: .milliseconds(50))
       window.sendEvent(escape)
@@ -550,8 +578,8 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testShippingTableArrowMovementSkipsSectionHeaders() throws {
-    let (window, table, viewModel) = try makeShippingSidebar()
+  func testNativeCompatibilityTableArrowMovementSkipsSectionHeaders() throws {
+    let (window, table, viewModel) = try makeNativeCompatibilitySidebar()
     defer { window.close() }
     let appRows = viewModel.snapshot.entries.indices.filter {
       if case .app = viewModel.snapshot.entries[$0] { return true }
@@ -594,7 +622,33 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testHeldArrowNavigationKeepsRowsVisibleAndSeparate() async throws {
+  func testHeldArrowNavigationKeepsRowsVisibleAndSeparate() throws {
+    #if compiler(>=6.4)
+      if #available(macOS 27.0, *) {
+        try SwiftUISidebarChecks(testCase: self).verifyNavigation()
+        return
+      }
+    #endif
+    var failure: Error?
+    Task { @MainActor in
+      do { try await self.checkNativeHeldArrowNavigationKeepsRowsVisibleAndSeparate() } catch {
+        failure = error
+      }
+      NSApp.stop(nil)
+      if let wake = NSEvent.otherEvent(
+        with: .applicationDefined, location: .zero,
+        modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+        subtype: 0, data1: 0, data2: 0)
+      {
+        NSApp.postEvent(wake, atStart: true)
+      }
+    }
+    NSApp.run()
+    if let failure { throw failure }
+  }
+
+  @MainActor
+  private func checkNativeHeldArrowNavigationKeepsRowsVisibleAndSeparate() async throws {
     let settings = try isolatedAppListSettings(for: self)
     let apps = (0..<40).map {
       makeApp(name: String(format: "App %02d", $0), version: "1", remoteVersion: "2")
@@ -1133,8 +1187,8 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testShippingMenuValidatesSelectedAppActions() throws {
-    let (window, table, viewModel) = try makeShippingSidebar()
+  func testNativeCompatibilityMenuValidatesSelectedAppActions() throws {
+    let (window, table, viewModel) = try makeNativeCompatibilitySidebar()
     defer { window.close() }
     let menu = try XCTUnwrap(table.menu)
     for (row, entry) in viewModel.snapshot.entries.enumerated() {
@@ -1154,7 +1208,9 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  private func makeShippingSidebar() throws -> (NSWindow, NSTableView, UpdatesListViewModel) {
+  private func makeNativeCompatibilitySidebar() throws -> (
+    NSWindow, NSTableView, UpdatesListViewModel
+  ) {
     let apps = [
       makeApp(name: "Discord", version: "1", remoteVersion: "2"),
       makeApp(name: "Cursor", version: "3"),
@@ -1162,8 +1218,7 @@ final class MigrationInteractionContractTest: XCTestCase {
     let viewModel = UpdatesListViewModel(
       snapshot: AppListSnapshot(withApps: apps, filterQuery: nil))
     let host = NSHostingView(
-      rootView: UpdatesSidebarView(
-        viewModel: viewModel, searchFocusController: SearchFocusController()))
+      rootView: UpdatesTableBridge(viewModel: viewModel, showsSupportStatusOverride: nil))
     host.frame = NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 420)
     let window = NSWindow(
       contentRect: host.bounds, styleMask: [.titled], backing: .buffered, defer: false)
