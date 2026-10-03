@@ -6,7 +6,7 @@ A macOS utility that finds updates for App Store, Sparkle, and Homebrew applicat
 
 ## Development
 
-Development and CI use `master`. Requires Xcode 26.6 or later and `ripgrep`.
+Development and CI use `master`. Requires Xcode 26.5 or later and `ripgrep`; CI uses Xcode 26.6.
 Use the `Latest` scheme in `Latest.xcodeproj`, or run:
 
 ```sh
@@ -44,6 +44,7 @@ account. The host checkout is shared read-only; clone it onto the guest disk:
 ```sh
 git clone --no-hardlinks '/Volumes/My Shared Files/latest' ~/Latest
 cd ~/Latest
+brew install ripgrep
 ./script/build_and_run.sh
 ./script/test.sh --all
 cp -R build/production-visuals '/Volumes/My Shared Files/artifacts/'
