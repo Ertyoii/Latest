@@ -8,7 +8,6 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-06-04.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
-import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -17,18 +16,16 @@ struct LocationsSettingsView: View {
   @State private var showsDirectoryImporter = false
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Text("Check apps from:")
-        .offset(
-          x: VisualMetrics.locationsLabelOffset.width,
-          y: VisualMetrics.locationsLabelOffset.height
-        )
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Check apps from these folders.")
+        .foregroundStyle(.secondary)
 
       DirectoryLocationsTable(
         urls: viewModel.directoryURLs,
         selection: $viewModel.selectedDirectory
       )
-      .frame(width: 400, height: 200)
+      .frame(height: min(200, max(96, CGFloat(viewModel.directoryURLs.count) * 34 + 12)))
+      .clipShape(.rect(cornerRadius: 8))
 
       ControlGroup {
         Button {
@@ -49,9 +46,7 @@ struct LocationsSettingsView: View {
       .controlSize(.small)
       .fixedSize()
     }
-    .padding(.horizontal, 20)
-    .padding(.top, 19)
-    .frame(width: 440, height: 296, alignment: .topLeading)
+    .padding(20)
     .fileImporter(
       isPresented: $showsDirectoryImporter,
       allowedContentTypes: [.folder],
@@ -168,9 +163,10 @@ private struct DirectoryLocationRow: View {
         .scaledToFit()
         .foregroundStyle(.secondary)
     } else {
-      Image(nsImage: NSWorkspace.shared.icon(forFile: url.relativePath))
+      Image(systemName: "folder.fill")
         .resizable()
         .scaledToFit()
+        .foregroundStyle(.tint)
     }
   }
 

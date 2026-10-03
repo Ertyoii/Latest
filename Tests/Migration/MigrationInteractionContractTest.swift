@@ -290,11 +290,6 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testGeneralSettingsContentMakesRoomForAppearanceSelector() {
-    XCTAssertEqual(SettingsViewModel.Tab.general.contentSize, CGSize(width: 440, height: 255))
-  }
-
-  @MainActor
   func testUpdateProgressAggregatesOverlappingBatches() {
     let service = UpdateCheckingService()
     let coordinator = UpdateCheckCoordinator()

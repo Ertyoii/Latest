@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		53A001012FFF000000000001 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A001002FFF000000000001 /* AboutView.swift */; };
+		53A001032FFF000000000001 /* LicensesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A001022FFF000000000001 /* LicensesView.swift */; };
+		53A001052FFF000000000001 /* LICENSE.md in Resources */ = {isa = PBXBuildFile; fileRef = 53A001042FFF000000000001 /* LICENSE.md */; };
 		A0FA00000000000000000003 /* SidebarInputFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0FA00000000000000000004 /* SidebarInputFixture.swift */; };
 		A0FA00000000000000000001 /* UpdatesScrollList.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0FA00000000000000000002 /* UpdatesScrollList.swift */; };
 		04DB211D3099FDA076EC8F2F /* ReleaseNotesVersionSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A492B900BB42DB5CA9C73A45 /* ReleaseNotesVersionSelection.swift */; };
@@ -56,7 +59,7 @@
 		509735502798D17E00FFE809 /* MainActorAsyncStreamRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5097354F2798D17E00FFE809 /* MainActorAsyncStreamRegistry.swift */; };
 		509B30EE28DBB17D00DDAA2E /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 509B30ED28DBB17D00DDAA2E /* Sparkle */; };
 		509C4ABC2AD1FFCC00E9C2E1 /* FailableDecodable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 509C4ABB2AD1FFCC00E9C2E1 /* FailableDecodable.swift */; };
-		50A86BBD27EA6BF4007A5F80 /* Credits.rtf in Resources */ = {isa = PBXBuildFile; fileRef = 50A86BBC27EA6BF4007A5F80 /* Credits.rtf */; };
+		50A86BBD27EA6BF4007A5F80 /* SparkleLicense.txt in Resources */ = {isa = PBXBuildFile; fileRef = 50A86BBC27EA6BF4007A5F80 /* SparkleLicense.txt */; };
 		50A8D2B327D2B063004DBA05 /* ReleaseNotesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50A8D2B227D2B063004DBA05 /* ReleaseNotesProvider.swift */; };
 		50B016982C38986300590339 /* AppDirectoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B016972C38986300590339 /* AppDirectoryStore.swift */; };
 		50BBF3FF2B21120200AB4D26 /* UpdateRepository+Entry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BBF3FE2B21120200AB4D26 /* UpdateRepository+Entry.swift */; };
@@ -185,6 +188,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		53A001002FFF000000000001 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		53A001022FFF000000000001 /* LicensesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicensesView.swift; sourceTree = "<group>"; };
+		53A001042FFF000000000001 /* LICENSE.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE.md; sourceTree = SOURCE_ROOT; };
 		A0FA00000000000000000004 /* SidebarInputFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarInputFixture.swift; sourceTree = "<group>"; };
 		A0FA00000000000000000002 /* UpdatesScrollList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatesScrollList.swift; sourceTree = "<group>"; };
 		29A88F89296B7DC2000A5EDE /* fa */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fa; path = fa.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -281,7 +287,7 @@
 		50A11E362B2F7E4100355CF5 /* sr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = sr; path = sr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		50A11E372B2F7E4600355CF5 /* sr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = sr; path = sr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		50A11E382B2F7E4800355CF5 /* he */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = he; path = he.lproj/Localizable.strings; sourceTree = "<group>"; };
-		50A86BBC27EA6BF4007A5F80 /* Credits.rtf */ = {isa = PBXFileReference; lastKnownFileType = text.rtf; path = Credits.rtf; sourceTree = "<group>"; };
+		50A86BBC27EA6BF4007A5F80 /* SparkleLicense.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = SparkleLicense.txt; sourceTree = "<group>"; };
 		50A8D2B227D2B063004DBA05 /* ReleaseNotesProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesProvider.swift"; sourceTree = "<group>"; };
 		50B016972C38986300590339 /* AppDirectoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDirectoryStore.swift"; sourceTree = "<group>"; };
 		50BBF3FE2B21120200AB4D26 /* UpdateRepository+Entry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UpdateRepository+Entry.swift"; sourceTree = "<group>"; };
@@ -514,7 +520,8 @@
 				50290E7D1E53EB6A00133E3D /* Info.plist */,
 				502217992804BB330043366B /* InfoPlist.strings */,
 				501EA9841EB1BA4400D05821 /* Localizable.strings */,
-				50A86BBC27EA6BF4007A5F80 /* Credits.rtf */,
+				50A86BBC27EA6BF4007A5F80 /* SparkleLicense.txt */,
+				53A001042FFF000000000001 /* LICENSE.md */,
 				50FEB8802B1D2402006FB75D /* ExcludedAppIdentifiers.plist */,
 				51B000002FC5000000000001 /* ReleaseNotesSources.json */,
 				6CC32A1D8DEA423388F22C29 /* LatestReleaseNotes.json */,
@@ -638,6 +645,8 @@
 				51A020032FC4000000000001 /* GeneralSettingsView.swift */,
 				51A020042FC4000000000001 /* LocationsSettingsView.swift */,
 				51A020022FC4000000000001 /* SettingsRootView.swift */,
+				53A001002FFF000000000001 /* AboutView.swift */,
+				53A001022FFF000000000001 /* LicensesView.swift */,
 				51A020002FC4000000000001 /* SettingsViewModel.swift */,
 			);
 			path = Settings;
@@ -1094,7 +1103,8 @@
 				51D000012FC7000000000001 /* UpdateSources.json in Resources */,
 				501EA9821EB1BA4400D05821 /* Localizable.strings in Resources */,
 				508605292E78B077009235D2 /* App.icon in Resources */,
-				50A86BBD27EA6BF4007A5F80 /* Credits.rtf in Resources */,
+				50A86BBD27EA6BF4007A5F80 /* SparkleLicense.txt in Resources */,
+				53A001052FFF000000000001 /* LICENSE.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1162,6 +1172,8 @@
 				51F1000A2FD0000000000001 /* UpdateActionView.swift in Sources */,
 				51A020052FC4000000000001 /* SettingsViewModel.swift in Sources */,
 				51A020072FC4000000000001 /* SettingsRootView.swift in Sources */,
+				53A001012FFF000000000001 /* AboutView.swift in Sources */,
+				53A001032FFF000000000001 /* LicensesView.swift in Sources */,
 				51A020082FC4000000000001 /* GeneralSettingsView.swift in Sources */,
 				51A020092FC4000000000001 /* LocationsSettingsView.swift in Sources */,
 				501AA0012FC4000000000001 /* main.swift in Sources */,

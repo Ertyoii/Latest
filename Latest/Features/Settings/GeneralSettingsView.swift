@@ -16,18 +16,13 @@ struct GeneralSettingsView: View {
   private var appearanceRawValue = ApplicationAppearance.system.rawValue
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
+    VStack(alignment: .leading, spacing: 16) {
       settingsForm
-
-      Spacer(minLength: 16)
       if viewModel.showsInstallHelperBanner {
         installHelperBanner
       }
     }
-    .padding(.horizontal, 20)
-    .padding(.top, 20)
-    .padding(.bottom, 16)
-    .frame(width: 440, height: 249, alignment: .topLeading)
+    .padding(20)
     .onAppear {
       viewModel.refreshInstallHelperAvailability()
     }
@@ -44,24 +39,25 @@ struct GeneralSettingsView: View {
   }
 
   private var settingsForm: some View {
-    Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 16) {
-      GridRow {
-        formLabel("Appearance:")
-
-        appearancePicker
+    VStack(spacing: 16) {
+      GroupBox {
+        HStack {
+          Text("Appearance")
+          Spacer(minLength: 16)
+          appearancePicker
+        }
+        .padding(10)
       }
 
-      GridRow(alignment: .top) {
-        formLabel("Include:")
-          .padding(.top, 1)
-
+      GroupBox("App visibility") {
         VStack(alignment: .leading, spacing: 14) {
           preferenceOption(
             title: "Apps with limited support",
-            description:
-              "List apps with limited support. Update information may be outdated or inaccurate, and updates cannot be performed directly in Latest.",
+            description: "Update information may be inaccurate. Update these apps outside Latest.",
             isOn: limitedSupportBinding
           )
+
+          Divider()
 
           preferenceOption(
             title: "Unsupported apps",
@@ -69,7 +65,7 @@ struct GeneralSettingsView: View {
             isOn: unsupportedAppsBinding
           )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
       }
     }
   }
@@ -83,35 +79,28 @@ struct GeneralSettingsView: View {
     }
     .labelsHidden()
     .pickerStyle(.segmented)
-    .frame(width: 220, height: 24)
-    .padding(.leading, 8)
+    .frame(width: 230)
     .accessibilityIdentifier("settings.appearance")
   }
 
   private var installHelperBanner: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Divider()
-
+    GroupBox {
       HStack(spacing: 12) {
-        Text("Enable a helper program to update App Store apps within Latest.")
-          .font(.body)
-          .textSelection(.enabled)
-          .fixedSize(horizontal: false, vertical: true)
-
-        Spacer(minLength: 8)
+        VStack(alignment: .leading, spacing: 4) {
+          Text("App Store updates")
+          Text("Enable a helper to update App Store apps within Latest.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
 
         Button("Enable") {
           viewModel.registerInstallHelper()
         }
-        .frame(width: 65)
       }
+      .padding(10)
     }
-  }
-
-  private func formLabel(_ title: String) -> some View {
-    Text(title)
-      .font(.body)
-      .frame(width: 80, alignment: .trailing)
   }
 
   private func preferenceOption(
@@ -119,15 +108,19 @@ struct GeneralSettingsView: View {
     description: String,
     isOn: Binding<Bool>
   ) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Toggle(title, isOn: isOn)
-        .toggleStyle(.checkbox)
-
-      Text(description)
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
+    Toggle(isOn: isOn) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text(title)
+        Text(description)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
+    .toggleStyle(.switch)
+    .accessibilityLabel(title)
+    .accessibilityHint(description)
   }
 
   private var limitedSupportBinding: Binding<Bool> {

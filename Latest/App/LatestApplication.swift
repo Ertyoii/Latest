@@ -44,6 +44,25 @@ struct LatestApplication: SwiftUI.App {
       SettingsRootView(viewModel: environment.settingsViewModel)
         .modifier(ApplicationAppearanceModifier(appearance: appearance))
     }
+    .windowResizability(.contentSize)
+
+    Window("About Latest", id: "about") {
+      AboutView()
+        .modifier(ApplicationAppearanceModifier(appearance: appearance))
+        .windowMinimizeBehavior(.disabled)
+    }
+    .windowResizability(.contentSize)
+    .restorationBehavior(.disabled)
+    .defaultLaunchBehavior(.suppressed)
+
+    Window("Licenses", id: "licenses") {
+      LicensesView()
+        .modifier(ApplicationAppearanceModifier(appearance: appearance))
+    }
+    .defaultSize(width: 560, height: 480)
+    .windowResizability(.contentMinSize)
+    .restorationBehavior(.disabled)
+    .defaultLaunchBehavior(.suppressed)
   }
 
   private var appearance: ApplicationAppearance {

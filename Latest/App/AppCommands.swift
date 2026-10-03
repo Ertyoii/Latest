@@ -109,12 +109,19 @@ final class AppCommands {
 }
 
 struct LatestCommands: Commands {
+  @Environment(\.openWindow) private var openWindow
   let appCommands: AppCommands
   @ObservedObject var updatesViewModel: UpdatesListViewModel
   @ObservedObject var updateCheckingService: UpdateCheckingService
   @ObservedObject var appUpdateController: AppUpdateController
 
   var body: some Commands {
+    CommandGroup(replacing: .appInfo) {
+      Button("About Latest") {
+        openWindow(id: "about")
+      }
+    }
+
     CommandMenu("Updates") {
       Button("View Latest Releases…") {
         appUpdateController.checkForAppUpdates()
@@ -166,6 +173,10 @@ struct LatestCommands: Commands {
     }
 
     CommandGroup(after: .help) {
+      Button("Licenses…") {
+        openWindow(id: "licenses")
+      }
+
       Button("Latest on GitHub") {
         appCommands.visitWebsite()
       }
