@@ -18,5 +18,6 @@
   "0.74": "Latest Dev 0.74\n\n• Fixed App Store apps appearing out of order by sorting installed apps using their displayed date.\n• Preserved local-date fallback and alphabetical ordering for matching dates.",
   "0.75": "Latest Dev 0.75\n\n• Simplified release-note preparation and caching while preserving existing notes and formatting.\n• Moved remaining presentation constants and main-window toolbar chrome to SwiftUI without changing their appearance.\n• Preserved release-note scroll resets, native sidebar behavior, and helper-alert preferences.",
   "0.76": "Latest Dev 0.76\n\n• Moved sidebar selection, scrolling, menus, and swipe actions to SwiftUI on macOS 27.\n• Preserved keyboard navigation, search, row sizing, and native compatibility on macOS 26.\n• Simplified sidebar rendering and removed repeated row work.",
-  "0.77": "Latest Dev 0.77\n\n• Fixed version parsing and kept update precedence separate from version identity.\n• Refreshes changed app metadata and prevents stale checks from restoring removed apps.\n• Allows cancelled release-note requests to retry and reduces repeated cache and candidate-selection work."
+  "0.77": "Latest Dev 0.77\n\n• Fixed version parsing and kept update precedence separate from version identity.\n• Refreshes changed app metadata and prevents stale checks from restoring removed apps.\n• Allows cancelled release-note requests to retry and reduces repeated cache and candidate-selection work.",
+  "0.78": "Latest Dev 0.78\n\n• Fixed the sidebar search shadow being clipped by the first section header."
 }

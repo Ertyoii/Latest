@@ -36,7 +36,11 @@ struct UpdatesSidebarView: View {
     VStack(spacing: 0) {
       UpdatesSidebarHeaderView(
         viewModel: viewModel, searchFocusController: searchFocusController,
-        focus: activeFocus, restoreFocus: restorePreviousFocus)
+        focus: activeFocus, restoreFocus: restorePreviousFocus
+      )
+      // Keep the glass shadow above the scrolling content so the first
+      // opaque section header does not cut it off at the search/list seam.
+      .zIndex(1)
       #if compiler(>=6.4)
         if #available(macOS 27.0, *) {
           UpdatesScrollList(
