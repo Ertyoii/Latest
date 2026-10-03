@@ -468,14 +468,7 @@ final class MigrationInteractionContractTest: XCTestCase {
     try await waitForFocus { search.currentEditor() === window.firstResponder }
     let searchFrame = search.convert(search.bounds, to: nil)
     let clearLocation = NSPoint(x: searchFrame.maxX + 7, y: searchFrame.midY)
-    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-      let event = try XCTUnwrap(
-        NSEvent.mouseEvent(
-          with: type, location: clearLocation, modifierFlags: [], timestamp: 0,
-          windowNumber: window.windowNumber, context: nil,
-          eventNumber: 0, clickCount: 1, pressure: 1))
-      window.sendEvent(event)
-    }
+    try clickTestWindow(window, at: clearLocation)
     try await Task.sleep(for: .milliseconds(50))
     XCTAssertEqual(viewModel.searchQuery, "")
     try await waitForFocus { search.currentEditor() === window.firstResponder }
@@ -483,15 +476,7 @@ final class MigrationInteractionContractTest: XCTestCase {
     window.sendEvent(escape)
     try await waitForFocus { window.firstResponder === table }
     XCTAssertTrue(window.firstResponder === table)
-    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-      let event = try XCTUnwrap(
-        NSEvent.mouseEvent(
-          with: type,
-          location: NSPoint(x: searchFrame.midX, y: searchFrame.midY), modifierFlags: [],
-          timestamp: 0, windowNumber: window.windowNumber, context: nil,
-          eventNumber: 0, clickCount: 1, pressure: 1))
-      window.sendEvent(event)
-    }
+    try clickTestWindow(window, at: NSPoint(x: searchFrame.midX, y: searchFrame.midY))
     try await Task.sleep(for: .milliseconds(50))
     XCTAssertTrue(search.currentEditor() === window.firstResponder)
     window.sendEvent(escape)
@@ -542,19 +527,7 @@ final class MigrationInteractionContractTest: XCTestCase {
     try await waitForWebContent(web, containing: "Offline acceptance fixture")
     func focusReleaseNotes() throws {
       let location = web.convert(NSPoint(x: 40, y: 40), to: nil)
-      let down = try XCTUnwrap(
-        NSEvent.mouseEvent(
-          with: .leftMouseDown, location: location, modifierFlags: [],
-          timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-          context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
-      let up = try XCTUnwrap(
-        NSEvent.mouseEvent(
-          with: .leftMouseUp, location: location, modifierFlags: [],
-          timestamp: down.timestamp + 0.05, windowNumber: window.windowNumber,
-          context: nil, eventNumber: 2, clickCount: 1, pressure: 0))
-      // Native text selection consumes mouse-up inside its tracking loop.
-      NSApp.postEvent(up, atStart: false)
-      window.sendEvent(down)
+      try clickTestWindow(window, at: location)
     }
     try focusReleaseNotes()
     try await waitForFocus("initial release notes") { window.firstResponder === web }

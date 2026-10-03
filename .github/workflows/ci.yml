@@ -35,7 +35,7 @@ jobs:
           mkdir -p build/visual-diagnostics
 
       - name: Cache pinned package downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build/DerivedData/SourcePackages
           key: packages-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('Latest.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
@@ -58,7 +58,7 @@ jobs:
 
       - name: Preserve test results and visual diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macOS-test-results
           path: |

@@ -170,14 +170,7 @@ struct SidebarInputFixture {
     let rect = rowRect(row)
     let y = document.isFlipped ? rect.midY : document.bounds.height - rect.midY
     let point = document.convert(CGPoint(x: 110, y: y), to: nil)
-    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-      let event = try XCTUnwrap(
-        NSEvent.mouseEvent(
-          with: type, location: point, modifierFlags: [],
-          timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-          context: nil, eventNumber: 1, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0))
-      window.sendEvent(event)
-    }
+    try clickTestWindow(window, at: point)
   }
 
   func press(down: Bool, repeatKey: Bool = true) throws {
@@ -304,14 +297,7 @@ extension MigrationInteractionContractTest {
     let search = try XCTUnwrap(fixture.window.contentView.flatMap { findSearch(in: $0) })
     let searchFrame = search.convert(search.bounds, to: nil)
     let clearLocation = NSPoint(x: searchFrame.maxX + 7, y: searchFrame.midY)
-    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-      let event = try XCTUnwrap(
-        NSEvent.mouseEvent(
-          with: type, location: clearLocation, modifierFlags: [], timestamp: 0,
-          windowNumber: fixture.window.windowNumber, context: nil,
-          eventNumber: 0, clickCount: 1, pressure: 1))
-      fixture.window.sendEvent(event)
-    }
+    try clickTestWindow(fixture.window, at: clearLocation)
     try await Task.sleep(for: .milliseconds(100))
     XCTAssertEqual(fixture.model.searchQuery, "")
     XCTAssertEqual(fixture.model.snapshot.sections.flatMap(\.apps).count, 40)

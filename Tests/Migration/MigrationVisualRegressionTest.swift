@@ -137,8 +137,8 @@ final class MigrationVisualRegressionTest: XCTestCase {
         tableView.view(atColumn: 0, row: firstAppRow, makeIfNecessary: false))
       cell.layoutSubtreeIfNeeded()
       accessibilityLabel = try XCTUnwrap(cell.accessibilityLabel())
-      icon = cell.convert(
-        NSRect(x: 0, y: cell.bounds.midY - 25, width: 50, height: 50), to: nil)
+      let row = tableView.convert(tableView.rect(ofRow: firstAppRow), to: nil)
+      icon = NSRect(x: row.minX + 16, y: row.midY - 25, width: 50, height: 50)
     } else {
       let sidebar = try SidebarInputFixture(window: window, model: viewModel)
       let app = viewModel.snapshot.apps[0]
@@ -178,6 +178,12 @@ final class MigrationVisualRegressionTest: XCTestCase {
     XCTAssertTrue(accessibilityLabel.contains(app.source.supportState.label))
     XCTAssertTrue(accessibilityLabel.contains(NSLocalizedString("UpdateAction", comment: "")))
     let rendered = try await captureWindowBitmap(window)
+    let pixels = NSRect(
+      x: icon.minX * 2, y: (window.frame.height - icon.maxY) * 2,
+      width: icon.width * 2, height: icon.height * 2)
+    let bounds = NSRect(x: 0, y: 0, width: rendered.pixelsWide, height: rendered.pixelsHigh)
+    XCTAssertTrue(bounds.contains(pixels), "Icon crop \(pixels) must fit capture \(bounds)")
+    guard bounds.contains(pixels) else { return }
     var goldenIconPixels = 0
     for y in Int((window.frame.height - icon.maxY) * 2)..<Int((window.frame.height - icon.minY) * 2)
     {
@@ -248,9 +254,10 @@ private enum MigrationGalleryRenderer {
     .appendingPathComponent("macos-26", isDirectory: true)
 
   static func render(_ scenario: MigrationGalleryScenario) async throws -> NSBitmapImageRep {
-    let rootView = MigrationGalleryView(scenario: scenario)
+    let rootView = MigrationGalleryView(scenario: scenario).environment(\.displayScale, 2)
     let hostingView = NSHostingView(rootView: rootView)
     hostingView.frame = CGRect(origin: .zero, size: scenario.size)
+    hostingView.layer?.contentsScale = 2
 
     let window = NSWindow(
       contentRect: CGRect(origin: .zero, size: scenario.size),
@@ -266,6 +273,21 @@ private enum MigrationGalleryRenderer {
     defer { window.close() }
     window.layoutIfNeeded()
     hostingView.layoutSubtreeIfNeeded()
+    if case .detail(.releaseNotes) = scenario.surface {
+      var ready = false
+      for _ in 0..<200 {
+        if let web = hostingView.firstDescendant(of: WKWebView.self), !web.isLoading,
+          let body = try? await web.evaluateJavaScript("document.body.innerText") as? String,
+          body.contains("Improvements to Cursor")
+        {
+          _ = try await web.takeSnapshot(configuration: nil)
+          ready = true
+          break
+        }
+        try await Task.sleep(for: .milliseconds(50))
+      }
+      guard ready else { throw VisualRegressionError.didNotSettle(scenario.id + " WebKit") }
+    }
     // Suspend the main actor so SwiftUI .task work (including the header icon)
     // can run. Pumping RunLoop from a synchronous test does not provide that
     // scheduling boundary. Require consecutive settled frames, not one timed

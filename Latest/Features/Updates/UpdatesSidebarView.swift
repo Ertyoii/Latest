@@ -63,6 +63,7 @@ struct UpdatesSidebarView: View {
   }
 
   private func restorePreviousFocus() {
+    if searchFocusController.restorePreviousResponder() { return }
     activeFocus.wrappedValue = previousFocus
     if previousFocus == .list {
       // The macOS 26 compatibility renderer owns its native responder.

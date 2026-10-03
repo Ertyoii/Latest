@@ -139,6 +139,24 @@ func makeLatestTestWindow(
   throw CocoaError(.coderInvalidValue)
 }
 
+/// Supply the release before a native view enters its synchronous tracking loop.
+@MainActor
+func clickTestWindow(_ window: NSWindow, at location: NSPoint) throws {
+  let timestamp = ProcessInfo.processInfo.systemUptime
+  let down = try XCTUnwrap(
+    NSEvent.mouseEvent(
+      with: .leftMouseDown, location: location, modifierFlags: [],
+      timestamp: timestamp, windowNumber: window.windowNumber, context: nil,
+      eventNumber: 1, clickCount: 1, pressure: 1))
+  let up = try XCTUnwrap(
+    NSEvent.mouseEvent(
+      with: .leftMouseUp, location: location, modifierFlags: [],
+      timestamp: timestamp + 0.05, windowNumber: window.windowNumber, context: nil,
+      eventNumber: 2, clickCount: 1, pressure: 0))
+  NSApp.postEvent(up, atStart: false)
+  window.sendEvent(down)
+}
+
 /// SwiftUI responders need NSApplication's event loop while async XCTest work runs.
 @MainActor
 func runApplicationTest(_ operation: @escaping @MainActor () async throws -> Void) throws {
