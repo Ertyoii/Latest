@@ -158,8 +158,9 @@ final class MigrationVisualRegressionTest: XCTestCase {
       // SwiftUI builds virtual accessibility children only after inspection is
       // enabled. This is the same application attribute an AX client requests.
       NSApp.accessibilitySetValue(true, forAttribute: .init(rawValue: "AXEnhancedUserInterface"))
+      let elements = sidebar.accessibilityElements()
       let row = try XCTUnwrap(
-        sidebar.accessibilityElements().first {
+        elements.first {
           $0.accessibilityIdentifier() == "updates.app.\(app.identifier)"
             && $0.accessibilityFrame().intersects(window.frame)
         })
@@ -168,7 +169,7 @@ final class MigrationVisualRegressionTest: XCTestCase {
       let rect = window.convertFromScreen(row.accessibilityFrame())
       XCTAssertEqual(rect.minX, 0, accuracy: 0.5)
       icon = NSRect(x: rect.minX + 16, y: rect.maxY - 55, width: 50, height: 50)
-      let paintedRows = sidebar.accessibilityElements().filter {
+      let paintedRows = elements.filter {
         $0.accessibilityIdentifier()?.hasPrefix("updates.app.") == true
           && $0.accessibilityFrame().intersects(window.frame)
       }.sorted { $0.accessibilityFrame().minY > $1.accessibilityFrame().minY }
@@ -646,7 +647,7 @@ final class ProductionVisualParityTest: XCTestCase {
     window.orderFront(nil)
     defer { window.close() }
     row.update(
-      app: apps[0], isSelected: false, filterQuery: nil,
+      app: apps[0], isSelected: false,
       dateFormatter: DateFormatter(), updating: service)
     try await Task.sleep(for: .milliseconds(150))
     row.layoutSubtreeIfNeeded()
@@ -705,7 +706,7 @@ final class ProductionVisualParityTest: XCTestCase {
         defer { window.close() }
         let formatter = DateFormatter()
         formatter.dateStyle = .short
-        row.update(app: app, isSelected: selected, filterQuery: nil, dateFormatter: formatter)
+        row.update(app: app, isSelected: selected, dateFormatter: formatter)
         nativeRow.isSelected = selected
         nativeRow.isEmphasized = selected
         row.backgroundStyle = selected ? .emphasized : .normal

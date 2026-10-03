@@ -37,7 +37,7 @@ struct UpdateRowView: View {
 
   init(
     app: App, selection: UpdateRowSelection,
-    filterQuery: String?, date: String, showsSupportStatus: Bool, updating: any AppUpdating
+    date: String, showsSupportStatus: Bool, updating: any AppUpdating
   ) {
     self.app = app
     self.selection = selection

@@ -406,28 +406,15 @@ final class MigrationInteractionContractTest: XCTestCase {
 
   @MainActor
   func testSidebarSearchAcceptsTypingClearAndEscapeRestoresTableFocus() throws {
-    #if compiler(>=6.4)
-      if #available(macOS 27.0, *) {
-        try SwiftUISidebarChecks(testCase: self).verifySearch()
-        return
-      }
-    #endif
-    var failure: Error?
-    Task { @MainActor in
-      do {
-        try await self.checkNativeSidebarSearchAcceptsTypingClearAndEscapeRestoresTableFocus()
-      } catch { failure = error }
-      NSApp.stop(nil)
-      if let wake = NSEvent.otherEvent(
-        with: .applicationDefined, location: .zero,
-        modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
-        subtype: 0, data1: 0, data2: 0)
-      {
-        NSApp.postEvent(wake, atStart: true)
-      }
+    try runApplicationTest {
+      #if compiler(>=6.4)
+        if #available(macOS 27.0, *) {
+          try await self.checkSwiftUISidebarSearch()
+          return
+        }
+      #endif
+      try await self.checkNativeSidebarSearchAcceptsTypingClearAndEscapeRestoresTableFocus()
     }
-    NSApp.run()
-    if let failure { throw failure }
   }
 
   @MainActor
@@ -623,28 +610,15 @@ final class MigrationInteractionContractTest: XCTestCase {
 
   @MainActor
   func testHeldArrowNavigationKeepsRowsVisibleAndSeparate() throws {
-    #if compiler(>=6.4)
-      if #available(macOS 27.0, *) {
-        try SwiftUISidebarChecks(testCase: self).verifyNavigation()
-        return
-      }
-    #endif
-    var failure: Error?
-    Task { @MainActor in
-      do { try await self.checkNativeHeldArrowNavigationKeepsRowsVisibleAndSeparate() } catch {
-        failure = error
-      }
-      NSApp.stop(nil)
-      if let wake = NSEvent.otherEvent(
-        with: .applicationDefined, location: .zero,
-        modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
-        subtype: 0, data1: 0, data2: 0)
-      {
-        NSApp.postEvent(wake, atStart: true)
-      }
+    try runApplicationTest {
+      #if compiler(>=6.4)
+        if #available(macOS 27.0, *) {
+          try await self.checkSwiftUISidebarNavigation()
+          return
+        }
+      #endif
+      try await self.checkNativeHeldArrowNavigationKeepsRowsVisibleAndSeparate()
     }
-    NSApp.run()
-    if let failure { throw failure }
   }
 
   @MainActor
@@ -839,7 +813,7 @@ final class MigrationInteractionContractTest: XCTestCase {
     )
 
     let row = UpdateRowHostingCell(frame: NSRect(x: 0, y: 0, width: 308, height: 60))
-    row.update(app: app, isSelected: false, filterQuery: nil, dateFormatter: formatter)
+    row.update(app: app, isSelected: false, dateFormatter: formatter)
     let label = try XCTUnwrap(row.accessibilityLabel())
     XCTAssertTrue(label.contains("Discord"))
     XCTAssertTrue(label.contains("1"))

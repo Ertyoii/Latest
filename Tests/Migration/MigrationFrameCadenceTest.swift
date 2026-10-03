@@ -21,20 +21,7 @@ final class MigrationFrameCadenceTest: XCTestCase {
       throw XCTSkip("Run script/benchmark_frames.sh to measure presented scrolling frames.")
     }
     let output = URL(fileURLWithPath: path.trimmingCharacters(in: .whitespacesAndNewlines))
-    var failure: Error?
-    Task { @MainActor in
-      do { try await measure(output: output) } catch { failure = error }
-      NSApp.stop(nil)
-      if let wake = NSEvent.otherEvent(
-        with: .applicationDefined, location: .zero, modifierFlags: [],
-        timestamp: CACurrentMediaTime(), windowNumber: 0, context: nil,
-        subtype: 0, data1: 0, data2: 0)
-      {
-        NSApp.postEvent(wake, atStart: true)
-      }
-    }
-    NSApp.run()
-    if let failure { throw failure }
+    try runApplicationTest { try await self.measure(output: output) }
   }
 
   private func measure(output: URL) async throws {
@@ -68,18 +55,9 @@ final class MigrationFrameCadenceTest: XCTestCase {
     window.setFrame(
       CGRect(origin: window.frame.origin, size: CGSize(width: 768, height: 516)), display: true)
     window.title = "Latest frame benchmark"
-    // macOS may refuse focus stealing by an XCTest host. Start only after a
-    // real activation, rather than publishing misleading inactive-window FPS.
-    print("FRAME_BENCHMARK_WAITING_FOR_FOCUS")
-    fflush(stdout)
-    let focusDeadline = ContinuousClock.now + .seconds(60)
-    while !window.isKeyWindow && ContinuousClock.now < focusDeadline {
-      window.makeKeyAndOrderFront(nil)
-      try await Task.sleep(for: .milliseconds(100))
-    }
-    try XCTSkipUnless(window.isKeyWindow, "Activate the visible benchmark window, then rerun.")
-    print("FRAME_BENCHMARK_STARTED active=\(NSApp.isActive)")
     let sidebar = try SidebarInputFixture(window: window, model: model)
+    try await sidebar.activate()
+    print("FRAME_BENCHMARK_STARTED active=\(NSApp.isActive)")
     let scroll = sidebar.scroll
     let input = FrameInputRecorder(window: window, selectedRow: { sidebar.selectedRow })
     defer { input.stop() }
@@ -158,10 +136,13 @@ final class MigrationFrameCadenceTest: XCTestCase {
       feeder.start()
       try await Task.sleep(for: .seconds(3.05))
       let end = CACurrentMediaTime()
-      XCTAssertEqual(sidebar.selectedRow, startRow + (down ? count : -count))
       XCTAssertTrue(window.isKeyWindow)
       XCTAssertTrue(window.occlusionState.contains(.visible))
+      // Drain queued input after the measurement endpoint before checking its
+      // final selection. The captured trial interval remains unchanged.
       try await Task.sleep(for: .milliseconds(350))
+      XCTAssertEqual(input.keys.count, count)
+      XCTAssertEqual(sidebar.selectedRow, startRow + (down ? count : -count))
       XCTAssertTrue(scroll.contentView.bounds.contains(sidebar.rowRect(sidebar.selectedRow)))
       return Trial(
         name: name, start: start, end: end, keys: input.keys, inputInterval: interval,

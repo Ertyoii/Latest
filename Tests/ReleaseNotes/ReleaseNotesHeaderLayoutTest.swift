@@ -368,7 +368,7 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
     defer { window.close() }
     let formatter = DateFormatter()
     formatter.dateStyle = .short
-    row.update(app: app, isSelected: nativeRow == nil, filterQuery: nil, dateFormatter: formatter)
+    row.update(app: app, isSelected: nativeRow == nil, dateFormatter: formatter)
     // Native selection precedes the model's deferred row-content update.
     // Its first painted frame must already use the selected text color.
     nativeRow?.isSelected = true

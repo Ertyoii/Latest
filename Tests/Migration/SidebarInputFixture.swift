@@ -33,16 +33,16 @@ struct SidebarInputFixture {
   }
 
   func rowRect(_ index: Int) -> CGRect {
+    var entry = 0
     var y: CGFloat = 0
-    for (row, entry) in model.snapshot.entries.enumerated() {
-      let height: CGFloat
-      switch entry {
-      case .section: height = 27
-      case .app: height = 60
+    for section in model.snapshot.sections {
+      if index == entry { return CGRect(x: 0, y: y, width: 308, height: 27) }
+      let count = section.apps.count
+      if index > entry && index <= entry + count {
+        return CGRect(x: 0, y: y + 37 + CGFloat(index - entry - 1) * 60, width: 308, height: 60)
       }
-      if row == index { return CGRect(x: 0, y: y, width: 308, height: height) }
-      y += height
-      if case .section = entry { y += 10 }
+      entry += count + 1
+      y += 37 + CGFloat(count) * 60
     }
     return .zero
   }
@@ -57,7 +57,7 @@ struct SidebarInputFixture {
       }
       return false
     }
-    if let row { try click(row: row) }
+    try click(row: XCTUnwrap(row, "The sidebar must contain a fully visible app row"))
   }
 
   func scroll(to y: CGFloat) {
@@ -68,18 +68,35 @@ struct SidebarInputFixture {
 
   func accessibilityElements() -> [SidebarAccessibilityElement] {
     var seen = Set<ObjectIdentifier>()
-    func visit(_ value: Any) -> [SidebarAccessibilityElement] {
+    var elements: [SidebarAccessibilityElement] = []
+    func visit(_ value: Any) {
       guard let object = value as? NSObject,
         seen.insert(ObjectIdentifier(object)).inserted
-      else { return [] }
+      else { return }
       let element = SidebarAccessibilityElement(object: object)
-      // Hosting views may be ignored accessibility containers. Traverse their
-      // native children as well so virtual SwiftUI row elements remain reachable.
-      let nativeChildren = (value as? NSView)?.subviews ?? []
-      return [element] + (element.accessibilityChildren() ?? []).flatMap { visit($0) }
-        + nativeChildren.flatMap { visit($0) }
+      elements.append(element)
+      for child in element.accessibilityChildren() ?? [] { visit(child) }
+      // Hosting views may be ignored AX containers; their native children
+      // still lead to virtual SwiftUI row elements.
+      for child in (value as? NSView)?.subviews ?? [] { visit(child) }
     }
-    return visit(window)
+    visit(window)
+    return elements
+  }
+
+  func activate() async throws {
+    NSApp.setActivationPolicy(.regular)
+    print("SIDEBAR_TEST_WAITING_FOR_FOCUS")
+    fflush(stdout)
+    let deadline = ContinuousClock.now + .seconds(60)
+    repeat {
+      NSApp.activate()
+      window.makeKeyAndOrderFront(nil)
+      if window.isKeyWindow { return }
+      try await Task.sleep(for: .milliseconds(20))
+    } while ContinuousClock.now < deadline
+    XCTFail("Activate the visible sidebar test window")
+    throw CocoaError(.userCancelled)
   }
 
   func click(row: Int) throws {
@@ -127,18 +144,9 @@ struct SidebarAccessibilityElement {
 }
 
 @MainActor
-final class SwiftUISidebarChecks {
-  private let testCase: XCTestCase
-  init(testCase: XCTestCase) { self.testCase = testCase }
+extension MigrationInteractionContractTest {
   private func makeFixture() async throws -> (SidebarInputFixture, AppEnvironment) {
-    #if compiler(>=6.4)
-      try XCTSkipUnless(
-        ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27,
-        "Custom SwiftUI swipe containers require macOS 27.")
-    #else
-      throw XCTSkip("Custom SwiftUI swipe containers require the macOS 27 SDK.")
-    #endif
-    let settings = try isolatedAppListSettings(for: testCase)
+    let settings = try isolatedAppListSettings(for: self)
     let apps = (0..<40).map { index in
       let bundle = Latest.App.Bundle(
         version: Version(versionNumber: "1.0", buildNumber: nil),
@@ -157,27 +165,14 @@ final class SwiftUISidebarChecks {
       settings: settings)
     let environment = AppEnvironment(settings: settings, updatesListViewModel: model)
     NSApp.setActivationPolicy(.regular)
-    let window = try await makeLatestTestWindow(environment: environment, testCase: testCase)
-    print("SIDEBAR_TEST_WAITING_FOR_FOCUS")
-    NSApp.activate()
-    window.makeKeyAndOrderFront(nil)
-    for _ in 0..<3000 {
-      if window.isKeyWindow { break }
-      NSApp.activate()
-      window.makeKeyAndOrderFront(nil)
-      try await Task.sleep(for: .milliseconds(20))
-    }
-    window.makeKey()
-    XCTAssertTrue(window.isKeyWindow)
+    let window = try await makeLatestTestWindow(environment: environment, testCase: self)
+    let fixture = try SidebarInputFixture(window: window, model: model)
+    try await fixture.activate()
     try await Task.sleep(for: .milliseconds(100))
-    return (try SidebarInputFixture(window: window, model: model), environment)
+    return (fixture, environment)
   }
 
-  func verifyNavigation() throws {
-    try runInteractions { try await self.checkPointerKeyboardRepeatReversalHeadersAndEdges() }
-  }
-
-  private func checkPointerKeyboardRepeatReversalHeadersAndEdges() async throws {
+  func checkSwiftUISidebarNavigation() async throws {
     let (fixture, _) = try await makeFixture()
     defer { fixture.window.close() }
     try fixture.focus()
@@ -223,13 +218,7 @@ final class SwiftUISidebarChecks {
     XCTAssertEqual(fixture.scroll.contentView.bounds.minY, 0, accuracy: 0.5)
   }
 
-  func verifySearch() throws {
-    try runInteractions {
-      try await self.checkSearchTypingClearAndEscapeRestoresKeyboardNavigation()
-    }
-  }
-
-  private func checkSearchTypingClearAndEscapeRestoresKeyboardNavigation() async throws {
+  func checkSwiftUISidebarSearch() async throws {
     let (fixture, environment) = try await makeFixture()
     defer { fixture.window.close() }
     try fixture.focus()
@@ -237,7 +226,7 @@ final class SwiftUISidebarChecks {
     environment.commands.focusSearch()
     try await Task.sleep(for: .milliseconds(100))
     let editor = try XCTUnwrap(fixture.window.firstResponder as? NSTextView)
-    editor.insertText("Sidebar App 00")
+    editor.insertText("Sidebar App 00", replacementRange: NSRange(location: NSNotFound, length: 0))
     try await Task.sleep(for: .milliseconds(100))
     XCTAssertEqual(fixture.model.snapshot.sections.flatMap(\.apps).count, 1)
     func findSearch(in view: NSView) -> NSTextField? {
@@ -261,7 +250,7 @@ final class SwiftUISidebarChecks {
     XCTAssertEqual(fixture.model.searchQuery, "")
     XCTAssertEqual(fixture.model.snapshot.sections.flatMap(\.apps).count, 40)
     XCTAssertTrue(fixture.window.firstResponder === editor)
-    editor.insertText("Sidebar App 00")
+    editor.insertText("Sidebar App 00", replacementRange: NSRange(location: NSNotFound, length: 0))
     try await Task.sleep(for: .milliseconds(100))
     environment.commands.focusSearch()
     let escape = try XCTUnwrap(
@@ -287,21 +276,4 @@ final class SwiftUISidebarChecks {
     try await Task.sleep(for: .milliseconds(50))
     XCTAssertEqual(fixture.selectedRow, 2)
   }
-  private func runInteractions(_ operation: @escaping @MainActor () async throws -> Void) throws {
-    var failure: Error?
-    Task { @MainActor in
-      do { try await operation() } catch { failure = error }
-      NSApp.stop(nil)
-      if let wake = NSEvent.otherEvent(
-        with: .applicationDefined, location: .zero,
-        modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
-        subtype: 0, data1: 0, data2: 0)
-      {
-        NSApp.postEvent(wake, atStart: true)
-      }
-    }
-    NSApp.run()
-    if let failure { throw failure }
-  }
-
 }

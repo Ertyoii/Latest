@@ -128,3 +128,21 @@ func makeLatestTestWindow(
   XCTFail("The production Latest scene did not open")
   throw CocoaError(.coderInvalidValue)
 }
+
+/// SwiftUI responders need NSApplication's event loop while async XCTest work runs.
+@MainActor
+func runApplicationTest(_ operation: @escaping @MainActor () async throws -> Void) throws {
+  var failure: Error?
+  Task { @MainActor in
+    do { try await operation() } catch { failure = error }
+    NSApp.stop(nil)
+    if let wake = NSEvent.otherEvent(
+      with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0,
+      windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0)
+    {
+      NSApp.postEvent(wake, atStart: true)
+    }
+  }
+  NSApp.run()
+  if let failure { throw failure }
+}

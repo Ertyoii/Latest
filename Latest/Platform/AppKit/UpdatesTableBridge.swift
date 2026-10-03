@@ -112,7 +112,6 @@ private struct UpdatesTableView: NSViewRepresentable {
     private var lastKeyboardFocusRequest: UInt = 0
     private var viewModel: UpdatesListViewModel
     private var entries: [AppListSnapshot.Entry] = []
-    private var filterQuery: String?
     private var selectedIdentifier: App.Bundle.Identifier?
     private var selectedRowIndex: Int?
     private var snapshotRevision: Int?
@@ -203,7 +202,6 @@ private struct UpdatesTableView: NSViewRepresentable {
         needsContentUpdate
         ? TableViewSnapshotDiff(from: previousEntries, to: snapshot.entries).change : nil
       entries = snapshot.entries
-      filterQuery = snapshot.filterQuery
       selectedIdentifier = nextSelectedApp?.identifier
       selectedRowIndex = nextSelectedRowIndex
       snapshotRevision = nextRevision
@@ -277,7 +275,6 @@ private struct UpdatesTableView: NSViewRepresentable {
         view.update(
           app: app,
           isSelected: selectedIdentifier == app.identifier,
-          filterQuery: filterQuery,
           dateFormatter: Self.dateFormatter,
           showsSupportStatusOverride: showsSupportStatusOverride,
           updating: viewModel.updating
@@ -406,7 +403,6 @@ private struct UpdatesTableView: NSViewRepresentable {
         view.update(
           app: app,
           isSelected: selectedIdentifier == app.identifier,
-          filterQuery: filterQuery,
           dateFormatter: Self.dateFormatter,
           showsSupportStatusOverride: showsSupportStatusOverride,
           updating: viewModel.updating
@@ -464,7 +460,6 @@ final class UpdateRowHostingCell: NSTableCellView {
   func update(
     app: App,
     isSelected: Bool,
-    filterQuery: String?,
     dateFormatter: DateFormatter,
     showsSupportStatusOverride: Bool? = nil,
     updating: any AppUpdating = AppUpdateService.shared
@@ -473,7 +468,7 @@ final class UpdateRowHostingCell: NSTableCellView {
       isSelected ? (backgroundStyle == .emphasized ? .active : .inactive) : .unselected
     let content = UpdateRowView(
       app: app, selection: selection,
-      filterQuery: filterQuery, date: dateFormatter.string(from: app.updateDate),
+      date: dateFormatter.string(from: app.updateDate),
       showsSupportStatus: showsSupportStatusOverride ?? true, updating: updating)
     if let host {
       host.rootView = content

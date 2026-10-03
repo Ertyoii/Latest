@@ -23,20 +23,8 @@ final class MigrationPerformanceTest: XCTestCase {
     guard FileManager.default.fileExists(atPath: Self.benchmarkFlagURL.path) else {
       throw XCTSkip("Run script/benchmark_migration.sh to execute migration benchmarks.")
     }
-    var failure: Error?
-    Task { @MainActor in
-      do { try await self.measureMigrationPerformanceMatrix() } catch { failure = error }
-      NSApp.stop(nil)
-      if let wake = NSEvent.otherEvent(
-        with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0,
-        windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0)
-      {
-        NSApp.postEvent(wake, atStart: true)
-      }
-    }
     NSApp.setActivationPolicy(.regular)
-    NSApp.run()
-    if let failure { throw failure }
+    try runApplicationTest { try await self.measureMigrationPerformanceMatrix() }
   }
 
   private func measureMigrationPerformanceMatrix() async throws {
@@ -143,17 +131,7 @@ final class MigrationPerformanceTest: XCTestCase {
     try await Task.sleep(for: .milliseconds(100))
     let keyboard = try SidebarInputFixture(window: keyboardWindow, model: scrollViewModel)
     keyboard.scroll(to: 0)
-    NSApp.activate(ignoringOtherApps: true)
-    keyboardWindow.makeKeyAndOrderFront(nil)
-    print("MIGRATION_BENCHMARK_WAITING_FOR_FOCUS")
-    fflush(stdout)
-    let deadline = Date(timeIntervalSinceNow: 60)
-    while !keyboardWindow.isKeyWindow && Date() < deadline {
-      NSApp.activate()
-      keyboardWindow.makeKeyAndOrderFront(nil)
-      try await Task.sleep(for: .milliseconds(20))
-    }
-    XCTAssertTrue(keyboardWindow.isKeyWindow, "Activate the visible benchmark window")
+    try await keyboard.activate()
     try keyboard.focus()
     try await Task.sleep(for: .milliseconds(50))
     let firstAppRow = keyboard.selectedRow

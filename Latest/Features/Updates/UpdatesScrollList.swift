@@ -16,11 +16,11 @@ import SwiftUI
     @Environment(\.controlActiveState) private var controlActiveState
 
     var body: some View {
-      SidebarScrollingViewport(navigation: navigation) {
+      SidebarScrollingViewport(viewModel: viewModel, navigation: navigation) {
         LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
           ForEach(viewModel.snapshot.sections) { group in
             Section {
-              Color.clear.frame(height: SidebarNavigationLayout.sectionSpacing)
+              Color.clear.frame(height: 10)
                 .accessibilityHidden(true)
               ForEach(group.apps, id: \.identifier) { app in
                 UpdatesScrollRow(
@@ -68,13 +68,10 @@ import SwiftUI
       .onChange(of: viewModel.snapshotRevision, initial: true) { _, _ in
         navigation.apply(snapshot: viewModel.snapshot)
         navigation.synchronize(viewModel.selectedApp?.identifier)
-        let maximum = max(0, navigation.layout.contentHeight - navigation.viewport.height)
+        let maximum = max(0, navigation.contentHeight - navigation.viewport.height)
         if navigation.viewport.minY > maximum {
           scroll(to: maximum)
         }
-      }
-      .background {
-        SidebarSelectionObserver(viewModel: viewModel, navigation: navigation)
       }
       .onChange(of: focus.wrappedValue, initial: true) { _, _ in
         navigation.setEmphasized(focus.wrappedValue == .list && controlActiveState != .inactive)
@@ -82,22 +79,34 @@ import SwiftUI
       .onChange(of: controlActiveState) { _, _ in
         navigation.setEmphasized(focus.wrappedValue == .list && controlActiveState != .inactive)
       }
-      .modifier(SidebarSelectionMenu(viewModel: viewModel))
       .accessibilityIdentifier("updates.list")
       .accessibilityLabel("Apps")
     }
 
     private func moveSelection(down: Bool) {
-      guard let app = navigation.layout.next(after: viewModel.selectedApp?.identifier, down: down),
-        let row = navigation.layout.frames[app.identifier]
-      else { return }
+      let snapshot = viewModel.snapshot
+      let current = viewModel.selectedApp.flatMap { snapshot.firstIndex(of: $0) }
+      var index = current.map { $0 + (down ? 1 : -1) } ?? 0
+      while snapshot.entries.indices.contains(index) {
+        if case .app(let app) = snapshot.entries[index] {
+          moveSelection(to: app, row: navigation.frames[index])
+          return
+        }
+        index += current == nil || down ? 1 : -1
+      }
+      if let current, case .app(let app) = snapshot.entries[current] {
+        moveSelection(to: app, row: navigation.frames[current])
+      }
+    }
+
+    private func moveSelection(to app: App, row: CGRect) {
       // Update both values in one transaction. No delayed scroll or animation may
       // move the viewport back after another key, a reversal, or a search change.
       var transaction = Transaction(animation: nil)
       transaction.disablesAnimations = true
       withTransaction(transaction) {
         select(app, keyboard: true)
-        let target = navigation.layout.scrollOffset(for: row, viewport: navigation.viewport)
+        let target = navigation.scrollOffset(for: row, viewport: navigation.viewport)
         if abs(target - navigation.viewport.minY) > 0.5 { scroll(to: target) }
       }
     }
@@ -113,13 +122,18 @@ import SwiftUI
     }
   }
 
-  // ScrollPosition changes only invalidate the viewport. Keep the lazy stack's
-  // view value stable rather than recreating its swipe/AX rows for each arrow.
+  // Selection and ScrollPosition invalidate only this viewport. The lazy
+  // stack's view value stays stable across arrows and retains its swipe/AX rows.
   private struct SidebarScrollingViewport<Content: View>: View {
+    let viewModel: UpdatesListViewModel
     @Bindable var navigation: SidebarScrollState
     let content: Content
 
-    init(navigation: SidebarScrollState, @ViewBuilder content: () -> Content) {
+    init(
+      viewModel: UpdatesListViewModel, navigation: SidebarScrollState,
+      @ViewBuilder content: () -> Content
+    ) {
+      self.viewModel = viewModel
       self.navigation = navigation
       self.content = content()
     }
@@ -127,32 +141,14 @@ import SwiftUI
     var body: some View {
       ScrollView(.vertical) { content }
         .scrollPosition($navigation.position)
-    }
-  }
-
-  // Reading selection here confines Observation invalidation to this observer;
-  // the lazy stack does not recreate every visible swipe container per arrow.
-  private struct SidebarSelectionObserver: View {
-    let viewModel: UpdatesListViewModel
-    let navigation: SidebarScrollState
-
-    var body: some View {
-      Color.clear.accessibilityHidden(true)
         .onChange(of: viewModel.selectedApp?.identifier, initial: true) { _, identifier in
           navigation.synchronize(identifier)
         }
-    }
-  }
-
-  private struct SidebarSelectionMenu: ViewModifier {
-    let viewModel: UpdatesListViewModel
-
-    func body(content: Content) -> some View {
-      content.contextMenu {
-        if let app = viewModel.selectedApp {
-          UpdatesRowMenu(app: app, viewModel: viewModel)
+        .contextMenu {
+          if let app = viewModel.selectedApp {
+            UpdatesRowMenu(app: app, viewModel: viewModel)
+          }
         }
-      }
     }
   }
 
@@ -163,7 +159,8 @@ import SwiftUI
   private final class SidebarScrollState {
     var position = ScrollPosition()
     @ObservationIgnored var viewport = CGRect.zero
-    @ObservationIgnored var layout = SidebarNavigationLayout()
+    @ObservationIgnored private(set) var frames: [CGRect] = []
+    @ObservationIgnored private(set) var contentHeight: CGFloat = 0
     @ObservationIgnored private var selections: [App.Bundle.Identifier: UpdateRowSelection] = [:]
     @ObservationIgnored private var selected: App.Bundle.Identifier?
     @ObservationIgnored private var emphasized = false
@@ -179,9 +176,37 @@ import SwiftUI
     }
 
     func apply(snapshot: AppListSnapshot) {
-      layout = SidebarNavigationLayout(snapshot: snapshot)
-      let identifiers = Set(layout.apps.map(\.identifier))
+      frames = []
+      frames.reserveCapacity(snapshot.entries.count)
+      contentHeight = 0
+      var identifiers = Set<App.Bundle.Identifier>()
+      for entry in snapshot.entries {
+        switch entry {
+        case .section:
+          frames.append(.zero)
+          contentHeight += VisualMetrics.sectionHeaderHeight + 10
+        case .app(let app):
+          identifiers.insert(app.identifier)
+          frames.append(
+            CGRect(
+              x: 0, y: contentHeight,
+              width: VisualMetrics.sidebarIdealWidth, height: VisualMetrics.appRowHeight))
+          contentHeight += VisualMetrics.appRowHeight
+        }
+      }
       selections = selections.filter { identifiers.contains($0.key) }
+    }
+
+    func scrollOffset(for row: CGRect, viewport: CGRect) -> CGFloat {
+      guard viewport.height > 0 else { return viewport.minY }
+      let margin = min(VisualMetrics.appRowHeight, viewport.height / 4)
+      var y = viewport.minY
+      if row.maxY > viewport.maxY - margin {
+        y = row.maxY + margin - viewport.height
+      } else if row.minY < viewport.minY + margin {
+        y = row.minY - margin
+      }
+      return min(max(0, y), max(0, contentHeight - viewport.height))
     }
 
     func synchronize(_ identifier: App.Bundle.Identifier?) {
@@ -201,20 +226,31 @@ import SwiftUI
   private struct UpdatesScrollRow: View {
     let app: App
     let viewModel: UpdatesListViewModel
-    let showsSupportStatus: Bool
     let focus: FocusState<SidebarFocus?>.Binding
     let selection: UpdateRowSelection
     let select: () -> Void
+    private let content: UpdateRowView
     private var isSelected: Bool { selection.isSelected }
     private var isEmphasized: Bool { selection.usesActiveSelectionColors }
 
-    var body: some View {
-      let content = UpdateRowView(
-        app: app, selection: selection, filterQuery: viewModel.snapshot.filterQuery,
+    init(
+      app: App, viewModel: UpdatesListViewModel, showsSupportStatus: Bool,
+      focus: FocusState<SidebarFocus?>.Binding, selection: UpdateRowSelection,
+      select: @escaping () -> Void
+    ) {
+      self.app = app
+      self.viewModel = viewModel
+      self.focus = focus
+      self.selection = selection
+      self.select = select
+      content = UpdateRowView(
+        app: app, selection: selection,
         date: Self.dateFormatter.string(from: app.updateDate),
         showsSupportStatus: showsSupportStatus, updating: viewModel.updating)
-      return
-        content
+    }
+
+    var body: some View {
+      content
         // The native source-list cell extends 16pt past the viewport. Preserve
         // that measured geometry instead of shrinking its text/status columns.
         .frame(width: VisualMetrics.sidebarIdealWidth, height: VisualMetrics.appRowHeight)
@@ -231,10 +267,7 @@ import SwiftUI
           }
         }
         .contentShape(Rectangle())
-        .onTapGesture {
-          focus.wrappedValue = .list
-          select()
-        }
+        .onTapGesture(perform: selectApp)
         .contextMenu { UpdatesRowMenu(app: app, viewModel: viewModel) }
         .swipeActions(edge: .leading, allowsFullSwipe: false) {
           Button {
@@ -262,12 +295,13 @@ import SwiftUI
         .accessibilityElement(children: .contain)
         .accessibilityLabel(content.accessibilityLabel)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction {
-          focus.wrappedValue = .list
-          select()
-        }
+        .accessibilityAction { selectApp() }
         .accessibilityIdentifier("updates.app.\(app.identifier)")
-        .id(app.identifier)
+    }
+
+    private func selectApp() {
+      focus.wrappedValue = .list
+      select()
     }
 
     private static let dateFormatter: DateFormatter = {
@@ -317,48 +351,3 @@ import SwiftUI
     }
   }
 #endif
-
-/// Fixed geometry shared by keyboard navigation and the visible SwiftUI layout.
-/// Snapshot changes rebuild the index once; held arrows perform constant work.
-@MainActor
-struct SidebarNavigationLayout {
-  static let sectionSpacing: CGFloat = 10
-  var apps: [App] = []
-  var frames: [App.Bundle.Identifier: CGRect] = [:]
-  private var indexes: [App.Bundle.Identifier: Int] = [:]
-  private(set) var contentHeight: CGFloat = 0
-
-  init() {}
-
-  init(snapshot: AppListSnapshot) {
-    for group in snapshot.sections {
-      contentHeight += VisualMetrics.sectionHeaderHeight + Self.sectionSpacing
-      for app in group.apps {
-        indexes[app.identifier] = apps.count
-        apps.append(app)
-        frames[app.identifier] = CGRect(
-          x: 0, y: contentHeight,
-          width: VisualMetrics.sidebarIdealWidth, height: VisualMetrics.appRowHeight)
-        contentHeight += VisualMetrics.appRowHeight
-      }
-    }
-  }
-
-  func next(after identifier: App.Bundle.Identifier?, down: Bool) -> App? {
-    guard !apps.isEmpty else { return nil }
-    guard let identifier, let index = indexes[identifier] else { return apps.first }
-    return apps[min(apps.count - 1, max(0, index + (down ? 1 : -1)))]
-  }
-
-  func scrollOffset(for row: CGRect, viewport: CGRect) -> CGFloat {
-    guard viewport.height > 0 else { return viewport.minY }
-    let margin = min(VisualMetrics.appRowHeight, viewport.height / 4)
-    var y = viewport.minY
-    if row.maxY > viewport.maxY - margin {
-      y = row.maxY + margin - viewport.height
-    } else if row.minY < viewport.minY + margin {
-      y = row.minY - margin
-    }
-    return min(max(0, y), max(0, contentHeight - viewport.height))
-  }
-}
