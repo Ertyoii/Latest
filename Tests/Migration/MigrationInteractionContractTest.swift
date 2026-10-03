@@ -290,11 +290,6 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testGeneralSettingsContentMakesRoomForAppearanceSelector() {
-    XCTAssertEqual(SettingsViewModel.Tab.general.contentSize, CGSize(width: 440, height: 255))
-  }
-
-  @MainActor
   func testUpdateProgressAggregatesOverlappingBatches() {
     let service = UpdateCheckingService()
     let coordinator = UpdateCheckCoordinator()
@@ -467,8 +462,7 @@ final class MigrationInteractionContractTest: XCTestCase {
     ).focusSearch()
     try await waitForFocus { search.currentEditor() === window.firstResponder }
     let searchFrame = search.convert(search.bounds, to: nil)
-    let clearLocation = NSPoint(x: searchFrame.maxX + 7, y: searchFrame.midY)
-    try clickTestWindow(window, at: clearLocation)
+    try await SidebarInputFixture(window: window, model: viewModel).clickSearchClearButton()
     try await Task.sleep(for: .milliseconds(50))
     XCTAssertEqual(viewModel.searchQuery, "")
     try await waitForFocus { search.currentEditor() === window.firstResponder }

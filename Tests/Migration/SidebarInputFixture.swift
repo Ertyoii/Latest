@@ -150,6 +150,25 @@ struct SidebarInputFixture {
     return elements
   }
 
+  func clickSearchClearButton() async throws {
+    NSApp.accessibilitySetValue(true, forAttribute: .init(rawValue: "AXEnhancedUserInterface"))
+    for _ in 0..<100 {
+      window.contentView?.layoutSubtreeIfNeeded()
+      if let button = accessibilityElements().first(where: {
+        $0.accessibilityLabel() == "Clear Search"
+          && !$0.accessibilityFrame().isEmpty
+          && $0.accessibilityFrame().intersects(window.frame)
+      }) {
+        let frame = window.convertFromScreen(button.accessibilityFrame())
+        try clickTestWindow(window, at: NSPoint(x: frame.midX, y: frame.midY))
+        return
+      }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTFail("The visible search clear button did not expose its accessibility frame")
+    throw CocoaError(.coderInvalidValue)
+  }
+
   func activate() async throws {
     NSApp.setActivationPolicy(.regular)
     print("SIDEBAR_TEST_WAITING_FOR_FOCUS pid=\(ProcessInfo.processInfo.processIdentifier)")
@@ -290,16 +309,7 @@ extension MigrationInteractionContractTest {
     editor.insertText("Sidebar App 00", replacementRange: NSRange(location: NSNotFound, length: 0))
     try await Task.sleep(for: .milliseconds(100))
     XCTAssertEqual(fixture.model.snapshot.sections.flatMap(\.apps).count, 1)
-    func findSearch(in view: NSView) -> NSTextField? {
-      if let field = view as? NSTextField, field.currentEditor() === editor {
-        return field
-      }
-      return view.subviews.lazy.compactMap { findSearch(in: $0) }.first
-    }
-    let search = try XCTUnwrap(fixture.window.contentView.flatMap { findSearch(in: $0) })
-    let searchFrame = search.convert(search.bounds, to: nil)
-    let clearLocation = NSPoint(x: searchFrame.maxX + 7, y: searchFrame.midY)
-    try clickTestWindow(fixture.window, at: clearLocation)
+    try await fixture.clickSearchClearButton()
     try await Task.sleep(for: .milliseconds(100))
     XCTAssertEqual(fixture.model.searchQuery, "")
     XCTAssertEqual(fixture.model.snapshot.sections.flatMap(\.apps).count, 40)

@@ -28,27 +28,6 @@ final class SettingsViewModel: ObservableObject {
       }
     }
 
-    var systemImageName: String {
-      switch self {
-      case .general:
-        return "gearshape"
-      case .locations:
-        return "externaldrive"
-      }
-    }
-
-    var contentSize: CGSize {
-      switch self {
-      case .general:
-        // SwiftUI's native preferences toolbar is six points shorter than the
-        // former NSToolbar host. Keep that six-point allowance while making
-        // room for the native appearance selector.
-        CGSize(width: 440, height: 255)
-      case .locations:
-        CGSize(width: 440, height: 296)
-      }
-    }
-
   }
 
   @Published var selectedTab: Tab = .general

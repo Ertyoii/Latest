@@ -104,4 +104,6 @@ Add each app version to `Latest/Resources/LatestReleaseNotes.json` for offline L
 
 Based on [Latest by Max Langer and contributors](https://github.com/mangerlahn/Latest). Fork modifications © 2026 ertyoii; upstream and dependency notices are retained.
 
+About shows the app icon, name, version, and copyright. Full GPL and Sparkle notices are bundled for offline reading in Help → Licenses.
+
 Distributed under [GPL version 3](LICENSE.md). Binary distributions must include corresponding source. This software comes without warranty.

@@ -18,27 +18,28 @@ struct SettingsRootView: View {
   }
 
   var body: some View {
-    TabView(selection: $viewModel.selectedTab) {
-      GeneralSettingsView(viewModel: viewModel)
-        .frame(width: 440, height: 255, alignment: .topLeading)
-        .tabItem {
-          Label(
-            SettingsViewModel.Tab.general.title,
-            systemImage: SettingsViewModel.Tab.general.systemImageName)
+    VStack(spacing: 0) {
+      Picker("Settings", selection: $viewModel.selectedTab) {
+        ForEach(SettingsViewModel.Tab.allCases, id: \.self) { tab in
+          Text(tab.title).tag(tab)
         }
-        .tag(SettingsViewModel.Tab.general)
+      }
+      .labelsHidden()
+      .pickerStyle(.segmented)
+      .controlSize(.large)
+      .frame(width: 240)
+      .padding(.top, 12)
+      .padding(.bottom, 4)
 
-      LocationsSettingsView(viewModel: viewModel)
-        .tabItem {
-          Label(
-            SettingsViewModel.Tab.locations.title,
-            systemImage: SettingsViewModel.Tab.locations.systemImageName)
-        }
-        .tag(SettingsViewModel.Tab.locations)
+      switch viewModel.selectedTab {
+      case .general:
+        GeneralSettingsView(viewModel: viewModel)
+      case .locations:
+        LocationsSettingsView(viewModel: viewModel)
+      }
     }
-    .frame(
-      width: viewModel.selectedTab.contentSize.width,
-      height: viewModel.selectedTab.contentSize.height
-    )
+    .frame(width: 460)
+    .fixedSize(horizontal: false, vertical: true)
+    .navigationTitle("Settings")
   }
 }
