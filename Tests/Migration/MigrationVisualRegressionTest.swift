@@ -581,12 +581,13 @@ final class ProductionVisualParityTest: XCTestCase {
         environment: environment, dark: dark, testCase: self)
       defer { window.close() }
       var captures: [String: NSBitmapImageRep] = [:]
-      for state in ["idle", "scanning", "quarter", "three-quarters", "finished"] {
+      for state in ["idle", "scanning", "zero", "quarter", "three-quarters", "finished"] {
         switch state {
         case "idle": break
         case "scanning": service.updateCheckerDidStartScanningForApps(coordinator)
-        case "quarter":
+        case "zero":
           service.updateChecker(coordinator, didStartCheckingApps: 4, generation: 1)
+        case "quarter":
           service.updateChecker(coordinator, didCheckApp: LocalUATFixture.apps[0])
         case "three-quarters":
           for app in LocalUATFixture.apps[1...2] {
@@ -618,6 +619,7 @@ final class ProductionVisualParityTest: XCTestCase {
       // excluding the refresh button, rather than requiring an accent color.
       var changedColumns = Set<Int>()
       var scanPixels = 0
+      var scanTransitionPixels = 0
       var completionPixels = 0
       for y in 0..<110 {
         for x in 0..<300 {
@@ -625,12 +627,18 @@ final class ProductionVisualParityTest: XCTestCase {
             changedColumns.insert(x)
           }
           if try difference("idle", "scanning", x: x, y: y) > 0.04 { scanPixels += 1 }
+          if try difference("scanning", "zero", x: x, y: y) > 0.04 {
+            scanTransitionPixels += 1
+          }
           if try difference("idle", "finished", x: x, y: y) > 0.04 { completionPixels += 1 }
         }
       }
       XCTAssertGreaterThan(
         changedColumns.count, 40, "The horizontal bar must advance with checked apps")
-      XCTAssertGreaterThan(scanPixels, 20, "Scanning must paint an indeterminate indicator")
+      XCTAssertGreaterThan(scanPixels, 20, "Scanning must paint the empty linear progress track")
+      XCTAssertEqual(
+        scanTransitionPixels, 0,
+        "Learning the app count must preserve the empty bar without a spinner transition")
       XCTAssertEqual(completionPixels, 0, "Completion must remove the progress indicator")
       XCTAssertLessThan(
         try difference("quarter", "finished", x: 240, y: 20), 0.02,
