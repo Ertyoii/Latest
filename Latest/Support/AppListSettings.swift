@@ -81,7 +81,7 @@ final class AppListSettings: AppListSettingsProviding {
     }
 
     get {
-      SortOptions(rawValue: userDefaults.integer(forKey: SortOptionsKey))!
+      SortOptions(rawValue: userDefaults.integer(forKey: SortOptionsKey)) ?? .updateDate
     }
   }
 

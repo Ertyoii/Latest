@@ -39,7 +39,7 @@ final class AppDataStoreTest: XCTestCase {
     let initialBundle = makeBundle(versionNumber: "1.0", at: appURL)
     let remoteVersion = Version(versionNumber: "2.0", buildNumber: nil)
 
-    _ = store.set(appBundles: [initialBundle])
+    store.set(appBundles: [initialBundle])
     _ = store.set(
       .success(makeUpdate(for: initialBundle, remoteVersion: remoteVersion)), for: initialBundle)
 
@@ -57,7 +57,7 @@ final class AppDataStoreTest: XCTestCase {
     let initialBundle = makeBundle(versionNumber: "1.0", at: appURL)
     let remoteVersion = Version(versionNumber: "2.0", buildNumber: nil)
 
-    _ = store.set(appBundles: [initialBundle])
+    store.set(appBundles: [initialBundle])
     let availableApp = store.set(
       .success(makeUpdate(for: initialBundle, remoteVersion: remoteVersion)),
       for: initialBundle
@@ -93,19 +93,21 @@ final class AppDataStoreTest: XCTestCase {
     )
   }
 
-  func testBulkRefreshReportsOnlyNewOrChangedVersionsAndRemovesMissingApps() {
+  func testBulkRefreshReplacesVersionsAndRemovesMissingApps() {
     let store = AppDataStore()
     let root = URL(fileURLWithPath: "/Applications/Store-\(UUID().uuidString)")
     let original = makeBundle(versionNumber: "1.0", at: root.appendingPathComponent("A.app"))
     let removed = makeBundle(versionNumber: "1.0", at: root.appendingPathComponent("B.app"))
-    XCTAssertEqual(store.set(appBundles: [original, removed]).count, 2)
-    XCTAssertTrue(store.set(appBundles: [original, removed]).isEmpty)
+    store.set(appBundles: [original, removed])
+    XCTAssertEqual(Set(store.apps.map(\.identifier)), [original.identifier, removed.identifier])
+    store.set(appBundles: [original, removed])
+    XCTAssertEqual(store.apps.count, 2)
 
     let refreshed = makeBundle(versionNumber: "2.0", at: original.fileURL)
-    let added = store.set(appBundles: [refreshed])
-    XCTAssertEqual(added.map(\.version), [refreshed.version])
+    store.set(appBundles: [refreshed])
+    XCTAssertEqual(store.apps.map(\.version), [refreshed.version])
     XCTAssertEqual(store.apps.map(\.identifier), [original.identifier])
-    XCTAssertTrue(store.set(appBundles: []).isEmpty)
+    store.set(appBundles: [])
     XCTAssertTrue(store.apps.isEmpty)
   }
 

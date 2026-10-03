@@ -177,7 +177,7 @@ struct SidebarInputFixture {
     repeat {
       NSApp.activate()
       window.makeKeyAndOrderFront(nil)
-      if window.isKeyWindow { return }
+      if NSApp.isActive && window.isKeyWindow { return }
       try await Task.sleep(for: .milliseconds(20))
     } while ContinuousClock.now < deadline
     XCTFail(

@@ -135,7 +135,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
 
     benchmark("app_data_store_update_batch", iterations: 30) {
       let store = AppDataStore()
-      _ = store.set(appBundles: Set(dataStoreBundles))
+      store.set(appBundles: Set(dataStoreBundles))
 
       var checksum = 0
       for index in stride(from: 0, to: dataStoreBundles.count, by: 2) {

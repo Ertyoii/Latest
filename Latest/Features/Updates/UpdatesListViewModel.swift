@@ -47,7 +47,7 @@ final class UpdatesListViewModel: ObservableObject {
     set { selection.app = newValue }
   }
   var isKeyboardSelection: Bool { selection.isKeyboardSelection }
-  @Published var searchQuery = ""
+  @Published private(set) var searchQuery = ""
 
   private var observationTasks = [Task<Void, Never>]()
   private var selectionWasUserInitiated = false

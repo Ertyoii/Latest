@@ -507,7 +507,12 @@ final class MigrationInteractionContractTest: XCTestCase {
     try await fixture.activate()
     func waitForFocus(_ stage: String, _ condition: () -> Bool) async throws {
       for _ in 0..<100 {
-        if condition() { return }
+        // AppKit may assign its field editor before SwiftUI commits the new
+        // responder's key handlers. Require focus to survive a main-loop turn.
+        if condition() {
+          try await Task.sleep(for: .milliseconds(10))
+          if condition() { return }
+        }
         try await Task.sleep(for: .milliseconds(10))
       }
       XCTFail(
@@ -530,7 +535,9 @@ final class MigrationInteractionContractTest: XCTestCase {
     try await waitForFocus("first Find") { search.currentEditor() === window.firstResponder }
     XCTAssertTrue(search.currentEditor() === window.firstResponder)
     environment.commands.focusSearch()
-    try await waitForFocus("repeated Find") { search.currentEditor() === window.firstResponder }
+    // Do not yield after repeated Find: a pending request must not steal focus
+    // back after the immediately following Escape.
+    XCTAssertTrue(search.currentEditor() === window.firstResponder)
     let escape = try XCTUnwrap(
       NSEvent.keyEvent(
         with: .keyDown, location: .zero,
@@ -542,6 +549,9 @@ final class MigrationInteractionContractTest: XCTestCase {
       window.firstResponder === web, "Escape must return to the previously focused release notes")
     for listFocus in [true, false, true] {
       if listFocus { try fixture.focus() } else { try focusReleaseNotes() }
+      // SwiftUI commits the click gesture after AppKit sends the mouse events.
+      // Let that input finish before issuing the next keyboard command.
+      try await Task.sleep(for: .milliseconds(50))
       let destination = window.firstResponder
       environment.commands.focusSearch()
       try await waitForFocus("Find from list=\(listFocus)") {

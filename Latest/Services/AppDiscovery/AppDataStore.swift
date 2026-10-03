@@ -67,9 +67,8 @@ final class AppDataStore: AppProviding, Sendable {
     }
   }
 
-  func set(appBundles: Set<App.Bundle>) -> Set<App> {
-    let added = state.withLock { state in
-      var added = Set<App>()
+  func set(appBundles: Set<App.Bundle>) {
+    state.withLock { state in
       var appsByIdentifier = [App.Bundle.Identifier: App]()
       appsByIdentifier.reserveCapacity(appBundles.count)
       for bundle in appBundles {
@@ -80,13 +79,10 @@ final class AppDataStore: AppProviding, Sendable {
             bundle: bundle, update: nil,
             isIgnored: state.ignoredAppIdentifiers.contains(bundle.bundleIdentifier))
         appsByIdentifier[bundle.identifier] = app
-        if previous != app { added.insert(app) }
       }
       state.appsByIdentifier = appsByIdentifier
-      return added
     }
     scheduleFilterUpdate()
-    return added
   }
 
   func set(appBundle bundle: App.Bundle) -> App {

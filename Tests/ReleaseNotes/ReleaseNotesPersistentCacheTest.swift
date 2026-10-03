@@ -24,7 +24,7 @@ final class ReleaseNotesPersistentCacheTest: XCTestCase {
       .init(text: "\nFixed repeated release-note parsing."),
     ])
     let resolved = ResolvedReleaseNotes(content: source, quality: .genuine, provenance: .changelog)
-    let payload = try XCTUnwrap(ReleaseNotesPersistentCache.payload(from: resolved))
+    let payload = ReleaseNotesPersistentCache.payload(from: resolved)
 
     await cache.store(payload, forKey: "com.example.app-2.0")
     let loadedPayload = await cache.payload(forKey: "com.example.app-2.0")

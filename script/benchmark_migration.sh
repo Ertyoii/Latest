@@ -4,7 +4,7 @@ set -euo pipefail
 export TEST_RUNNER_LATEST_UI_TESTS=1
 
 LABEL="${1:-current}"
-if [[ ! "$LABEL" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+if (($# > 1)) || [[ ! "$LABEL" =~ ^[a-zA-Z0-9_-]+$ ]]; then
   echo "Benchmark label must contain only letters, numbers, underscores, or hyphens." >&2
   exit 2
 fi
@@ -47,84 +47,4 @@ echo
 echo "Migration benchmark summary ($LABEL):"
 cat "$REPORT_FILE"
 
-awk '
-BEGIN {
-	budgets["cold_launch_to_populated_sidebar_fixture"] = 65
-	statistics["cold_launch_to_populated_sidebar_fixture"] = "p50_ms"
-	# CPU work targets a 120-Hz frame budget; this does not measure presented FPS.
-	budgets["sidebar_scroll_frame_main_thread"] = 8.333
-	statistics["sidebar_scroll_frame_main_thread"] = "p95_ms"
-	budgets["sidebar_long_jump_main_thread"] = 50
-	statistics["sidebar_long_jump_main_thread"] = "p95_ms"
-	budgets["sidebar_keyboard_selection_frame_main_thread"] = 8.333
-	statistics["sidebar_keyboard_selection_frame_main_thread"] = "p95_ms"
-	budgets["selection_to_detail"] = 8
-	statistics["selection_to_detail"] = "p95_ms"
-	# Full provider-to-render paths: reserve a frame for a memory hit, and
-	# bounded extra latency for RTF decoding or cold markup preparation.
-	budgets["selection_to_render_memory"] = 16
-	statistics["selection_to_render_memory"] = "p95_ms"
-	budgets["selection_to_render_disk"] = 50
-	statistics["selection_to_render_disk"] = "p95_ms"
-	budgets["selection_to_render_cold"] = 100
-	statistics["selection_to_render_cold"] = "p95_ms"
-
-}
-
-$1 == "MIGRATION_BENCHMARK" {
-	delete values
-	for (fieldIndex = 2; fieldIndex <= NF; fieldIndex++) {
-		split($fieldIndex, pair, "=")
-		values[pair[1]] = pair[2]
-	}
-	name = values["name"]
-	if (name in budgets) {
-		observed[name] = values[statistics[name]] + 0
-		seen[name] = 1
-	}
-}
-
-$1 == "MIGRATION_MEMORY" {
-	delete values
-	for (fieldIndex = 2; fieldIndex <= NF; fieldIndex++) {
-		split($fieldIndex, pair, "=")
-		values[pair[1]] = pair[2]
-	}
-	if (values["name"] ~ /^repeated_selection(_[0-9]+)?$/) {
-		memoryDelta = values["delta_bytes"] + 0
-		memorySeen = 1
-	}
-}
-
-END {
-	failed = 0
-	for (name in budgets) {
-		if (!seen[name]) {
-			printf "MIGRATION GATE FAIL missing=%s\n", name > "/dev/stderr"
-			failed = 1
-		} else if (observed[name] > budgets[name]) {
-			printf "MIGRATION GATE FAIL name=%s statistic=%s observed_ms=%.3f budget_ms=%.3f\n", name, statistics[name], observed[name], budgets[name] > "/dev/stderr"
-			failed = 1
-		} else {
-			printf "MIGRATION GATE PASS name=%s statistic=%s observed_ms=%.3f budget_ms=%.3f\n", name, statistics[name], observed[name], budgets[name]
-		}
-	}
-	if (!memorySeen) {
-		print "MIGRATION GATE FAIL missing=repeated_selection_memory" > "/dev/stderr"
-		failed = 1
-	} else if (memoryDelta > 24 * 1024 * 1024) {
-		printf "MIGRATION GATE FAIL name=repeated_selection_memory delta_bytes=%d budget_bytes=%d\n", memoryDelta, 24 * 1024 * 1024 > "/dev/stderr"
-		failed = 1
-	} else {
-		printf "MIGRATION GATE PASS name=repeated_selection_memory delta_bytes=%d budget_bytes=%d\n", memoryDelta, 24 * 1024 * 1024
-	}
-	exit failed
-}
-' "$REPORT_FILE"
-
-warning_count="$(rg -c 'reentrant operation in its NSTableView delegate|Publishing changes from within view updates' "$LOG_FILE" || true)"
-if ((warning_count > 0)); then
-	echo "MIGRATION GATE FAIL runtime_warning_count=$warning_count" >&2
-	exit 1
-fi
-echo "MIGRATION GATE PASS runtime_warning_count=0"
+/usr/bin/python3 "$ROOT_DIR/script/check_benchmarks.py" migration "$REPORT_FILE" "$LOG_FILE"

@@ -155,6 +155,16 @@ func clickTestWindow(_ window: NSWindow, at location: NSPoint) throws {
       eventNumber: 2, clickCount: 1, pressure: 0))
   NSApp.postEvent(up, atStart: false)
   window.sendEvent(down)
+  // Native controls may consume the release in their tracking loop. SwiftUI
+  // gestures do not; finish that click before sending the next command.
+  if let pending = NSApp.nextEvent(
+    matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: false),
+    pending.windowNumber == up.windowNumber, pending.timestamp == up.timestamp
+  {
+    _ = NSApp.nextEvent(
+      matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true)
+    window.sendEvent(pending)
+  }
 }
 
 /// SwiftUI responders need NSApplication's event loop while async XCTest work runs.

@@ -163,7 +163,7 @@ extension App: Hashable {
     return lhs.identifier == rhs.identifier && lhs.version == rhs.version
   }
 
-  /// Exclude the number of apps from the function
+  /// Versions at the same path share a bucket; equality also checks the version.
   func hash(into hasher: inout Hasher) {
     hasher.combine(self.identifier)
   }

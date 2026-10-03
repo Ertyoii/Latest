@@ -57,7 +57,7 @@ final class MigrationPerformanceTest: XCTestCase {
       withExtendedLifetime(window) {
         host.displayIfNeeded()
       }
-      return host.descendant(of: NSTableView.self)?.numberOfRows ?? snapshot.apps.count
+      return host.descendant(of: SwiftUIUpdateTableView.self)?.numberOfRows ?? snapshot.apps.count
     }
 
     let scanRoot = try makeSyntheticAppRoot(count: 120)
@@ -247,9 +247,8 @@ final class MigrationPerformanceTest: XCTestCase {
             let resolved = ResolvedReleaseNotes(
               content: ReleaseNotesContent(string: "Cached notes for \(app.name)"),
               quality: .genuine, provenance: .changelog)
-            if let payload = ReleaseNotesPersistentCache.payload(from: resolved) {
-              await cache.store(payload, forKey: ReleaseNotesCacheKey(app: app).stableIdentifier)
-            }
+            let payload = ReleaseNotesPersistentCache.payload(from: resolved)
+            await cache.store(payload, forKey: ReleaseNotesCacheKey(app: app).stableIdentifier)
           }
           seeded.fulfill()
         }

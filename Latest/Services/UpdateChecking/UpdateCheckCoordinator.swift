@@ -117,7 +117,7 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       hasDiscoveredApps = true
       // Invalidate before replacing the store so late results cannot restore removed apps.
       let generation = beginUpdateCheckGeneration()
-      _ = dataStore.set(appBundles: bundles)
+      dataStore.set(appBundles: bundles)
       scheduleUpdateCheck(on: Array(bundles), generation: generation, publishesSnapshot: true)
     }
   }

@@ -76,22 +76,18 @@ private actor AppStoreLookupCache {
     let taskID = UUID()
     let taskGeneration = generation
     inFlightTasks[key] = InFlightLookup(id: taskID, task: task)
+    defer { removeInFlightLookup(for: key, matching: taskID) }
 
     do {
       let entry = try await task.value
       if taskGeneration == generation {
         store(.entry(entry), for: key, lifetime: successfulLookupLifetime)
       }
-      removeInFlightLookup(for: key, matching: taskID)
       return entry
     } catch let error as LatestError {
       if taskGeneration == generation, case .updateInfoUnavailable = error {
         store(.unavailable, for: key, lifetime: unavailableLookupLifetime)
       }
-      removeInFlightLookup(for: key, matching: taskID)
-      throw error
-    } catch {
-      removeInFlightLookup(for: key, matching: taskID)
       throw error
     }
   }
@@ -184,25 +180,25 @@ private final class AppStoreLookupClient: Sendable {
     let cacheKey = AppStoreLookupCacheKey(
       bundleIdentifier: bundleIdentifier, countryCode: countryCode, entityType: entityType)
 
-    guard let endpoint else {
-      throw malformedURLError
-    }
-
-    var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
-    components?.queryItems = [
-      URLQueryItem(name: "limit", value: "1"),
-      URLQueryItem(name: "entity", value: entityType),
-      URLQueryItem(name: "country", value: countryCode),
-      URLQueryItem(name: "bundleId", value: bundleIdentifier),
-      // Apple's CDN can retain an older release at the canonical lookup URL.
-      // Keep coalescing in our actor cache, but give each HTTP lookup a fresh URL.
-      URLQueryItem(name: "t", value: UUID().uuidString),
-    ]
-    guard let url = components?.url else {
-      throw malformedURLError
-    }
-
     return try await cache.entry(for: cacheKey) {
+      guard let endpoint = self.endpoint else {
+        throw malformedURLError
+      }
+
+      var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
+      components?.queryItems = [
+        URLQueryItem(name: "limit", value: "1"),
+        URLQueryItem(name: "entity", value: entityType),
+        URLQueryItem(name: "country", value: countryCode),
+        URLQueryItem(name: "bundleId", value: bundleIdentifier),
+        // Apple's CDN can retain an older release at the canonical lookup URL.
+        // Keep coalescing in our actor cache, but give each HTTP lookup a fresh URL.
+        URLQueryItem(name: "t", value: UUID().uuidString),
+      ]
+      guard let url = components?.url else {
+        throw malformedURLError
+      }
+
       let request = URLRequest(
         url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
       let (data, _) = try await self.session.data(for: request)

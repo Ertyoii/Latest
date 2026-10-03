@@ -111,7 +111,7 @@ final class MigrationVisualRegressionTest: XCTestCase {
 
     let icon: NSRect
     let accessibilityLabel: String
-    if let tableView = hostingView.firstDescendant(of: NSTableView.self) {
+    if let tableView = hostingView.firstDescendant(of: SwiftUIUpdateTableView.self) {
       XCTAssertEqual(tableView.rowHeight, 60)
       XCTAssertEqual(tableView.intercellSpacing, .zero)
       XCTAssertEqual(tableView.style, .sourceList)
@@ -580,6 +580,10 @@ final class ProductionVisualParityTest: XCTestCase {
       let window = try await makeLatestTestWindow(
         environment: environment, dark: dark, testCase: self)
       defer { window.close() }
+      let sidebar = try SidebarInputFixture(window: window, model: environment.updatesListViewModel)
+      try await sidebar.activate()
+      let web = try XCTUnwrap(window.contentView?.firstDescendant(of: WKWebView.self))
+      try await waitForWebPaint(web)
       var captures: [String: NSBitmapImageRep] = [:]
       for state in ["idle", "scanning", "zero", "quarter", "three-quarters", "finished"] {
         switch state {
@@ -597,7 +601,7 @@ final class ProductionVisualParityTest: XCTestCase {
         }
         try await Task.sleep(for: .milliseconds(350))
         window.layoutIfNeeded()
-        let bitmap = try await captureWindowBitmap(window)
+        let bitmap = try await settledWindowBitmap(window)
         let toolbar = try XCTUnwrap(
           bitmap.cgImage?.cropping(
             to: CGRect(
@@ -899,6 +903,18 @@ final class ProductionVisualParityTest: XCTestCase {
         let environment = AppEnvironment(settings: settings, updatesListViewModel: model)
         let window = try await makeLatestTestWindow(
           environment: environment, dark: dark, testCase: self)
+        // Native materials sample the window's backdrop. Keep position and
+        // key-window state explicit so earlier input tests cannot change the reference.
+        let screen = try XCTUnwrap(window.screen)
+        window.setFrameOrigin(
+          NSPoint(
+            x: screen.visibleFrame.minX + 80,
+            y: screen.visibleFrame.maxY - window.frame.height - 80))
+        NSApp.deactivate()
+        for _ in 0..<100 where window.isKeyWindow {
+          try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(window.isKeyWindow)
         let view = try XCTUnwrap(window.contentView)
         defer { window.close() }
         window.layoutIfNeeded()

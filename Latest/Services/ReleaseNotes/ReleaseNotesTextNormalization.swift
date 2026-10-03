@@ -169,23 +169,25 @@ extension ReleaseNotesMarkup {
   }
 
   static func removingDuplicateLeadingLines(_ text: String) -> String {
-    var lines = text.components(separatedBy: .newlines)
-    while lines.count > 1 {
-      let first = Self.normalizedReleaseLine(lines[0])
-      let second = Self.normalizedReleaseLine(lines[1])
-      guard !first.isEmpty, first == second else { break }
-      lines.remove(at: 1)
+    let lines = text.components(separatedBy: .newlines)
+    guard let title = lines.first else { return text }
+    let normalizedTitle = Self.normalizedReleaseLine(title)
+    var body = lines.dropFirst()
+    if !normalizedTitle.isEmpty {
+      body = body.drop { Self.normalizedReleaseLine($0) == normalizedTitle }
     }
 
-    if lines.count > 1,
-      let releaseTitle = Self.releaseTitleText(from: lines[0]),
+    var result = [title]
+    if let firstLine = body.first,
+      let releaseTitle = Self.releaseTitleText(from: title),
       let bodyWithoutRepeatedTitle = Self.bodyLineWithoutRepeatedTitle(
-        lines[1], releaseTitle: releaseTitle)
+        firstLine, releaseTitle: releaseTitle)
     {
-      lines[1] = bodyWithoutRepeatedTitle
+      result.append(bodyWithoutRepeatedTitle)
+      body = body.dropFirst()
     }
-
-    return lines.joined(separator: "\n")
+    result.append(contentsOf: body)
+    return result.joined(separator: "\n")
   }
 
   private static func releaseTitleText(from line: String) -> String? {

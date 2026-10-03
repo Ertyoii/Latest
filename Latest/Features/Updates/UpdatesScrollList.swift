@@ -1,6 +1,7 @@
 // Fork contributions © 2026 ertyoii.
 // Licensed under GPL-3.0; see LICENSE.md.
 
+import AppKit
 import Observation
 import SwiftUI
 
@@ -37,6 +38,9 @@ import SwiftUI
                 .accessibilityAddTraits(.isHeader)
             }
           }
+        }
+        .background(alignment: .topLeading) {
+          SidebarListSelection(navigation: navigation)
         }
       }
       .scrollEdgeEffectHidden()
@@ -152,18 +156,35 @@ import SwiftUI
     }
   }
 
-  /// Keep geometry out of SwiftUI invalidation, and notify only the two rows
-  /// whose selection changes. The dictionary is bounded by the current snapshot.
+  // Reuse one native background as selection moves, rather than constructing
+  // another table for every arrow press. Only this view observes its geometry.
+  private struct SidebarListSelection: View {
+    let navigation: SidebarScrollState
+
+    var body: some View {
+      SidebarSelectionBackground(emphasized: navigation.emphasized)
+        .frame(height: VisualMetrics.appRowHeight)
+        .offset(y: navigation.selectedFrame?.minY ?? 0)
+        .opacity(navigation.selectedFrame == nil ? 0 : 1)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+  }
+
+  /// Keep scroll geometry out of SwiftUI invalidation. Selection updates only
+  /// its background and two rows; the dictionary is bounded by the snapshot.
   @MainActor
   @Observable
   private final class SidebarScrollState {
     var position = ScrollPosition()
+    private(set) var selectedFrame: CGRect?
+    private(set) var emphasized = false
     @ObservationIgnored var viewport = CGRect.zero
     @ObservationIgnored private(set) var frames: [CGRect] = []
     @ObservationIgnored private(set) var contentHeight: CGFloat = 0
     @ObservationIgnored private var selections: [App.Bundle.Identifier: UpdateRowSelection] = [:]
     @ObservationIgnored private var selected: App.Bundle.Identifier?
-    @ObservationIgnored private var emphasized = false
+    @ObservationIgnored private var snapshot: AppListSnapshot?
 
     func selection(for app: App) -> UpdateRowSelection {
       if let selection = selections[app.identifier] { return selection }
@@ -176,6 +197,7 @@ import SwiftUI
     }
 
     func apply(snapshot: AppListSnapshot) {
+      self.snapshot = snapshot
       frames = []
       frames.reserveCapacity(snapshot.entries.count)
       contentHeight = 0
@@ -213,6 +235,9 @@ import SwiftUI
       if selected != identifier, let selected { selections[selected]?.style = .unselected }
       selected = identifier
       if let identifier { selections[identifier]?.style = emphasized ? .active : .inactive }
+      selectedFrame = snapshot?.app(withIdentifier: identifier)
+        .flatMap { snapshot?.firstIndex(of: $0) }
+        .map { frames[$0] }
     }
 
     func setEmphasized(_ value: Bool) {
@@ -231,7 +256,6 @@ import SwiftUI
     let select: () -> Void
     private let content: UpdateRowView
     private var isSelected: Bool { selection.isSelected }
-    private var isEmphasized: Bool { selection.usesActiveSelectionColors }
 
     init(
       app: App, viewModel: UpdatesListViewModel, showsSupportStatus: Bool,
@@ -255,17 +279,6 @@ import SwiftUI
         // that measured geometry instead of shrinking its text/status columns.
         .frame(width: VisualMetrics.sidebarIdealWidth, height: VisualMetrics.appRowHeight)
         .offset(x: 16)
-        .background {
-          if isSelected {
-            RoundedRectangle(cornerRadius: 8)
-              .fill(
-                Color(
-                  nsColor: isEmphasized
-                    ? .selectedContentBackgroundColor : .unemphasizedSelectedTextBackgroundColor)
-              )
-              .padding(.horizontal, 10)
-          }
-        }
         .contentShape(Rectangle())
         .onTapGesture(perform: selectApp)
         .contextMenu { UpdatesRowMenu(app: app, viewModel: viewModel) }
@@ -311,6 +324,80 @@ import SwiftUI
       formatter.doesRelativeDateFormatting = true
       return formatter
     }()
+  }
+
+  private struct SidebarSelectionBackground: NSViewRepresentable {
+    let emphasized: Bool
+
+    func makeNSView(context: Context) -> SidebarSelectionView {
+      SidebarSelectionView()
+    }
+
+    func updateNSView(_ view: SidebarSelectionView, context: Context) {
+      view.table.emphasized = emphasized
+      view.table.rowView(atRow: 0, makeIfNecessary: true)?.isEmphasized = emphasized
+    }
+  }
+
+  private final class SidebarSelectionView: NSView {
+    let table = SidebarSelectionTable()
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    init() {
+      super.init(frame: .zero)
+      clipsToBounds = true
+      addSubview(table)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layout() {
+      super.layout()
+      let row = table.rect(ofRow: 0)
+      // Align the native row, excluding the table's outer top padding.
+      table.frame = NSRect(x: 0, y: -row.minY, width: bounds.width, height: row.maxY)
+    }
+  }
+
+  /// AppKit owns source-list selection materials; this single empty row only paints the background.
+  private final class SidebarSelectionTable: NSTableView, NSTableViewDataSource, NSTableViewDelegate
+  {
+    var emphasized = false
+    override var acceptsFirstResponder: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    init() {
+      super.init(frame: .zero)
+      style = .sourceList
+      backgroundColor = .clear
+      headerView = nil
+      intercellSpacing = .zero
+      rowHeight = VisualMetrics.appRowHeight
+      usesAutomaticRowHeights = false
+      focusRingType = .none
+      dataSource = self
+      delegate = self
+      let column = NSTableColumn(identifier: .init("selection"))
+      column.width = VisualMetrics.sidebarIdealWidth
+      addTableColumn(column)
+      reloadData()
+      selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func numberOfRows(in tableView: NSTableView) -> Int { 1 }
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int)
+      -> NSView?
+    {
+      NSView()
+    }
+    func tableView(_ tableView: NSTableView, didAdd rowView: NSTableRowView, forRow row: Int) {
+      rowView.isEmphasized = emphasized
+    }
   }
 
   private struct UpdatesRowMenu: View {

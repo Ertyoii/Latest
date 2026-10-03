@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A10300000000000000000002 /* SparkleUpdateOperationTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10300000000000000000001 /* SparkleUpdateOperationTest.swift */; };
 		A0310000000000000000000F /* AppDownloadUpdateTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0310000000000000000000E /* AppDownloadUpdateTest.swift */; };
 		A0310000000000000000000C /* InstallerCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0310000000000000000000B /* InstallerCommand.swift */; };
 		A0310000000000000000000A /* DownloadUpdateOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03100000000000000000009 /* DownloadUpdateOperation.swift */; };
@@ -195,6 +196,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A10300000000000000000001 /* SparkleUpdateOperationTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SparkleUpdateOperationTest.swift; sourceTree = "<group>"; };
 		A0310000000000000000000E /* AppDownloadUpdateTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDownloadUpdateTest.swift; sourceTree = "<group>"; };
 		A0310000000000000000000B /* InstallerCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstallerCommand.swift; sourceTree = "<group>"; };
 		A03100000000000000000009 /* DownloadUpdateOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadUpdateOperation.swift; sourceTree = "<group>"; };
@@ -877,6 +879,7 @@
 			isa = PBXGroup;
 			children = (
 				508D4E6B2FC000000000001 /* UpdateQueueTest.swift */,
+				A10300000000000000000001 /* SparkleUpdateOperationTest.swift */,
 				A0310000000000000000000E /* AppDownloadUpdateTest.swift */,
 			);
 			path = Updating;
@@ -1302,6 +1305,7 @@
 				508D4E702FC100000000001 /* ComplexityBenchmarkTest.swift in Sources */,
 				50FEB87D2B1BE630006FB75D /* OSVersionTest.swift in Sources */,
 				508D4E6C2FC000000000001 /* UpdateQueueTest.swift in Sources */,
+				A10300000000000000000002 /* SparkleUpdateOperationTest.swift in Sources */,
 				A0310000000000000000000F /* AppDownloadUpdateTest.swift in Sources */,
 				50FEB87F2B1BE67F006FB75D /* VersionSanitizationTest.swift in Sources */,
 				50E4EB092B17DFCE00A70A7D /* VersionParserTest.swift in Sources */,
@@ -1585,7 +1589,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.80;
+				MARKETING_VERSION = 0.81;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1628,7 +1632,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.80;
+				MARKETING_VERSION = 0.81;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

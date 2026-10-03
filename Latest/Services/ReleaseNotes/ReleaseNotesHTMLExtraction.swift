@@ -210,34 +210,38 @@ extension ReleaseNotesMarkup {
       return nil
     }
     let searchRange = NSRange(searchStart..<html.endIndex, in: html)
-    let matches = regex.matches(in: html, range: searchRange)
-    guard let firstMatch = matches.first,
-      let openingRange = Range(firstMatch.range, in: html),
-      !html[openingRange].hasPrefix("</")
-    else {
-      return nil
-    }
-
+    var openingRange: Range<String.Index>?
+    var element: (range: Range<String.Index>, contentRange: Range<String.Index>)?
     var depth = 0
-    for match in matches {
-      guard let tokenRange = Range(match.range, in: html) else { continue }
+    // Stop at this element's closing tag. Collecting every later match makes
+    // walking a changelog repeatedly scan and allocate its remaining tail.
+    regex.enumerateMatches(in: html, range: searchRange) { match, _, stop in
+      guard let match, let tokenRange = Range(match.range, in: html) else { return }
       let token = html[tokenRange]
       let isClosing = token.hasPrefix("</")
       let isSelfClosing = token.dropLast().last == "/"
+      if openingRange == nil {
+        guard !isClosing else {
+          stop.pointee = true
+          return
+        }
+        openingRange = tokenRange
+      }
       if isClosing {
         depth -= 1
-        if depth == 0 {
-          return (
+        if depth == 0, let openingRange {
+          element = (
             range: openingRange.lowerBound..<tokenRange.upperBound,
             contentRange: openingRange.upperBound..<tokenRange.lowerBound
           )
+          stop.pointee = true
         }
       } else if !isSelfClosing {
         depth += 1
       }
     }
 
-    return nil
+    return element
   }
 
   static func reactServerText(for reference: String, in html: String) -> String? {

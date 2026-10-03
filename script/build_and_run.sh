@@ -2,6 +2,18 @@
 set -euo pipefail
 
 MODE="${1:-run}"
+usage() {
+  echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--uat] [--signed]"
+}
+if (($# > 2)); then
+  usage >&2
+  exit 2
+fi
+case "$MODE" in
+  -h|--help) usage; exit 0 ;;
+  run|--debug|debug|--logs|logs|--telemetry|telemetry|--verify|verify|--uat|uat) ;;
+  *) usage >&2; exit 2 ;;
+esac
 APP_NAME="Latest Dev"
 PROJECT="Latest.xcodeproj"
 SCHEME="Latest"
@@ -69,9 +81,5 @@ case "$MODE" in
     open_app
     sleep 4
     pgrep -x "$APP_NAME" >/dev/null
-    ;;
-  *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--uat] [--signed]" >&2
-    exit 2
     ;;
 esac

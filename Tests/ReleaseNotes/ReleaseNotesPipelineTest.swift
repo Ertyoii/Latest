@@ -67,30 +67,13 @@ final class ReleaseNotesPipelineTest: XCTestCase {
     ) { XCTAssertEqual($0 as? FetchHTMLError, .unusableText) }
   }
 
-  func testResolverPreservesFirstCandidateOnTiesAndFirstRejection() throws {
+  func testPipelineRejectsEmptyContentBeforeRendering() async {
     let context = ReleaseNotesContext(
       appName: "Example", bundleIdentifier: "com.example.App", localVersion: "1", remoteVersion: "2"
     )
-    let first = ReleaseNotesCandidate(
-      markup: "First release notes", baseURL: nil, provenance: .changelog)
-    let second = ReleaseNotesCandidate(
-      markup: "Second release notes", baseURL: nil, provenance: .githubRelease)
-    let resolver = ReleaseNotesResolver()
-    let scorer = ReleaseNotesCandidateScorer()
-    let resolved = try resolver.resolve([first, second], for: context, scorer: scorer)
-    XCTAssertEqual(resolved.candidate.markup, first.markup)
-
-    let empty = ReleaseNotesCandidate(markup: "", baseURL: nil, provenance: .changelog)
-    let wrongApp = ReleaseNotesCandidate(
-      markup: "Wrong application", baseURL: nil, provenance: .changelog,
-      declaredAppIdentifiers: ["com.example.Other"])
-    XCTAssertThrowsError(try resolver.resolve([empty, wrongApp], for: context, scorer: scorer)) {
-      XCTAssertEqual($0 as? ReleaseNotesCandidateRejection, .empty)
-    }
-    XCTAssertThrowsError(try resolver.resolve([wrongApp, empty], for: context, scorer: scorer)) {
-      XCTAssertEqual($0 as? ReleaseNotesCandidateRejection, .wrongApplication)
-    }
-    XCTAssertThrowsError(try resolver.resolve([], for: context, scorer: scorer)) {
+    let candidate = ReleaseNotesCandidate(markup: " \n", baseURL: nil, provenance: .changelog)
+    let result = await ReleaseNotesPipeline().resolve(candidate, for: context)
+    XCTAssertThrowsError(try result.get()) {
       XCTAssertEqual($0 as? ReleaseNotesCandidateRejection, .empty)
     }
   }
@@ -202,35 +185,6 @@ final class ReleaseNotesPipelineTest: XCTestCase {
           markup: String(repeating: "x", count: 33), baseURL: nil, provenance: .changelog
         ), for: context)
     ) { XCTAssertEqual($0 as? ReleaseNotesCandidateRejection, .oversized) }
-  }
-
-  func testReleaseNotesResolverPrefersGenuineNotesOverGenericHomebrewMetadata() throws {
-    let context = ReleaseNotesContext(
-      appName: "Example",
-      bundleIdentifier: "com.example.App",
-      localVersion: "1.0",
-      remoteVersion: "1.1"
-    )
-    let generic = ReleaseNotesCandidate(
-      markup: "Example 1.1 is available from Homebrew.",
-      baseURL: nil,
-      provenance: .homebrewMetadata,
-      qualityHint: .genericMetadata
-    )
-    let genuine = ReleaseNotesCandidate(
-      markup: "Fixed a crash when reopening documents.",
-      baseURL: nil,
-      provenance: .changelog,
-      qualityHint: .genuine
-    )
-
-    let resolved = try ReleaseNotesResolver().resolve(
-      [generic, genuine],
-      for: context,
-      scorer: ReleaseNotesCandidateScorer()
-    )
-    XCTAssertEqual(resolved.quality, .genuine)
-    XCTAssertEqual(resolved.candidate.provenance, .changelog)
   }
 
   func testGenericHomebrewMetadataHasDistinctQualityAndProvenance() {
@@ -533,7 +487,7 @@ private struct StubReleaseNotesLoader: ReleaseNotesHTTPDataLoading {
   }
 }
 
-private struct StubCatalogLoader: ReleaseNotesCatalogHTTPDataLoading {
+private struct StubCatalogLoader: ReleaseNotesHTTPDataLoading {
   let response: ReleaseNotesFetchResponse
 
   func load(_ request: URLRequest, maximumResponseSize: Int) async throws
@@ -543,7 +497,7 @@ private struct StubCatalogLoader: ReleaseNotesCatalogHTTPDataLoading {
   }
 }
 
-private struct OfflineCatalogLoader: ReleaseNotesCatalogHTTPDataLoading {
+private struct OfflineCatalogLoader: ReleaseNotesHTTPDataLoading {
   private struct Offline: Error {}
 
   func load(_ request: URLRequest, maximumResponseSize: Int) async throws
@@ -553,11 +507,11 @@ private struct OfflineCatalogLoader: ReleaseNotesCatalogHTTPDataLoading {
   }
 }
 
-private struct OversizedCatalogLoader: ReleaseNotesCatalogHTTPDataLoading {
+private struct OversizedCatalogLoader: ReleaseNotesHTTPDataLoading {
   func load(_ request: URLRequest, maximumResponseSize: Int) async throws
     -> ReleaseNotesFetchResponse
   {
-    throw ReleaseNotesCatalogRemoteRejection.oversized
+    throw ReleaseNotesFetchError.oversized
   }
 }
 

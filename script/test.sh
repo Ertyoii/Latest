@@ -7,12 +7,14 @@ CONFIGURATION="Debug"
 MODE=background
 COVERAGE=NO
 FILTERS=()
+HAS_ONLY_FILTER=false
 for argument in "$@"; do
   case "$argument" in
     --ui) MODE=ui ;;
     --all) MODE=all ;;
     --coverage) COVERAGE=YES ;;
-    -only-testing:*|-skip-testing:*) FILTERS+=("$argument") ;;
+    -only-testing:*) FILTERS+=("$argument"); HAS_ONLY_FILTER=true ;;
+    -skip-testing:*) FILTERS+=("$argument") ;;
     --help)
       echo "Usage: $0 [--ui|--all] [--coverage] [-only-testing:target/class/method]"
       echo "Default: offline background checks. --ui: window/input checks. --all: both."
@@ -29,6 +31,7 @@ RESULT_BUNDLE="$BUILD_DIR/Latest-Tests-$(date +%Y%m%d-%H%M%S).xcresult"
 
 mkdir -p "$BUILD_DIR" "$MODULE_CACHE"
 
+/usr/bin/python3 -m unittest discover -s "$ROOT_DIR/script/tests"
 "$ROOT_DIR/script/check_structure.sh"
 
 export TEST_RUNNER_LATEST_UI_TESTS=0
@@ -36,7 +39,7 @@ if [[ "$MODE" != background ]]; then
   export TEST_RUNNER_LATEST_UI_TESTS=1
   echo "UI tests open production windows and may take keyboard focus."
 fi
-if [[ "$MODE" == ui && ${#FILTERS[@]} == 0 ]]; then
+if [[ "$MODE" == ui && "$HAS_ONLY_FILTER" == false ]]; then
   for suite in MigrationInteractionContractTest MigrationVisualRegressionTest ProductionVisualParityTest ReleaseNotesHeaderLayoutTest; do
     FILTERS+=("-only-testing:Latest Tests/$suite")
   done

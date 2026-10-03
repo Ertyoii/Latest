@@ -127,12 +127,9 @@ extension ReleaseNotesProvider {
       return body
     }
 
-    var lines = body.components(separatedBy: .newlines)
-    while let firstLine = lines.first,
-      ReleaseNotesMarkup.normalizedReleaseLine(firstLine)
-        == ReleaseNotesMarkup.normalizedReleaseLine(title)
-    {
-      lines.removeFirst()
+    let normalizedTitle = ReleaseNotesMarkup.normalizedReleaseLine(title)
+    let lines = body.components(separatedBy: .newlines).drop { line in
+      ReleaseNotesMarkup.normalizedReleaseLine(line) == normalizedTitle
     }
 
     return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)

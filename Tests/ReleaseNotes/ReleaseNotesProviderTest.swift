@@ -28,7 +28,7 @@ final class ReleaseNotesProviderTest: XCTestCase {
       content: ReleaseNotesContent(string: "Fixed missing files in the vault explorer."),
       quality: .genuine, provenance: .changelog)
     await cache.store(
-      try XCTUnwrap(ReleaseNotesPersistentCache.payload(from: notes)),
+      ReleaseNotesPersistentCache.payload(from: notes),
       forKey: ReleaseNotesCacheKey(app: app).stableIdentifier)
     let result = try await releaseNotes(
       for: app, provider: ReleaseNotesProvider(persistentCache: cache))
@@ -236,7 +236,7 @@ final class ReleaseNotesProviderTest: XCTestCase {
     let resolved = ResolvedReleaseNotes(
       content: ReleaseNotesContent(string: "Cached notes"),
       quality: .genuine, provenance: .changelog)
-    let encoded = try XCTUnwrap(ReleaseNotesPersistentCache.payload(from: resolved))
+    let encoded = ReleaseNotesPersistentCache.payload(from: resolved)
     let storedAt = Date(timeIntervalSinceNow: -3600)
     let payload = ReleaseNotesPersistentPayload(
       richTextData: encoded.richTextData, semanticContent: encoded.semanticContent,

@@ -6,8 +6,7 @@ A macOS utility that finds updates for App Store, Sparkle, and Homebrew applicat
 
 ## Development
 
-Development and CI use `master`. Requires Xcode 26.5 or later and `ripgrep`; CI uses Xcode 26.6.
-Use the `Latest` scheme in `Latest.xcodeproj`, or run:
+Requires Xcode 26.5 or later and `ripgrep`. Development and CI use `master`; CI uses Xcode 26.6. Open the `Latest` scheme in `Latest.xcodeproj`, or run:
 
 ```sh
 brew install ripgrep
@@ -16,79 +15,54 @@ brew install ripgrep
 ./script/format.sh --check
 ```
 
-`test.sh` runs offline behavior, architecture, and offscreen layout checks in a background test host, with coverage disabled. It does not activate Latest or open test windows. Add `--coverage` when measuring coverage; use `-only-testing:'Latest Tests/Class/method'` for a focused check.
+`build_and_run.sh --help` lists launch, debugger, and logging options. Add `--signed` after a mode for an Apple Development build; the App Store installation helper requires the app and helper to share a valid signing identity.
 
-`./script/test.sh --ui` opts into native window, mouse/keyboard, accessibility, and screenshot checks; these can take focus. `--all` runs both lanes and is used by CI on its dedicated macOS 26 desktop with Xcode 26.6. Individual tests have a 60-second default timeout and a 120-second maximum. CI caches the pinned package downloads and uploads test results and production window captures. Benchmarks and live catalog audits keep their separate scripts and never run as part of these commands.
+`test.sh` runs script regressions, architecture checks, offline behavior, and offscreen layout tests in a background host. Use `-only-testing:'Latest Tests/Class/method'` to focus XCTest. Coverage is opt-in with `--coverage`; run `./script/format.sh` to apply the pinned formatting rules with your Xcode toolchain.
 
-Sidebar visual tests open `LatestMainWindowScene` with offline data and inspect/crop its actual rows, using the renderer selected by the current OS. Full-window captures go under `build/production-visuals/main-window-scene`. When same-host original captures exist in `build/production-visual-reference/main-window-scene`, every pixel is compared; existing mismatches remain failures, and absent references do not establish parity. The 14 macOS 26 [component references](Tests/VisualBaselines/macos-26/README.md) retain production detail, locations, update-action, and toolbar coverage. The old gallery’s independent sidebar implementation has been removed; its historical sidebar pixels remain excluded from detail comparisons. Compare UI changes with the original on the same system before updating a reference.
+`./script/test.sh --ui` runs window, input, accessibility, and screenshot checks and may take focus. `--all` includes both lanes. Benchmarks and live catalog audits have separate commands. For another host OS, see [testing on macOS 26](docs/macos26-testing.md).
 
-Run `./script/format.sh` to format Swift sources. Use the same Xcode toolchain for reproducible output; `.swift-format` defines the formatting rules.
+## Reading the code
 
-### Testing macOS 26 locally
+The [development guide](docs/Development.md) gives a reading order, design rationale, and links to Swift and SwiftUI guidance.
 
-The host OS controls native appearance; selecting Xcode 26 on macOS 27 does not
-reproduce macOS 26. On an Apple Silicon Mac, use a [Tart VM](https://tart.run/quick-start/):
+| Directory | Responsibility |
+| --- | --- |
+| `Latest/App` | Assembly, scenes, commands, and lifecycle |
+| `Latest/Domain` | Immutable app metadata and version rules |
+| `Latest/Features` | SwiftUI presentation and feature state |
+| `Latest/Services` | Discovery, update checking, and release notes |
+| `Latest/Platform` | AppKit, WebKit compatibility, update sources, and installers |
+| `Latest/Support` | Preferences, presentation helpers, and shared infrastructure |
+| `Tests` | Behavior, integration, visual, and performance contracts |
+| `script` | Local build, validation, measurement, and audit commands |
+
+SwiftUI owns the scenes, search, rows, settings, and detail controls. macOS 27 with its SDK uses `UpdatesScrollList`; macOS 26 retains `UpdatesTableBridge` for native input and swipe behavior. Release notes use WebKit for text selection and scrolling. Native detail capsules on macOS 26 and small AppKit bridges preserve platform behavior and established appearance.
+
+Discovery publishes complete scans so rows appear in their final order. Refresh keeps the previous list and selection visible. Keyboard selection updates the detail header immediately and waits for selection to settle before loading notes; mouse selection loads notes immediately.
+
+## Updating applications
+
+Features call `AppUpdating`; platform adapters own the update mechanism. Sparkle is pinned through Swift Package Manager. Native Mac App Store apps update within Latest; macOS 26.1+ uses a privileged helper. Wrapped iOS apps open the App Store. Helper registration errors are displayed, and pending updates can resume after System Settings approval.
+
+Signed standalone bundle replacement supports Docker Desktop, Telegram Desktop, Zed, Chrome, Bruno, Discord, 1Password, and Delta. Homebrew downloads require the expected bundle identifier and cask. Each install fetches fresh metadata, verifies available checksums, signing identity, architecture, and minimum OS, and keeps the original until replacement succeeds. Running apps require confirmation to quit and reopen; package installers and companion services use separate paths.
+
+Obsidian's installed version comes from its ASAR payload; Delta's comes from executable metadata. Obsidian public payload updates verify the vendor checksum and RSA signature. Early-access preferences are respected: authenticated updates open Obsidian, and incompatible launchers open the official installer page. Ghostty uses its official Sparkle feed.
+
+## Release notes
+
+`Latest/Resources/LatestReleaseNotes.json` supplies version-matched offline Latest Dev notes. The release menu opens this fork's GitHub releases; automatic self-updates require a separately configured signed appcast.
+
+Notes can load even if update checking fails. A failed or metadata-only source falls back to the vendor catalog. Notes target the available update or installed version; broad-version and latest-section fallbacks retain a degraded quality rating. Preparation, display, and new cache entries share immutable semantic text; older RTF caches use a narrow compatibility reader.
 
 ```sh
-brew install cirruslabs/cli/tart
-./script/macos26_vm.sh setup
-./script/macos26_vm.sh run
+./script/audit_release_notes.sh
+./script/audit_release_notes.sh --installed
+./script/audit_release_notes.sh --catalog /path/to/cask.json
 ```
 
-The VM and downloads stay under `build/macos26-vm`. Its public image includes
-Xcode 26.5 and downloads about 70 GB compressed; it can exercise the macOS 26
-renderer, while CI remains the exact Xcode 26.6 gate. Set `LATEST_VM_IMAGE` to a
-matching image when one is available. Log in with the image's `admin`/`admin`
-account. Setup fixes the guest display at 1440×900 pixels and 1× scale for the
-CI visual references. The host checkout is shared read-only; clone it onto the guest disk:
+The default audit is offline. Live audits save reports and HTML under `build/` and use an isolated cache. `audit_release_note_coverage.sh` checks source routes, not whether the remote notes are usable.
 
-```sh
-git clone --no-hardlinks '/Volumes/My Shared Files/latest' ~/Latest
-cd ~/Latest
-brew install ripgrep
-./script/build_and_run.sh
-./script/test.sh --all
-cp -R build/production-visuals '/Volumes/My Shared Files/artifacts/'
-```
-
-Run the app and UI suite while the VM desktop is unlocked. For an exact compiler
-reproduction, install Xcode 26.6 in the guest and set `DEVELOPER_DIR` to its
-`Contents/Developer` directory. CI also uploads its real macOS 26 production
-window captures with each run's test-results artifact.
-
-The public Xcode 26.5 VM was verified to build and run Latest and match all 14
-gallery references at 1×. Its programmatic window activation can be refused by
-the guest desktop; focus-sensitive tests require an active test window. Their
-failure reports include window eligibility and application activation state.
-
-## Architecture and SwiftUI migration
-
-- `Latest/App`: assembly and lifecycle through `AppEnvironment`
-- `Latest/Features`: SwiftUI presentation and feature state
-- `Latest/Domain`: framework-independent models and version rules
-- `Latest/Services`: discovery, updates, and release notes
-- `Latest/Platform`: AppKit, App Store, Sparkle, and installer integrations
-- `Latest/Support`: shared infrastructure and presentation helpers
-
-Search, section headings, app rows, progress/error controls, and detail action buttons use SwiftUI. On macOS 27 with the macOS 27 SDK, `UpdatesScrollList` also owns selection, scrolling, pinned headings, context menus, swipe actions, and accessibility. macOS 26 and Xcode 26 builds retain `UpdatesTableBridge`, because SwiftUI's custom-scroll swipe container requires macOS 27. Release notes use WebKit inside a SwiftUI container. SwiftUI controls the main window's toolbar chrome; `WindowAccessor` only preserves helper-alert suppression choices on Cancel and Escape.
-
-On macOS 26, detail action capsules retain their native title, symbol, and pressed-state drawing to match the established visual references; SwiftUI owns their state and callbacks.
-
-Release-note preparation, display and new cache entries share immutable semantic text runs. Existing RTF caches and legacy vendor encodings are decoded through a narrow AppKit compatibility reader.
-
-Application-wide appearance, system icons, Finder actions and Dock badges retain narrow AppKit integrations. A window's `preferredColorScheme` does not apply the app's chosen appearance to every native panel. The SwiftUI sidebar preserves the original 60-point rows, 27-point headings, and content alignment. Its inactive selection uses a different system gray, accepted for this migration; subtle dark heading compositing and icon edge differences remain. Original full-window references remain intact, so strict pixel checks report these differences.
-
-Arrow navigation commits selection and scrolling together, keeping rows contiguous. The detail header follows immediately; notes load after keyboard selection settles. Mouse selection loads notes immediately.
-
-Discovery and update lookups publish a complete list together, so startup rows first appear in their final date order. Refresh keeps the previous list and selection visible until the new scan finishes.
-
-Features depend on `AppUpdating`. Sparkle is pinned through Swift Package Manager. Native Mac App Store apps update within Latest; on macOS 26.1 and newer a privileged helper installs the App Store package. Wrapped iOS apps use the native App Store. Helper registration errors are shown, and a pending update resumes after approval in System Settings. The app and embedded helper must share a valid signing identity; use `./script/build_and_run.sh --verify --signed` for a signed local build. Unsigned test builds can run but cannot enable the helper.
-
-Latest can also replace signed standalone bundles for Docker Desktop, Telegram Desktop, Zed, Chrome, Bruno, Discord, 1Password, and Delta. Homebrew-backed downloads require both a known bundle identifier and the matching cask. Each install fetches fresh metadata, checks the published checksum when provided, validates the staged bundle's signing identity, architecture, and minimum macOS version, and keeps the original until replacement succeeds. Running apps require confirmation to quit and reopen after installation or rollback. Package installers and companion services remain outside this replacement path.
-
-Obsidian's displayed version comes from its installed ASAR payload; Delta's comes from its main executable's version metadata. Obsidian public payload updates verify the vendor's checksum and RSA signature. Existing early-access preferences are respected; authenticated early-access updates open Obsidian, and an incompatible launcher opens the official installer page. Ghostty uses its official Sparkle feed.
-
-## Performance checks
+## Performance and visual checks
 
 ```sh
 ./script/benchmark_complexity.sh
@@ -96,22 +70,16 @@ Obsidian's displayed version comes from its installed ASAR payload; Delta's come
 ./script/benchmark_frames.sh current
 ```
 
-These use Release builds without coverage. Compare runs on the same hardware and workload. The frame benchmark opens the production SwiftUI window scene with 300 offline apps, tests held arrows at system repeat/30/60 keys per second, and saves measurements and reports under `build/`. Its calibration overlay preserves the hosting view and keyboard responder. The fixture is a load test; use the live app for ordinary visual and input acceptance. Keep the benchmark window focused and unobstructed.
+Benchmarks use Release builds without coverage. Compare the same hardware and workload. The frame benchmark opens the production window with 300 offline apps; keep it focused and unobstructed. Reports and captures go under `build/`. Missing, malformed, or nonfinite measurements and missing required logs fail validation; the script regression tests run with `test.sh`.
 
-The macOS 27 keyboard workload still exceeds the 8.33 ms CPU target. Scrolling, startup, detail rendering, and memory growth pass their budgets. Frame captures deliver all queued arrows without selection bounce or unintended reversals, but the smoothness and one-frame input-delay gates remain unmet; 120 Hz presentation has not been verified. Keep failed reports under `build/` and distinguish correct navigation from smooth presentation.
+The retained macOS 27 reports still miss the 8.33 ms keyboard CPU target and the smoothness and one-frame input-delay gates. Correct navigation does not establish smooth presentation; 120 Hz presentation remains unverified.
 
-## Release notes
+Visual tests use `LatestMainWindowScene` with offline data, a fixed screen position, and an inactive window. Captures go under `build/production-visuals/main-window-scene` and compare every pixel against same-host originals in `build/production-visual-reference/main-window-scene` when present. Missing references do not prove parity. Preserve old references and record source revision, accepted layout changes, and capture conditions when recapturing from the independent original renderer. Never generate references from the candidate. The 14 macOS 26 [component references](Tests/VisualBaselines/macos-26/README.md) separately cover detail, locations, actions, and toolbar appearance.
 
-Add each app version to `Latest/Resources/LatestReleaseNotes.json` for offline Latest Dev notes. The release menu opens this fork's GitHub releases; automatic self-updates require a separately configured signed appcast.
-
-`./script/audit_release_notes.sh` runs offline regression tests. Add `--catalog /path/to/cask.json` for a live Homebrew catalog audit, or `--installed` for installed apps. Reports and rendered HTML go under `build/`. `audit_release_note_coverage.sh` checks source routes, which do not guarantee usable notes.
-
-Release notes can load even when update checking fails. A failed or metadata-only primary source falls back to the curated vendor catalog. Notes target an available update, or the actual installed version when it is current; broader or latest-section fallbacks retain their degraded quality rating. Installed audits use an isolated cache and exercise this same rendering path.
+The macOS 27 sidebar uses SwiftUI for content and interaction, with a small native background to preserve source-list selection materials. The UI lane covers repeated Find/Escape between the list, search, and release notes; synthetic clicks must complete before the next command, and foreground tests must acquire application and window focus.
 
 ## License
 
-Based on [Latest by Max Langer and contributors](https://github.com/mangerlahn/Latest). Fork modifications © 2026 ertyoii; upstream and dependency notices are retained.
-
-About shows the app icon, name, version, and copyright. Full GPL and Sparkle notices are bundled for offline reading in Help → Licenses.
+Based on [Latest by Max Langer and contributors](https://github.com/mangerlahn/Latest). Fork modifications © 2026 ertyoii; upstream and dependency notices are retained. Full GPL and Sparkle notices are available offline in Help → Licenses.
 
 Distributed under [GPL version 3](LICENSE.md). Binary distributions must include corresponding source. This software comes without warranty.

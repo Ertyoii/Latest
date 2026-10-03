@@ -86,9 +86,10 @@ actor ReleaseNotesPersistentCache {
     }
   }
 
-  @MainActor
-  static func payload(from releaseNotes: ResolvedReleaseNotes) -> ReleaseNotesPersistentPayload? {
-    return ReleaseNotesPersistentPayload(
+  nonisolated static func payload(from releaseNotes: ResolvedReleaseNotes)
+    -> ReleaseNotesPersistentPayload
+  {
+    ReleaseNotesPersistentPayload(
       semanticContent: releaseNotes.content,
       qualityRawValue: releaseNotes.quality.rawValue,
       provenanceRawValue: releaseNotes.provenance.rawValue,

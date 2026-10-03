@@ -10,24 +10,15 @@ import AppKit
 import Sparkle
 
 /// The operation updating Sparkle apps.
-class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
+final class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
 
-  /// The updater used to update this app.
-  private var updater: SPUUpdater?
-
-  // Callback to be called when the operation has been cancelled
-  fileprivate var cancellationCallback: (() -> Void)?
-
-  /// Schedules an progress update notification.
-  private let progressSchedulerQueue = DispatchQueue(
-    label: "com.max-langer.Latest.sparkle-update-progress")
-
-  private var isProgressNotificationScheduled = false
-
-  /// Initializes the operation with the given Sparkle app and handler
-  override init(bundleIdentifier: String, appIdentifier: App.Bundle.Identifier) {
-    super.init(bundleIdentifier: bundleIdentifier, appIdentifier: appIdentifier)
-  }
+  // Sparkle's driver callbacks run on the main actor. OperationQueue entry
+  // points hop there before touching the updater or its download state.
+  @MainActor private var updater: SPUUpdater?
+  @MainActor private var cancellationCallback: (() -> Void)?
+  @MainActor private var progressTask: Task<Void, Never>?
+  @MainActor private var expectedContentLength: UInt64 = 0
+  @MainActor private var receivedLength: UInt64 = 0
 
   // MARK: - Operation Overrides
 
@@ -41,6 +32,7 @@ class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
     }
 
     Task { @MainActor in
+      guard !self.isCancelled, !self.isFinished else { return }
       // Instantiate a new updater that performs the update
       let updater = SPUUpdater(
         hostBundle: bundle, applicationBundle: bundle, userDriver: self, delegate: self)
@@ -49,46 +41,30 @@ class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
         try updater.start()
       } catch let error {
         self.finish(with: error)
+        return
       }
 
-      updater.checkForUpdates()
-
+      guard !self.isCancelled, !self.isFinished else { return }
       self.updater = updater
+      updater.checkForUpdates()
     }
   }
 
   override func cancel() {
     super.cancel()
 
-    self.cancellationCallback?()
     self.finish()
   }
 
   override func finish() {
-    // Cleanup updater
-    self.updater = nil
-
     super.finish()
-  }
-
-  // MARK: - Downloading
-
-  /// The estimated total length of the downloaded app bundle.
-  fileprivate var expectedContentLength: UInt64 = 0
-
-  /// The length of already downloaded data.
-  fileprivate var receivedLength: UInt64 = 0
-
-  // MARK: - Installation
-
-  /// Whether the app is open.
-  fileprivate var isAppOpen = false
-
-  /// One instance of the currently updating application.
-  fileprivate var runningApplication: NSRunningApplication? {
-    return NSWorkspace.shared.runningApplications.first(where: {
-      $0.bundleIdentifier == self.bundleIdentifier
-    })
+    Task { @MainActor in
+      self.cancelProgressNotification()
+      let cancellation = self.cancellationCallback
+      self.cancellationCallback = nil
+      if self.isCancelled { cancellation?() }
+      self.updater = nil
+    }
   }
 
 }
@@ -105,6 +81,11 @@ extension SparkleUpdateOperation: SPUUserDriver {
   }
 
   func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
+    guard !isCancelled, !isFinished else {
+      cancellation()
+      return
+    }
+    cancellationCallback = cancellation
     self.progressState = .initializing
   }
 
@@ -135,7 +116,7 @@ extension SparkleUpdateOperation: SPUUserDriver {
   }
 
   func showDownloadInitiated(cancellation: @escaping () -> Void) {
-    if self.isCancelled {
+    if self.isCancelled || self.isFinished {
       cancellation()
       return
     }
@@ -146,7 +127,7 @@ extension SparkleUpdateOperation: SPUUserDriver {
   // MARK: - Downloading Update
 
   func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {
-    // This should be only called once per download. If it Uis called more than once, reset the progress
+    // A replacement download (for example after a failed delta) resets progress.
     self.expectedContentLength = expectedContentLength
     self.receivedLength = 0
 
@@ -162,34 +143,39 @@ extension SparkleUpdateOperation: SPUUserDriver {
     self.scheduleProgressHandler()
   }
 
+  @MainActor
   private func scheduleProgressHandler() {
-    progressSchedulerQueue.async { [weak self] in
-      guard let self, !self.isProgressNotificationScheduled else { return }
-      self.isProgressNotificationScheduled = true
-      self.progressSchedulerQueue.asyncAfter(deadline: .now() + .milliseconds(200)) { [weak self] in
-        guard let self else { return }
-        self.isProgressNotificationScheduled = false
-        guard !self.isCancelled, !self.isFinished else { return }
-        self.progressState = .downloading(
-          loadedSize: Int64(self.receivedLength), totalSize: Int64(self.expectedContentLength))
-      }
+    guard progressTask == nil, !isCancelled, !isFinished else { return }
+    progressTask = Task { [weak self] in
+      do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+      guard let self else { return }
+      self.progressTask = nil
+      guard !self.isCancelled, !self.isFinished else { return }
+      self.progressState = .downloading(
+        loadedSize: Int64(clamping: self.receivedLength),
+        totalSize: Int64(clamping: self.expectedContentLength))
     }
+  }
+
+  @MainActor
+  private func cancelProgressNotification() {
+    progressTask?.cancel()
+    progressTask = nil
   }
 
   // MARK: - Installing Update
 
   func showDownloadDidStartExtractingUpdate() {
+    cancelProgressNotification()
     self.progressState = .extracting(progress: 0)
   }
 
   func showExtractionReceivedProgress(_ progress: Double) {
+    cancelProgressNotification()
     self.progressState = .extracting(progress: progress)
   }
 
   func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
-    // Check whether app is open
-    self.isAppOpen = self.runningApplication != nil
-
     reply(self.isCancelled ? .dismiss : .install)
   }
 
@@ -197,6 +183,7 @@ extension SparkleUpdateOperation: SPUUserDriver {
     withApplicationTerminated applicationTerminated: Bool,
     retryTerminatingApplication: @escaping () -> Void
   ) {
+    cancelProgressNotification()
     self.progressState = .installing
   }
 

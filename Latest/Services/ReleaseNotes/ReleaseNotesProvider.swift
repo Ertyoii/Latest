@@ -112,10 +112,9 @@ class ReleaseNotesProvider {
           forKey: cacheKey,
           cost: resolved.content.length * 2
         )
-        if let payload = ReleaseNotesPersistentCache.payload(from: resolved) {
-          Task {
-            await self.persistentCache.store(payload, forKey: cacheKey.stableIdentifier)
-          }
+        let payload = ReleaseNotesPersistentCache.payload(from: resolved)
+        Task {
+          await self.persistentCache.store(payload, forKey: cacheKey.stableIdentifier)
         }
       }
 
@@ -558,7 +557,7 @@ class ReleaseNotesProvider {
     from urls: [URL], versionPrefix: String?, allowsLatestFallback: Bool, requestID: UUID,
     with completion: @escaping ResolvedCompletion
   ) {
-    var remainingURLs = urls
+    var remainingURLs = urls.makeIterator()
     var activeAttemptID = UUID()
     var didComplete = false
 
@@ -570,12 +569,11 @@ class ReleaseNotesProvider {
     }
 
     func loadNext() {
-      guard !remainingURLs.isEmpty else {
+      guard let url = remainingURLs.next() else {
         finish(.failure(LatestError.releaseNotesUnavailable))
         return
       }
 
-      let url = remainingURLs.removeFirst()
       let attemptID = UUID()
       activeAttemptID = attemptID
 

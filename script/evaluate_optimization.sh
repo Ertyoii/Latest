@@ -15,7 +15,8 @@ usage: script/evaluate_optimization.sh [--full] [--installed] [--homebrew-cask P
 
 Fast mode runs focused release-note tests plus Release artifact/security checks.
 Full mode also runs the complete test suite, complexity budgets, and the
-shipping AppKit parity sidebar through latency, memory, and runtime-warning gates.
+current sidebar renderer through latency, memory, and runtime-warning gates.
+Full mode opens test windows and may take keyboard focus.
 EOF
 }
 
@@ -75,15 +76,15 @@ plutil -lint "$ROOT_DIR/Latest/Resources/Info.plist"
 if [[ "$MODE" == "full" ]]; then
   echo
   echo "EVALUATION phase=complete_test_suite"
-  "$ROOT_DIR/script/test.sh"
+  "$ROOT_DIR/script/test.sh" --all
 
   echo
   echo "EVALUATION phase=complexity_budgets"
   "$ROOT_DIR/script/benchmark_complexity.sh"
 
-	echo
-	echo "EVALUATION phase=appkit_sidebar_latency_memory_and_runtime_gates"
-	"$ROOT_DIR/script/benchmark_migration.sh" "evaluation-appkit" appkit
+  echo
+  echo "EVALUATION phase=sidebar_latency_memory_and_runtime_gates"
+  "$ROOT_DIR/script/benchmark_migration.sh" "evaluation"
 fi
 
 echo

@@ -65,14 +65,44 @@ final class ReleaseNotesMarkupTest: XCTestCase {
       XCTAssertEqual(
         ReleaseNotesWebDocument.html(for: cached.content), originalHTML,
         "Existing RTF cache remains compatible")
-      let newPayload = try XCTUnwrap(
-        ReleaseNotesPersistentCache.payload(
-          from:
-            ResolvedReleaseNotes(content: text, quality: .genuine, provenance: .changelog)))
+      let newPayload = ReleaseNotesPersistentCache.payload(
+        from:
+          ResolvedReleaseNotes(content: text, quality: .genuine, provenance: .changelog))
       let restored = try XCTUnwrap(
         ReleaseNotesPersistentCache.resolvedReleaseNotes(from: newPayload))
       XCTAssertEqual(ReleaseNotesWebDocument.html(for: restored.content), originalHTML)
     }
+  }
+
+  func testHTMLExtractionPreservesNestedElementsAndSiblingBoundaries() throws {
+    let first = "<ARTICLE><h2>版本 🚀</h2><article>Nested fix</article><p>First release.</p></ARTICLE>"
+    let second = "<article><p>Second release.</p></article>"
+    let html = "Before" + first + second + "<article>Unclosed"
+    let element = try XCTUnwrap(
+      ReleaseNotesMarkup.nextHTMLElement(in: html, tagName: "article", searchStart: html.startIndex)
+    )
+    XCTAssertEqual(String(html[element.range]), first)
+    XCTAssertEqual(
+      String(html[element.contentRange]),
+      "<h2>版本 🚀</h2><article>Nested fix</article><p>First release.</p>")
+    let sibling = try XCTUnwrap(
+      ReleaseNotesMarkup.nextHTMLElement(
+        in: html, tagName: "article", searchStart: element.range.upperBound))
+    XCTAssertEqual(String(html[sibling.range]), second)
+    XCTAssertNil(
+      ReleaseNotesMarkup.nextHTMLElement(
+        in: html, tagName: "article", searchStart: sibling.range.upperBound))
+  }
+
+  func testDuplicateReleaseTitlesPreserveBodyAndBlankLines() {
+    let repeated = "# Version 2\nVersion 2\n**Version 2**\nFixed crashes.\n\nImproved startup."
+    XCTAssertEqual(
+      ReleaseNotesMarkup.removingDuplicateLeadingLines(repeated),
+      "# Version 2\nFixed crashes.\n\nImproved startup.")
+    XCTAssertEqual(
+      ReleaseNotesProvider.deduplicating(title: "Version 2", in: repeated),
+      "Fixed crashes.\n\nImproved startup.")
+    XCTAssertEqual(ReleaseNotesMarkup.removingDuplicateLeadingLines("\n\nBody"), "\n\nBody")
   }
 
   func testMarkdownDisclosureMarkupDoesNotLeakIntoNotes() {

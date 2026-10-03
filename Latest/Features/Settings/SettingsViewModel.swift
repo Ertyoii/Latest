@@ -40,7 +40,7 @@ final class SettingsViewModel: ObservableObject {
   private let installHelperService: any InstallHelperServicing
   private let directoryStoreFactory: DirectoryStoreFactory
   private lazy var directoryStore = directoryStoreFactory { [weak self] in
-    self?.reloadDirectories()
+    self?.refreshDirectories()
   }
 
   init(
@@ -53,7 +53,7 @@ final class SettingsViewModel: ObservableObject {
     self.settings = settings
     self.installHelperService = installHelperService
     self.directoryStoreFactory = directoryStoreFactory
-    reloadDirectories()
+    refreshDirectories()
     refreshInstallHelperAvailability()
   }
 
@@ -106,27 +106,18 @@ final class SettingsViewModel: ObservableObject {
 
   func addDirectories(_ urls: [URL]) {
     urls.forEach(directoryStore.add)
-    reloadDirectories()
+    refreshDirectories()
   }
 
   func removeSelectedDirectory() {
     guard let selectedDirectory, directoryStore.canRemove(selectedDirectory) else { return }
     directoryStore.remove(selectedDirectory)
     self.selectedDirectory = nil
-    reloadDirectories()
+    refreshDirectories()
   }
 
-  func isReachable(_ url: URL) -> Bool {
-    directoryStore.isReachable(url)
-  }
-
-  /// Refreshes the locations snapshot. Kept internal so the migration
-  /// performance harness measures the same path used after add/remove events.
+  /// Refreshes locations and clears selection when its directory was removed.
   func refreshDirectories() {
-    reloadDirectories()
-  }
-
-  private func reloadDirectories() {
     MigrationTelemetry.shared.measureSettingsRefresh {
       directoryURLs = directoryStore.URLs
       if let selectedDirectory, !directoryURLs.contains(selectedDirectory) {

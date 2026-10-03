@@ -282,40 +282,6 @@ struct SignedReleaseNotesCatalogEnvelope: Codable, Equatable, Sendable {
   let signature: Data
 }
 
-protocol ReleaseNotesCatalogHTTPDataLoading: Sendable {
-  func load(_ request: URLRequest, maximumResponseSize: Int) async throws
-    -> ReleaseNotesFetchResponse
-}
-
-struct URLSessionReleaseNotesCatalogDataLoader: ReleaseNotesCatalogHTTPDataLoading {
-  let session: URLSession
-
-  init(session: URLSession = .shared) {
-    self.session = session
-  }
-
-  func load(_ request: URLRequest, maximumResponseSize: Int) async throws
-    -> ReleaseNotesFetchResponse
-  {
-    let (bytes, response) = try await session.bytes(for: request)
-    guard response.expectedContentLength <= Int64(maximumResponseSize) else {
-      throw ReleaseNotesCatalogRemoteRejection.oversized
-    }
-
-    var data = Data()
-    if response.expectedContentLength > 0 {
-      data.reserveCapacity(min(Int(response.expectedContentLength), maximumResponseSize))
-    }
-    for try await byte in bytes {
-      guard data.count < maximumResponseSize else {
-        throw ReleaseNotesCatalogRemoteRejection.oversized
-      }
-      data.append(byte)
-    }
-    return ReleaseNotesFetchResponse(data: data, response: response)
-  }
-}
-
 enum ReleaseNotesCatalogRemoteRejection: Error, Equatable, Sendable {
   case disabled
   case http
@@ -386,13 +352,13 @@ struct SignedReleaseNotesCatalogClient: Sendable {
 
   private let configuration: Configuration
   private let bundledCatalogData: Data
-  private let loader: any ReleaseNotesCatalogHTTPDataLoading
+  private let loader: any ReleaseNotesHTTPDataLoading
   private let cache: ReleaseNotesCatalogDiskCache?
 
   init(
     configuration: Configuration,
     bundledCatalogData: Data,
-    loader: any ReleaseNotesCatalogHTTPDataLoading = URLSessionReleaseNotesCatalogDataLoader(),
+    loader: any ReleaseNotesHTTPDataLoading = URLSessionReleaseNotesHTTPDataLoader(),
     cache: ReleaseNotesCatalogDiskCache? = nil
   ) {
     self.configuration = configuration
@@ -472,8 +438,8 @@ struct SignedReleaseNotesCatalogClient: Sendable {
         request,
         maximumResponseSize: configuration.maximumEnvelopeSize
       )
-    } catch let rejection as ReleaseNotesCatalogRemoteRejection {
-      throw rejection
+    } catch ReleaseNotesFetchError.oversized {
+      throw ReleaseNotesCatalogRemoteRejection.oversized
     } catch {
       throw ReleaseNotesCatalogRemoteRejection.network
     }

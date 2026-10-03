@@ -92,48 +92,44 @@ class VersionTest: XCTestCase {
     XCTAssertFalse(update(local: second, remote: first).updateAvailable)
   }
 
-  // MARK: - Right Comparison
-
-  func testRightComparison() {
-    // If bundle is available, check for the bundle
-
-    // Should check the bundle version
-    var v1 = Version(versionNumber: "2.1.5", buildNumber: "312")
-    var v2 = Version(versionNumber: "2.1.6d12", buildNumber: "215")
-    self.newer(v1, v2)
-
-    // Should check the version
-    v1 = Version(versionNumber: "2.1.5", buildNumber: nil)
-    v2 = Version(versionNumber: "2.2.6", buildNumber: "216")
-    self.older(v1, v2)
-
-    // Should check the version
-    v1 = Version(versionNumber: "2.1.5", buildNumber: "215")
-    v2 = Version(versionNumber: "2.2.6", buildNumber: nil)
-    self.older(v1, v2)
-
-    // Should check the version
-    v1 = Version(versionNumber: "2.1.5", buildNumber: nil)
-    v2 = Version(versionNumber: "2.2.6", buildNumber: nil)
-    self.older(v1, v2)
-  }
-
-  // MARK: - Bundle Checking
-
-  func testOlderBundle() {
-    var v1 = Version(versionNumber: "2.1.5", buildNumber: "215")
-    var v2 = Version(versionNumber: "2.1.6", buildNumber: "216")
-    self.older(v1, v2)
-
-    v1 = Version(versionNumber: "2.1.5", buildNumber: "215a")
-    v2 = Version(versionNumber: "2.2.6", buildNumber: "216b")
-    self.older(v1, v2)
-  }
-
-  func testEqualBundle() {
-    let v1 = Version(versionNumber: "2.1.5", buildNumber: "215")
-    let v2 = Version(versionNumber: "2.1.5", buildNumber: "215")
-    self.equal(v1, v2)
+  /// Update precedence is directional and separate from Version identity.
+  func testUpdatePrecedence() {
+    let cases:
+      [(
+        local: String, localBuild: String?, remote: String, remoteBuild: String?,
+        expected: Version.UpdateComparison
+      )] = [
+        ("2.1.5", "312", "2.1.6d12", "215", .newer),
+        ("2.1.5", nil, "2.2.6", "216", .older),
+        ("2.1.5", "215", "2.2.6", nil, .older),
+        ("2.1.5", nil, "2.2.6", nil, .older),
+        ("2.1.5", "215", "2.1.6", "216", .older),
+        ("2.1.5", "215a", "2.2.6", "216b", .older),
+        ("2.1.5", "215", "2.1.5", "215", .samePrecedence),
+        ("2.0.6", "217", "2.1.5", "216", .newer),
+        ("2.1.6", "217a", "2.2.4", "216b", .newer),
+        ("2.1.5", nil, "2.1.6", "216", .older),
+        ("2.1.5", nil, "3.1.6", nil, .older),
+        ("2.1.5", nil, "2.1.5", "215", .samePrecedence),
+        ("2.2.6", "215", "2.2.6", nil, .samePrecedence),
+        ("3.1.6", nil, "3.1.6", nil, .samePrecedence),
+        ("2.1.6", nil, "2.1.5", "216", .newer),
+        ("2.3.6", "215", "2.2.4", nil, .newer),
+        ("4.1.5", nil, "3.1.6", nil, .newer),
+        ("2.1.5", nil, "2.1.5.0", "215", .samePrecedence),
+        ("2.2.6.0", "215", "2.2.6", nil, .samePrecedence),
+        ("2.2.6", nil, "2.2.6", nil, .samePrecedence),
+        ("3.1.5", "215", "2.2.6", nil, .newer),
+        ("3.1.5", nil, "2.1.6", "216", .newer),
+        ("٣.١.٥", "٢١٥", "٢.٢.٦", nil, .newer),
+        ("३.१.५", "२१७", "२.१.६", nil, .newer),
+      ]
+    for fixture in cases {
+      let local = Version(versionNumber: fixture.local, buildNumber: fixture.localBuild)
+      let remote = Version(versionNumber: fixture.remote, buildNumber: fixture.remoteBuild)
+      XCTAssertEqual(
+        local.comparisonForUpdate(to: remote), fixture.expected, "\(local) → \(remote)")
+    }
   }
 
   func testEqualBundlesWithDifferentVersionsDeduplicateByIdentifier() {
@@ -156,107 +152,6 @@ class VersionTest: XCTestCase {
 
     XCTAssertEqual(oldBundle, newBundle)
     XCTAssertEqual(Set([oldBundle, newBundle]).count, 1)
-  }
-
-  func testNewerBundle() {
-    var v1 = Version(versionNumber: "2.0.6", buildNumber: "217")
-    var v2 = Version(versionNumber: "2.1.5", buildNumber: "216")
-    self.newer(v1, v2)
-
-    v1 = Version(versionNumber: "2.1.6", buildNumber: "217a")
-    v2 = Version(versionNumber: "2.2.4", buildNumber: "216b")
-    self.newer(v1, v2)
-  }
-
-  // MARK: - Version Checking
-
-  func testOlderVersionSimple() {
-    var v1 = Version(versionNumber: "2.1.5", buildNumber: nil)
-    var v2 = Version(versionNumber: "2.1.6", buildNumber: "216")
-    self.older(v1, v2)
-
-    v1 = Version(versionNumber: "2.1.5", buildNumber: nil)
-    v2 = Version(versionNumber: "3.1.6", buildNumber: nil)
-    self.older(v1, v2)
-  }
-
-  func testEqualVersionSimple() {
-    var v1 = Version(versionNumber: "2.1.5", buildNumber: nil)
-    var v2 = Version(versionNumber: "2.1.5", buildNumber: "215")
-    self.equal(v1, v2)
-
-    v1 = Version(versionNumber: "2.2.6", buildNumber: "215")
-    v2 = Version(versionNumber: "2.2.6", buildNumber: nil)
-    self.equal(v1, v2)
-
-    v1 = Version(versionNumber: "3.1.6", buildNumber: nil)
-    v2 = Version(versionNumber: "3.1.6", buildNumber: nil)
-    self.equal(v1, v2)
-  }
-
-  func testNewerVersionSimple() {
-    var v1 = Version(versionNumber: "2.1.6", buildNumber: nil)
-    var v2 = Version(versionNumber: "2.1.5", buildNumber: "216")
-    self.newer(v1, v2)
-
-    v1 = Version(versionNumber: "2.3.6", buildNumber: "215")
-    v2 = Version(versionNumber: "2.2.4", buildNumber: nil)
-    self.newer(v1, v2)
-
-    v1 = Version(versionNumber: "4.1.5", buildNumber: nil)
-    v2 = Version(versionNumber: "3.1.6", buildNumber: nil)
-    self.newer(v1, v2)
-  }
-
-  func testEqualVersion() {
-    var v1 = Version(versionNumber: "2.1.5", buildNumber: nil)
-    var v2 = Version(versionNumber: "2.1.5.0", buildNumber: "215")
-    self.equal(v1, v2)
-
-    v1 = Version(versionNumber: "2.2.6.0", buildNumber: "215")
-    v2 = Version(versionNumber: "2.2.6", buildNumber: nil)
-    self.equal(v1, v2)
-
-    v1 = Version(versionNumber: "2.2.6", buildNumber: nil)
-    v2 = Version(versionNumber: "2.2.6", buildNumber: nil)
-    self.equal(v1, v2)
-  }
-
-  func testNewerVersion() {
-    let v1 = Version(versionNumber: "3.1.5", buildNumber: "215")
-    let v2 = Version(versionNumber: "2.2.6", buildNumber: nil)
-    self.newer(v1, v2)
-  }
-
-  func testNumeralSystems() {
-    // Western arabic numerals
-    var v1 = Version(versionNumber: "3.1.5", buildNumber: nil)
-    var v2 = Version(versionNumber: "2.1.6", buildNumber: "216")
-    self.newer(v1, v2)
-
-    // Eastern arabic numerals
-    v1 = Version(versionNumber: "٣.١.٥", buildNumber: "٢١٥")
-    v2 = Version(versionNumber: "٢.٢.٦", buildNumber: nil)
-    self.newer(v1, v2)
-
-    // Indian numerals
-    v1 = Version(versionNumber: "३.१.५", buildNumber: "२१७")
-    v2 = Version(versionNumber: "२.१.६", buildNumber: nil)
-    self.newer(v1, v2)
-  }
-
-  // MARK: - Helper Methods
-
-  private func older(_ v1: Version, _ v2: Version) {
-    XCTAssertEqual(v1.comparisonForUpdate(to: v2), .older)
-  }
-
-  private func equal(_ v1: Version, _ v2: Version) {
-    XCTAssertEqual(v1.comparisonForUpdate(to: v2), .samePrecedence)
-  }
-
-  private func newer(_ v1: Version, _ v2: Version) {
-    XCTAssertEqual(v1.comparisonForUpdate(to: v2), .newer)
   }
 
 }

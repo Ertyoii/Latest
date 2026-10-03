@@ -172,49 +172,11 @@ struct ReleaseNotesCandidateScorer: Sendable {
   }
 }
 
-struct ScoredReleaseNotesCandidate: Sendable {
-  let candidate: ReleaseNotesCandidate
-  let quality: ReleaseNotesQuality
-}
-
-/// Selects the highest-quality usable candidate while keeping source selection
-/// independent from fetching, parsing, and rendering. This supports genuine
-/// notes and generic package metadata coexisting without conflating them.
-struct ReleaseNotesResolver: Sendable {
-  func resolve(
-    _ candidates: [ReleaseNotesCandidate],
-    for context: ReleaseNotesContext,
-    scorer: ReleaseNotesCandidateScorer
-  ) throws -> ScoredReleaseNotesCandidate {
-    var best: ScoredReleaseNotesCandidate?
-    var firstRejection: Error?
-
-    for candidate in candidates {
-      do {
-        let quality = try scorer.quality(of: candidate, for: context)
-        if let best, best.quality >= quality { continue }
-        best = ScoredReleaseNotesCandidate(candidate: candidate, quality: quality)
-      } catch {
-        firstRejection = firstRejection ?? error
-      }
-    }
-
-    guard let best else {
-      throw firstRejection ?? ReleaseNotesCandidateRejection.empty
-    }
-    return best
-  }
-}
-
+/// Validates and prepares one source. The provider owns ordered fallback between sources.
 struct ReleaseNotesPipeline: Sendable {
-  private let resolver: ReleaseNotesResolver
   private let scorer: ReleaseNotesCandidateScorer
 
-  init(
-    resolver: ReleaseNotesResolver = ReleaseNotesResolver(),
-    scorer: ReleaseNotesCandidateScorer = ReleaseNotesCandidateScorer()
-  ) {
-    self.resolver = resolver
+  init(scorer: ReleaseNotesCandidateScorer = ReleaseNotesCandidateScorer()) {
     self.scorer = scorer
   }
 
@@ -222,23 +184,16 @@ struct ReleaseNotesPipeline: Sendable {
     _ candidate: ReleaseNotesCandidate,
     for context: ReleaseNotesContext
   ) async -> Result<ResolvedReleaseNotes, Error> {
-    await resolve([candidate], for: context)
-  }
-
-  func resolve(
-    _ candidates: [ReleaseNotesCandidate],
-    for context: ReleaseNotesContext
-  ) async -> Result<ResolvedReleaseNotes, Error> {
     do {
-      let resolved = try resolver.resolve(candidates, for: context, scorer: scorer)
+      let quality = try scorer.quality(of: candidate, for: context)
       let rendered = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
-        from: resolved.candidate.markup,
-        baseURL: resolved.candidate.baseURL,
+        from: candidate.markup,
+        baseURL: candidate.baseURL,
         relevantVersion: context.remoteVersion
       )
       return rendered.map {
         ResolvedReleaseNotes(
-          content: $0, quality: resolved.quality, provenance: resolved.candidate.provenance)
+          content: $0, quality: quality, provenance: candidate.provenance)
       }
     } catch {
       return .failure(error)
