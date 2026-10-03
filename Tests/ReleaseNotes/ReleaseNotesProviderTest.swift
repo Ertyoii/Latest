@@ -59,6 +59,34 @@ final class ReleaseNotesProviderTest: XCTestCase {
   }
 
   @MainActor
+  func testGitHubMarkdownOmitsHTMLDownloadButtonsOutsideCodeFences() async throws {
+    let button =
+      #"<a href="https://example.com/BetterDisplay-v5.0.6.dmg"><img src="https://example.com/download.png" width="175" alt="Download for macOS"/></a>"#
+    let markdown = """
+      # BetterDisplay 5.0.6
+      - Fixed brightness syncing after wake.
+      - Improved display arrangement reliability.
+
+      ```html
+      \(button)
+      ```
+
+      \(button)
+      """
+    let result = await ReleaseNotesMarkup.githubAttributedStringByPreparingOffMain(
+      from: markdown, title: nil,
+      baseURL: URL(string: "https://github.com/waydabber/BetterDisplay/releases/tag/v5.0.6"),
+      relevantVersion: "5.0.6")
+    let text = try XCTUnwrap(result).get().string
+    XCTAssertTrue(text.contains("BetterDisplay 5.0.6"))
+    XCTAssertTrue(text.contains("Fixed brightness syncing after wake"))
+    XCTAssertTrue(text.contains("Improved display arrangement reliability"))
+    XCTAssertEqual(
+      text.components(separatedBy: button).count - 1, 1,
+      "Keep the literal code example, but omit the image-only footer")
+  }
+
+  @MainActor
   func testLatestDevHasVersionMatchedOfflineNotesWithoutAnUpdater() async throws {
     func app(identifier: String, version: String) -> App {
       let bundle = App.Bundle(

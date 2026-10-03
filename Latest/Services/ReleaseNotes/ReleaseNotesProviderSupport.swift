@@ -163,7 +163,7 @@ final class ReleaseNotesCacheKey: NSObject {
 
   init(app: App) {
     stableIdentifier = [
-      "vendor-fallback-v2",
+      "vendor-fallback-v3",
       app.identifier.absoluteString,
       app.version.debugDescription,
       app.remoteVersion?.debugDescription ?? "",

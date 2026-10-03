@@ -106,7 +106,7 @@ enum BundleCollector {
     }
 
     let bundle = metadataCache.bundle(forAppAt: url, signature: signature) {
-      bundle(forAppAt: url, modificationDate: signature.bundleModificationDate)
+      Self.bundle(forAppAt: url, modificationDate: signature.bundleModificationDate)
     }
     // Payload updates can happen outside the bundle, so resolve them after the plist cache.
     return bundle.map { InstalledAppVersion.resolve(for: $0) }
