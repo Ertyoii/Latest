@@ -510,43 +510,80 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testSearchEscapeRestoresReleaseNotesAfterRepeatedFindCommands() async throws {
+  func testSearchEscapeRestoresReleaseNotesAfterRepeatedFindCommands() throws {
     try requireUITests()
+    try runApplicationTest {
+      try await self.checkSearchEscapeRestoresReleaseNotesAfterRepeatedFindCommands()
+    }
+  }
+
+  @MainActor
+  private func checkSearchEscapeRestoresReleaseNotesAfterRepeatedFindCommands() async throws {
     let environment = AppEnvironment.localUATFixture(
       settings: try isolatedAppListSettings(for: self))
     let window = try await makeLatestTestWindow(environment: environment, testCase: self)
     let host = try XCTUnwrap(window.contentView)
     defer { window.close() }
+    let fixture = try SidebarInputFixture(window: window, model: environment.updatesListViewModel)
+    try await fixture.activate()
+    func waitForFocus(_ stage: String, _ condition: () -> Bool) async throws {
+      for _ in 0..<100 {
+        if condition() { return }
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      XCTFail(
+        "Focus did not settle at \(stage); responder=\(String(describing: window.firstResponder)), key=\(window.isKeyWindow), active=\(NSApp.isActive)"
+      )
+      throw CocoaError(.coderInvalidValue)
+    }
     host.layoutSubtreeIfNeeded()
     try await Task.sleep(for: .milliseconds(100))
     let web = try XCTUnwrap(host.descendant(of: WKWebView.self))
     try await waitForWebContent(web, containing: "Offline acceptance fixture")
-    XCTAssertTrue(window.makeFirstResponder(web))
-    try await Task.sleep(for: .milliseconds(50))
+    func focusReleaseNotes() throws {
+      let location = web.convert(NSPoint(x: 40, y: 40), to: nil)
+      let down = try XCTUnwrap(
+        NSEvent.mouseEvent(
+          with: .leftMouseDown, location: location, modifierFlags: [],
+          timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+          context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+      let up = try XCTUnwrap(
+        NSEvent.mouseEvent(
+          with: .leftMouseUp, location: location, modifierFlags: [],
+          timestamp: down.timestamp + 0.05, windowNumber: window.windowNumber,
+          context: nil, eventNumber: 2, clickCount: 1, pressure: 0))
+      // Native text selection consumes mouse-up inside its tracking loop.
+      NSApp.postEvent(up, atStart: false)
+      window.sendEvent(down)
+    }
+    try focusReleaseNotes()
+    try await waitForFocus("initial release notes") { window.firstResponder === web }
     environment.commands.focusSearch()
-    try await Task.sleep(for: .milliseconds(50))
     let search = try XCTUnwrap(host.descendant(of: NSTextField.self))
+    try await waitForFocus("first Find") { search.currentEditor() === window.firstResponder }
     XCTAssertTrue(search.currentEditor() === window.firstResponder)
     environment.commands.focusSearch()
-    try await Task.sleep(for: .milliseconds(50))
+    try await waitForFocus("repeated Find") { search.currentEditor() === window.firstResponder }
     let escape = try XCTUnwrap(
       NSEvent.keyEvent(
         with: .keyDown, location: .zero,
         modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
         characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53))
     window.sendEvent(escape)
-    try await Task.sleep(for: .milliseconds(50))
+    try await waitForFocus("Escape to release notes") { window.firstResponder === web }
     XCTAssertTrue(
       window.firstResponder === web, "Escape must return to the previously focused release notes")
-    let fixture = try SidebarInputFixture(window: window, model: environment.updatesListViewModel)
     for listFocus in [true, false, true] {
-      if listFocus { try fixture.focus() } else { XCTAssertTrue(window.makeFirstResponder(web)) }
-      try await Task.sleep(for: .milliseconds(50))
+      if listFocus { try fixture.focus() } else { try focusReleaseNotes() }
       let destination = window.firstResponder
       environment.commands.focusSearch()
-      try await Task.sleep(for: .milliseconds(50))
+      try await waitForFocus("Find from list=\(listFocus)") {
+        search.currentEditor() === window.firstResponder
+      }
       window.sendEvent(escape)
-      try await Task.sleep(for: .milliseconds(50))
+      try await waitForFocus("Escape to list=\(listFocus)") {
+        window.firstResponder === destination
+      }
       XCTAssertTrue(
         window.firstResponder === destination,
         "Escape must follow the latest focus destination when switching between list and notes")

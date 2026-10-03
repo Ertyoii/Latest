@@ -16,9 +16,12 @@ import WebKit
 struct ReleaseNotesWebView: View {
   let text: ReleaseNotesContent?
   @StateObject private var renderer = ReleaseNotesPage()
+  @FocusState private var focus: SidebarFocus?
+  @Environment(\.windowFocus) private var windowFocus
 
   var body: some View {
     WebView(renderer.page)
+      .focused(windowFocus ?? $focus, equals: .releaseNotes)
       .webViewBackForwardNavigationGestures(.disabled)
       .webViewMagnificationGestures(.disabled)
       .accessibilityElement(children: .contain)

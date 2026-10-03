@@ -36,7 +36,6 @@ struct LatestRootView: View {
         updatesViewModel: updatesViewModel,
         showsSupportStatus: updatesViewModel.showsSupportStatus
       )
-      .focused($focus, equals: .releaseNotes)
       .frame(minWidth: VisualMetrics.detailMinWidth)
       .overlay(alignment: .top) {
         Rectangle()

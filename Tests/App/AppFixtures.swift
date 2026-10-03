@@ -113,6 +113,7 @@ func makeLatestTestWindow(
   (dark ? ApplicationAppearance.dark : .light).apply(to: NSApp)
   let id = "latest-test-\(UUID().uuidString)"
   let existingWindows = Set(NSApp.windows.map(ObjectIdentifier.init))
+  NSApp.setActivationPolicy(.regular)
   let scene = NSHostingSceneRepresentation {
     LatestMainWindowScene(id: id) {
       LatestRootView(environment: environment)

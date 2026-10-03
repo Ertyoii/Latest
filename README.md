@@ -6,7 +6,8 @@ A macOS utility that finds updates for App Store, Sparkle, and Homebrew applicat
 
 ## Development
 
-Requires Xcode 26.6 or later and `ripgrep`. Use the `Latest` scheme in `Latest.xcodeproj`, or run:
+Development and CI use `master`. Requires Xcode 26.6 or later and `ripgrep`.
+Use the `Latest` scheme in `Latest.xcodeproj`, or run:
 
 ```sh
 brew install ripgrep
@@ -17,11 +18,41 @@ brew install ripgrep
 
 `test.sh` runs offline behavior, architecture, and offscreen layout checks in a background test host, with coverage disabled. It does not activate Latest or open test windows. Add `--coverage` when measuring coverage; use `-only-testing:'Latest Tests/Class/method'` for a focused check.
 
-`./script/test.sh --ui` opts into native window, mouse/keyboard, accessibility, and screenshot checks; these can take focus. `--all` runs both lanes and is used by CI on its dedicated desktop. Benchmarks and live catalog audits keep their separate scripts and never run as part of these commands.
+`./script/test.sh --ui` opts into native window, mouse/keyboard, accessibility, and screenshot checks; these can take focus. `--all` runs both lanes and is used by CI on its dedicated macOS 26 desktop with Xcode 26.6. Individual tests have a 90-second default timeout and a 180-second maximum. CI caches the pinned package downloads and uploads test results and production window captures. Benchmarks and live catalog audits keep their separate scripts and never run as part of these commands.
 
 Sidebar visual tests open `LatestMainWindowScene` with offline data and inspect/crop its actual rows, using the renderer selected by the current OS. Full-window captures go under `build/production-visuals/main-window-scene`. When same-host original captures exist in `build/production-visual-reference/main-window-scene`, every pixel is compared; existing mismatches remain failures, and absent references do not establish parity. The 14 macOS 26 [component references](Tests/VisualBaselines/macos-26/README.md) retain production detail, locations, update-action, and toolbar coverage. The old gallery’s independent sidebar implementation has been removed; its historical sidebar pixels remain excluded from detail comparisons. Compare UI changes with the original on the same system before updating a reference.
 
 Run `./script/format.sh` to format Swift sources. Use the same Xcode toolchain for reproducible output; `.swift-format` defines the formatting rules.
+
+### Testing macOS 26 locally
+
+The host OS controls native appearance; selecting Xcode 26 on macOS 27 does not
+reproduce macOS 26. On an Apple Silicon Mac, use a [Tart VM](https://tart.run/quick-start/):
+
+```sh
+brew install cirruslabs/cli/tart
+./script/macos26_vm.sh setup
+./script/macos26_vm.sh run
+```
+
+The VM and downloads stay under `build/macos26-vm`. Its public image includes
+Xcode 26.5 and downloads about 70 GB compressed; it can exercise the macOS 26
+renderer, while CI remains the exact Xcode 26.6 gate. Set `LATEST_VM_IMAGE` to a
+matching image when one is available. Log in with the image's `admin`/`admin`
+account. The host checkout is shared read-only; clone it onto the guest disk:
+
+```sh
+git clone --no-hardlinks '/Volumes/My Shared Files/latest' ~/Latest
+cd ~/Latest
+./script/build_and_run.sh
+./script/test.sh --all
+cp -R build/production-visuals '/Volumes/My Shared Files/artifacts/'
+```
+
+Run the app and UI suite while the VM desktop is unlocked. For an exact compiler
+reproduction, install Xcode 26.6 in the guest and set `DEVELOPER_DIR` to its
+`Contents/Developer` directory. CI also uploads its real macOS 26 production
+window captures with each run's test-results artifact.
 
 ## Architecture and SwiftUI migration
 

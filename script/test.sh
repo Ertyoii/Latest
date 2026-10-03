@@ -65,5 +65,8 @@ xcodebuild \
   CODE_SIGN_IDENTITY="" \
   -enableCodeCoverage "$COVERAGE" \
   -parallel-testing-enabled NO \
+  -test-timeouts-enabled YES \
+  -default-test-execution-time-allowance 90 \
+  -maximum-test-execution-time-allowance 180 \
   "${FILTERS[@]}" \
   test

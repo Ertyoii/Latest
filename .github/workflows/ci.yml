@@ -2,7 +2,7 @@ name: macOS CI
 
 on:
   push:
-    branches: [develop]
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -32,7 +32,13 @@ jobs:
           command -v rg >/dev/null || brew install ripgrep
           xcodebuild -version
           swift --version
-          mkdir -p /tmp/latest-visual-output
+          mkdir -p build/visual-diagnostics
+
+      - name: Cache pinned package downloads
+        uses: actions/cache@v4
+        with:
+          path: build/DerivedData/SourcePackages
+          key: packages-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('Latest.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
 
       - name: Resolve pinned dependencies
         run: |
@@ -43,6 +49,8 @@ jobs:
           git diff --exit-code -- Latest.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
       - name: Run structure, behavior, and visual gates
+        env:
+          TEST_RUNNER_LATEST_VISUAL_OUTPUT_DIRECTORY: ${{ github.workspace }}/build/visual-diagnostics
         run: |
           set -o pipefail
           mkdir -p build
@@ -57,6 +65,7 @@ jobs:
             build/ci-tests.log
             build/*.xcresult
             build/production-visuals/**/*.png
-            /tmp/latest-visual-output/*.png
+            build/visual-diagnostics/*.png
+            build/detail-capsule-*/*.png
           if-no-files-found: warn
           retention-days: 14
