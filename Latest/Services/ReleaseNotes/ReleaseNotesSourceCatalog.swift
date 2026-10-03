@@ -175,7 +175,9 @@ enum ReleaseNotesSourceCatalog {
   }
 
   private static func expandedURL(_ template: String, version: Version) -> URL? {
-    let versionNumber = version.versionNumber
+    let versionNumber = version.versionNumber.map {
+      $0.hasPrefix("v") ? String($0.dropFirst()) : $0
+    }
     let major = versionNumber?.split(separator: ".", maxSplits: 1).first.map(String.init)
     let majorMinor = versionNumber?.majorMinorVersionPrefix
     var value = template

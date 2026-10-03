@@ -12,6 +12,71 @@ import XCTest
 @testable import Latest
 
 final class BundleCollectorTest: XCTestCase {
+  func testDeltaUsesMainApplicationVersionAndRefreshesInPlace() throws {
+    let directory = try makeTemporaryDirectory()
+    let appURL = try makeAppBundle(
+      named: "Delta", in: directory,
+      info: [
+        "CFBundleName": "Delta", "CFBundleIdentifier": "com.zed-industries.delta",
+        "CFBundleShortVersionString": "0.1.0", "CFBundleVersion": "0.1.0",
+      ])
+    let executable = appURL.appendingPathComponent("Contents/MacOS/delta-app")
+    try FileManager.default.createDirectory(
+      at: executable.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("\0delta_version0.18.0zed_username\0".utf8).write(to: executable)
+    XCTAssertEqual(BundleCollector.collectBundle(at: appURL)?.version.versionNumber, "0.18.0")
+    try Data("\0delta_version0.18.2zed_username\0".utf8).write(to: executable)
+    XCTAssertEqual(BundleCollector.collectBundle(at: appURL)?.version.versionNumber, "0.18.2")
+    try Data("not version metadata".utf8).write(to: executable)
+    XCTAssertEqual(BundleCollector.collectBundle(at: appURL)?.version.versionNumber, "0.1.0")
+  }
+
+  func testObsidianUsesValidatedNewerPayloadAndDoesNotReuseInstallerBuildNumber() throws {
+    let directory = try makeTemporaryDirectory()
+    let updates = directory.appendingPathComponent("obsidian")
+    try FileManager.default.createDirectory(at: updates, withIntermediateDirectories: true)
+    let app = App.Bundle(
+      version: Version(versionNumber: "1.13.7", buildNumber: "1.13.7"), name: "Obsidian",
+      bundleIdentifier: "md.obsidian", fileURL: directory.appendingPathComponent("Obsidian.app"),
+      source: .none)
+    func writeArchive(filename: String, version: String) throws {
+      let package = try JSONSerialization.data(withJSONObject: [
+        "name": "obsidian-dev", "version": version,
+      ])
+      let header = try JSONSerialization.data(withJSONObject: [
+        "files": [
+          "main.js": ["size": 0, "offset": "0"],
+          "package.json": ["size": package.count, "offset": "0"],
+        ]
+      ])
+      var archive = Data()
+      for value in [4, header.count + 8, header.count + 4, header.count] {
+        var number = UInt32(value).littleEndian
+        archive.append(Data(bytes: &number, count: 4))
+      }
+      archive.append(header)
+      archive.append(package)
+      try archive.write(to: updates.appendingPathComponent(filename))
+    }
+    try writeArchive(filename: "obsidian-1.14.4.asar", version: "1.14.4")
+    // A higher filename alone is not evidence of an installed application version.
+    try writeArchive(filename: "obsidian-9.0.0.asar", version: "1.14.4")
+    try Data("truncated download".utf8).write(
+      to: updates.appendingPathComponent("obsidian-8.0.0.asar"))
+    let resolved = InstalledAppVersion.resolve(for: app, applicationSupport: directory)
+    XCTAssertEqual(resolved.version.versionNumber, "1.14.4")
+    XCTAssertNil(resolved.version.buildNumber)
+    let update = App.Update(
+      app: resolved, remoteVersion: Version(versionNumber: "1.13.7", buildNumber: "1.13.7"),
+      minimumOSVersion: nil, source: .homebrew, date: nil, releaseNotes: nil,
+      updateAction: .external(label: "Obsidian", block: { _ in }))
+    XCTAssertFalse(update.updateAvailable, "An older installer must not replace a newer payload.")
+    try FileManager.default.removeItem(at: updates.appendingPathComponent("obsidian-1.14.4.asar"))
+    XCTAssertEqual(
+      InstalledAppVersion.resolve(for: app, applicationSupport: directory).version.versionNumber,
+      "1.13.7")
+  }
+
   func testRenamedCodexBundleUsesCatalogedSparkleSource() throws {
     let directory = try makeTemporaryDirectory()
     let appURL = try makeAppBundle(

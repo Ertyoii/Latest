@@ -22,6 +22,12 @@ extension App {
     /// Homebrew is the update source.
     case homebrew
 
+    /// A vendor-signed standalone application download installed within Latest.
+    case directDownload
+
+    /// A vendor feed whose installer must be opened outside Latest.
+    case vendor
+
   }
 }
 
@@ -45,9 +51,9 @@ extension App.Source {
     switch self {
     case .none:
       return .none
-    case .sparkle, .appStore:
+    case .sparkle, .appStore, .directDownload:
       return .full
-    case .homebrew:
+    case .homebrew, .vendor:
       return .limited
     }
   }

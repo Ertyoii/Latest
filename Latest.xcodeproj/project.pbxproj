@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A03100000000000000000008 /* ObsidianUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03100000000000000000007 /* ObsidianUpdate.swift */; };
+		A03100000000000000000006 /* AppDownloadUpdateOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03100000000000000000005 /* AppDownloadUpdateOperation.swift */; };
+		A03100000000000000000004 /* AppDownloadSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03100000000000000000003 /* AppDownloadSource.swift */; };
+		A03100000000000000000002 /* InstalledAppVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03100000000000000000001 /* InstalledAppVersion.swift */; };
 		53A001012FFF000000000001 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A001002FFF000000000001 /* AboutView.swift */; };
 		53A001032FFF000000000001 /* LicensesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A001022FFF000000000001 /* LicensesView.swift */; };
 		53A001052FFF000000000001 /* LICENSE.md in Resources */ = {isa = PBXBuildFile; fileRef = 53A001042FFF000000000001 /* LICENSE.md */; };
@@ -188,6 +192,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A03100000000000000000007 /* ObsidianUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObsidianUpdate.swift; sourceTree = "<group>"; };
+		A03100000000000000000005 /* AppDownloadUpdateOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDownloadUpdateOperation.swift; sourceTree = "<group>"; };
+		A03100000000000000000003 /* AppDownloadSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDownloadSource.swift; sourceTree = "<group>"; };
+		A03100000000000000000001 /* InstalledAppVersion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstalledAppVersion.swift; sourceTree = "<group>"; };
 		53A001002FFF000000000001 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		53A001022FFF000000000001 /* LicensesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicensesView.swift; sourceTree = "<group>"; };
 		53A001042FFF000000000001 /* LICENSE.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE.md; sourceTree = SOURCE_ROOT; };
@@ -683,6 +691,7 @@
 				50B016972C38986300590339 /* AppDirectoryStore.swift */,
 				5073753E278998A300F371D8 /* AppLibrary.swift */,
 				501EF8EC2B9A665A00F0D759 /* BundleCollector.swift */,
+				A03100000000000000000001 /* InstalledAppVersion.swift */,
 			);
 			path = AppDiscovery;
 			sourceTree = "<group>";
@@ -778,6 +787,9 @@
 			isa = PBXGroup;
 			children = (
 				5040D45A28DBB753009BF379 /* HomebrewCheckerOperation.swift */,
+				A03100000000000000000007 /* ObsidianUpdate.swift */,
+				A03100000000000000000005 /* AppDownloadUpdateOperation.swift */,
+				A03100000000000000000003 /* AppDownloadSource.swift */,
 			);
 			path = Homebrew;
 			sourceTree = "<group>";
@@ -1186,12 +1198,16 @@
 				503A5C0D2F14528500471DAA /* UpdateInstallHelper.swift in Sources */,
 				5058BA3A21202BA7003F332B /* IconCache.swift in Sources */,
 				5040D45C28DBB753009BF379 /* HomebrewCheckerOperation.swift in Sources */,
+				A03100000000000000000008 /* ObsidianUpdate.swift in Sources */,
+				A03100000000000000000006 /* AppDownloadUpdateOperation.swift in Sources */,
+				A03100000000000000000004 /* AppDownloadSource.swift in Sources */,
 				50C9F10C234641E000FD1802 /* SparkleCheckerOperation.swift in Sources */,
 				50E4EB072B17DACB00A70A7D /* VersionParser.swift in Sources */,
 				5039DE8D22CAA2790088B39B /* AppStoreUpdateOperation.swift in Sources */,
 				507375572789AB0300F371D8 /* AppListSnapshot.swift in Sources */,
 				5073755B278B0A7400F371D8 /* TableViewSnapshotDiff.swift in Sources */,
 				501EF8ED2B9A665A00F0D759 /* BundleCollector.swift in Sources */,
+				A03100000000000000000002 /* InstalledAppVersion.swift in Sources */,
 				50C9F0F5234637BD00FD1802 /* UpdateCheckerOperation.swift in Sources */,
 				50D6EF5F281461A3002D7006 /* SparkleFeed.swift in Sources */,
 				501EF8EF2B9A77B400F0D759 /* AppDirectory.swift in Sources */,

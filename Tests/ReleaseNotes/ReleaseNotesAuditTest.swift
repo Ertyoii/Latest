@@ -24,7 +24,13 @@ final class ReleaseNotesAuditTest: XCTestCase {
       XCTAssertFalse(bundles.isEmpty, "Expected at least one discoverable app bundle.")
 
       let updateResults = await Self.updateResults(for: bundles)
-      let provider = await MainActor.run { ReleaseNotesProvider() }
+      let cacheDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        UUID().uuidString)
+      defer { try? FileManager.default.removeItem(at: cacheDirectory) }
+      let provider = await MainActor.run {
+        ReleaseNotesProvider(
+          persistentCache: ReleaseNotesPersistentCache(directoryURL: cacheDirectory))
+      }
       var rows = [AuditRow]()
 
       for bundle in bundles {
@@ -36,48 +42,26 @@ final class ReleaseNotesAuditTest: XCTestCase {
           continue
         }
 
-        switch updateResult {
+        let app = App(bundle: bundle, update: updateResult, isIgnored: false)
+        let rendered = await Self.renderedReleaseNotes(for: app, provider: provider)
+        switch rendered {
         case .failure(let error):
           rows.append(
             AuditRow(
-              bundle: bundle, status: "update-check-failed", detail: String(describing: error),
-              excerpt: nil))
-        case .success(let update):
-          let app = App(bundle: bundle, update: .success(update), isIgnored: false)
-          guard app.releaseNotes != nil else {
-            rows.append(
-              AuditRow(
-                bundle: bundle, status: "unavailable",
-                detail: "Update source returned no release notes.", excerpt: nil))
-            continue
-          }
-
-          let rendered = await Self.renderedReleaseNotes(for: app, provider: provider)
-          switch rendered {
-          case .failure(let error):
-            rows.append(
-              AuditRow(
-                bundle: bundle, status: "rejected", detail: String(describing: error), excerpt: nil)
-            )
-          case .success(let resolved):
-            let text = resolved.content.string
-            let issues = Self.issues(in: text, quality: resolved.quality, for: bundle)
-            if issues.isEmpty {
-              rows.append(
-                AuditRow(
-                  bundle: bundle,
-                  status: resolved.quality == .genericMetadata ? "metadata-only" : "accepted",
-                  detail:
-                    "source=\(app.source.rawValue) quality=\(resolved.quality) provenance=\(resolved.provenance.rawValue)",
-                  excerpt: text
-                ))
-            } else {
-              rows.append(
-                AuditRow(
-                  bundle: bundle, status: "malformed", detail: issues.joined(separator: ", "),
-                  excerpt: text))
-            }
-          }
+              bundle: bundle, status: app.error == nil ? "unavailable" : "update-check-failed",
+              detail: String(describing: app.error ?? error), excerpt: nil))
+        case .success(let resolved):
+          let text = resolved.content.string
+          let issues = Self.issues(in: text, quality: resolved.quality, for: bundle)
+          rows.append(
+            AuditRow(
+              bundle: bundle,
+              status: issues.isEmpty
+                ? (resolved.quality == .genericMetadata ? "metadata-only" : "accepted")
+                : "malformed",
+              detail: issues.isEmpty
+                ? "source=\(app.source.rawValue) quality=\(resolved.quality) provenance=\(resolved.provenance.rawValue)"
+                : issues.joined(separator: ", "), excerpt: text))
         }
       }
 
@@ -402,7 +386,7 @@ extension ReleaseNotesAuditTest {
             return row
           }
         }
-        for task in tasks { rows.append(await task.value) }
+        for task in tasks { rows.append(try await task.value) }
         let data = try JSONSerialization.data(
           withJSONObject: rows, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: URL(fileURLWithPath: reportPath), options: .atomic)

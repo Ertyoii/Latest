@@ -639,5 +639,45 @@
     "kind": "changelog",
     "urlTemplate": "https://www.navicat.com/en/products/navicat-for-sqlite-release-note",
     "versionPrefix": "exact"
+  },
+  {
+    "keys": [
+      "net.freemacsoft.AppCleaner"
+    ],
+    "homebrewTokens": [],
+    "kind": "changelog",
+    "versionPrefix": "exact",
+    "urlTemplate": "https://freemacsoft.net/appcleaner/releasenotes.html"
+  },
+  {
+    "keys": [
+      "com.knollsoft.Rectangle"
+    ],
+    "homebrewTokens": [
+      "rectangle"
+    ],
+    "kind": "github",
+    "versionPrefix": "exact",
+    "urlTemplate": "https://api.github.com/repos/rxhanson/Rectangle/releases/tags/v{version}"
+  },
+  {
+    "keys": [
+      "com.bitgapp.eqmac"
+    ],
+    "homebrewTokens": [
+      "eqmac"
+    ],
+    "kind": "github",
+    "versionPrefix": "exact",
+    "urlTemplate": "https://api.github.com/repos/bitgapp/eqMac/releases/tags/v{version}"
+  },
+  {
+    "keys": [
+      "com.zed-industries.delta"
+    ],
+    "homebrewTokens": [],
+    "kind": "changelog",
+    "versionPrefix": "exact",
+    "urlTemplate": "https://delta.dev/docs/whats-in-the-latest"
   }
 ]

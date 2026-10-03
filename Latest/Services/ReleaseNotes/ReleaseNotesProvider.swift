@@ -84,7 +84,10 @@ class ReleaseNotesProvider {
           )))
       return
     }
-    if app.error != nil, app.releaseNotes == nil {
+    if app.releaseNotes == nil,
+      ReleaseNotesSourceCatalog.releaseNotes(
+        for: app.bundle, remoteVersion: app.releaseNotesVersion, allowNameFallback: false) == nil
+    {
       completion(.failure(LatestError.releaseNotesUnavailable))
       return
     }
@@ -157,7 +160,49 @@ class ReleaseNotesProvider {
 
   private func loadReleaseNotes(for app: App, with completion: @escaping ResolvedCompletion) {
     let requestID = currentRequestID
-    if let releaseNotes = app.releaseNotes {
+    let catalog = ReleaseNotesSourceCatalog.releaseNotes(
+      for: app.bundle, remoteVersion: app.releaseNotesVersion, allowNameFallback: false)
+    // A self-updated payload can be newer than the installer listed by Homebrew.
+    let localIsNewer =
+      app.remoteVersion.map {
+        app.version.comparisonForUpdate(to: $0) == .newer
+      } ?? false
+    let primary = localIsNewer ? catalog : (app.releaseNotes ?? catalog)
+    guard let primary else {
+      completion(.failure(LatestError.releaseNotesUnavailable))
+      return
+    }
+    loadReleaseNotes(primary, for: app) { result in
+      guard self.isCurrentRequest(requestID) else { return }
+      let validated = Self.validated(result)
+      if case .success(let notes) = validated, notes.quality == .genuine {
+        completion(validated)
+        return
+      }
+      guard let catalog, catalog.cacheIdentifier != primary.cacheIdentifier else {
+        completion(validated)
+        return
+      }
+      self.loadReleaseNotes(catalog, for: app) { fallback in
+        guard self.isCurrentRequest(requestID) else { return }
+        if case .success(let notes) = Self.validated(fallback),
+          notes.quality > ((try? validated.get().quality) ?? .rejected)
+        {
+          completion(.success(notes))
+        } else {
+          completion(validated)
+        }
+      }
+    }
+  }
+
+  private func loadReleaseNotes(
+    _ releaseNotes: App.Update.ReleaseNotes, for app: App,
+    with completion: @escaping ResolvedCompletion
+  ) {
+    let requestID = currentRequestID
+    let relevantVersion = app.releaseNotesVersion.versionNumber
+    do {
       switch releaseNotes {
       case .html(let html), .genericMetadata(let html):
         currentReleaseNotesTask = Task { [weak self] in
@@ -176,7 +221,7 @@ class ReleaseNotesProvider {
         }
       case .url(let url):
         self.releaseNotes(
-          from: url, relevantVersion: app.remoteVersion?.versionNumber, requestID: requestID,
+          from: url, relevantVersion: relevantVersion, requestID: requestID,
           with: completion)
       case .encoded(let data):
         let provenance: ReleaseNotesProvenance =
@@ -187,7 +232,7 @@ class ReleaseNotesProvider {
           let releaseNotes = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
             from: data,
             baseURL: nil,
-            relevantVersion: app.remoteVersion?.versionNumber
+            relevantVersion: relevantVersion
           )
           guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
           completion(
@@ -203,20 +248,20 @@ class ReleaseNotesProvider {
         currentReleaseNotesTask = Task { [weak self] in
           guard let self else { return }
           let releaseNotes = await self.githubReleaseNotes(
-            from: apiURL, relevantVersion: app.remoteVersion?.versionNumber,
+            from: apiURL, relevantVersion: relevantVersion,
             fallbackHTML: fallbackHTML)
           guard !Task.isCancelled else { return }
           completion(releaseNotes)
         }
       case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML):
         self.changelogReleaseNotes(
-          from: urls, versionPrefix: versionPrefix ?? app.remoteVersion?.versionNumber,
+          from: urls, versionPrefix: versionPrefix ?? relevantVersion,
           allowsLatestFallback: allowsLatestFallback, fallbackHTML: fallbackHTML,
           requestID: requestID,
           with: { result in
             let broadVersion =
               versionPrefix.map {
-                !ReleaseNotesMarkup.versionCandidates(from: app.remoteVersion?.versionNumber)
+                !ReleaseNotesMarkup.versionCandidates(from: relevantVersion)
                   .contains($0)
               } ?? false
             completion(
@@ -229,8 +274,6 @@ class ReleaseNotesProvider {
               })
           })
       }
-    } else {
-      completion(.failure(LatestError.releaseNotesUnavailable))
     }
   }
 
@@ -482,7 +525,7 @@ class ReleaseNotesProvider {
         let releaseNotes = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
           from: content.text,
           baseURL: content.baseURL,
-          relevantVersion: versionPrefix
+          relevantVersion: nil
         )
         guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
         completion(

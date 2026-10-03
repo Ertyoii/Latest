@@ -219,6 +219,10 @@ class AppStoreCheckerOperationTest: XCTestCase {
     XCTAssertTrue(update.updateAvailable, "The available Mac release must appear as an update")
     XCTAssertEqual(update.minimumOSVersion?.majorVersion, 14)
     XCTAssertEqual(update.date, ISO8601DateFormatter().date(from: "2026-10-02T03:19:36Z"))
+    guard case .html(let notes) = update.releaseNotes else {
+      return XCTFail("The App Store response should retain its release notes")
+    }
+    XCTAssertEqual(notes, "- Fixed launch.\n- Improved sync.\nThanks for updating.")
 
     // An explicit refresh must fetch current metadata again, beyond the actor cache.
     await AppStoreUpdateCheckerOperation.invalidateLookupCache()
@@ -261,6 +265,7 @@ private final class AppStoreLookupURLProtocol: URLProtocol, @unchecked Sendable 
     let version = entity == "desktopSoftware" ? (fresh ? "7.68" : "7.67") : "7.68.1"
     let body = """
       {"results":[{"version":"\(version)","minimumOsVersion":"14.0",
+      "releaseNotes":"- Fixed launch.<br>- Improved sync.<br />Thanks for updating.",
       "currentVersionReleaseDate":"2026-10-02T03:19:36Z",
       "trackViewUrl":"https://apps.apple.com/us/app/id302584613","trackId":302584613}]}
       """

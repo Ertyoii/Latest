@@ -105,6 +105,7 @@ final class UpdateRepository: Sendable {
     let version: Version?
     let minimumOSVersion: OperatingSystemVersion?
     let releaseNotes: App.Update.ReleaseNotes?
+    let caskToken: String?
   }
 
   func updateInfo(for bundle: App.Bundle) async -> UpdateInfo {
@@ -115,7 +116,8 @@ final class UpdateRepository: Sendable {
             bundle: bundle,
             version: version,
             minimumOSVersion: minimumOSVersion,
-            releaseNotes: releaseNotes
+            releaseNotes: releaseNotes,
+            caskToken: self.entry(for: bundle)?.token
           ))
       }
     }

@@ -49,7 +49,7 @@ struct ReleaseNotesContext: Sendable {
     appName = app.name
     bundleIdentifier = app.bundleIdentifier
     localVersion = app.version.versionNumber ?? app.version.buildNumber
-    remoteVersion = app.remoteVersion?.versionNumber ?? app.remoteVersion?.buildNumber
+    remoteVersion = app.releaseNotesVersion.versionNumber ?? app.releaseNotesVersion.buildNumber
     self.platform = platform
   }
 

@@ -26,6 +26,23 @@ final class HomebrewCheckerOperation: Sendable {
 
   func check() async throws -> App.Update {
     try Task.checkCancellation()
+    if bundle.bundleIdentifier == "md.obsidian" {
+      return try await ObsidianUpdate.check(bundle)
+    }
+    if bundle.bundleIdentifier == "com.zed-industries.delta" {
+      let source = AppDownloadSource.delta
+      let release = try await source.release()
+      return App.Update(
+        app: bundle, remoteVersion: release.version, minimumOSVersion: nil,
+        source: .directDownload, date: nil,
+        releaseNotes: .changelog(
+          urls: [URL(string: "https://delta.dev/docs/whats-in-the-latest")!],
+          versionPrefix: release.version.versionNumber, allowsLatestFallback: true,
+          fallbackHTML: nil),
+        updateAction: .builtIn { app in
+          UpdateQueue.shared.addOperation(AppDownloadUpdateOperation(app: app, source: source))
+        })
+    }
     guard let repository else {
       throw LatestError.updateInfoUnavailable
     }
@@ -41,18 +58,26 @@ final class HomebrewCheckerOperation: Sendable {
         remoteVersion: version,
         allowNameFallback: false
       ) ?? info.releaseNotes
+    let downloadSource = AppDownloadSource.homebrewSource(for: bundle, token: info.caskToken)
+    let action: App.Update.Action
+    if let downloadSource {
+      action = .builtIn { app in
+        UpdateQueue.shared.addOperation(
+          AppDownloadUpdateOperation(app: app, source: downloadSource))
+      }
+    } else {
+      action = .external(label: info.bundle.name) { app in
+        Task { @MainActor in MacApplicationWorkspace.shared.openApplication(at: app.fileURL) }
+      }
+    }
     return App.Update(
       app: info.bundle,
       remoteVersion: version,
       minimumOSVersion: info.minimumOSVersion,
-      source: .homebrew,
+      source: downloadSource == nil ? .homebrew : .directDownload,
       date: nil,
       releaseNotes: releaseNotes,
-      updateAction: .external(label: info.bundle.name) { app in
-        Task { @MainActor in
-          MacApplicationWorkspace.shared.openApplication(at: app.fileURL)
-        }
-      }
+      updateAction: action
     )
   }
 }

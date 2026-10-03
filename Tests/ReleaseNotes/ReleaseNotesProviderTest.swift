@@ -14,6 +14,28 @@ import XCTest
 
 final class ReleaseNotesProviderTest: XCTestCase {
   @MainActor
+  func testFailedUpdateCheckStillLoadsCachedVendorNotes() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cache = ReleaseNotesPersistentCache(directoryURL: directory)
+    let bundle = App.Bundle(
+      version: Version(versionNumber: "1.14.4", buildNumber: nil),
+      name: "Obsidian", bundleIdentifier: "md.obsidian",
+      fileURL: URL(fileURLWithPath: "/Applications/Obsidian.app"), source: .none)
+    let app = App(
+      bundle: bundle, update: .failure(LatestError.updateInfoUnavailable), isIgnored: false)
+    let notes = ResolvedReleaseNotes(
+      content: ReleaseNotesContent(string: "Fixed missing files in the vault explorer."),
+      quality: .genuine, provenance: .changelog)
+    await cache.store(
+      try XCTUnwrap(ReleaseNotesPersistentCache.payload(from: notes)),
+      forKey: ReleaseNotesCacheKey(app: app).stableIdentifier)
+    let result = try await releaseNotes(
+      for: app, provider: ReleaseNotesProvider(persistentCache: cache))
+    XCTAssertEqual(result.string, notes.content.string)
+  }
+
+  @MainActor
   func testGitHubSelectedReleaseKeepsBodyBeforeVersionedDownloadLink() async throws {
     let html = """
       <p>BetterDisplay 5 brings expanded display arrangement and advanced image controls.</p>

@@ -15,6 +15,30 @@ import XCTest
 
 final class ReleaseNotesMarkupTest: XCTestCase {
   @MainActor
+  func testZoomKeepsTheMacFixWhenTwoPatchVersionsShareAReleaseDate() async throws {
+    let html = """
+      <h2>September 24, 2026</h2>
+      <p>Note: Two versions were released: 7.1.9 and 7.2.2.</p>
+      <h3>Full versions for 7.2.2</h3><p>macOS</p><p>7.2.2 (88465)</p>
+      <h3>Resolved issues in version 7.2.2</h3>
+      <table><tr><th>Description</th><th>Platforms</th></tr>
+      <tr><td>Minor bug fix</td><td>macOS</td></tr></table>
+      <h3>Full versions for 7.1.9</h3><p>7.1.9 (11111)</p>
+      <h3>Resolved issues in version 7.1.9</h3><p>Unrelated older train fix</p>
+      <h2>September 15, 2026</h2><p>7.1.8</p>
+      """
+    let result = await ReleaseNotesMarkup.attributedStringFromChangelogByPreparingOffMain(
+      fromHTML: html, baseURL: URL(string: "https://support.zoom.com/hc/en/article")!,
+      relevantVersion: "7.2.2 (88465)", allowFirstSectionFallback: false)
+    let text = try XCTUnwrap(result).get().string
+    XCTAssertTrue(text.contains("Minor bug fix"))
+    XCTAssertTrue(text.contains("Resolved issues"))
+    XCTAssertFalse(text.contains("Full versions"))
+    XCTAssertFalse(text.contains("Unrelated older train fix"))
+    XCTAssertFalse(text.contains("7.1.9"))
+  }
+
+  @MainActor
   func testPreparedRichTextMatchesOriginalHTMLAndLegacyCache() throws {
     let cases = [
       "# Release 2.0\n\n**Bold** *italic* ***both*** `code` ~~removed~~ [link](notes)\n\n- First item\n    - Nested item\n- Second item\n\n1. Ordered\n2. More\n\n```swift\nlet x = 1\nprint(x)\n```",

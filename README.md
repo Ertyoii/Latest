@@ -84,6 +84,10 @@ Discovery and update lookups publish a complete list together, so startup rows f
 
 Features depend on `AppUpdating`. Sparkle is pinned through Swift Package Manager. Native Mac App Store apps update within Latest; on macOS 26.1 and newer a privileged helper installs the App Store package. Wrapped iOS apps use the native App Store. Helper registration errors are shown, and a pending update resumes after approval in System Settings. The app and embedded helper must share a valid signing identity; use `./script/build_and_run.sh --verify --signed` for a signed local build. Unsigned test builds can run but cannot enable the helper.
 
+Latest can also replace signed standalone bundles for Docker Desktop, Telegram Desktop, Zed, Chrome, Bruno, Discord, 1Password, and Delta. Homebrew-backed downloads require both a known bundle identifier and the matching cask. Each install fetches fresh metadata, checks the published checksum when provided, validates the newer bundle against the installed app's signing requirement, and keeps the original until replacement succeeds. Running apps require confirmation to quit. Package installers and companion services remain outside this replacement path.
+
+Obsidian's displayed version comes from its installed ASAR payload; Delta's comes from its main executable's version metadata. Obsidian public payload updates verify the vendor's checksum and RSA signature. Existing early-access preferences are respected; authenticated early-access updates open Obsidian, and an incompatible launcher opens the official installer page. Ghostty uses its official Sparkle feed.
+
 ## Performance checks
 
 ```sh
@@ -101,6 +105,8 @@ The macOS 27 keyboard workload still exceeds the 8.33 ms CPU target. Scrolling, 
 Add each app version to `Latest/Resources/LatestReleaseNotes.json` for offline Latest Dev notes. The release menu opens this fork's GitHub releases; automatic self-updates require a separately configured signed appcast.
 
 `./script/audit_release_notes.sh` runs offline regression tests. Add `--catalog /path/to/cask.json` for a live Homebrew catalog audit, or `--installed` for installed apps. Reports and rendered HTML go under `build/`. `audit_release_note_coverage.sh` checks source routes, which do not guarantee usable notes.
+
+Release notes can load even when update checking fails. A failed or metadata-only primary source falls back to the curated vendor catalog. Notes target an available update, or the actual installed version when it is current; broader or latest-section fallbacks retain their degraded quality rating. Installed audits use an isolated cache and exercise this same rendering path.
 
 ## License
 

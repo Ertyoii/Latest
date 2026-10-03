@@ -13,6 +13,128 @@ import XCTest
 @testable import Latest
 
 final class UpdateRepositoryTest: XCTestCase {
+  func testZIPExtractionCannotWriteThroughAnArchiveSymlink() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let outside = directory.appendingPathComponent("outside")
+    let extracted = directory.appendingPathComponent("extracted")
+    try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: extracted, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("Fixtures/symlink-escape.zip")
+    do {
+      try await AppDownloadUpdateOperation.extractZIP(at: fixture, to: extracted)
+      XCTFail("Archive paths through symlinks must be rejected")
+    } catch {}
+    XCTAssertFalse(
+      FileManager.default.fileExists(atPath: outside.appendingPathComponent("escaped.txt").path))
+  }
+
+  /// Opt-in integration check against downloaded vendor artifacts; never installs them.
+  func testDownloadedVendorArtifactsMatchTheirInstalledSigningIdentity() async throws {
+    guard let path = ProcessInfo.processInfo.environment["LATEST_VENDOR_ARTIFACTS"] else {
+      throw XCTSkip("Set LATEST_VENDOR_ARTIFACTS to a prepared vendor-validation directory.")
+    }
+    try await Task.detached {
+      let directory = URL(fileURLWithPath: path)
+      let delta = try XCTUnwrap(
+        BundleCollector.collectBundle(at: URL(fileURLWithPath: "/Applications/Delta.app")))
+      let release = try AppDownloadRelease(
+        data: Data(contentsOf: directory.appendingPathComponent("delta-release.json")),
+        source: .delta
+      )
+      try AppDownloadUpdateOperation.validate(
+        candidate: directory.appendingPathComponent("Delta.app"),
+        replacing: delta, expectedVersion: release.version)
+      let obsidian = try ObsidianUpdate.release(
+        from: Data(
+          contentsOf: directory.deletingLastPathComponent().appendingPathComponent(
+            "obsidian-release.json")),
+        includesEarlyAccess: false)
+      try ObsidianUpdate.verify(
+        Data(contentsOf: directory.appendingPathComponent("obsidian.asar.gz")), release: obsidian)
+    }.value
+  }
+
+  func testDownloadMetadataSelectsTheHostArchitectureAndRejectsInstallerArtifacts() throws {
+    var record: [String: Any] = [
+      "version": "2.0.0", "url": "https://example.com/arm64.dmg",
+      "sha256": String(repeating: "a", count: 64), "artifacts": [["app": ["Example.app"]]],
+      "variations": [
+        "tahoe": [
+          "url": "https://example.com/intel.dmg", "sha256": String(repeating: "b", count: 64),
+        ]
+      ],
+    ]
+    func release(_ platform: String) throws -> AppDownloadRelease {
+      try AppDownloadRelease(
+        data: JSONSerialization.data(withJSONObject: record),
+        source: .homebrew("example"), platform: platform)
+    }
+    XCTAssertEqual(try release("arm64_tahoe").url.lastPathComponent, "arm64.dmg")
+    XCTAssertEqual(try release("tahoe").url.lastPathComponent, "intel.dmg")
+    XCTAssertEqual(try release("tahoe").sha256, String(repeating: "b", count: 64))
+    record["artifacts"] = [["pkg": ["Installer.pkg"]]]
+    XCTAssertThrowsError(try release("arm64_tahoe"))
+    record["artifacts"] = [["app": ["../Other.app"]]]
+    XCTAssertThrowsError(try release("arm64_tahoe"))
+    record["artifacts"] = [["app": ["Example.app"]]]
+    record["url"] = "http://example.com/update.dmg"
+    XCTAssertThrowsError(try release("arm64_tahoe"))
+  }
+
+  func testDownloadChecksumRejectsModifiedArchiveAndReplacementRestoresOriginalOnFailure() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let original = directory.appendingPathComponent("Example.app")
+    try Data("abc".utf8).write(to: original)
+    try AppDownloadUpdateOperation.verifyChecksum(
+      of: original,
+      expected: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    XCTAssertThrowsError(
+      try AppDownloadUpdateOperation.verifyChecksum(
+        of: original,
+        expected: String(repeating: "0", count: 64)))
+    let stage = directory.appendingPathComponent("stage")
+    try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: true)
+    XCTAssertThrowsError(
+      try AppDownloadUpdateOperation.replaceApplication(
+        at: original, with: stage.appendingPathComponent("missing.app"), backupDirectory: stage))
+    XCTAssertEqual(try Data(contentsOf: original), Data("abc".utf8))
+    let candidate = stage.appendingPathComponent("Example.app")
+    try Data("new".utf8).write(to: candidate)
+    try AppDownloadUpdateOperation.replaceApplication(
+      at: original, with: candidate, backupDirectory: stage)
+    XCTAssertEqual(try Data(contentsOf: original), Data("new".utf8))
+    XCTAssertEqual(
+      try Data(contentsOf: stage.appendingPathComponent("original.app")), Data("abc".utf8))
+  }
+
+  func testObsidianPreservesStableAndExistingEarlyAccessChannels() throws {
+    let data = Data(
+      #"{"minimumVersion":"1.1.9","latestVersion":"1.13.7","downloadUrl":"https://example.com/public.asar.gz","hash":"hash","signature":"signature","beta":{"minimumVersion":"1.1.9","latestVersion":"1.14.4","downloadUrl":"https://example.com/beta.asar.gz","hash":"hash","signature":"signature"}}"#
+        .utf8)
+    XCTAssertEqual(
+      try ObsidianUpdate.release(
+        from: data,
+        includesEarlyAccess: false
+      ).latestVersion, "1.13.7")
+    let beta = try ObsidianUpdate.release(
+      from: data,
+      includesEarlyAccess: true)
+    XCTAssertEqual(beta.latestVersion, "1.14.4")
+    XCTAssertThrowsError(try ObsidianUpdate.verify(Data("tampered".utf8), release: beta))
+  }
+
+  func testGhosttyUsesItsOfficialStableSparkleFeed() {
+    XCTAssertEqual(
+      SparkleFeed.feedURL(
+        from: [:], bundleIdentifier: "com.mitchellh.ghostty",
+        bundleURL: URL(fileURLWithPath: "/Applications/Ghostty.app"))?.absoluteString,
+      "https://release.files.ghostty.org/appcast.xml")
+  }
+
   func testRenamedCodexAppDoesNotMatchConsumerChatGPTCask() {
     XCTAssertTrue(UpdateRepository.isLocallyExcludedFromHomebrewMatching("com.openai.codex"))
     XCTAssertFalse(UpdateRepository.isLocallyExcludedFromHomebrewMatching("com.openai.chat"))

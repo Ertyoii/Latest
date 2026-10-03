@@ -153,7 +153,7 @@ enum ReleaseNotesMarkup {
           allowFirstSectionFallback: allowFirstSectionFallback
         )
       else { return nil }
-      return prepare(relevantText, baseURL: baseURL, relevantVersion: relevantVersion)
+      return prepare(relevantText, baseURL: baseURL, relevantVersion: nil)
     }
     guard let preparedMarkup else { return nil }
     return render(preparedMarkup)

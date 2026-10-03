@@ -173,6 +173,7 @@ final class ReleaseNotesCacheKey: NSObject {
     self.releaseNotes = app.releaseNotes?.cacheIdentifier ?? ""
     self.catalogRevision = ReleaseNotesSourceCatalog.revision
     self.stableIdentifier = [
+      "vendor-fallback-v2",
       identifier.absoluteString,
       localVersion,
       remoteVersion,
@@ -224,4 +225,9 @@ extension App.Update.ReleaseNotes {
       return "changelog:\(urlList):\(versionPrefix ?? ""):\(allowsLatestFallback):\(fallbackDigest)"
     }
   }
+}
+
+// Use installed-payload notes unless a newer update is actually available.
+extension App {
+  var releaseNotesVersion: Version { updateAvailable ? (remoteVersion ?? version) : version }
 }
