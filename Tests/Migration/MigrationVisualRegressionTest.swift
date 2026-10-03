@@ -128,6 +128,9 @@ final class MigrationVisualRegressionTest: XCTestCase {
       XCTAssertEqual(
         tableView.rect(ofRow: firstSectionRow).height, VisualMetrics.sectionHeaderHeight)
       XCTAssertEqual(tableView.rect(ofRow: firstAppRow).height, 60)
+      // Snapshot.apps retains input order; Notes sorts below the initial viewport.
+      tableView.scrollRowToVisible(firstAppRow)
+      try await Task.sleep(for: .milliseconds(100))
 
       for row in firstAppRow..<min(tableView.numberOfRows, firstAppRow + 5) {
         _ = tableView.view(atColumn: 0, row: row, makeIfNecessary: true)
@@ -254,10 +257,9 @@ private enum MigrationGalleryRenderer {
     .appendingPathComponent("macos-26", isDirectory: true)
 
   static func render(_ scenario: MigrationGalleryScenario) async throws -> NSBitmapImageRep {
-    let rootView = MigrationGalleryView(scenario: scenario).environment(\.displayScale, 2)
+    let rootView = MigrationGalleryView(scenario: scenario)
     let hostingView = NSHostingView(rootView: rootView)
     hostingView.frame = CGRect(origin: .zero, size: scenario.size)
-    hostingView.layer?.contentsScale = 2
 
     let window = NSWindow(
       contentRect: CGRect(origin: .zero, size: scenario.size),
@@ -560,8 +562,13 @@ private enum VisualRegressionError: LocalizedError {
 /// strict full-frame comparison without accepting any changed RGBA pixels.
 final class ProductionVisualParityTest: XCTestCase {
   @MainActor
-  func testDetailCapsulePaintsAndRoutesMouseActions() async throws {
+  func testDetailCapsulePaintsAndRoutesMouseActions() throws {
     try requireUITests()
+    try runApplicationTest { try await self.checkDetailCapsulePaintsAndRoutesMouseActions() }
+  }
+
+  @MainActor
+  private func checkDetailCapsulePaintsAndRoutesMouseActions() async throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent()
     let set =
@@ -623,15 +630,32 @@ final class ProductionVisualParityTest: XCTestCase {
             location: down.locationInWindow, modifierFlags: [], timestamp: down.timestamp + 0.05,
             windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1,
             pressure: 0))
-        window.sendEvent(down)
-        try await Task.sleep(for: .milliseconds(50))
-        let pressed = try await captureWindowBitmap(window)
+        // AppKit tracking runs outside this async task so we can capture the
+        // genuine pressed pixels before queuing the matching release.
+        let pressed = try await { @MainActor in
+          NSApp.postEvent(down, atStart: false)
+          defer { NSApp.postEvent(up, atStart: false) }
+          var pressed: NSBitmapImageRep?
+          for _ in 0..<40 {
+            try await Task.sleep(for: .milliseconds(25))
+            let bitmap = try await captureWindowBitmap(window)
+            let fill = try XCTUnwrap(bitmap.colorAt(x: 160, y: 58)?.usingColorSpace(.sRGB))
+            if fill.redComponent < center.redComponent - 0.1 {
+              pressed = bitmap
+              break
+            }
+          }
+          XCTAssertEqual(actions, 0, "The action must wait for mouse-up")
+          return try XCTUnwrap(pressed, "\(filename) must paint its pressed fill before release")
+        }()
         try XCTUnwrap(pressed.representation(using: .png, properties: [:])).write(
           to: output.appendingPathComponent("\(filename)-pressed.png"))
         let pressedFill = try XCTUnwrap(pressed.colorAt(x: 160, y: 58)?.usingColorSpace(.sRGB))
         XCTAssertLessThan(pressedFill.redComponent, center.redComponent - 0.1, filename)
-        window.sendEvent(up)
-        try await Task.sleep(for: .milliseconds(50))
+        for _ in 0..<40 {
+          if actions == 1 { break }
+          try await Task.sleep(for: .milliseconds(25))
+        }
         XCTAssertEqual(actions, 1, "\(filename) must invoke the displayed action exactly once")
       }
     }

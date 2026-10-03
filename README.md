@@ -65,6 +65,8 @@ window captures with each run's test-results artifact.
 
 Search, section headings, app rows, progress/error controls, and detail action buttons use SwiftUI. On macOS 27 with the macOS 27 SDK, `UpdatesScrollList` also owns selection, scrolling, pinned headings, context menus, swipe actions, and accessibility. macOS 26 and Xcode 26 builds retain `UpdatesTableBridge`, because SwiftUI's custom-scroll swipe container requires macOS 27. Release notes use WebKit inside a SwiftUI container. SwiftUI controls the main window's toolbar chrome; `WindowAccessor` only preserves helper-alert suppression choices on Cancel and Escape.
 
+On macOS 26, detail action capsules retain their native title, symbol, and pressed-state drawing to match the established visual references; SwiftUI owns their state and callbacks.
+
 Release-note preparation, display and new cache entries share immutable semantic text runs. Existing RTF caches and legacy vendor encodings are decoded through a narrow AppKit compatibility reader.
 
 Application-wide appearance, system icons, Finder actions and Dock badges retain narrow AppKit integrations. A window's `preferredColorScheme` does not apply the app's chosen appearance to every native panel. The SwiftUI sidebar preserves the original 60-point rows, 27-point headings, and content alignment. Its inactive selection uses a different system gray, accepted for this migration; subtle dark heading compositing and icon edge differences remain. Original full-window references remain intact, so strict pixel checks report these differences.
