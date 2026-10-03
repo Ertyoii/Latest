@@ -159,46 +159,23 @@ final class ResolvedReleaseNotesBox: NSObject {
 }
 
 final class ReleaseNotesCacheKey: NSObject {
-  private let identifier: App.Bundle.Identifier
-  private let localVersion: String
-  private let remoteVersion: String
-  private let releaseNotes: String
-  private let catalogRevision: UInt64
   let stableIdentifier: String
 
   init(app: App) {
-    self.identifier = app.identifier
-    self.localVersion = app.version.debugDescription
-    self.remoteVersion = app.remoteVersion?.debugDescription ?? ""
-    self.releaseNotes = app.releaseNotes?.cacheIdentifier ?? ""
-    self.catalogRevision = ReleaseNotesSourceCatalog.revision
-    self.stableIdentifier = [
-      identifier.absoluteString,
-      localVersion,
-      remoteVersion,
-      releaseNotes,
-      String(catalogRevision),
+    stableIdentifier = [
+      "vendor-fallback-v3",
+      app.identifier.absoluteString,
+      app.version.debugDescription,
+      app.remoteVersion?.debugDescription ?? "",
+      app.releaseNotes?.cacheIdentifier ?? "",
+      String(ReleaseNotesSourceCatalog.revision),
     ].joined(separator: "\u{1f}")
   }
 
-  override var hash: Int {
-    var hasher = Hasher()
-    hasher.combine(identifier)
-    hasher.combine(localVersion)
-    hasher.combine(remoteVersion)
-    hasher.combine(releaseNotes)
-    hasher.combine(catalogRevision)
-    return hasher.finalize()
-  }
+  override var hash: Int { stableIdentifier.hashValue }
 
   override func isEqual(_ object: Any?) -> Bool {
-    guard let other = object as? ReleaseNotesCacheKey else {
-      return false
-    }
-
-    return identifier == other.identifier && localVersion == other.localVersion
-      && remoteVersion == other.remoteVersion && releaseNotes == other.releaseNotes
-      && catalogRevision == other.catalogRevision
+    (object as? ReleaseNotesCacheKey)?.stableIdentifier == stableIdentifier
   }
 }
 
@@ -224,4 +201,9 @@ extension App.Update.ReleaseNotes {
       return "changelog:\(urlList):\(versionPrefix ?? ""):\(allowsLatestFallback):\(fallbackDigest)"
     }
   }
+}
+
+// Use installed-payload notes unless a newer update is actually available.
+extension App {
+  var releaseNotesVersion: Version { updateAvailable ? (remoteVersion ?? version) : version }
 }

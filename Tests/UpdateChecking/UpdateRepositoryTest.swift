@@ -13,6 +13,14 @@ import XCTest
 @testable import Latest
 
 final class UpdateRepositoryTest: XCTestCase {
+  func testGhosttyUsesItsOfficialStableSparkleFeed() {
+    XCTAssertEqual(
+      SparkleFeed.feedURL(
+        from: [:], bundleIdentifier: "com.mitchellh.ghostty",
+        bundleURL: URL(fileURLWithPath: "/Applications/Ghostty.app"))?.absoluteString,
+      "https://release.files.ghostty.org/appcast.xml")
+  }
+
   func testRenamedCodexAppDoesNotMatchConsumerChatGPTCask() {
     XCTAssertTrue(UpdateRepository.isLocallyExcludedFromHomebrewMatching("com.openai.codex"))
     XCTAssertFalse(UpdateRepository.isLocallyExcludedFromHomebrewMatching("com.openai.chat"))

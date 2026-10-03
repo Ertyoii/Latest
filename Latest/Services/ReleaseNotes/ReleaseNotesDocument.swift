@@ -109,6 +109,12 @@ enum ReleaseNotesDocument {
         inComment = !trimmed.contains("-->")
         return nil
       }
+      // GitHub release bodies can end with an HTML image-only download button.
+      if trimmed.range(
+        of: #"(?i)^<a\b[^>]*>\s*<img\b[^>]*>\s*</a>$"#, options: .regularExpression) != nil
+      {
+        return nil
+      }
       if trimmed.range(of: #"^</?details\b[^>]*>$"#, options: .regularExpression) != nil {
         return nil
       }

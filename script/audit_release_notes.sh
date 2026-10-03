@@ -93,7 +93,7 @@ fi
 if [[ "$RUN_INSTALLED_AUDIT" == true ]]; then
   only_testing+=("Latest Tests/ReleaseNotesAuditTest/testInstalledApplicationReleaseNotesAudit")
   swift_flags="-DLATEST_RELEASE_NOTES_AUDIT"
-  export LATEST_RELEASE_NOTES_AUDIT_REPORT="$AUDIT_REPORT"
+  export TEST_RUNNER_LATEST_RELEASE_NOTES_AUDIT_REPORT="$AUDIT_REPORT"
 fi
 
 xcode_args=(

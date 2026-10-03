@@ -26,33 +26,58 @@ final class HomebrewCheckerOperation: Sendable {
 
   func check() async throws -> App.Update {
     try Task.checkCancellation()
+    if bundle.bundleIdentifier == "md.obsidian" {
+      return try await ObsidianUpdate.check(bundle)
+    }
+    if bundle.bundleIdentifier == "com.zed-industries.delta" {
+      let source = AppDownloadSource.delta
+      let release = try await source.release()
+      return App.Update(
+        app: bundle, remoteVersion: release.version, minimumOSVersion: nil,
+        source: .directDownload, date: nil,
+        releaseNotes: .changelog(
+          urls: [URL(string: "https://delta.dev/docs/whats-in-the-latest")!],
+          versionPrefix: release.version.versionNumber, allowsLatestFallback: true,
+          fallbackHTML: nil),
+        updateAction: .builtIn { app in
+          UpdateQueue.shared.addOperation(AppDownloadUpdateOperation(app: app, source: source))
+        })
+    }
     guard let repository else {
       throw LatestError.updateInfoUnavailable
     }
 
-    let info = await repository.updateInfo(for: bundle)
-    try Task.checkCancellation()
-    guard let version = info.version else {
+    guard let entry = await repository.entry(for: bundle) else {
       throw LatestError.updateInfoUnavailable
     }
+    try Task.checkCancellation()
+    let version = entry.version
     let releaseNotes =
       ReleaseNotesSourceCatalog.releaseNotes(
-        for: info.bundle,
+        for: bundle,
         remoteVersion: version,
         allowNameFallback: false
-      ) ?? info.releaseNotes
+      ) ?? entry.releaseNotes
+    let downloadSource = AppDownloadSource.homebrewSource(for: bundle, token: entry.token)
+    let action: App.Update.Action
+    if let downloadSource {
+      action = .builtIn { app in
+        UpdateQueue.shared.addOperation(
+          AppDownloadUpdateOperation(app: app, source: downloadSource))
+      }
+    } else {
+      action = .external(label: bundle.name) { app in
+        Task { @MainActor in MacApplicationWorkspace.shared.openApplication(at: app.fileURL) }
+      }
+    }
     return App.Update(
-      app: info.bundle,
+      app: bundle,
       remoteVersion: version,
-      minimumOSVersion: info.minimumOSVersion,
-      source: .homebrew,
+      minimumOSVersion: entry.minimumOSVersion,
+      source: downloadSource == nil ? .homebrew : .directDownload,
       date: nil,
       releaseNotes: releaseNotes,
-      updateAction: .external(label: info.bundle.name) { app in
-        Task { @MainActor in
-          MacApplicationWorkspace.shared.openApplication(at: app.fileURL)
-        }
-      }
+      updateAction: action
     )
   }
 }

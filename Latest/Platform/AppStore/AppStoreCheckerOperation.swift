@@ -453,7 +453,8 @@ private struct AppStoreEntry: Decodable, Sendable {
     self.versionNumber = try container.decode(String.self, forKey: .versionNumber)
 
     let releaseNotes = try container.decodeIfPresent(String.self, forKey: .releaseNotes)
-    self.releaseNotesContent = releaseNotes?.replacingOccurrences(of: "\n", with: "<br>")
+    self.releaseNotesContent = releaseNotes?.replacingOccurrences(
+      of: #"(?i)<br\s*/?>"#, with: "\n", options: .regularExpression)
 
     if let date = try container.decodeIfPresent(String.self, forKey: .date) {
       self.date = Self.dateFormatter.date(from: date)

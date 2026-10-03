@@ -121,7 +121,10 @@ final class SparkleUpdateCheckerOperation: NSObject, @unchecked Sendable {
 
     var releaseNotes: App.Update.ReleaseNotes?
     let releaseNotesURL = appcastItem.releaseNotesURL ?? appcastItem.fullReleaseNotesURL
-    if let description = appcastItem.itemDescription {
+    // Surge publishes its changelog in this custom appcast element.
+    if let description = appcastItem.itemDescription
+      ?? appcastItem.propertiesDictionary["markdownDescription"] as? String
+    {
       if ReleaseNotesMarkup.isUsefulReleaseNotesText(
         description, relevantVersion: version.versionNumber)
       {

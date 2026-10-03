@@ -14,6 +14,28 @@ import XCTest
 
 final class ReleaseNotesProviderTest: XCTestCase {
   @MainActor
+  func testFailedUpdateCheckStillLoadsCachedVendorNotes() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cache = ReleaseNotesPersistentCache(directoryURL: directory)
+    let bundle = App.Bundle(
+      version: Version(versionNumber: "1.14.4", buildNumber: nil),
+      name: "Obsidian", bundleIdentifier: "md.obsidian",
+      fileURL: URL(fileURLWithPath: "/Applications/Obsidian.app"), source: .none)
+    let app = App(
+      bundle: bundle, update: .failure(LatestError.updateInfoUnavailable), isIgnored: false)
+    let notes = ResolvedReleaseNotes(
+      content: ReleaseNotesContent(string: "Fixed missing files in the vault explorer."),
+      quality: .genuine, provenance: .changelog)
+    await cache.store(
+      try XCTUnwrap(ReleaseNotesPersistentCache.payload(from: notes)),
+      forKey: ReleaseNotesCacheKey(app: app).stableIdentifier)
+    let result = try await releaseNotes(
+      for: app, provider: ReleaseNotesProvider(persistentCache: cache))
+    XCTAssertEqual(result.string, notes.content.string)
+  }
+
+  @MainActor
   func testGitHubSelectedReleaseKeepsBodyBeforeVersionedDownloadLink() async throws {
     let html = """
       <p>BetterDisplay 5 brings expanded display arrangement and advanced image controls.</p>
@@ -34,6 +56,34 @@ final class ReleaseNotesProviderTest: XCTestCase {
     for error in [FetchHTMLError.unusableText, .fetchFailed] {
       XCTAssertEqual(ReleaseNotesMessage(error: error), expected)
     }
+  }
+
+  @MainActor
+  func testGitHubMarkdownOmitsHTMLDownloadButtonsOutsideCodeFences() async throws {
+    let button =
+      #"<a href="https://example.com/BetterDisplay-v5.0.6.dmg"><img src="https://example.com/download.png" width="175" alt="Download for macOS"/></a>"#
+    let markdown = """
+      # BetterDisplay 5.0.6
+      - Fixed brightness syncing after wake.
+      - Improved display arrangement reliability.
+
+      ```html
+      \(button)
+      ```
+
+      \(button)
+      """
+    let result = await ReleaseNotesMarkup.githubAttributedStringByPreparingOffMain(
+      from: markdown, title: nil,
+      baseURL: URL(string: "https://github.com/waydabber/BetterDisplay/releases/tag/v5.0.6"),
+      relevantVersion: "5.0.6")
+    let text = try XCTUnwrap(result).get().string
+    XCTAssertTrue(text.contains("BetterDisplay 5.0.6"))
+    XCTAssertTrue(text.contains("Fixed brightness syncing after wake"))
+    XCTAssertTrue(text.contains("Improved display arrangement reliability"))
+    XCTAssertEqual(
+      text.components(separatedBy: button).count - 1, 1,
+      "Keep the literal code example, but omit the image-only footer")
   }
 
   @MainActor

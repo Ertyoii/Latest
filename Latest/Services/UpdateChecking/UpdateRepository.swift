@@ -70,54 +70,18 @@ final class UpdateRepository: Sendable {
 
   // MARK: - Accessors
 
-  /// Returns update information for the given bundle.
-  func updateInfo(
-    for bundle: App.Bundle,
-    handler:
-      @escaping @Sendable (
-        _ bundle: App.Bundle, _ version: Version?, _ minimumOSVersion: OperatingSystemVersion?,
-        _ releaseNotes: App.Update.ReleaseNotes?
-      ) -> Void
-  ) {
-    let checkApp: @Sendable () -> Void = { [weak self] in
-      guard let self, let entry = self.entry(for: bundle) else {
-        handler(bundle, nil, nil, nil)
-        return
+  /// Waits for the catalog once, then returns the matched entry without copying its metadata.
+  func entry(for bundle: App.Bundle) async -> Entry? {
+    await withCheckedContinuation { continuation in
+      let lookup: @Sendable () -> Void = { [self] in
+        continuation.resume(returning: state.withLock { $0.entryMatcher.entry(for: bundle) })
       }
-      return handler(bundle, entry.version, entry.minimumOSVersion, entry.releaseNotes)
-    }
-
-    /// Entries are still being fetched, add the request to the queue.
-    queue.async { [weak self] in
-      guard let self else { return }
-
-      let queued = self.state.withLock { state in
+      let queued = state.withLock { state in
         guard state.pendingRequests != nil else { return false }
-        state.pendingRequests?.append(checkApp)
+        state.pendingRequests?.append(lookup)
         return true
       }
-      if !queued { checkApp() }
-    }
-  }
-
-  struct UpdateInfo: Sendable {
-    let bundle: App.Bundle
-    let version: Version?
-    let minimumOSVersion: OperatingSystemVersion?
-    let releaseNotes: App.Update.ReleaseNotes?
-  }
-
-  func updateInfo(for bundle: App.Bundle) async -> UpdateInfo {
-    await withCheckedContinuation { continuation in
-      updateInfo(for: bundle) { bundle, version, minimumOSVersion, releaseNotes in
-        continuation.resume(
-          returning: UpdateInfo(
-            bundle: bundle,
-            version: version,
-            minimumOSVersion: minimumOSVersion,
-            releaseNotes: releaseNotes
-          ))
-      }
+      if !queued { lookup() }
     }
   }
 
@@ -144,11 +108,6 @@ final class UpdateRepository: Sendable {
       )
       completed.1?(self, isReusable)
     }
-  }
-
-  /// Returns a repository entry for the given name, if available.
-  private func entry(for bundle: App.Bundle) -> Entry? {
-    state.withLock { $0.entryMatcher.entry(for: bundle) }
   }
 
   static func preferredEntry(from possibleEntries: [Entry], for bundleIdentifier: String) -> Entry?

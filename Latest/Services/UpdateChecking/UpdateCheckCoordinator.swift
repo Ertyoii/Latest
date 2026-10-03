@@ -385,7 +385,7 @@ extension UpdateCheckCoordinator {
       switch bundle.source {
       case .sparkle, .appStore:
         supported.append(bundle)
-      case .homebrew, .none:
+      case .homebrew, .directDownload, .vendor, .none:
         fallback.append(bundle)
       }
     }

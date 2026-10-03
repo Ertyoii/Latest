@@ -22,7 +22,10 @@ enum ZoomReleaseNotesExtractor {
     }
     guard !lines.isEmpty else { return nil }
 
-    let candidates = ReleaseNotesMarkup.versionCandidates(from: version)
+    // The bundle includes the build in parentheses, while section headings do not.
+    let releaseVersion = version?.replacingOccurrences(
+      of: #"\s*\(\d+\)\s*$"#, with: "", options: .regularExpression)
+    let candidates = ReleaseNotesMarkup.versionCandidates(from: releaseVersion)
     guard !candidates.isEmpty else { return nil }
 
     let versionIndexes = lines.indices.filter { index in
@@ -49,7 +52,18 @@ enum ZoomReleaseNotesExtractor {
         }
       }
 
-      let selectedLines = Array(lines[startIndex..<endIndex])
+      var selectedLines = Array(lines[startIndex..<endIndex])
+      // Zoom can publish two patch trains on the same date. Choose the matching table.
+      if let fullVersionIndex = selectedLines.firstIndex(where: {
+        $0.hasPrefix("Full versions for ")
+          && ReleaseNotesMarkup.lineContainsVersionCandidate($0, candidates: candidates)
+      }) {
+        let nextVersion =
+          selectedLines.indices.dropFirst(fullVersionIndex + 1).first {
+            selectedLines[$0].hasPrefix("Full versions for ")
+          } ?? selectedLines.endIndex
+        selectedLines = [lines[startIndex]] + Array(selectedLines[fullVersionIndex..<nextVersion])
+      }
       let cleanedText = Self.cleanedZoomReleaseText(selectedLines)
       guard Self.looksLikeZoomReleaseBody(cleanedText),
         ReleaseNotesMarkup.isUsefulReleaseNotesText(cleanedText, relevantVersion: version)
@@ -85,7 +99,10 @@ enum ZoomReleaseNotesExtractor {
       let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !trimmedLine.isEmpty else { continue }
 
-      if trimmedLine.localizedCaseInsensitiveCompare("Full versions") == .orderedSame {
+      if trimmedLine.range(
+        of: #"^Full versions(?: for .+)?$"#,
+        options: [.regularExpression, .caseInsensitive]) != nil
+      {
         skippingFullVersions = true
         continue
       }

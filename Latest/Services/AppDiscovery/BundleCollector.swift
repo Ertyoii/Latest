@@ -105,9 +105,11 @@ enum BundleCollector {
       return nil
     }
 
-    return metadataCache.bundle(forAppAt: url, signature: signature) {
-      bundle(forAppAt: url, modificationDate: signature.bundleModificationDate)
+    let bundle = metadataCache.bundle(forAppAt: url, signature: signature) {
+      Self.bundle(forAppAt: url, modificationDate: signature.bundleModificationDate)
     }
+    // Payload updates can happen outside the bundle, so resolve them after the plist cache.
+    return bundle.map { InstalledAppVersion.resolve(for: $0) }
   }
 
   /// Built-in macOS apps are serviced by system updates and must not enter the
