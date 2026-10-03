@@ -19,7 +19,7 @@ case "${1:---help}" in
   setup)
     echo "Downloading $VM_IMAGE (about 70 GB compressed with Xcode)."
     "$TART" clone "$VM_IMAGE" "$VM_NAME"
-    "$TART" set "$VM_NAME" --cpu 4 --memory 8192 --display 1440x900
+    "$TART" set "$VM_NAME" --cpu 4 --memory 8192 --display 1440x900px --no-display-refit
     ;;
   run)
     mkdir -p "$ROOT_DIR/build/macos26-vm/shared"

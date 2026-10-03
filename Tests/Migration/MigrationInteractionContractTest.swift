@@ -646,7 +646,32 @@ final class MigrationInteractionContractTest: XCTestCase {
     table.selectRowIndexes(IndexSet(integer: 10), byExtendingSelection: false)
     table.scrollRowToVisible(10)
     window.makeFirstResponder(table)
-    try await Task.sleep(for: .milliseconds(100))
+    func isVerticallyVisible(_ index: Int) -> Bool {
+      let row = table.rect(ofRow: index)
+      let viewport = table.visibleRect
+      // Native source-list rows include horizontal margins outside the viewport.
+      return row.minY >= viewport.minY && row.maxY <= viewport.maxY
+    }
+    var previousViewport: NSRect?
+    var stableFrames = 0
+    for _ in 0..<100 {
+      window.layoutIfNeeded()
+      host.layoutSubtreeIfNeeded()
+      scroll.layoutSubtreeIfNeeded()
+      table.layoutSubtreeIfNeeded()
+      let viewport = table.visibleRect
+      let ready =
+        table.numberOfRows == viewModel.snapshot.entries.count
+        && viewport.height > 0 && isVerticallyVisible(10)
+      stableFrames = ready && viewport == previousViewport ? stableFrames + 1 : 0
+      if stableFrames >= 3 { break }
+      previousViewport = viewport
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    XCTAssertGreaterThanOrEqual(
+      stableFrames, 3,
+      "Initial viewport must settle before input: visible=\(table.visibleRect), frame=\(table.frame), clip=\(scroll.contentView.bounds)"
+    )
     func presentedY() -> CGFloat {
       scroll.contentView.layer?.presentation()?.bounds.minY ?? scroll.contentView.bounds.minY
     }
@@ -663,7 +688,10 @@ final class MigrationInteractionContractTest: XCTestCase {
     try press(125)
     XCTAssertEqual(table.selectedRow, 11, "Selection must respond immediately.")
     XCTAssertTrue(viewModel.isKeyboardSelection, "Held arrows must coalesce release-note requests.")
-    XCTAssertTrue(table.visibleRect.contains(table.rect(ofRow: 11)))
+    XCTAssertTrue(
+      isVerticallyVisible(11),
+      "Arrow must immediately reveal row=\(table.rect(ofRow: 11)), visible=\(table.visibleRect), frame=\(table.frame), clip=\(scroll.contentView.bounds)"
+    )
     var positions = [presentedY()]
     var largestOverlap: CGFloat = 0
     func paintedRow(_ index: Int) -> NSRect {
@@ -689,7 +717,7 @@ final class MigrationInteractionContractTest: XCTestCase {
       zip(positions, positions.dropFirst()).allSatisfy { $1 >= $0 - 0.5 },
       "Held Down must not restore an obsolete scroll position.")
     XCTAssertTrue(
-      table.visibleRect.contains(table.rect(ofRow: 12)), "The final selected row must be visible.")
+      isVerticallyVisible(12), "The final selected row must be visible.")
 
     // Reversing toward a row already in view stops the pending forward scroll.
     try press(125)

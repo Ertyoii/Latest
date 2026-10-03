@@ -161,7 +161,9 @@ struct SidebarInputFixture {
       if window.isKeyWindow { return }
       try await Task.sleep(for: .milliseconds(20))
     } while ContinuousClock.now < deadline
-    XCTFail("UI test window could not acquire focus. Run --ui when the desktop is available.")
+    XCTFail(
+      "UI test window could not acquire focus: title=\(window.title), class=\(type(of: window)), visible=\(window.isVisible), canBecomeKey=\(window.canBecomeKey), onActiveSpace=\(window.isOnActiveSpace), active=\(NSApp.isActive), policy=\(NSApp.activationPolicy().rawValue). Run --ui when the desktop is available."
+    )
     throw CocoaError(.userCancelled)
   }
 
