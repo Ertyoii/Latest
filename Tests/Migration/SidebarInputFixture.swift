@@ -63,7 +63,7 @@ struct SidebarInputFixture {
 
   func clickProgress(for app: Latest.App) async throws {
     let frame = try contentFrame(for: app)
-    let location = CGPoint(x: frame.minX + 264, y: frame.midY)
+    let location = CGPoint(x: frame.minX + 264, y: frame.midY - 10)
     let down = try XCTUnwrap(
       NSEvent.mouseEvent(
         with: .leftMouseDown, location: location, modifierFlags: [],
