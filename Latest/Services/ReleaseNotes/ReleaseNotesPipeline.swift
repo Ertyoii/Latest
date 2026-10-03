@@ -131,8 +131,11 @@ struct ReleaseNotesCandidateScorer: Sendable {
 
     if !candidate.declaredAppIdentifiers.isEmpty {
       let expected = Self.normalizedIdentifier(context.bundleIdentifier)
-      let identifiers = Set(candidate.declaredAppIdentifiers.map(Self.normalizedIdentifier))
-      guard identifiers.contains(expected) else {
+      guard
+        candidate.declaredAppIdentifiers.contains(where: {
+          Self.normalizedIdentifier($0) == expected
+        })
+      else {
         throw ReleaseNotesCandidateRejection.wrongApplication
       }
     }
@@ -169,14 +172,6 @@ struct ReleaseNotesCandidateScorer: Sendable {
   }
 }
 
-struct ParsedReleaseNotes: Sendable {
-  let markup: String
-  let baseURL: URL?
-  let relevantVersion: String?
-  let provenance: ReleaseNotesProvenance
-  let quality: ReleaseNotesQuality
-}
-
 struct ScoredReleaseNotesCandidate: Sendable {
   let candidate: ReleaseNotesCandidate
   let quality: ReleaseNotesQuality
@@ -191,78 +186,36 @@ struct ReleaseNotesResolver: Sendable {
     for context: ReleaseNotesContext,
     scorer: ReleaseNotesCandidateScorer
   ) throws -> ScoredReleaseNotesCandidate {
-    var accepted = [ScoredReleaseNotesCandidate]()
+    var best: ScoredReleaseNotesCandidate?
     var firstRejection: Error?
 
     for candidate in candidates {
       do {
-        accepted.append(
-          ScoredReleaseNotesCandidate(
-            candidate: candidate,
-            quality: try scorer.quality(of: candidate, for: context)
-          ))
+        let quality = try scorer.quality(of: candidate, for: context)
+        if let best, best.quality >= quality { continue }
+        best = ScoredReleaseNotesCandidate(candidate: candidate, quality: quality)
       } catch {
         firstRejection = firstRejection ?? error
       }
     }
 
-    guard let best = accepted.max(by: { $0.quality < $1.quality }) else {
+    guard let best else {
       throw firstRejection ?? ReleaseNotesCandidateRejection.empty
     }
     return best
   }
 }
 
-struct ReleaseNotesParser: Sendable {
-  func parse(
-    _ candidate: ReleaseNotesCandidate,
-    context: ReleaseNotesContext,
-    quality: ReleaseNotesQuality
-  ) -> ParsedReleaseNotes {
-    ParsedReleaseNotes(
-      markup: candidate.markup,
-      baseURL: candidate.baseURL,
-      relevantVersion: context.remoteVersion,
-      provenance: candidate.provenance,
-      quality: quality
-    )
-  }
-}
-
-struct ReleaseNotesRenderer: Sendable {
-  @MainActor
-  func render(_ parsed: ParsedReleaseNotes) async -> Result<ResolvedReleaseNotes, Error> {
-    let rendered = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
-      from: parsed.markup,
-      baseURL: parsed.baseURL,
-      relevantVersion: parsed.relevantVersion
-    )
-    return rendered.map {
-      ResolvedReleaseNotes(
-        content: $0,
-        quality: parsed.quality,
-        provenance: parsed.provenance
-      )
-    }
-  }
-}
-
 struct ReleaseNotesPipeline: Sendable {
   private let resolver: ReleaseNotesResolver
   private let scorer: ReleaseNotesCandidateScorer
-  private let parser: ReleaseNotesParser
-  private let renderer: ReleaseNotesRenderer
 
   init(
     resolver: ReleaseNotesResolver = ReleaseNotesResolver(),
-    scorer: ReleaseNotesCandidateScorer = ReleaseNotesCandidateScorer(),
-    parser: ReleaseNotesParser = ReleaseNotesParser(),
-    renderer: ReleaseNotesRenderer = ReleaseNotesRenderer()
+    scorer: ReleaseNotesCandidateScorer = ReleaseNotesCandidateScorer()
   ) {
     self.resolver = resolver
     self.scorer = scorer
-    self.parser = parser
-    self.renderer = renderer
   }
 
   func resolve(
@@ -278,8 +231,15 @@ struct ReleaseNotesPipeline: Sendable {
   ) async -> Result<ResolvedReleaseNotes, Error> {
     do {
       let resolved = try resolver.resolve(candidates, for: context, scorer: scorer)
-      let parsed = parser.parse(resolved.candidate, context: context, quality: resolved.quality)
-      return await renderer.render(parsed)
+      let rendered = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
+        from: resolved.candidate.markup,
+        baseURL: resolved.candidate.baseURL,
+        relevantVersion: context.remoteVersion
+      )
+      return rendered.map {
+        ResolvedReleaseNotes(
+          content: $0, quality: resolved.quality, provenance: resolved.candidate.provenance)
+      }
     } catch {
       return .failure(error)
     }

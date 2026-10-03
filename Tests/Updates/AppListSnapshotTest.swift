@@ -189,6 +189,16 @@ final class AppListSnapshotTest: XCTestCase {
     }
   }
 
+  func testTableDiffReloadsChangedVersionTextWithEquivalentUpdatePrecedence() {
+    let original = makeApp(name: "Alpha", versionNumber: "1.0")
+    let refreshed = makeApp(name: "Alpha", versionNumber: "1.0.0", appURL: original.fileURL)
+    let diff = TableViewSnapshotDiff(from: [.app(original)], to: [.app(refreshed)])
+    guard case .reload(let rows) = diff.change else {
+      return XCTFail("Changed displayed version text must reload the row")
+    }
+    XCTAssertEqual(rows, IndexSet(integer: 0))
+  }
+
   private func section(at index: Int, in snapshot: AppListSnapshot) -> AppListSnapshot.Section? {
     guard case .section(let section) = snapshot.entries[index] else { return nil }
     return section

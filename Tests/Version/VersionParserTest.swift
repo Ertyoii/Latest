@@ -57,4 +57,14 @@ final class VersionParserTest: XCTestCase {
     XCTAssertEqual(
       VersionParser.parse(combinedVersionNumber: ""), Version(versionNumber: nil, buildNumber: nil))
   }
+
+  func testParsingPreservesUnicodeAcrossFoundationRegexRanges() {
+    for version in ["1.2🚀", "1.2e\u{301}", "版本1.2🚀"] {
+      XCTAssertEqual(VersionParser.parse(versionNumber: "v" + version), version)
+      XCTAssertEqual(VersionParser.parse(buildNumber: "IU-" + version), version)
+      let combined = VersionParser.parse(combinedVersionNumber: version + ",42🚀")
+      XCTAssertEqual(combined.versionNumber, version)
+      XCTAssertEqual(combined.buildNumber, "42🚀")
+    }
+  }
 }

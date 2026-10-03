@@ -195,7 +195,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
     benchmark("version_comparison_repeated_parse", iterations: 30) {
       var checksum = 0
       for pair in versionPairs {
-        if pair.local < pair.remote {
+        if pair.local.comparisonForUpdate(to: pair.remote) == .older {
           checksum &+= 1
         }
       }

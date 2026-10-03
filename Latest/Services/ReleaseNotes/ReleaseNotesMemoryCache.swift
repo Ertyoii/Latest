@@ -64,33 +64,10 @@ actor ReleaseNotesGitHubCache {
 actor ReleaseNotesHTMLCache {
 
   private struct Entry {
-    let value: Value
+    let value: Result<String, FetchHTMLError>
     let expiresAt: Date
     var lastAccessedAt: Date
     let cost: Int
-  }
-
-  private enum Value {
-    case success(String)
-    case failure(FetchHTMLError)
-
-    func get() throws -> String {
-      switch self {
-      case .success(let html):
-        return html
-      case .failure(let error):
-        throw error
-      }
-    }
-
-    var cost: Int {
-      switch self {
-      case .success(let html):
-        return html.utf8.count
-      case .failure:
-        return 0
-      }
-    }
   }
 
   private var entries = [URL: Entry]()
@@ -105,12 +82,12 @@ actor ReleaseNotesHTMLCache {
     -> String
   {
     let now = Date()
-    pruneExpiredEntries(at: now)
-    if var entry = entries[url] {
+    if var entry = entries[url], entry.expiresAt > now {
       entry.lastAccessedAt = now
       entries[url] = entry
       return try entry.value.get()
     }
+    removeEntry(for: url)
 
     if let task = inFlightTasks[url] {
       return try await task.value
@@ -120,29 +97,31 @@ actor ReleaseNotesHTMLCache {
       try await loader()
     }
     inFlightTasks[url] = task
+    defer { inFlightTasks[url] = nil }
 
     do {
       let html = try await task.value
       store(.success(html), for: url, lifetime: successfulResponseLifetime)
-      inFlightTasks[url] = nil
       return html
+    } catch  where error is CancellationError || (error as? URLError)?.code == .cancelled {
+      // Cancellation says nothing about the resource; a later request must be able to retry.
+      throw error
     } catch FetchHTMLError.unusableText {
       store(.failure(.unusableText), for: url, lifetime: failedResponseLifetime)
-      inFlightTasks[url] = nil
       throw FetchHTMLError.unusableText
     } catch {
       store(.failure(.fetchFailed), for: url, lifetime: failedResponseLifetime)
-      inFlightTasks[url] = nil
       throw error
     }
   }
 
-  private func store(_ value: Value, for url: URL, lifetime: TimeInterval) {
+  private func store(_ value: Result<String, FetchHTMLError>, for url: URL, lifetime: TimeInterval)
+  {
     let now = Date()
     pruneExpiredEntries(at: now)
     removeEntry(for: url)
 
-    let cost = value.cost
+    let cost = (try? value.get())?.utf8.count ?? 0
     guard cost <= maximumStoredHTMLBytes else { return }
     entries[url] = Entry(
       value: value,

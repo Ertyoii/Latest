@@ -12,6 +12,20 @@ import XCTest
 
 class VersionSanitizationTest: XCTestCase {
 
+  func testUpdateRetainsOriginalVersionWhenSanitizedPrecedenceIsUnchanged() {
+    let bundle = App.Bundle(
+      version: Version(versionNumber: "1.2.3", buildNumber: "1.2.3"),
+      name: "Example", bundleIdentifier: "test.version",
+      fileURL: URL(fileURLWithPath: "/tmp/Version.app"), source: .sparkle,
+      modificationDate: .distantPast)
+    let update = App.Update(
+      app: bundle, remoteVersion: Version(versionNumber: "1.2.3.4", buildNumber: "abc"),
+      minimumOSVersion: nil, source: .sparkle, date: nil, releaseNotes: nil,
+      updateAction: .builtIn { _ in })
+    XCTAssertTrue(update.sanitized(for: bundle) === update)
+    XCTAssertEqual(update.remoteVersion.versionNumber, "1.2.3.4")
+  }
+
   func testNoSanitization() {
     let appVersion = Version(versionNumber: "1.2", buildNumber: "40")
     let remoteVersion = Version(versionNumber: "3.2", buildNumber: "ABC")

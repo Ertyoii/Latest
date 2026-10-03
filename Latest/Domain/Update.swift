@@ -52,7 +52,7 @@ extension App {
 
     /// Whether an update is available for the given app.
     var updateAvailable: Bool {
-      var updateAvailable = app.version < remoteVersion
+      var updateAvailable = app.version.comparisonForUpdate(to: remoteVersion) == .older
 
       if updateAvailable, let minimumOSVersion {
         updateAvailable = ProcessInfo.processInfo.isOperatingSystemAtLeast(minimumOSVersion)
@@ -76,7 +76,11 @@ extension App {
     /// Returns a sanitized update for the given app bundle.
     func sanitized(for bundle: App.Bundle) -> Update {
       let version = remoteVersion.sanitize(with: bundle.version)
-      guard version != remoteVersion || app !== bundle else { return self }
+      // Keep the vendor's original representation when normalization preserves precedence.
+      guard version.comparisonForUpdate(to: remoteVersion) != .samePrecedence || app !== bundle
+      else {
+        return self
+      }
 
       return Update(
         app: bundle, remoteVersion: version, minimumOSVersion: minimumOSVersion, source: source,

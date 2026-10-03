@@ -14,6 +14,126 @@ import XCTest
 @testable import Latest
 
 @MainActor
+final class UpdateCheckDiscoveryTest: XCTestCase {
+  func testUnchangedDiscoveryKeepsPendingChecks() async {
+    let started = expectation(description: "Both checks started")
+    started.expectedFulfillmentCount = 2
+    let checks = SuspendedDiscoveryChecks { _ in started.fulfill() }
+    let coordinator = UpdateCheckCoordinator(
+      check: { bundle, _ in try await checks.check(bundle) },
+      repositoryProvider: {
+        XCTFail("Sparkle-only scans must not load the Homebrew catalog")
+        return nil
+      })
+    let progress = DiscoveryCheckProgress(finished: expectation(description: "Scan finished"))
+    coordinator.progressDelegate = progress
+    let bundles = [bundle("A"), bundle("B")]
+
+    coordinator.updateDiscoveredBundles(bundles)
+    await fulfillment(of: [started], timeout: 2)
+    coordinator.updateDiscoveredBundles([bundle("B"), bundle("A")])
+    await checks.completeAll()
+    await fulfillment(of: [progress.finished], timeout: 2)
+
+    XCTAssertEqual(
+      Set(coordinator.appProvider.updatableApps.map(\.identifier)), Set(bundles.map(\.identifier)))
+    XCTAssertEqual(progress.checked.count, 2)
+    XCTAssertEqual(progress.batchSizes, [2])
+  }
+
+  func testChangedDiscoveryRechecksRetainedAppsAndRejectsRemovedResults() async {
+    let initialStarted = expectation(description: "Initial checks started")
+    initialStarted.expectedFulfillmentCount = 3
+    let replacementStarted = expectation(description: "Changed and retained apps rechecked")
+    replacementStarted.expectedFulfillmentCount = 2
+    let startedCount = Mutex(0)
+    let checks = SuspendedDiscoveryChecks { _ in
+      let count = startedCount.withLock {
+        $0 += 1
+        return $0
+      }
+      (count <= 3 ? initialStarted : replacementStarted).fulfill()
+    }
+    let coordinator = UpdateCheckCoordinator(
+      check: { bundle, _ in try await checks.check(bundle) }, repositoryProvider: { nil })
+    let progress = DiscoveryCheckProgress(
+      finished: expectation(description: "Replacement scan finished"))
+    coordinator.progressDelegate = progress
+
+    coordinator.updateDiscoveredBundles([bundle("A"), bundle("B"), bundle("Removed")])
+    await fulfillment(of: [initialStarted], timeout: 2)
+    let replacement = [bundle("A", version: "2"), bundle("B")]
+    coordinator.updateDiscoveredBundles(replacement)
+    await fulfillment(of: [replacementStarted], timeout: 2)
+    await checks.completeAll()
+    await fulfillment(of: [progress.finished], timeout: 2)
+
+    let apps = coordinator.appProvider.updatableApps
+    XCTAssertEqual(Set(apps.map(\.identifier)), Set(replacement.map(\.identifier)))
+    XCTAssertEqual(apps.first { $0.name == "A" }?.version.versionNumber, "2")
+    XCTAssertEqual(progress.batchSizes, [3, 2])
+    XCTAssertEqual(progress.checked.count, 2)
+  }
+
+  private func bundle(_ name: String, version: String = "1") -> App.Bundle {
+    App.Bundle(
+      version: Version(versionNumber: version, buildNumber: nil), name: name,
+      bundleIdentifier: "test.discovery.\(name)", fileURL: URL(fileURLWithPath: "/tmp/\(name).app"),
+      source: .sparkle, modificationDate: .distantPast)
+  }
+}
+
+private actor SuspendedDiscoveryChecks {
+  private let started: @Sendable (App.Bundle) -> Void
+  private var pending = [(App.Bundle, CheckedContinuation<App.Update, Error>)]()
+
+  init(started: @escaping @Sendable (App.Bundle) -> Void) {
+    self.started = started
+  }
+
+  func check(_ bundle: App.Bundle) async throws -> App.Update {
+    try await withCheckedThrowingContinuation { continuation in
+      pending.append((bundle, continuation))
+      started(bundle)
+    }
+  }
+
+  func completeAll() {
+    for (bundle, continuation) in pending {
+      continuation.resume(
+        returning: App.Update(
+          app: bundle, remoteVersion: Version(versionNumber: "3", buildNumber: nil),
+          minimumOSVersion: nil, source: .sparkle, date: nil, releaseNotes: nil,
+          updateAction: .builtIn { _ in }))
+    }
+    pending.removeAll()
+  }
+}
+
+@MainActor
+private final class DiscoveryCheckProgress: UpdateCheckProgressReporting {
+  let finished: XCTestExpectation
+  var checked = [App]()
+  var batchSizes = [Int]()
+
+  init(finished: XCTestExpectation) { self.finished = finished }
+  func updateCheckerDidStartScanningForApps(_ updateChecker: UpdateCheckCoordinator) {}
+  func updateChecker(
+    _ updateChecker: UpdateCheckCoordinator, didStartCheckingApps count: Int, generation: Int
+  ) {
+    batchSizes.append(count)
+  }
+  func updateChecker(_ updateChecker: UpdateCheckCoordinator, didCheckApp app: App) {
+    checked.append(app)
+  }
+  func updateCheckerDidFinishCheckingForUpdates(
+    _ updateChecker: UpdateCheckCoordinator, generation: Int
+  ) {
+    finished.fulfill()
+  }
+}
+
+@MainActor
 final class UpdateQueueTest: XCTestCase {
 
   func testDuplicateUpdateOperationIsNotQueued() {

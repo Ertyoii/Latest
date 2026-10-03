@@ -162,7 +162,7 @@ class AppLibrary: @unchecked Sendable {
 
   /// The store handling application directories.
   private lazy var directoryStore = {
-    AppDirectoryStore(updateHandler: self.startQuery)
+    AppDirectoryStore { [weak self] in self?.startQuery() }
   }()
 
 }

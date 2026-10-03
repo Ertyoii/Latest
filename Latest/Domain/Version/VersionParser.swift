@@ -78,22 +78,17 @@ enum VersionParser {
   }
 
   private static func parse(_ versionString: String, using patterns: [Pattern]) -> Version {
-    patterns.reduce(Version(versionNumber: nil, buildNumber: nil)) { partialResult, pattern in
-      if partialResult.versionNumber != nil || partialResult.buildNumber != nil {
-        return partialResult
-      }
-
+    let range = NSRange(versionString.startIndex..<versionString.endIndex, in: versionString)
+    for pattern in patterns {
       guard
-        let match = pattern.regex.firstMatch(
-          in: versionString, range: .init(location: 0, length: versionString.count))
-      else {
-        return partialResult
-      }
+        let match = pattern.regex.firstMatch(in: versionString, range: range)
+      else { continue }
 
       return Version(
         versionNumber: pattern.string(for: .versionNumber, in: versionString, match: match),
         buildNumber: pattern.string(for: .buildNumber, in: versionString, match: match))
     }
+    return Version(versionNumber: nil, buildNumber: nil)
   }
 
 }

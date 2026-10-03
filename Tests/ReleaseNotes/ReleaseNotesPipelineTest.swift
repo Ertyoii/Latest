@@ -14,6 +14,87 @@ import XCTest
 
 final class ReleaseNotesPipelineTest: XCTestCase {
 
+  func testHTMLCacheDoesNotCacheCancellation() async throws {
+    let cancellations: [any Error] = [CancellationError(), URLError(.cancelled)]
+    for cancellation in cancellations {
+      let cache = ReleaseNotesHTMLCache()
+      let url = URL(string: "https://example.com/cancelled")!
+      await XCTAssertThrowsErrorAsync(try await cache.html(for: url) { throw cancellation }) {
+        XCTAssertTrue($0 is CancellationError || ($0 as? URLError)?.code == .cancelled)
+      }
+      let recovered = try await cache.html(for: url) { "Recovered release notes" }
+      XCTAssertEqual(recovered, "Recovered release notes")
+    }
+  }
+
+  func testPipelinePreservesSelectedSourceAndRequestedVersion() async throws {
+    let context = ReleaseNotesContext(
+      appName: "Example", bundleIdentifier: "com.example.App", localVersion: "1.0",
+      remoteVersion: "2.0")
+    let candidate = ReleaseNotesCandidate(
+      markup: """
+        # 2.0
+        - Fixed crashes when opening large documents and improved editor performance.
+        # 1.0
+        - Added an older feature that belongs to the previous release.
+        """, baseURL: nil, provenance: .changelog)
+    let resolved = try await ReleaseNotesPipeline().resolve(candidate, for: context).get()
+    XCTAssertEqual(resolved.provenance, .changelog)
+    XCTAssertEqual(resolved.quality, .genuine)
+    XCTAssertTrue(resolved.content.string.contains("Fixed crashes"))
+    XCTAssertFalse(resolved.content.string.contains("older feature"))
+  }
+
+  func testHTMLCacheReusesSuccessAndUnusableTextFailure() async throws {
+    let cache = ReleaseNotesHTMLCache()
+    let url = URL(string: "https://example.com/success")!
+    _ = try await cache.html(for: url) { "Cached release notes" }
+    let cached = try await cache.html(for: url) {
+      XCTFail("A cache hit must not fetch again")
+      return "Unexpected replacement"
+    }
+    XCTAssertEqual(cached, "Cached release notes")
+
+    let unusableURL = URL(string: "https://example.com/unusable")!
+    await XCTAssertThrowsErrorAsync(
+      try await cache.html(for: unusableURL) { throw FetchHTMLError.unusableText }
+    ) { XCTAssertEqual($0 as? FetchHTMLError, .unusableText) }
+    await XCTAssertThrowsErrorAsync(
+      try await cache.html(for: unusableURL) {
+        XCTFail("Unusable responses should retain their negative cache")
+        return "Unexpected replacement"
+      }
+    ) { XCTAssertEqual($0 as? FetchHTMLError, .unusableText) }
+  }
+
+  func testResolverPreservesFirstCandidateOnTiesAndFirstRejection() throws {
+    let context = ReleaseNotesContext(
+      appName: "Example", bundleIdentifier: "com.example.App", localVersion: "1", remoteVersion: "2"
+    )
+    let first = ReleaseNotesCandidate(
+      markup: "First release notes", baseURL: nil, provenance: .changelog)
+    let second = ReleaseNotesCandidate(
+      markup: "Second release notes", baseURL: nil, provenance: .githubRelease)
+    let resolver = ReleaseNotesResolver()
+    let scorer = ReleaseNotesCandidateScorer()
+    let resolved = try resolver.resolve([first, second], for: context, scorer: scorer)
+    XCTAssertEqual(resolved.candidate.markup, first.markup)
+
+    let empty = ReleaseNotesCandidate(markup: "", baseURL: nil, provenance: .changelog)
+    let wrongApp = ReleaseNotesCandidate(
+      markup: "Wrong application", baseURL: nil, provenance: .changelog,
+      declaredAppIdentifiers: ["com.example.Other"])
+    XCTAssertThrowsError(try resolver.resolve([empty, wrongApp], for: context, scorer: scorer)) {
+      XCTAssertEqual($0 as? ReleaseNotesCandidateRejection, .empty)
+    }
+    XCTAssertThrowsError(try resolver.resolve([wrongApp, empty], for: context, scorer: scorer)) {
+      XCTAssertEqual($0 as? ReleaseNotesCandidateRejection, .wrongApplication)
+    }
+    XCTAssertThrowsError(try resolver.resolve([], for: context, scorer: scorer)) {
+      XCTAssertEqual($0 as? ReleaseNotesCandidateRejection, .empty)
+    }
+  }
+
   func testCurrentTelegramRegressionSelectsExactDesktopVersion() throws {
     let changelog = """
       7.0.3

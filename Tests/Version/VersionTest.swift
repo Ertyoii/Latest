@@ -53,6 +53,45 @@ class VersionTest: XCTestCase {
     XCTAssertEqual(Set(emptyVersions).count, 1)
   }
 
+  func testVersionIdentityDistinguishesDisplayedVersionsAndBuilds() {
+    let versions = [
+      Version(versionNumber: "1.0", buildNumber: nil),
+      Version(versionNumber: "1.0.0", buildNumber: nil),
+      Version(versionNumber: "1.0", buildNumber: "10"),
+      Version(versionNumber: "1.0", buildNumber: "20"),
+      Version(versionNumber: "2.0", buildNumber: "10"),
+    ]
+    for (left, lhs) in versions.enumerated() {
+      for (right, rhs) in versions.enumerated() {
+        XCTAssertEqual(lhs == rhs, left == right, "\(lhs) / \(rhs)")
+      }
+    }
+    let copies = versions.map {
+      Version(versionNumber: $0.versionNumber, buildNumber: $0.buildNumber)
+    }
+    XCTAssertEqual(Set(versions + copies).count, versions.count)
+    for (version, copy) in zip(versions, copies) {
+      XCTAssertEqual(version, copy)
+      XCTAssertEqual(version.hashValue, copy.hashValue)
+    }
+  }
+
+  func testUpdateAvailabilityPreservesInstalledToRemoteComparisonDirection() {
+    func update(local: Version, remote: Version) -> App.Update {
+      let bundle = App.Bundle(
+        version: local, name: "Example", bundleIdentifier: "test.version",
+        fileURL: URL(fileURLWithPath: "/tmp/Version.app"), source: .sparkle,
+        modificationDate: .distantPast)
+      return App.Update(
+        app: bundle, remoteVersion: remote, minimumOSVersion: nil, source: .sparkle,
+        date: nil, releaseNotes: nil, updateAction: .builtIn { _ in })
+    }
+    let first = Version(versionNumber: "1", buildNumber: "1")
+    let second = Version(versionNumber: "2", buildNumber: "1")
+    XCTAssertTrue(update(local: first, remote: second).updateAvailable)
+    XCTAssertFalse(update(local: second, remote: first).updateAvailable)
+  }
+
   // MARK: - Right Comparison
 
   func testRightComparison() {
@@ -217,30 +256,15 @@ class VersionTest: XCTestCase {
   // MARK: - Helper Methods
 
   private func older(_ v1: Version, _ v2: Version) {
-    XCTAssertTrue(v1 < v2)
-    XCTAssertTrue(v1 <= v2)
-    XCTAssertTrue(v1 != v2)
-    XCTAssertFalse(v1 == v2)
-    XCTAssertFalse(v1 >= v2)
-    XCTAssertFalse(v1 > v2)
+    XCTAssertEqual(v1.comparisonForUpdate(to: v2), .older)
   }
 
   private func equal(_ v1: Version, _ v2: Version) {
-    XCTAssertTrue(v1 >= v2)
-    XCTAssertTrue(v1 <= v2)
-    XCTAssertTrue(v1 == v2)
-    XCTAssertFalse(v1 != v2)
-    XCTAssertFalse(v1 < v2)
-    XCTAssertFalse(v1 > v2)
+    XCTAssertEqual(v1.comparisonForUpdate(to: v2), .samePrecedence)
   }
 
   private func newer(_ v1: Version, _ v2: Version) {
-    XCTAssertTrue(v1 > v2)
-    XCTAssertTrue(v1 >= v2)
-    XCTAssertTrue(v1 != v2)
-    XCTAssertFalse(v1 == v2)
-    XCTAssertFalse(v1 <= v2)
-    XCTAssertFalse(v1 < v2)
+    XCTAssertEqual(v1.comparisonForUpdate(to: v2), .newer)
   }
 
 }

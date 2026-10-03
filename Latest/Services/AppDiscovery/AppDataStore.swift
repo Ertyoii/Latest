@@ -47,6 +47,24 @@ final class AppDataStore: AppProviding, Sendable {
     }
   }
 
+  /// Discovery identity alone is insufficient: an existing path may have new metadata.
+  func containsSameBundles(as bundles: Set<App.Bundle>) -> Bool {
+    state.withLock { state in
+      state.appsByIdentifier.count == bundles.count
+        && bundles.allSatisfy { bundle in
+          guard let current = state.appsByIdentifier[bundle.identifier]?.bundle else {
+            return false
+          }
+          return current.version.versionNumber == bundle.version.versionNumber
+            && current.version.buildNumber == bundle.version.buildNumber
+            && current.name == bundle.name
+            && current.bundleIdentifier == bundle.bundleIdentifier
+            && current.source == bundle.source
+            && current.modificationDate == bundle.modificationDate
+        }
+    }
+  }
+
   func set(appBundles: Set<App.Bundle>) -> Set<App> {
     let added = state.withLock { state in
       var added = Set<App>()

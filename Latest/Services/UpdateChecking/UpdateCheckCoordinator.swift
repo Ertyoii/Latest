@@ -55,6 +55,7 @@ protocol UpdateCheckCoordinating: AnyObject {
 /// UpdateCheckCoordinator handles the logic for checking for updates.
 /// Update sources are registered in `availableCheckers`.
 class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
+  typealias Check = @Sendable (App.Bundle, UpdateRepository?) async throws -> App.Update
 
   /// The object holding the apps found by the checker.
   var appProvider: AppProviding {
@@ -67,8 +68,15 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
   static let shared = UpdateCheckCoordinator()
 
   private var updateCompletionObserver: NSObjectProtocol?
+  private let check: Check
+  private let repositoryProvider: @Sendable () -> UpdateRepository?
 
-  init() {
+  init(
+    check: @escaping Check = UpdateCheckCoordinator.check,
+    repositoryProvider: @escaping @Sendable () -> UpdateRepository? = UpdateRepository.newRepository
+  ) {
+    self.check = check
+    self.repositoryProvider = repositoryProvider
     self.updateCompletionObserver = NotificationCenter.default.addObserver(
       forName: .latestUpdateOperationDidFinish,
       object: nil,
@@ -94,12 +102,25 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
 
   /// The library containing all bundles loaded from disk.
   private lazy var library: AppLibrary = {
-    return AppLibrary { bundles in
-      // Set new bundles and check for updates
-      let newApps = self.dataStore.set(appBundles: Set(bundles))
-      self.runUpdateCheck(on: newApps.map({ $0.bundle }))
+    return AppLibrary { [weak self] bundles in
+      self?.updateDiscoveredBundles(bundles)
     }
   }()
+
+  /// Reconciles a complete discovery snapshot and schedules its update checks.
+  func updateDiscoveredBundles(_ bundles: [App.Bundle], forceRefresh: Bool = false) {
+    updateCheckSchedulingLock.withLock {
+      let bundles = Set(bundles)
+      guard forceRefresh || !hasDiscoveredApps || !dataStore.containsSameBundles(as: bundles) else {
+        return
+      }
+      hasDiscoveredApps = true
+      // Invalidate before replacing the store so late results cannot restore removed apps.
+      let generation = beginUpdateCheckGeneration()
+      _ = dataStore.set(appBundles: bundles)
+      scheduleUpdateCheck(on: Array(bundles), generation: generation)
+    }
+  }
 
   /// The data store updated apps should be passed to
   private let dataStore = AppDataStore()
@@ -134,6 +155,7 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
 
   private let updateCheckSchedulingLock = NSLock()
   private var activeUpdateCheckTasks = [UUID: Task<Void, Never>]()
+  private var hasDiscoveredApps = false
 
   private let updateCheckGeneration = UpdateCheckGenerationTracker()
 
@@ -156,10 +178,7 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       guard let self else { return }
 
       self.library.reload { [weak self] bundles in
-        guard let self else { return }
-        let bundles = Array(Set(bundles))
-        _ = self.dataStore.set(appBundles: Set(bundles))
-        self.runUpdateCheck(on: bundles)
+        self?.updateDiscoveredBundles(bundles, forceRefresh: true)
       }
     }
   }
@@ -167,29 +186,24 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
   /// Prevents results from the previous generation from being published while a manual rescan is collecting bundles.
   private func invalidateActiveUpdateCheck() {
     updateCheckSchedulingLock.withLock {
-      _ = updateCheckGeneration.begin()
-      activeUpdateCheckTasks.values.forEach { $0.cancel() }
-      activeUpdateCheckTasks.removeAll(keepingCapacity: true)
+      _ = beginUpdateCheckGeneration()
     }
   }
 
-  /// Performs the update check on the given bundles.
-  private func runUpdateCheck(on bundles: [App.Bundle], cancelsExistingChecks: Bool = true) {
-    updateCheckSchedulingLock.lock()
+  /// Called while holding the scheduling lock.
+  private func beginUpdateCheckGeneration() -> Int {
+    let generation = updateCheckGeneration.begin()
+    activeUpdateCheckTasks.values.forEach { $0.cancel() }
+    activeUpdateCheckTasks.removeAll(keepingCapacity: true)
+    return generation
+  }
 
-    let generation: Int
-    if cancelsExistingChecks {
-      generation = updateCheckGeneration.begin()
-      activeUpdateCheckTasks.values.forEach { $0.cancel() }
-      activeUpdateCheckTasks.removeAll(keepingCapacity: true)
-    } else {
-      generation = updateCheckGeneration.currentOrBegin()
-    }
-
-    let repository = UpdateRepository.newRepository()
+  /// Called while holding the scheduling lock so registration and cancellation are atomic.
+  private func scheduleUpdateCheck(on bundles: [App.Bundle], generation: Int) {
     let checkableBundles = Self.prioritizedBundlesForUpdateCheck(bundles).filter {
       Self.checker(for: $0.source) != nil
     }
+    let repository = checkableBundles.contains { $0.source == .none } ? repositoryProvider() : nil
     updateCheckLogger.info(
       "Scheduled update check generation \(generation, privacy: .public) for \(bundles.count, privacy: .public) bundles and \(checkableBundles.count, privacy: .public) child tasks"
     )
@@ -205,7 +219,6 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       )
     }
     activeUpdateCheckTasks[taskID] = task
-    updateCheckSchedulingLock.unlock()
   }
 
   private func performUpdateCheck(
@@ -228,8 +241,8 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
         guard let self, bundles.indices.contains(indexedResult.index) else { return }
         self.didCheck(bundles[indexedResult.index], indexedResult.result, generation: generation)
       }
-    ) { bundle in
-      try await Self.check(bundle, repository: repository)
+    ) { [check] bundle in
+      try await check(bundle, repository)
     }
 
     guard updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
@@ -285,8 +298,11 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
         return
       }
 
-      _ = self.dataStore.set(appBundle: bundle)
-      self.runUpdateCheck(on: [bundle], cancelsExistingChecks: false)
+      self.updateCheckSchedulingLock.withLock {
+        _ = self.dataStore.set(appBundle: bundle)
+        self.scheduleUpdateCheck(
+          on: [bundle], generation: self.updateCheckGeneration.currentOrBegin())
+      }
     }
   }
 

@@ -8,12 +8,9 @@
 
 import Foundation
 
-/// A Version represents a single version of an app. It contains both the version number and the build number to uniquely
-/// identify an app (in theory).
-/// Comparisons of versions results in an actual comparison. I.E. 1.4.2 > 1.3.5
-/// Also, if the two versions are the same, or the strings are not parsable, the build numbers get compared.
-/// This class is very much work in progress and needs some deep thoughts on edge cases and a more clever implementation
-struct Version: Hashable, Comparable, Sendable {
+/// An app's version and build identifiers. Identity compares the stored identifiers,
+/// with all empty forms treated alike. Vendor-specific update precedence is separate.
+struct Version: Hashable, Sendable {
 
   /// The version number itself
   let versionNumber: String?
@@ -47,18 +44,11 @@ struct Version: Hashable, Comparable, Sendable {
     !hasParsedContent
   }
 
-  // MARK: - Comparisons
+  // MARK: - Identity
 
   static func == (lhs: Version, rhs: Version) -> Bool {
-    compare(lhs, rhs) == .equal
-  }
-
-  static func < (lhs: Version, rhs: Version) -> Bool {
-    compare(lhs, rhs) == .older
-  }
-
-  static func > (lhs: Version, rhs: Version) -> Bool {
-    compare(lhs, rhs) == .newer
+    if lhs.isEmpty && rhs.isEmpty { return true }
+    return lhs.versionNumber == rhs.versionNumber && lhs.buildNumber == rhs.buildNumber
   }
 
   // MARK: - Hashing
@@ -73,17 +63,22 @@ struct Version: Hashable, Comparable, Sendable {
     hasher.combine(buildNumber)
   }
 
-  // MARK: - Private
+  // MARK: - Update Precedence
 
-  /// An enum describing the result of an comparison.
-  private enum CheckingResult {
-    case older, newer, equal, undefined
+  enum UpdateComparison: Sendable {
+    case older, newer, samePrecedence, unavailable
+  }
+
+  /// Uses this value's build-number fallback rules. The comparison is directional;
+  /// it does not define identity or a total order suitable for sorting.
+  func comparisonForUpdate(to other: Version) -> UpdateComparison {
+    Self.compare(self, other)
   }
 
   /// Performs the actual check. This version checker is adopted by the Sparkle Framework and slightly adapted.
-  private static func compare(_ lhs: Version, _ rhs: Version) -> CheckingResult {
+  private static func compare(_ lhs: Version, _ rhs: Version) -> UpdateComparison {
     if lhs.isEmpty && rhs.isEmpty {
-      return .equal
+      return .samePrecedence
     }
 
     var c1: [Segment]?
@@ -106,7 +101,7 @@ struct Version: Hashable, Comparable, Sendable {
     }
 
     guard let c1, let c2 else {
-      return .undefined
+      return .unavailable
     }
 
     if let singleNumber1, let singleNumber2 {
@@ -116,7 +111,7 @@ struct Version: Hashable, Comparable, Sendable {
         return .older
       }
 
-      return .equal
+      return .samePrecedence
     }
 
     let count1 = c1.count
@@ -178,12 +173,12 @@ struct Version: Hashable, Comparable, Sendable {
       let l = count1 > count2
       let longerComponents = (l ? c1 : c2)[(l ? count2 : count1)...]
       guard let atoms = firstComponentAtoms(in: longerComponents) else {
-        return .equal  // Think "1.2" vs "1.2."
+        return .samePrecedence  // Think "1.2" vs "1.2."
       }
 
       if case .number(let number) = atoms.first {
         if number == 0 {
-          return .equal  // Think "1.2" vs "1.2.0"
+          return .samePrecedence  // Think "1.2" vs "1.2.0"
         }
 
         return l ? .newer : .older  // Think "1.2" vs "1.2.2"
@@ -192,7 +187,7 @@ struct Version: Hashable, Comparable, Sendable {
       return l ? .older : .newer  // Think "1.2" vs "1.2A"
     }
 
-    return .equal  // Think "1.2" vs "1.2"
+    return .samePrecedence  // Think "1.2" vs "1.2"
   }
 
   private static func firstComponentAtoms(in segments: ArraySlice<Segment>) -> [Segment.Atom]? {
