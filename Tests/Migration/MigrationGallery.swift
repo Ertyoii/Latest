@@ -468,7 +468,7 @@ private struct MigrationToolbarStateShelf: View {
       .foregroundStyle(.secondary)
 
       toolbarRow("Ready", isRefreshEnabled: true, progress: .hidden)
-      toolbarRow("Scanning", isRefreshEnabled: false, progress: .indeterminate)
+      toolbarRow("Scanning", isRefreshEnabled: false, progress: .determinate(0))
       toolbarRow("Checking 42%", isRefreshEnabled: false, progress: .determinate(0.42))
       Spacer()
     }

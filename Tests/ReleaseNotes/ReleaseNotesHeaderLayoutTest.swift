@@ -99,12 +99,8 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
     XCTAssertEqual(ToolbarProgressMetrics.normalized(-0.25), 0)
     XCTAssertEqual(ToolbarProgressMetrics.normalized(0.5), 0.5)
     XCTAssertEqual(ToolbarProgressMetrics.normalized(1.25), 1)
-    XCTAssertNotEqual(
-      ToolbarProgressMetrics.determinateIdentity,
-      ToolbarProgressMetrics.indeterminateIdentity
-    )
     XCTAssertEqual(ToolbarProgressPresentation(isRunning: false, fraction: 0.5), .hidden)
-    XCTAssertEqual(ToolbarProgressPresentation(isRunning: true, fraction: nil), .indeterminate)
+    XCTAssertEqual(ToolbarProgressPresentation(isRunning: true, fraction: nil), .determinate(0))
     XCTAssertEqual(ToolbarProgressPresentation(isRunning: true, fraction: -0.25), .determinate(0))
     XCTAssertEqual(ToolbarProgressPresentation(isRunning: true, fraction: 1.25), .determinate(1))
   }
