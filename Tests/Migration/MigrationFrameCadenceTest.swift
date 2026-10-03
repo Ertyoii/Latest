@@ -57,21 +57,10 @@ final class MigrationFrameCadenceTest: XCTestCase {
       snapshot: AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings),
       settings: settings)
     let environment = AppEnvironment(settings: settings, updatesListViewModel: model)
-    let host = NSHostingView(
-      rootView: LatestRootView(environment: environment)
-        .environment(\.colorScheme, .dark)
-        .environment(\.locale, Locale(identifier: "en_US")))
-    host.sizingOptions = []
-    host.frame = CGRect(x: 0, y: 0, width: 768, height: 464)
-    let window = FrameBenchmarkWindow(
-      contentRect: CGRect(x: 0, y: 0, width: 768, height: 516),
-      styleMask: [.titled, .closable], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.title = "Latest frame benchmark"
-    window.appearance = NSAppearance(named: .darkAqua)
-    window.contentView = host
-    window.center()
     NSApp.setActivationPolicy(.regular)
+    let window = try await makeLatestTestWindow(
+      environment: environment, dark: true, testCase: self)
+    let host = try XCTUnwrap(window.contentView)
     NSApp.activate(ignoringOtherApps: true)
     window.makeKeyAndOrderFront(nil)
     defer { window.close() }
@@ -82,6 +71,7 @@ final class MigrationFrameCadenceTest: XCTestCase {
     // macOS may refuse focus stealing by an XCTest host. Start only after a
     // real activation, rather than publishing misleading inactive-window FPS.
     print("FRAME_BENCHMARK_WAITING_FOR_FOCUS")
+    fflush(stdout)
     let focusDeadline = ContinuousClock.now + .seconds(60)
     while !window.isKeyWindow && ContinuousClock.now < focusDeadline {
       window.makeKeyAndOrderFront(nil)
@@ -89,11 +79,13 @@ final class MigrationFrameCadenceTest: XCTestCase {
     }
     try XCTSkipUnless(window.isKeyWindow, "Activate the visible benchmark window, then rerun.")
     print("FRAME_BENCHMARK_STARTED active=\(NSApp.isActive)")
-    let table = try XCTUnwrap(findTable(in: host))
-    let scroll = try XCTUnwrap(table.enclosingScrollView)
+    let sidebar = try SidebarInputFixture(window: window, model: model)
+    let scroll = sidebar.scroll
+    let input = FrameInputRecorder(window: window, selectedRow: { sidebar.selectedRow })
+    defer { input.stop() }
     let screen = try XCTUnwrap(window.screen)
-    XCTAssertEqual(table.numberOfRows, 301)
-    window.makeFirstResponder(table)
+    XCTAssertEqual(model.snapshot.entries.count, 301)
+    try sidebar.focus()
     let screenshot = try await captureWindowBitmap(window)
     try screenshot.representation(using: .png, properties: [:])?.write(
       to: output.appendingPathComponent("fixture.png"))
@@ -123,7 +115,7 @@ final class MigrationFrameCadenceTest: XCTestCase {
       configuration: configuration, delegate: capture)
     try stream.addStreamOutput(capture, type: .screen, sampleHandlerQueue: queue)
     try await stream.startCapture()
-    let sampler = DisplaySampler(table: table)
+    let sampler = DisplaySampler(sidebar: sidebar)
     let link = window.displayLink(target: sampler, selector: #selector(DisplaySampler.frame(_:)))
     let refresh = Float(screen.maximumFramesPerSecond)
     link.preferredFrameRateRange = CAFrameRateRange(
@@ -134,32 +126,29 @@ final class MigrationFrameCadenceTest: XCTestCase {
     var trials = [Trial]()
     func prepare(down: Bool) async throws {
       let row = down ? 30 : 230
-      table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-      table.scrollRowToVisible(row)
-      let selected = table.rect(ofRow: row)
-      var bounds = scroll.contentView.bounds
-      bounds.origin.y =
-        down
-        ? selected.maxY + table.rowHeight - bounds.height : selected.minY - table.rowHeight
-      bounds = scroll.contentView.constrainBoundsRect(bounds)
-      scroll.contentView.scroll(to: bounds.origin)
-      scroll.reflectScrolledClipView(scroll.contentView)
       NSApp.activate(ignoringOtherApps: true)
       window.makeKeyAndOrderFront(nil)
-      window.makeFirstResponder(table)
+      try sidebar.focus()
+      // Prepare through the renderer's own navigation. Mutating NSClipView
+      // directly bypasses SwiftUI's lazy-stack offset/materialization bookkeeping.
+      for _ in 0..<model.snapshot.entries.count {
+        if sidebar.selectedRow == row { break }
+        try sidebar.press(down: sidebar.selectedRow < row)
+        try await Task.sleep(for: .milliseconds(5))
+      }
       try await Task.sleep(for: .milliseconds(350))
       XCTAssertTrue(window.isKeyWindow)
       XCTAssertTrue(window.occlusionState.contains(.visible))
-      XCTAssertTrue(window.firstResponder === table)
+      XCTAssertEqual(sidebar.selectedRow, row)
     }
     func run(_ name: String, down: Bool, interval: Double = 1.0 / 30, stall: Bool = false)
       async throws -> Trial
     {
       try await prepare(down: down)
-      window.keys.removeAll(keepingCapacity: true)
-      window.stallOnKey = stall ? 45 : nil
-      defer { window.stallOnKey = nil }
-      let startRow = table.selectedRow
+      input.keys.removeAll(keepingCapacity: true)
+      input.stallOnKey = stall ? 45 : nil
+      defer { input.stallOnKey = nil }
+      let startRow = sidebar.selectedRow
       let count = Int((3 / interval).rounded())
       let start = CACurrentMediaTime() + 0.05
       let events = try (0..<count).map { index in
@@ -169,13 +158,13 @@ final class MigrationFrameCadenceTest: XCTestCase {
       feeder.start()
       try await Task.sleep(for: .seconds(3.05))
       let end = CACurrentMediaTime()
-      XCTAssertEqual(table.selectedRow, startRow + (down ? count : -count))
+      XCTAssertEqual(sidebar.selectedRow, startRow + (down ? count : -count))
       XCTAssertTrue(window.isKeyWindow)
       XCTAssertTrue(window.occlusionState.contains(.visible))
       try await Task.sleep(for: .milliseconds(350))
-      XCTAssertTrue(table.visibleRect.contains(table.rect(ofRow: table.selectedRow)))
+      XCTAssertTrue(scroll.contentView.bounds.contains(sidebar.rowRect(sidebar.selectedRow)))
       return Trial(
-        name: name, start: start, end: end, keys: window.keys, inputInterval: interval,
+        name: name, start: start, end: end, keys: input.keys, inputInterval: interval,
         posted: feeder.samples)
     }
 
@@ -185,13 +174,14 @@ final class MigrationFrameCadenceTest: XCTestCase {
       try await prepare(down: true)
       NSApp.postEvent(try arrowEvent(down: true, window: window), atStart: false)
       let deadline = ContinuousClock.now + .seconds(1)
-      while table.selectedRow != 31 && ContinuousClock.now < deadline {
+      while sidebar.selectedRow != 31 && ContinuousClock.now < deadline {
         try await Task.sleep(for: .milliseconds(1))
       }
-      XCTAssertEqual(table.selectedRow, 31)
-      let clickedRow = table.selectedRow + offset
-      let location = table.convert(
-        NSPoint(x: 80, y: table.rect(ofRow: clickedRow).minY + 10), to: nil)
+      XCTAssertEqual(sidebar.selectedRow, 31)
+      let clickedRow = sidebar.selectedRow + offset
+      let document = try XCTUnwrap(scroll.documentView)
+      let location = document.convert(
+        NSPoint(x: 80, y: sidebar.rowRect(clickedRow).minY + 10), to: nil)
       for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
         let event = try XCTUnwrap(
           NSEvent.mouseEvent(
@@ -200,10 +190,11 @@ final class MigrationFrameCadenceTest: XCTestCase {
             eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0))
         NSApp.postEvent(event, atStart: false)
       }
-      while table.selectedRow != clickedRow && ContinuousClock.now < deadline {
+      let clickDeadline = ContinuousClock.now + .seconds(1)
+      while sidebar.selectedRow != clickedRow && ContinuousClock.now < clickDeadline {
         try await Task.sleep(for: .milliseconds(1))
       }
-      XCTAssertEqual(table.selectedRow, clickedRow, "Click must select the visibly targeted row.")
+      XCTAssertEqual(sidebar.selectedRow, clickedRow, "Click must select the visibly targeted row.")
     }
 
     // A stationary interval rejects cursor/chrome/detail noise. A compositor
@@ -213,10 +204,13 @@ final class MigrationFrameCadenceTest: XCTestCase {
     let idleStart = CACurrentMediaTime()
     try await Task.sleep(for: .seconds(1))
     trials.append(Trial(name: "idle", start: idleStart, end: CACurrentMediaTime(), keys: []))
+    let calibrationParent = try XCTUnwrap(host.superview)
     let calibration = NSView(frame: host.frame)
-    let fixtureFrame = window.frame
+    calibration.autoresizingMask = [.width, .height]
     calibration.wantsLayer = true
-    window.contentView = calibration
+    // An overlay leaves the scene's hosting view and keyboard responder intact.
+    // Replacing contentView loses SwiftUI focus even after reattaching the view.
+    calibrationParent.addSubview(calibration, positioned: .above, relativeTo: host)
     let calibrationStart = CACurrentMediaTime()
     let colorSweep = CABasicAnimation(keyPath: "backgroundColor")
     colorSweep.fromValue = CGColor(gray: 0, alpha: 1)
@@ -225,8 +219,7 @@ final class MigrationFrameCadenceTest: XCTestCase {
     colorSweep.timingFunction = CAMediaTimingFunction(name: .linear)
     calibration.layer?.add(colorSweep, forKey: "capture-calibration")
     try await Task.sleep(for: .seconds(2))
-    window.contentView = host
-    window.setFrame(fixtureFrame, display: true)
+    calibration.removeFromSuperview()
     trials.append(
       Trial(name: "calibration", start: calibrationStart, end: CACurrentMediaTime(), keys: []))
     _ = try await run("warmup", down: true)
@@ -251,10 +244,6 @@ final class MigrationFrameCadenceTest: XCTestCase {
       trials: trials, displaySamples: sampler.samples, capturedFrames: capture.frames)
     try encoder.encode(report).write(to: output.appendingPathComponent("raw.json"))
     print("FRAME_BENCHMARK raw=\(output.appendingPathComponent("raw.json").path)")
-  }
-
-  private func findTable(in view: NSView) -> NSTableView? {
-    (view as? NSTableView) ?? view.subviews.lazy.compactMap { self.findTable(in: $0) }.first
   }
 
   private func arrowEvent(down: Bool, window: NSWindow, timestamp: Double = CACurrentMediaTime())
@@ -314,19 +303,37 @@ private struct KeySample: Codable {
 }
 
 @MainActor
-private final class FrameBenchmarkWindow: NSWindow {
+private final class FrameInputRecorder {
   var keys = [KeySample]()
   var stallOnKey: Int?
+  let window: NSWindow
+  let selectedRow: () -> Int
+  private var monitor: Any?
 
-  override func sendEvent(_ event: NSEvent) {
-    guard event.type == .keyDown, [125, 126].contains(event.keyCode) else {
-      super.sendEvent(event)
-      return
+  init(window: NSWindow, selectedRow: @escaping () -> Int) {
+    self.window = window
+    self.selectedRow = selectedRow
+    // Preserve the actual SwiftUI scene's NSWindow and responder chain. Record
+    // queued arrows at normal application dispatch, then deliver each once.
+    monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      guard let self, event.window === self.window, [125, 126].contains(event.keyCode) else {
+        return event
+      }
+      self.record(event)
+      return nil
     }
+  }
+
+  func stop() {
+    if let monitor { NSEvent.removeMonitor(monitor) }
+    monitor = nil
+  }
+
+  private func record(_ event: NSEvent) {
     let time = CACurrentMediaTime()
-    super.sendEvent(event)
+    window.sendEvent(event)
     if keys.count == stallOnKey { Thread.sleep(forTimeInterval: 0.1) }
-    let row = (firstResponder as? NSTableView)?.selectedRow ?? -1
+    let row = selectedRow()
     keys.append(
       KeySample(
         time: time, duration: CACurrentMediaTime() - time, queued: event.timestamp, row: row))
@@ -375,20 +382,20 @@ private struct Report: Codable {
 
 @MainActor
 private final class DisplaySampler: NSObject {
-  let table: NSTableView
+  let sidebar: SidebarInputFixture
   var samples = [DisplaySample]()
-  init(table: NSTableView) { self.table = table }
+  init(sidebar: SidebarInputFixture) { self.sidebar = sidebar }
 
   @objc func frame(_ link: CADisplayLink) {
-    guard let scroll = table.enclosingScrollView else { return }
+    let scroll = sidebar.scroll
     samples.append(
       DisplaySample(
         time: CACurrentMediaTime(),
         y: Double(
           scroll.contentView.layer?.presentation()?.bounds.minY ?? scroll.contentView.bounds.minY),
-        row: table.selectedRow,
-        active: NSApp.isActive, key: table.window?.isKeyWindow == true,
-        visible: table.window?.occlusionState.contains(.visible) == true))
+        row: sidebar.selectedRow,
+        active: NSApp.isActive, key: sidebar.window.isKeyWindow == true,
+        visible: sidebar.window.occlusionState.contains(.visible) == true))
   }
 }
 

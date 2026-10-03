@@ -23,6 +23,8 @@ cp "$ROOT_DIR/Tests/Migration/MigrationFrameCadenceTest.swift" \
   "$ROOT_DIR/script/analyze_frame_benchmark.py" "$ROOT_DIR/script/benchmark_frames.sh" "$OUTPUT/method/"
 shasum -a 256 "$ROOT_DIR/Latest/Platform/AppKit/UpdatesTableSupport.swift" \
   "$ROOT_DIR/Latest/Platform/AppKit/UpdatesTableBridge.swift" \
+  "$ROOT_DIR/Latest/Features/Updates/UpdatesScrollList.swift" \
+  "$ROOT_DIR/Tests/Migration/SwiftUISidebarTest.swift" \
   "$ROOT_DIR/Latest/Features/Updates/UpdateRowView.swift" \
   "$ROOT_DIR/Latest/Features/ReleaseNotes/ReleaseNotesDetailViewModel.swift" "$OUTPUT"/method/* > "$OUTPUT/sources.sha256"
 sw_vers > "$OUTPUT/environment.txt"

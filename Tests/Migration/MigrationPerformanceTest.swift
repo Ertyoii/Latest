@@ -23,7 +23,23 @@ final class MigrationPerformanceTest: XCTestCase {
     guard FileManager.default.fileExists(atPath: Self.benchmarkFlagURL.path) else {
       throw XCTSkip("Run script/benchmark_migration.sh to execute migration benchmarks.")
     }
+    var failure: Error?
+    Task { @MainActor in
+      do { try await self.measureMigrationPerformanceMatrix() } catch { failure = error }
+      NSApp.stop(nil)
+      if let wake = NSEvent.otherEvent(
+        with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0,
+        windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0)
+      {
+        NSApp.postEvent(wake, atStart: true)
+      }
+    }
+    NSApp.setActivationPolicy(.regular)
+    NSApp.run()
+    if let failure { throw failure }
+  }
 
+  private func measureMigrationPerformanceMatrix() async throws {
     let settings = try isolatedAppListSettings(for: self)
     emitConfigurationLine()
     let appsBySize = Dictionary(
@@ -75,7 +91,7 @@ final class MigrationPerformanceTest: XCTestCase {
     scrollHost.frame = NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 640)
     let scrollWindow = attachToWindow(scrollHost)
     defer { scrollWindow.close() }
-    RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+    try await Task.sleep(for: .milliseconds(50))
     let sidebarScrollView = try XCTUnwrap(
       scrollHost.descendants(of: NSScrollView.self).max {
         ($0.documentView?.bounds.height ?? 0) < ($1.documentView?.bounds.height ?? 0)
@@ -113,33 +129,44 @@ final class MigrationPerformanceTest: XCTestCase {
       return Int(sidebarScrollView.contentView.bounds.origin.y)
     }
 
-    let keyboardTable = try XCTUnwrap(scrollHost.descendant(of: NSTableView.self))
-    let firstAppRow = try XCTUnwrap(
-      scrollSnapshot.entries.indices.first {
-        if case .app = scrollSnapshot.entries[$0] { return true }
-        return false
-      })
-    keyboardTable.selectRowIndexes(IndexSet(integer: firstAppRow), byExtendingSelection: false)
-    keyboardTable.scrollRowToVisible(firstAppRow)
-    scrollWindow.makeFirstResponder(keyboardTable)
-    RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-    scrollHost.layoutSubtreeIfNeeded()
-    scrollHost.displayIfNeeded()
-    let down = try XCTUnwrap(
-      NSEvent.keyEvent(
-        with: .keyDown, location: .zero, modifierFlags: [.function, .numericPad],
-        timestamp: 0, windowNumber: scrollWindow.windowNumber, context: nil,
-        characters: "\u{F701}", charactersIgnoringModifiers: "\u{F701}",
-        isARepeat: true, keyCode: 125))
-    benchmarkSamples("sidebar_keyboard_selection_frame_main_thread", values: Array(0..<120)) { _ in
-      scrollWindow.firstResponder?.keyDown(with: down)
-      // Include the deferred SwiftUI/model work that direct clip scrolling omits.
-      RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.001))
-      scrollHost.layoutSubtreeIfNeeded()
-      scrollHost.displayIfNeeded()
-      return keyboardTable.selectedRow
+    // Real SwiftUI focus requires a scene-owned window. Keep the raw rendering
+    // fixtures above unchanged; this scene contains the same 308 × 640 sidebar.
+    let keyboardEnvironment = AppEnvironment(
+      settings: settings, updatesListViewModel: scrollViewModel)
+    let keyboardWindow = try await makeLatestTestWindow(
+      environment: keyboardEnvironment, testCase: self)
+    defer { keyboardWindow.close() }
+    keyboardWindow.title = "Latest sidebar benchmark"
+    keyboardWindow.setFrame(
+      CGRect(origin: keyboardWindow.frame.origin, size: CGSize(width: 768, height: 692)),
+      display: true)
+    try await Task.sleep(for: .milliseconds(100))
+    let keyboard = try SidebarInputFixture(window: keyboardWindow, model: scrollViewModel)
+    keyboard.scroll(to: 0)
+    NSApp.activate(ignoringOtherApps: true)
+    keyboardWindow.makeKeyAndOrderFront(nil)
+    print("MIGRATION_BENCHMARK_WAITING_FOR_FOCUS")
+    fflush(stdout)
+    let deadline = Date(timeIntervalSinceNow: 60)
+    while !keyboardWindow.isKeyWindow && Date() < deadline {
+      NSApp.activate()
+      keyboardWindow.makeKeyAndOrderFront(nil)
+      try await Task.sleep(for: .milliseconds(20))
     }
-    XCTAssertEqual(keyboardTable.selectedRow, firstAppRow + 120)
+    XCTAssertTrue(keyboardWindow.isKeyWindow, "Activate the visible benchmark window")
+    try keyboard.focus()
+    try await Task.sleep(for: .milliseconds(50))
+    let firstAppRow = keyboard.selectedRow
+    XCTAssertGreaterThanOrEqual(firstAppRow, 0)
+    try benchmarkSamples("sidebar_keyboard_selection_frame_main_thread", values: Array(0..<120)) {
+      _ in
+      try keyboard.press(down: true)
+      RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.001))
+      keyboardWindow.contentView?.layoutSubtreeIfNeeded()
+      keyboardWindow.contentView?.displayIfNeeded()
+      return keyboard.selectedRow
+    }
+    XCTAssertEqual(keyboard.selectedRow, firstAppRow + 120)
     guard case .app(let keyboardSelectedApp) = scrollSnapshot.entries[firstAppRow + 120] else {
       return XCTFail("Keyboard benchmark must navigate app rows")
     }

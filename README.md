@@ -48,9 +48,9 @@ Features depend on `AppUpdating`. Sparkle is pinned through Swift Package Manage
 ./script/benchmark_frames.sh current
 ```
 
-These use Release builds without coverage. Compare runs on the same hardware and workload. The frame benchmark captures a visible production window with 300 offline apps, tests held arrows at system repeat/30/60 keys per second, and saves measurements and reports under `build/`. Keep its window focused and unobstructed.
+These use Release builds without coverage. Compare runs on the same hardware and workload. The frame benchmark opens the production SwiftUI window scene with 300 offline apps, tests held arrows at system repeat/30/60 keys per second, and saves measurements and reports under `build/`. Its calibration overlay preserves the hosting view and keyboard responder. The fixture is a load test; use the live app for ordinary visual and input acceptance. Keep the benchmark window focused and unobstructed.
 
-Native row steps follow the keyboard repeat rate. About 60 changed frames per second was measured with 60 keys per second on a 60 Hz display; ordinary held keys do not produce continuous 60 FPS motion. The strict one-frame input-delay gate remains unmet. Benchmark exit failures must be investigated; 120 Hz presentation has not been verified.
+On macOS 27, the same 1,500-app production-window workload measured keyboard rendering p95 at about 29 ms for the SwiftUI sidebar and 15 ms for the retained native renderer. Both exceed the 8.33 ms target. Scrolling, startup, detail rendering, and memory growth passed their respective CPU/memory budgets. In a valid 300-app frame capture on a 60 Hz display, SwiftUI delivered all queued arrows but presented about 30–33 distinct row changes per second at 60 keys per second. Headers stayed fixed, with no selection bounce or unintended reversals. The smoothness and strict one-frame input-delay gates remain unmet; 120 Hz presentation has not been verified. Preserve failing benchmark results rather than treating a moving selection as a smoothness pass.
 
 ## Release notes
 
