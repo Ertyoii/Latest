@@ -118,7 +118,7 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       // Invalidate before replacing the store so late results cannot restore removed apps.
       let generation = beginUpdateCheckGeneration()
       _ = dataStore.set(appBundles: bundles)
-      scheduleUpdateCheck(on: Array(bundles), generation: generation)
+      scheduleUpdateCheck(on: Array(bundles), generation: generation, publishesSnapshot: true)
     }
   }
 
@@ -193,13 +193,16 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
   /// Called while holding the scheduling lock.
   private func beginUpdateCheckGeneration() -> Int {
     let generation = updateCheckGeneration.begin()
+    dataStore.beginUpdateCheck(generation: generation)
     activeUpdateCheckTasks.values.forEach { $0.cancel() }
     activeUpdateCheckTasks.removeAll(keepingCapacity: true)
     return generation
   }
 
   /// Called while holding the scheduling lock so registration and cancellation are atomic.
-  private func scheduleUpdateCheck(on bundles: [App.Bundle], generation: Int) {
+  private func scheduleUpdateCheck(
+    on bundles: [App.Bundle], generation: Int, publishesSnapshot: Bool = false
+  ) {
     let checkableBundles = Self.prioritizedBundlesForUpdateCheck(bundles).filter {
       Self.checker(for: $0.source) != nil
     }
@@ -215,7 +218,8 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       await self.performUpdateCheck(
         on: checkableBundles,
         repository: repository,
-        generation: generation
+        generation: generation,
+        publishesSnapshot: publishesSnapshot
       )
     }
     activeUpdateCheckTasks[taskID] = task
@@ -224,7 +228,8 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
   private func performUpdateCheck(
     on bundles: [App.Bundle],
     repository: UpdateRepository?,
-    generation: Int
+    generation: Int,
+    publishesSnapshot: Bool
   ) async {
     await MainActor.run {
       guard self.updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
@@ -255,6 +260,11 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
     )
     await MainActor.run {
       guard self.updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
+      if publishesSnapshot {
+        _ = self.updateCheckGeneration.withCurrent(generation) {
+          self.dataStore.finishUpdateCheck(generation: generation)
+        }
+      }
       self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self, generation: generation)
     }
   }

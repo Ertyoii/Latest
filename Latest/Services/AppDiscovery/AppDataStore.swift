@@ -18,6 +18,8 @@ final class AppDataStore: AppProviding, Sendable {
   }
   private struct State: Sendable {
     var appsByIdentifier = [App.Bundle.Identifier: App]()
+    var settledApps = [App]()
+    var pendingCheckGeneration: Int?
     var ignoredAppIdentifiers: Set<String>
     let preferences: Preferences
   }
@@ -128,17 +130,53 @@ final class AppDataStore: AppProviding, Sendable {
     scheduleFilterUpdate()
   }
 
+  /// Keep the last complete list visible while discovery and lookups change sort keys.
+  func beginUpdateCheck(generation: Int) {
+    state.withLock { state in
+      if state.pendingCheckGeneration == nil {
+        state.settledApps = Array(state.appsByIdentifier.values)
+      }
+      state.pendingCheckGeneration = generation
+    }
+  }
+
+  @MainActor func finishUpdateCheck(generation: Int) {
+    let apps = scheduledUpdate.withLock { scheduled -> [App]? in
+      let apps = state.withLock { state -> [App]? in
+        guard state.pendingCheckGeneration == generation else { return nil }
+        state.pendingCheckGeneration = nil
+        state.settledApps = Array(state.appsByIdentifier.values)
+        return state.settledApps
+      }
+      guard let apps else { return nil }
+      scheduled?.cancel()
+      scheduled = nil
+      return apps
+    }
+    guard let apps else { return }
+    updateStreams.yield(apps)
+  }
+
   @MainActor func updates() -> AsyncStream<[App]> {
-    updateStreams.stream(initialValue: apps)
+    let visibleApps = state.withLock { state in
+      state.pendingCheckGeneration == nil
+        ? Array(state.appsByIdentifier.values) : state.settledApps
+    }
+    return updateStreams.stream(initialValue: visibleApps)
   }
 
   private func scheduleFilterUpdate() {
+    guard state.withLock({ $0.pendingCheckGeneration == nil }) else { return }
     scheduledUpdate.withLock { scheduled in
       scheduled?.cancel()
       let work = DispatchWorkItem { [weak self] in
         Task { @MainActor [weak self] in
           guard let self else { return }
-          self.updateStreams.yield(self.apps)
+          let apps = self.state.withLock { state -> [App]? in
+            guard state.pendingCheckGeneration == nil else { return nil }
+            return Array(state.appsByIdentifier.values)
+          }
+          if let apps { self.updateStreams.yield(apps) }
         }
       }
       scheduled = work
