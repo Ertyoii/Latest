@@ -114,7 +114,10 @@ final class ReleaseNotesProviderTest: XCTestCase {
   }
   @MainActor
   func testReleaseNotesProviderInvalidatesCacheWhenReleaseNoteSourceChanges() async throws {
-    let provider = ReleaseNotesProvider()
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let provider = ReleaseNotesProvider(
+      persistentCache: ReleaseNotesPersistentCache(directoryURL: directory))
     let oldApp = makeReleaseNotesApp(html: "<p>Old release notes with bug fixes.</p>")
     let refreshedApp = makeReleaseNotesApp(html: "<p>Fresh release notes with improvements.</p>")
 

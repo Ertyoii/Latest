@@ -46,7 +46,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build
-          ./script/test.sh 2>&1 | tee build/ci-tests.log
+          ./script/test.sh --all 2>&1 | tee build/ci-tests.log
 
       - name: Preserve test results and visual diagnostics
         if: always()
@@ -56,7 +56,7 @@ jobs:
           path: |
             build/ci-tests.log
             build/*.xcresult
-            build/production-visuals/*.png
+            build/production-visuals/**/*.png
             /tmp/latest-visual-output/*.png
           if-no-files-found: warn
           retention-days: 14

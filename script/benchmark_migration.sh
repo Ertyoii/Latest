@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export TEST_RUNNER_LATEST_UI_TESTS=1
+
 LABEL="${1:-current}"
 if [[ ! "$LABEL" =~ ^[a-zA-Z0-9_-]+$ ]]; then
   echo "Benchmark label must contain only letters, numbers, underscores, or hyphens." >&2

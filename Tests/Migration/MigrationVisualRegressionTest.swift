@@ -73,7 +73,13 @@ final class MigrationVisualRegressionTest: XCTestCase {
             SidebarIndicatorPaths.pauseMark(at: CGPoint(x: 12 + offset, y: 12)).cgPath,
             scale: scale, fill: true))
       }
-      for angle in stride(from: -90.0, to: 360, by: 1) {
+      // Rotation/segment boundaries and diagonal starts exercise the distinct
+      // curve cases. Every integer degree repeated the same construction.
+      let angles: [Double] = [
+        -90, -89, -46, -45, -44, -1, 0, 1, 44, 45, 46, 89, 90, 91,
+        179, 180, 181, 269, 270, 271, 359,
+      ]
+      for angle in angles {
         for sweep in [0.01, 0.5, 1, 9.6, 45, 90, 151.2, 180, 270, 359.9, 360] {
           let reference = NSBezierPath()
           reference.appendArc(
@@ -92,35 +98,19 @@ final class MigrationVisualRegressionTest: XCTestCase {
 
   @MainActor
   func testProductionSidebarUsesMeasuredOriginalTableGeometryAndRealIcons() async throws {
+    try requireUITests()
     let environment = AppEnvironment.localUATFixture(
       settings: try isolatedAppListSettings(for: self))
     let viewModel = environment.updatesListViewModel
-    let hostingView = NSHostingView(
-      rootView: UpdatesSidebarView(
-        viewModel: viewModel,
-        searchFocusController: environment.searchFocusController
-      ))
-    hostingView.frame = NSRect(
-      x: 0,
-      y: 0,
-      width: VisualMetrics.sidebarIdealWidth,
-      height: MigrationGalleryMetrics.sidebarFixtureSize.height
-    )
-    let window = NSWindow(
-      contentRect: hostingView.bounds,
-      styleMask: [.borderless],
-      backing: .buffered,
-      defer: false
-    )
-    window.isReleasedWhenClosed = false
-    window.contentView = hostingView
-    window.orderFront(nil)
+    let window = try await makeLatestTestWindow(environment: environment, testCase: self)
+    let hostingView = try XCTUnwrap(window.contentView)
     defer { window.close() }
     window.layoutIfNeeded()
     hostingView.layoutSubtreeIfNeeded()
     try await Task.sleep(for: .milliseconds(150))
 
     let icon: NSRect
+    let accessibilityLabel: String
     if let tableView = hostingView.firstDescendant(of: NSTableView.self) {
       XCTAssertEqual(tableView.rowHeight, 60)
       XCTAssertEqual(tableView.intercellSpacing, .zero)
@@ -146,7 +136,7 @@ final class MigrationVisualRegressionTest: XCTestCase {
       let cell = try XCTUnwrap(
         tableView.view(atColumn: 0, row: firstAppRow, makeIfNecessary: false))
       cell.layoutSubtreeIfNeeded()
-      XCTAssertTrue(cell.accessibilityLabel()?.contains(viewModel.snapshot.apps[0].name) == true)
+      accessibilityLabel = try XCTUnwrap(cell.accessibilityLabel())
       icon = cell.convert(
         NSRect(x: 0, y: cell.bounds.midY - 25, width: 50, height: 50), to: nil)
     } else {
@@ -165,7 +155,7 @@ final class MigrationVisualRegressionTest: XCTestCase {
             && $0.accessibilityFrame().intersects(window.frame)
         })
       XCTAssertEqual(row.accessibilityFrame().height, 60, accuracy: 0.5)
-      XCTAssertTrue(row.accessibilityLabel()?.contains(app.name) == true)
+      accessibilityLabel = try XCTUnwrap(row.accessibilityLabel())
       let rect = window.convertFromScreen(row.accessibilityFrame())
       XCTAssertEqual(rect.minX, 0, accuracy: 0.5)
       icon = NSRect(x: rect.minX + 16, y: rect.maxY - 55, width: 50, height: 50)
@@ -180,6 +170,13 @@ final class MigrationVisualRegressionTest: XCTestCase {
           first.accessibilityFrame().minY - second.accessibilityFrame().minY, 60, accuracy: 0.5)
       }
     }
+    let app = viewModel.snapshot.apps[0]
+    let versions = try XCTUnwrap(app.localizedVersionInformation)
+    XCTAssertTrue(accessibilityLabel.contains(app.name))
+    XCTAssertTrue(accessibilityLabel.contains(versions.rawCurrent))
+    XCTAssertTrue(accessibilityLabel.contains(try XCTUnwrap(versions.rawNew)))
+    XCTAssertTrue(accessibilityLabel.contains(app.source.supportState.label))
+    XCTAssertTrue(accessibilityLabel.contains(NSLocalizedString("UpdateAction", comment: "")))
     let rendered = try await captureWindowBitmap(window)
     var goldenIconPixels = 0
     for y in Int((window.frame.height - icon.maxY) * 2)..<Int((window.frame.height - icon.minY) * 2)
@@ -199,6 +196,7 @@ final class MigrationVisualRegressionTest: XCTestCase {
 
   @MainActor
   func testMigrationGalleryRenderedRegions() async throws {
+    try requireUITests()
     guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 else {
       throw XCTSkip("Visual baselines are scoped to the macOS 26 renderer.")
     }
@@ -220,10 +218,6 @@ extension NSView {
     return subviews.lazy.compactMap { $0.firstDescendant(of: type) }.first
   }
 
-  fileprivate func allDescendants<ViewType: NSView>(of type: ViewType.Type) -> [ViewType] {
-    let current = (self as? ViewType).map { [$0] } ?? []
-    return current + subviews.flatMap { $0.allDescendants(of: type) }
-  }
 }
 
 @MainActor
@@ -384,17 +378,14 @@ private enum MigrationGalleryRenderer {
   private static func comparisonRegions(for scenario: MigrationGalleryScenario) -> [CGRect] {
     let insetBounds = CGRect(origin: .zero, size: scenario.size).insetBy(dx: 2, dy: 2)
     switch scenario.surface {
-    case .main:
+    case .detail:
       let leftToRightDetail = MigrationGalleryMetrics.detailFrame(in: scenario.size)
       let detail =
         scenario.layoutDirection == .rightToLeft
         ? CGRect(origin: .zero, size: leftToRightDetail.size)
         : leftToRightDetail
-      // The old gallery sidebar baseline was a standalone 65pt synthetic row,
-      // while the real pre-migration NSTableView resolves rows to 60pt. Do not
-      // make the main-window gate enforce that known-false fixture. The shipping
-      // sidebar is covered by the production table geometry/icon test above and
-      // by same-state on-screen comparison against the real original app.
+      // Only the real detail surface is covered by these existing references.
+      // Sidebar assertions use the production scene above.
       // NSWorkspace owns the generic document icon and can change its shadow
       // pixels independently of Latest. Compare the production-owned metadata
       // and action portion of the header; icon size/placement remains covered
@@ -543,12 +534,12 @@ private enum VisualRegressionError: LocalizedError {
   }
 }
 
-/// Captures the shipping composition, including its NSTableView sidebar, rather
-/// than just the migration gallery. A same-machine reference directory enables
+/// Captures the shipping scene and the sidebar renderer selected by the OS. A same-machine reference directory enables
 /// strict full-frame comparison without accepting any changed RGBA pixels.
 final class ProductionVisualParityTest: XCTestCase {
   @MainActor
   func testDetailCapsulePaintsAndRoutesMouseActions() async throws {
+    try requireUITests()
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent()
     let set =
@@ -626,6 +617,7 @@ final class ProductionVisualParityTest: XCTestCase {
 
   @MainActor
   func testSidebarProgressActionCancelsOnlyItsInjectedOperation() async throws {
+    try requireUITests()
     let queue = UpdateQueue()
     queue.isSuspended = true
     defer {
@@ -639,38 +631,22 @@ final class ProductionVisualParityTest: XCTestCase {
     }
     for operation in operations { queue.addOperation(operation) }
     operations[0].progressState = .downloading(loadedSize: 25, totalSize: 100)
-    let row = UpdateRowHostingCell(frame: NSRect(x: 0, y: 0, width: 308, height: 60))
-    let window = NSWindow(
-      contentRect: row.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.contentView = row
-    window.orderFront(nil)
-    defer { window.close() }
-    row.update(
-      app: apps[0], isSelected: false,
-      dateFormatter: DateFormatter(), updating: service)
-    try await Task.sleep(for: .milliseconds(150))
-    row.layoutSubtreeIfNeeded()
-    let down = try XCTUnwrap(
-      NSEvent.mouseEvent(
-        with: .leftMouseDown, location: NSPoint(x: 264, y: 30), modifierFlags: [],
-        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-        context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
-    let up = try XCTUnwrap(
-      NSEvent.mouseEvent(
-        with: .leftMouseUp, location: down.locationInWindow, modifierFlags: [],
-        timestamp: down.timestamp + 0.05, windowNumber: window.windowNumber,
-        context: nil, eventNumber: 2, clickCount: 1, pressure: 0))
-    // Queue mouse-up first so a native control's tracking loop can consume it.
-    NSApp.postEvent(up, atStart: false)
-    window.sendEvent(down)
-    try await Task.sleep(for: .milliseconds(50))
+    let fixture = try await SidebarInputFixture.make(
+      apps: apps, updating: service, testCase: self)
+    defer { fixture.window.close() }
+    try await fixture.clickProgress(for: apps[0])
     XCTAssertTrue(operations[0].isCancelled)
     XCTAssertFalse(operations[1].isCancelled, "Cancel must target the displayed app only")
   }
 
   @MainActor
-  func testSidebarUpdateControlStates() async throws {
+  func testSidebarUpdateControlStates() throws {
+    try requireUITests()
+    try runApplicationTest { try await self.checkSidebarUpdateControlStates() }
+  }
+
+  @MainActor
+  private func checkSidebarUpdateControlStates() async throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent()
     let marker = root.appendingPathComponent("build/sidebar-control-capture-set")
@@ -679,12 +655,18 @@ final class ProductionVisualParityTest: XCTestCase {
       .trimmingCharacters(in: .whitespacesAndNewlines) ?? "current"
     let output = root.appendingPathComponent("build/sidebar-control-\(set)")
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-    let app = LocalUATFixture.apps[0]
-    let started = expectation(description: "Sidebar update fixture started")
-    let operation = ProductionCaptureOperation(app: app, started: started)
-    UpdateQueue.shared.addOperation(operation)
-    await fulfillment(of: [started], timeout: 2)
-    defer { operation.finish() }
+    let apps = Array(LocalUATFixture.apps.prefix(2))
+    let app = apps[0]
+    let queue = UpdateQueue()
+    queue.isSuspended = true
+    let operation = UpdateOperation(
+      bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+    queue.addOperation(operation)
+    let service = AppUpdateService(queue: queue)
+    defer {
+      queue.cancelAllOperations()
+      queue.isSuspended = false
+    }
     let states: [(String, UpdateProgressState)] = [
       ("idle", .none), ("waiting", .pending),
       ("download", .downloading(loadedSize: 25_000_000, totalSize: 100_000_000)),
@@ -693,29 +675,19 @@ final class ProductionVisualParityTest: XCTestCase {
     ]
     for dark in [false, true] {
       for selected in [false, true] {
-        let row = UpdateRowHostingCell(frame: NSRect(x: 0, y: 0, width: 308, height: 60))
-        let nativeRow = NSTableRowView(frame: row.bounds)
-        nativeRow.backgroundColor = .textBackgroundColor
-        nativeRow.addSubview(row)
-        let window = NSWindow(
-          contentRect: row.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        window.contentView = nativeRow
-        window.orderFront(nil)
-        defer { window.close() }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        row.update(app: app, isSelected: selected, dateFormatter: formatter)
-        nativeRow.isSelected = selected
-        nativeRow.isEmphasized = selected
-        row.backgroundStyle = selected ? .emphasized : .normal
+        let fixture = try await SidebarInputFixture.make(
+          apps: apps, selected: selected ? app : apps[1], dark: dark,
+          updating: service, testCase: self)
+        defer { fixture.window.close() }
+        if selected {
+          try await fixture.activate()
+          try fixture.click(row: XCTUnwrap(fixture.model.snapshot.firstIndex(of: app)))
+        }
         for (name, state) in states {
           operation.progressState = state
-          try await Task.sleep(for: .milliseconds(300))
-          window.layoutIfNeeded()
-          row.layoutSubtreeIfNeeded()
-          let bitmap = try await captureWindowBitmap(window)
+          try await Task.sleep(for: .milliseconds(250))
+          fixture.window.layoutIfNeeded()
+          let bitmap = try await fixture.captureRow(for: app)
           let filename = "\(dark ? "dark" : "light")-\(selected ? "selected" : "plain")-\(name).png"
           try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
             to: output.appendingPathComponent(filename))
@@ -751,6 +723,7 @@ final class ProductionVisualParityTest: XCTestCase {
 
   @MainActor
   func testProductionWindowStates() async throws {
+    try requireUITests()
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent()
     let output = root.appendingPathComponent(
@@ -839,6 +812,7 @@ final class ProductionVisualParityTest: XCTestCase {
 
   @MainActor
   func testReleaseNotesRenderedPixels() async throws {
+    try requireUITests()
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent()
     let output = root.appendingPathComponent("build/production-visuals", isDirectory: true)

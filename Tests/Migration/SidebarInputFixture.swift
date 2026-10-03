@@ -12,6 +12,72 @@ import XCTest
 struct SidebarInputFixture {
   let window: NSWindow
   let model: UpdatesListViewModel
+
+  /// The production scene chooses the renderer for the current OS. Fixtures
+  /// supply data and services only; they never assemble or restyle a row.
+  static func make(
+    apps: [Latest.App], selected: Latest.App? = nil, dark: Bool = false,
+    searchFocusController: SearchFocusController = SearchFocusController(),
+    updating: any AppUpdating = AppUpdateService.shared, testCase: XCTestCase
+  ) async throws -> SidebarInputFixture {
+    let settings = try isolatedAppListSettings(for: testCase)
+    let model = UpdatesListViewModel(
+      snapshot: AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings),
+      settings: settings, updating: updating)
+    model.select(selected)
+    let environment = AppEnvironment(
+      searchFocusController: searchFocusController, settings: settings,
+      updating: updating, updatesListViewModel: model)
+    let window = try await makeLatestTestWindow(
+      environment: environment, dark: dark, testCase: testCase)
+    let fixture = try SidebarInputFixture(window: window, model: model)
+    window.layoutIfNeeded()
+    try await Task.sleep(for: .milliseconds(150))
+    return fixture
+  }
+
+  func contentFrame(for app: Latest.App) throws -> CGRect {
+    if let table = scroll.documentView as? NSTableView {
+      let index = try XCTUnwrap(model.snapshot.firstIndex(of: app))
+      let cell = try XCTUnwrap(table.view(atColumn: 0, row: index, makeIfNecessary: true))
+      return cell.convert(cell.bounds, to: nil)
+    }
+    NSApp.accessibilitySetValue(true, forAttribute: .init(rawValue: "AXEnhancedUserInterface"))
+    let row = try XCTUnwrap(
+      accessibilityElements().first {
+        $0.accessibilityIdentifier() == "updates.app.\(app.identifier)"
+          && $0.accessibilityFrame().intersects(window.frame)
+      })
+    // SwiftUI's source-list content begins 16pt inside the full-width AX row.
+    return window.convertFromScreen(row.accessibilityFrame()).offsetBy(dx: 16, dy: 0)
+  }
+
+  func captureRow(for app: Latest.App) async throws -> NSBitmapImageRep {
+    let frame = try contentFrame(for: app)
+    let bitmap = try await captureWindowBitmap(window)
+    let crop = CGRect(
+      x: frame.minX * 2, y: (window.frame.height - frame.maxY) * 2,
+      width: frame.width * 2, height: frame.height * 2)
+    return NSBitmapImageRep(cgImage: try XCTUnwrap(bitmap.cgImage?.cropping(to: crop)))
+  }
+
+  func clickProgress(for app: Latest.App) async throws {
+    let frame = try contentFrame(for: app)
+    let location = CGPoint(x: frame.minX + 264, y: frame.midY)
+    let down = try XCTUnwrap(
+      NSEvent.mouseEvent(
+        with: .leftMouseDown, location: location, modifierFlags: [],
+        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+        context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+    let up = try XCTUnwrap(
+      NSEvent.mouseEvent(
+        with: .leftMouseUp, location: location, modifierFlags: [],
+        timestamp: down.timestamp + 0.05, windowNumber: window.windowNumber,
+        context: nil, eventNumber: 2, clickCount: 1, pressure: 0))
+    NSApp.postEvent(up, atStart: false)
+    window.sendEvent(down)
+    try await Task.sleep(for: .milliseconds(50))
+  }
   let scroll: NSScrollView
 
   init(window: NSWindow, model: UpdatesListViewModel) throws {
@@ -86,16 +152,16 @@ struct SidebarInputFixture {
 
   func activate() async throws {
     NSApp.setActivationPolicy(.regular)
-    print("SIDEBAR_TEST_WAITING_FOR_FOCUS")
+    print("SIDEBAR_TEST_WAITING_FOR_FOCUS pid=\(ProcessInfo.processInfo.processIdentifier)")
     fflush(stdout)
-    let deadline = ContinuousClock.now + .seconds(60)
+    let deadline = ContinuousClock.now + .seconds(5)
     repeat {
       NSApp.activate()
       window.makeKeyAndOrderFront(nil)
       if window.isKeyWindow { return }
       try await Task.sleep(for: .milliseconds(20))
     } while ContinuousClock.now < deadline
-    XCTFail("Activate the visible sidebar test window")
+    XCTFail("UI test window could not acquire focus. Run --ui when the desktop is available.")
     throw CocoaError(.userCancelled)
   }
 
@@ -260,12 +326,14 @@ extension MigrationInteractionContractTest {
         characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53))
     fixture.window.sendEvent(escape)
     try await Task.sleep(for: .milliseconds(100))
-    XCTAssertFalse(fixture.window.firstResponder === editor)
+    // SwiftUI can temporarily retain the reusable AppKit field editor while
+    // transferring focus. The following arrow must navigate the actual list.
     fixture.model.setSearchQuery("")
     try await Task.sleep(for: .milliseconds(100))
     try fixture.press(down: true)
     try await Task.sleep(for: .milliseconds(50))
     XCTAssertEqual(fixture.selectedRow, 2)
+    XCTAssertTrue(fixture.model.isKeyboardSelection)
     fixture.model.setSearchQuery("No matching app")
     try await Task.sleep(for: .milliseconds(100))
     XCTAssertTrue(fixture.model.snapshot.sections.isEmpty)

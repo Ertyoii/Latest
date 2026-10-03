@@ -137,6 +137,7 @@ private final class DiscoveryCheckProgress: UpdateCheckProgressReporting {
 final class UpdateQueueTest: XCTestCase {
 
   func testDuplicateUpdateOperationIsNotQueued() {
+    let queue = UpdateQueue()
     let identifier = URL(fileURLWithPath: "/Applications/Duplicate-\(UUID().uuidString).app")
     let didStart = expectation(description: "Operation started")
     let didFinish = expectation(description: "Operation finished")
@@ -146,12 +147,12 @@ final class UpdateQueueTest: XCTestCase {
     }
     let secondOperation = TestUpdateOperation(identifier: identifier)
 
-    UpdateQueue.shared.addOperation(firstOperation)
+    queue.addOperation(firstOperation)
     wait(for: [didStart], timeout: 2)
 
-    UpdateQueue.shared.addOperation(secondOperation)
+    queue.addOperation(secondOperation)
 
-    let matchingOperations = UpdateQueue.shared.operations.compactMap { $0 as? UpdateOperation }
+    let matchingOperations = queue.operations.compactMap { $0 as? UpdateOperation }
       .filter {
         $0.appIdentifier == identifier
       }
@@ -165,6 +166,7 @@ final class UpdateQueueTest: XCTestCase {
   }
 
   func testFinishedUpdateOperationIsRemovedFromLookupIndex() {
+    let queue = UpdateQueue()
     let identifier = URL(fileURLWithPath: "/Applications/Finished-\(UUID().uuidString).app")
     let didStart = expectation(description: "Operation started")
     let didFinish = expectation(description: "Operation finished")
@@ -173,17 +175,18 @@ final class UpdateQueueTest: XCTestCase {
       didFinish.fulfill()
     }
 
-    UpdateQueue.shared.addOperation(operation)
+    queue.addOperation(operation)
     wait(for: [didStart], timeout: 2)
     operation.complete()
     wait(for: [didFinish], timeout: 2)
 
-    XCTAssertFalse(UpdateQueue.shared.contains(identifier))
+    XCTAssertFalse(queue.contains(identifier))
   }
 
   func testStateStreamImmediatelyYieldsCurrentState() async {
+    let queue = UpdateQueue()
     let identifier = URL(fileURLWithPath: "/Applications/Stream-\(UUID().uuidString).app")
-    var iterator = UpdateQueue.shared.states(for: identifier).makeAsyncIterator()
+    var iterator = queue.states(for: identifier).makeAsyncIterator()
 
     guard let state = await iterator.next() else {
       return XCTFail("Expected an initial queue state")
@@ -195,8 +198,9 @@ final class UpdateQueueTest: XCTestCase {
   }
 
   func testStateChangesReturnsCurrentWithoutRepublishingIt() async {
+    let queue = UpdateQueue()
     let identifier = URL(fileURLWithPath: "/Applications/StateChanges-\(UUID().uuidString).app")
-    let feed = UpdateQueue.shared.stateChanges(for: identifier)
+    let feed = queue.stateChanges(for: identifier)
     if case .none = feed.current {
       // Expected current value.
     } else {

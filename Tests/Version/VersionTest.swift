@@ -175,10 +175,6 @@ class VersionTest: XCTestCase {
     var v2 = Version(versionNumber: "2.1.6", buildNumber: "216")
     self.older(v1, v2)
 
-    v1 = Version(versionNumber: "2.1.5", buildNumber: "215")
-    v2 = Version(versionNumber: "2.2.6", buildNumber: nil)
-    self.older(v1, v2)
-
     v1 = Version(versionNumber: "2.1.5", buildNumber: nil)
     v2 = Version(versionNumber: "3.1.6", buildNumber: nil)
     self.older(v1, v2)
@@ -227,12 +223,8 @@ class VersionTest: XCTestCase {
   }
 
   func testNewerVersion() {
-    var v1 = Version(versionNumber: "3.1.5", buildNumber: nil)
-    var v2 = Version(versionNumber: "2.1.6", buildNumber: "216")
-    self.newer(v1, v2)
-
-    v1 = Version(versionNumber: "3.1.5", buildNumber: "215")
-    v2 = Version(versionNumber: "2.2.6", buildNumber: nil)
+    let v1 = Version(versionNumber: "3.1.5", buildNumber: "215")
+    let v2 = Version(versionNumber: "2.2.6", buildNumber: nil)
     self.newer(v1, v2)
   }
 

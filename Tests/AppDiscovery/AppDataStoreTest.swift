@@ -232,8 +232,7 @@ final class AppDirectoryTest: XCTestCase {
       versionNumber: "1.0")
 
     let initialCollection = expectation(description: "Initial collection")
-    let updateHandler = expectation(description: "Update handler")
-    updateHandler.isInverted = true
+    let updateCalls = Mutex(0)
 
     let directory = AppDirectory(
       url: directoryURL,
@@ -242,10 +241,11 @@ final class AppDirectoryTest: XCTestCase {
         initialCollection.fulfill()
       }
     ) {
-      updateHandler.fulfill()
+      updateCalls.withLock { $0 += 1 }
     }
 
-    wait(for: [initialCollection, updateHandler], timeout: 1)
+    wait(for: [initialCollection], timeout: 1)
+    XCTAssertEqual(updateCalls.withLock { $0 }, 0)
 
     XCTAssertEqual(directory.bundles.first?.version.versionNumber, "1.0")
   }

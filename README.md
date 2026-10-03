@@ -15,9 +15,11 @@ brew install ripgrep
 ./script/format.sh --check
 ```
 
-`test.sh` checks architecture, behavior, and visual regressions. CI also compares reviewed macOS 26 references in [Tests/VisualBaselines](Tests/VisualBaselines/macos-26/README.md). Compare UI changes with the original on the same system before updating a reference.
+`test.sh` runs offline behavior, architecture, and offscreen layout checks in a background test host, with coverage disabled. It does not activate Latest or open test windows. Add `--coverage` when measuring coverage; use `-only-testing:'Latest Tests/Class/method'` for a focused check.
 
-Full-window tests open the production SwiftUI scene with offline data. They save settled native window captures under `build/production-visuals/main-window-scene` and compare every pixel when same-host original captures exist in `build/production-visual-reference/main-window-scene`. The gallery references cover component scenarios; they do not represent the complete production window.
+`./script/test.sh --ui` opts into native window, mouse/keyboard, accessibility, and screenshot checks; these can take focus. `--all` runs both lanes and is used by CI on its dedicated desktop. Benchmarks and live catalog audits keep their separate scripts and never run as part of these commands.
+
+Sidebar visual tests open `LatestMainWindowScene` with offline data and inspect/crop its actual rows, using the renderer selected by the current OS. Full-window captures go under `build/production-visuals/main-window-scene`. When same-host original captures exist in `build/production-visual-reference/main-window-scene`, every pixel is compared; existing mismatches remain failures, and absent references do not establish parity. The 14 macOS 26 [component references](Tests/VisualBaselines/macos-26/README.md) retain production detail, locations, update-action, and toolbar coverage. The old gallery’s independent sidebar implementation has been removed; its historical sidebar pixels remain excluded from detail comparisons. Compare UI changes with the original on the same system before updating a reference.
 
 Run `./script/format.sh` to format Swift sources. Use the same Xcode toolchain for reproducible output; `.swift-format` defines the formatting rules.
 

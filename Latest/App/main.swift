@@ -33,6 +33,11 @@ private struct LatestUnitTestHostApplication: SwiftUI.App {
 }
 
 if ApplicationRuntime.isRunningUnitTests {
+  if ProcessInfo.processInfo.environment["LATEST_UI_TESTS"] != "1" {
+    // The background lane has no visible scenes and must not activate over the
+    // user's foreground app. UI/benchmark runners explicitly opt in.
+    NSApplication.shared.setActivationPolicy(.prohibited)
+  }
   LatestUnitTestHostApplication.main()
 } else {
   LatestApplication.main()

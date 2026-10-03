@@ -17,12 +17,11 @@ private typealias App = Latest.App
 
 /// Deterministic fixtures used by the SwiftUI migration's rendered regression suite.
 ///
-/// The gallery intentionally uses only local symbols and fixed text. Production views
-/// can be moved into this composition as they are cut over without making screenshots
-/// depend on the user's installed applications, network, locale, or update queue.
+/// Only production controls belong here. Main-window and sidebar coverage uses
+/// LatestMainWindowScene with offline models, never a second UI implementation.
 struct MigrationGalleryScenario: Identifiable {
   enum Surface {
-    case main(DetailState)
+    case detail(DetailState)
     case locations
     case updateStateShelf
     case toolbarStateShelf
@@ -74,41 +73,41 @@ struct MigrationGalleryScenario: Identifiable {
   }
 
   static let regressionCases: [MigrationGalleryScenario] = [
-    MigrationGalleryScenario("main-default-light", surface: .main(.releaseNotes)),
+    MigrationGalleryScenario("main-default-light", surface: .detail(.releaseNotes)),
     MigrationGalleryScenario(
       "main-minimum-dark-empty",
-      surface: .main(.empty),
+      surface: .detail(.empty),
       size: MigrationGalleryMetrics.minimumWindowSize,
       colorScheme: .dark,
       tint: .green
     ),
     MigrationGalleryScenario(
       "main-inactive-graphite",
-      surface: .main(.releaseNotes),
+      surface: .detail(.releaseNotes),
       controlActiveState: .inactive,
       tint: .gray
     ),
     MigrationGalleryScenario(
       "main-increased-contrast-orange",
-      surface: .main(.releaseNotes),
+      surface: .detail(.releaseNotes),
       colorScheme: .dark,
       tint: .orange,
       contrast: .increased
     ),
     MigrationGalleryScenario(
       "main-reduce-transparency-purple",
-      surface: .main(.loading),
+      surface: .detail(.loading),
       tint: .purple,
       reduceTransparency: true
     ),
     MigrationGalleryScenario(
       "main-large-text-error",
-      surface: .main(.error),
+      surface: .detail(.error),
       dynamicTypeSize: .accessibility1
     ),
     MigrationGalleryScenario(
       "main-rtl-long-localization",
-      surface: .main(.releaseNotes),
+      surface: .detail(.releaseNotes),
       locale: Locale(identifier: "ar"),
       layoutDirection: .rightToLeft
     ),
@@ -157,8 +156,6 @@ enum MigrationGalleryMetrics {
   static let detailHeaderHeight: CGFloat = 79
   static let locationsContentSize = CGSize(width: 440, height: 296)
   static let locationsTableSize = CGSize(width: 400, height: 200)
-  static let sidebarFixtureSize = CGSize(width: sidebarWidth, height: 420)
-  static let appRowHeight: CGFloat = 60
 
   static func detailFrame(in size: CGSize) -> CGRect {
     let sidebarWidth = min(self.sidebarWidth, size.width)
@@ -190,8 +187,16 @@ struct MigrationGalleryView: View {
   @ViewBuilder
   private var content: some View {
     switch scenario.surface {
-    case .main(let state):
-      MigrationMainWindowFixture(detailState: state)
+    case .detail(let state):
+      // Preserve the reviewed detail coordinates. The blank area replaces the
+      // old mock sidebar, which was never part of the pixel comparison.
+      HStack(spacing: 0) {
+        Color.clear.frame(width: MigrationGalleryMetrics.sidebarWidth)
+        Divider()
+        MigrationDetailFixture(state: state)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+      .background(.background)
     case .locations:
       MigrationLocationsFixture()
     case .updateStateShelf:
@@ -199,141 +204,6 @@ struct MigrationGalleryView: View {
     case .toolbarStateShelf:
       MigrationToolbarStateShelf()
     }
-  }
-}
-
-private struct MigrationMainWindowFixture: View {
-  let detailState: MigrationGalleryScenario.DetailState
-  @State private var selection: String? = MigrationAppFixture.cursor.id
-  @State private var searchText = ""
-
-  var body: some View {
-    HStack(spacing: 0) {
-      VStack(spacing: 0) {
-        TextField("Search Apps", text: $searchText)
-          .textFieldStyle(.roundedBorder)
-          .padding(.horizontal, 20)
-          .frame(height: 39)
-
-        List(selection: $selection) {
-          Section("Available Updates (2)") {
-            MigrationSidebarRow(app: .discord)
-            MigrationSidebarRow(app: .telegram)
-          }
-          Section("Installed Apps (3)") {
-            MigrationSidebarRow(app: .cursor)
-            MigrationSidebarRow(app: .browser)
-            MigrationSidebarRow(app: .notes)
-          }
-        }
-        .listStyle(.sidebar)
-      }
-      .frame(width: MigrationGalleryMetrics.sidebarWidth)
-      .background(.ultraThinMaterial)
-
-      Divider()
-
-      MigrationDetailFixture(state: detailState)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-    .background(.background)
-  }
-}
-
-private struct MigrationAppFixture: Identifiable {
-  let id: String
-  let name: String
-  let version: String
-  let date: String
-  let symbol: String
-  let color: Color
-  let updateAvailable: Bool
-
-  static let discord = MigrationAppFixture(
-    id: "com.example.discord",
-    name: "Discord",
-    version: "0.0.400 -> 0.0.401",
-    date: "Today",
-    symbol: "bubble.left.and.bubble.right.fill",
-    color: .indigo,
-    updateAvailable: true
-  )
-  static let telegram = MigrationAppFixture(
-    id: "com.example.telegram",
-    name: "Telegram",
-    version: "7.0.1 -> 7.0.3",
-    date: "Yesterday",
-    symbol: "paperplane.fill",
-    color: .cyan,
-    updateAvailable: true
-  )
-  static let cursor = MigrationAppFixture(
-    id: "com.example.cursor",
-    name: "Cursor",
-    version: "Version 3.12.17",
-    date: "Today",
-    symbol: "cursorarrow.rays",
-    color: .black,
-    updateAvailable: false
-  )
-  static let browser = MigrationAppFixture(
-    id: "com.example.browser",
-    name: "A Browser with a Deliberately Long Localized Name",
-    version: "Version 150.0.7871.129",
-    date: "Jul 18",
-    symbol: "globe",
-    color: .blue,
-    updateAvailable: false
-  )
-  static let notes = MigrationAppFixture(
-    id: "com.example.notes",
-    name: "Notes",
-    version: "Version 26.5",
-    date: "Jul 17",
-    symbol: "note.text",
-    color: .yellow,
-    updateAvailable: false
-  )
-}
-
-private struct MigrationSidebarRow: View {
-  let app: MigrationAppFixture
-
-  var body: some View {
-    HStack(spacing: 8) {
-      RoundedRectangle(cornerRadius: 10, style: .continuous)
-        .fill(app.color.gradient)
-        .overlay {
-          Image(systemName: app.symbol)
-            .font(.title2)
-            .foregroundStyle(app.color == .yellow ? .black : .white)
-        }
-        .frame(width: 50, height: 50)
-
-      VStack(alignment: .leading, spacing: 2) {
-        Text(app.name)
-          .font(.system(size: 13, weight: .semibold))
-          .lineLimit(1)
-        Text(app.version)
-          .font(.system(size: 11))
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-      }
-
-      Spacer(minLength: 4)
-
-      VStack(alignment: .trailing, spacing: 5) {
-        Text(app.date)
-          .font(.callout)
-          .foregroundStyle(.secondary)
-        Image(systemName: app.updateAvailable ? "arrow.down.circle.fill" : "checkmark.circle.fill")
-          .foregroundStyle(app.updateAvailable ? .cyan : .secondary)
-      }
-    }
-    .frame(height: MigrationGalleryMetrics.appRowHeight)
-    .tag(app.id)
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel("\(app.name), \(app.version), \(app.date)")
   }
 }
 

@@ -7,7 +7,16 @@ description: Build and replace a local macOS app in /Applications, remove duplic
 
 Deliver one installed app at `/Applications/<install-name>.app`, with the requested version and macOS resolving to that path. Build products are temporary installation inputs. Remove them after verifying the installed copy; retaining the fresh build requires an explicit user request.
 
-Follow the user's current instructions and existing authorization. Infer routine project, scheme, and app names from the repository and installed bundle. Ask only when identity or scope remains ambiguous. This skill does not authorize a version bump, commit, push, Dock restart, or changes to other apps by itself.
+Follow the user's current instructions and existing authorization. Infer routine project, scheme, and app names from the repository and installed bundle. Ask only when identity or scope remains ambiguous. For Latest, a replacement request includes preparing and pushing relevant unshipped changes as described below. For other repositories, follow their release authorization. Changes to other apps and restarting Dock require separate authorization.
+
+## Decide the version, then ship the source
+
+1. Read the working-tree status, configured remote/upstream, current marketing version, and release notes. Query the latest published release for this repository and channel (for GitHub, use `gh release list` / `gh release view`; exclude drafts and unrelated prereleases). Do not use the installed app's version as the published version.
+2. If there are no published releases, check the project's actual distribution convention. Latest Dev currently ships through commits pushed to `origin/develop`: fetch that branch and read its marketing version, release notes, and commit as the published-source fallback. Old upstream tags are not Latest Dev releases. Report which source was used. A failed remote lookup is unknown, not proof that no release exists.
+3. Compare versions numerically and compare relevant source changes with that published revision. If the current version is already newer, retain it. If it equals the published version and relevant changes remain unshipped, bump once using the repository's version convention and update release notes. If the version is behind, reconcile the remote state before choosing a version; never downgrade or reset unrelated work. If the requested source is already shipped, reuse its version without an empty release commit. Let the project's build-number mechanism own the build number.
+4. Commit only relevant changes and push to the intended branch successfully before building and replacing. Reuse an existing unpushed commit when appropriate. Stop if the push fails; do not install an unpublished candidate while reporting it as shipped.
+
+Replacement is a version-and-install workflow. Do not run the app's test suite, visual snapshots, benchmarks, evaluations, baseline comparisons, or test audits as part of it. Use validation evidence from the implementation task when available; do not rerun it. A build and installed-bundle verification are required. Run a test or evaluation only if the user separately requests it in the current task.
 
 ## Execute
 

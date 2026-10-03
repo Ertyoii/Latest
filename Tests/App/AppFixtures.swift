@@ -8,6 +8,14 @@ import XCTest
 
 @testable import Latest
 
+/// Native focus and WindowServer captures are explicit opt-in work. The default
+/// runner must remain usable while another application is in the foreground.
+func requireUITests() throws {
+  try XCTSkipUnless(
+    ProcessInfo.processInfo.environment["LATEST_UI_TESTS"] == "1",
+    "Run ./script/test.sh --ui for window and input tests.")
+}
+
 @MainActor
 func isolatedAppListSettings(for testCase: XCTestCase) throws -> AppListSettings {
   let suiteName = "LatestTests.AppListSettings.\(UUID().uuidString)"
@@ -95,6 +103,7 @@ enum LocalUATFixture {
 func makeLatestTestWindow(
   environment: AppEnvironment, dark: Bool = false, testCase: XCTestCase
 ) async throws -> NSWindow {
+  try requireUITests()
   let originalAppearanceName = NSApp.appearance?.name.rawValue
   testCase.addTeardownBlock {
     await MainActor.run {

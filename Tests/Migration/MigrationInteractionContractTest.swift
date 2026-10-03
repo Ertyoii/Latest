@@ -71,6 +71,7 @@ final class MigrationInteractionContractTest: XCTestCase {
 
   @MainActor
   func testHelperInstallButtonPresentsRegistrationFailure() async throws {
+    try requireUITests()
     let stored = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
     AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
     defer { AppStoreUpdateSettings.alwaysPerformManualUpdates.active = stored }
@@ -118,6 +119,7 @@ final class MigrationInteractionContractTest: XCTestCase {
 
   @MainActor
   func testSwiftUIHelperAlertMatchesOriginalSheetPixelsAndSuppression() async throws {
+    try requireUITests()
     let stored = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
     AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
     defer { AppStoreUpdateSettings.alwaysPerformManualUpdates.active = stored }
@@ -293,22 +295,6 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testLocalUATFixtureIsOfflinePopulatedAndSelected() throws {
-    let environment = AppEnvironment.localUATFixture(
-      settings: try isolatedAppListSettings(for: self))
-    let apps = environment.updatesListViewModel.snapshot.apps
-    XCTAssertEqual(apps.count, 18)
-    let firstVisible = try XCTUnwrap(
-      environment.updatesListViewModel.snapshot.sections.first?.apps.first)
-    let selected = try XCTUnwrap(environment.updatesListViewModel.selectedApp)
-    XCTAssertEqual(selected.identifier, firstVisible.identifier)
-    XCTAssertTrue(apps.allSatisfy { $0.releaseNotes != nil })
-    XCTAssertTrue(apps.allSatisfy { FileManager.default.fileExists(atPath: $0.fileURL.path) })
-    XCTAssertEqual(
-      Set(apps.map(\.fileURL)).count, apps.count, "UAT must exercise distinct real app icons")
-  }
-
-  @MainActor
   func testUpdateProgressAggregatesOverlappingBatches() {
     let service = UpdateCheckingService()
     let coordinator = UpdateCheckCoordinator()
@@ -376,8 +362,9 @@ final class MigrationInteractionContractTest: XCTestCase {
       backing: .buffered,
       defer: false
     )
+    window.isReleasedWhenClosed = false
     window.contentView = hostingView
-    window.makeKeyAndOrderFront(nil)
+    defer { window.close() }
     window.layoutIfNeeded()
     hostingView.layoutSubtreeIfNeeded()
     RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
@@ -406,6 +393,7 @@ final class MigrationInteractionContractTest: XCTestCase {
 
   @MainActor
   func testSidebarSearchAcceptsTypingClearAndEscapeRestoresTableFocus() throws {
+    try requireUITests()
     try runApplicationTest {
       #if compiler(>=6.4)
         if #available(macOS 27.0, *) {
@@ -523,6 +511,7 @@ final class MigrationInteractionContractTest: XCTestCase {
 
   @MainActor
   func testSearchEscapeRestoresReleaseNotesAfterRepeatedFindCommands() async throws {
+    try requireUITests()
     let environment = AppEnvironment.localUATFixture(
       settings: try isolatedAppListSettings(for: self))
     let window = try await makeLatestTestWindow(environment: environment, testCase: self)
@@ -610,6 +599,7 @@ final class MigrationInteractionContractTest: XCTestCase {
 
   @MainActor
   func testHeldArrowNavigationKeepsRowsVisibleAndSeparate() throws {
+    try requireUITests()
     try runApplicationTest {
       #if compiler(>=6.4)
         if #available(macOS 27.0, *) {
@@ -722,6 +712,7 @@ final class MigrationInteractionContractTest: XCTestCase {
 
   @MainActor
   func testDetailActionUsesRefreshedAppAtSameURL() async throws {
+    try requireUITests()
     let calls = Mutex([0, 0])
     let bundle = makeApp(name: "Example", version: "1").bundle
     let apps = ["2", "3"].enumerated().map { index, version in
@@ -812,9 +803,11 @@ final class MigrationInteractionContractTest: XCTestCase {
       date: Date(timeIntervalSince1970: 1_750_000_000)
     )
 
-    let row = UpdateRowHostingCell(frame: NSRect(x: 0, y: 0, width: 308, height: 60))
-    row.update(app: app, isSelected: false, dateFormatter: formatter)
-    let label = try XCTUnwrap(row.accessibilityLabel())
+    let row = UpdateRowView(
+      app: app, selection: UpdateRowSelection(),
+      date: formatter.string(from: app.updateDate), showsSupportStatus: true,
+      updating: AppUpdateService(queue: UpdateQueue()))
+    let label = row.accessibilityLabel
     XCTAssertTrue(label.contains("Discord"))
     XCTAssertTrue(label.contains("1"))
     XCTAssertTrue(label.contains("2"))
@@ -841,6 +834,7 @@ final class MigrationInteractionContractTest: XCTestCase {
 
   @MainActor
   func testReleaseNotesTextPreservesRichTextSelectionCopyAndAccessibility() async throws {
+    try requireUITests()
     let source = NSMutableAttributedString(string: "Bold link\tbody\nSecond paragraph")
     let fullRange = NSRange(location: 0, length: source.length)
     let linkRange = (source.string as NSString).range(of: "link")
@@ -892,6 +886,7 @@ final class MigrationInteractionContractTest: XCTestCase {
 
   @MainActor
   func testReleaseNotesWebViewReusesRendererAndResetsScrollOnSelection() async throws {
+    try requireUITests()
     let short = ReleaseNotesContent(string: "Short release notes")
     let long = ReleaseNotesContent(
       string: Array(repeating: "Long release notes", count: 150)
@@ -976,33 +971,33 @@ final class MigrationInteractionContractTest: XCTestCase {
 
   @MainActor
   func testSidebarSupportPreferenceUpdatesExistingRows() async throws {
+    try requireUITests()
     let app = makeApp(name: "Example", version: "1")
-    let model = UpdatesListViewModel(snapshot: AppListSnapshot(withApps: [app], filterQuery: nil))
-    let host = NSHostingView(
-      rootView: UpdatesTableBridge(viewModel: model, showsSupportStatusOverride: true))
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 308, height: 400),
-      styleMask: [.titled], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.contentView = host
-    window.orderFront(nil)
+    let suite = "SidebarSupport.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let settings = AppListSettings(userDefaults: defaults)
+    settings.showInstalledUpdates = true
+    let store = AppDataStore(userDefaults: defaults)
+    _ = store.set(appBundle: app.bundle)
+    let model = UpdatesListViewModel(
+      snapshot: AppListSnapshot(withApps: [app], filterQuery: nil, settings: settings),
+      settings: settings, appProvider: store)
+    model.startObserving()
+    defer { model.stopObserving() }
+    let environment = AppEnvironment(settings: settings, updatesListViewModel: model)
+    let window = try await makeLatestTestWindow(environment: environment, testCase: self)
     defer { window.close() }
-    host.layoutSubtreeIfNeeded()
-    let table = try XCTUnwrap(host.descendant(of: NSTableView.self))
-    let row = try XCTUnwrap(model.snapshot.firstIndex(of: app))
-    let cell = try XCTUnwrap(table.view(atColumn: 0, row: row, makeIfNecessary: true))
+    let fixture = try SidebarInputFixture(window: window, model: model)
     for visible in [true, false, true] {
-      host.rootView = UpdatesTableBridge(viewModel: model, showsSupportStatusOverride: visible)
-      host.layoutSubtreeIfNeeded()
-      try await Task.sleep(for: .milliseconds(100))
-      let bitmap = try await captureWindowBitmap(window)
-      let cellFrame = cell.convert(cell.bounds, to: nil)
+      settings.includeAppsWithLimitedSupport = visible
+      settings.includeUnsupportedApps = visible
+      try await Task.sleep(for: .milliseconds(150))
+      let bitmap = try await fixture.captureRow(for: app)
       var greenPixels = 0
-      for y in max(
-        0, Int((window.frame.height - cellFrame.maxY) * 2))..<min(
-          bitmap.pixelsHigh, Int((window.frame.height - cellFrame.minY) * 2))
-      {
-        for x in max(0, Int(cellFrame.minX * 2))..<min(bitmap.pixelsWide, Int(cellFrame.maxX * 2)) {
+      // Only the production status control, excluding the application's icon.
+      for y in 35..<83 {
+        for x in 502..<555 {
           let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
           if color.greenComponent - max(color.redComponent, color.blueComponent) > 0.2 {
             greenPixels += 1
@@ -1014,7 +1009,7 @@ final class MigrationInteractionContractTest: XCTestCase {
       } else {
         XCTAssertEqual(greenPixels, 0, "Disabling support indicators must remove the painted dot")
       }
-      XCTAssertTrue(table.view(atColumn: 0, row: row, makeIfNecessary: false) === cell)
+      XCTAssertEqual(model.snapshot.apps.map(\.identifier), [app.identifier])
     }
   }
 

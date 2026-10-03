@@ -16,8 +16,13 @@ import XCTest
 @testable import Latest
 
 final class ReleaseNotesHeaderLayoutTest: XCTestCase {
+  @MainActor
   func testUnitTestsUseIsolatedApplicationLifecycle() {
     XCTAssertTrue(ApplicationRuntime.isRunningUnitTests)
+    if ProcessInfo.processInfo.environment["LATEST_UI_TESTS"] != "1" {
+      XCTAssertEqual(NSApp.activationPolicy(), .prohibited)
+      XCTAssertFalse(NSApp.isActive, "Background tests must not activate over another app")
+    }
   }
   @MainActor
   func testSwiftUIDetailHeaderKeepsFixedProductionGeometry() {
@@ -106,6 +111,7 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 
   @MainActor
   func testToolbarTitleIsVisibleInHostedMainWindow() async throws {
+    try requireUITests()
     let environment = AppEnvironment.localUATFixture(
       settings: try isolatedAppListSettings(for: self))
     let window = try await makeLatestTestWindow(
@@ -156,6 +162,7 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 
   @MainActor
   func testMainWindowHasNoFloatingSidebarGlass() throws {
+    try requireUITests()
     let environment = AppEnvironment.localUATFixture(
       settings: try isolatedAppListSettings(for: self))
     let hostingView = NSHostingView(rootView: LatestRootView(environment: environment))
@@ -196,6 +203,7 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 
   @MainActor
   func testRefreshButtonHonorsEnabledStateForMouseInput() async throws {
+    try requireUITests()
     for enabled in [true, false] {
       var calls = 0
       let host = NSHostingView(
@@ -278,18 +286,22 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
 
   @MainActor
   func testSidebarShowsLongInstalledVersionWithoutTruncationAtIdealWidth() async throws {
+    try requireUITests()
     let app = makeApp(name: "Chrome", version: "151.0.7922.109")
     let expectedVersion = try XCTUnwrap(app.localizedVersionInformation?.current)
-    let image = try await captureSidebarRow(app: app, referenceVersion: expectedVersion)
-    let bitmap = NSBitmapImageRep(cgImage: image)
+    let fixture = try await SidebarInputFixture.make(apps: [app], testCase: self)
+    defer { fixture.window.close() }
+    let bitmap = try await fixture.captureRow(for: app)
+    let referenceBitmap = try nativeVersionReference(expectedVersion)
     var missingGlyphPixels = 0
     var glyphPixels = 0
     let backing = try XCTUnwrap(bitmap.colorAt(x: 600, y: 0)?.usingColorSpace(.deviceRGB))
       .redComponent
     for y in 62..<90 {
       for x in 116..<540 {
-        let reference = try XCTUnwrap(bitmap.colorAt(x: x + 616, y: y)?.usingColorSpace(.deviceRGB))
-        guard backing - reference.redComponent > 0.08 else { continue }
+        let reference = try XCTUnwrap(
+          referenceBitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
+        guard reference.alphaComponent > 0.15 else { continue }
         glyphPixels += 1
         // Text and NSTextField may snap coverage to adjacent pixels. Require
         // every native glyph pixel to have matching ink within one pixel.
@@ -312,21 +324,55 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
   }
 
   @MainActor
-  func testSidebarTextColorsFollowSelectionEmphasis() async throws {
+  func testSidebarTextColorsFollowSelectionEmphasis() throws {
+    try requireUITests()
+    try runApplicationTest { try await self.checkSidebarTextColorsFollowSelectionEmphasis() }
+  }
+
+  @MainActor
+  private func checkSidebarTextColorsFollowSelectionEmphasis() async throws {
     let app = makeApp(name: "Discord", version: "0.0.398", remoteVersion: "0.0.399")
+    let search = SearchFocusController()
+    let fixture = try await SidebarInputFixture.make(
+      apps: [app], selected: app, searchFocusController: search, testCase: self)
+    defer { fixture.window.close() }
+    try await fixture.activate()
+    try fixture.click(row: XCTUnwrap(fixture.model.snapshot.firstIndex(of: app)))
     for emphasized in [true, false] {
-      let bitmap = NSBitmapImageRep(
-        cgImage: try await captureSidebarRow(app: app, emphasized: emphasized))
+      if !emphasized {
+        // Transfer actual focus within the same production scene. Calling
+        // resignKey on a newly opened window did not establish this state.
+        search.focus()
+        let deadline = ContinuousClock.now + .seconds(1)
+        while !(fixture.window.firstResponder is NSTextView) && ContinuousClock.now < deadline {
+          try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(fixture.window.firstResponder is NSTextView, "Search must own keyboard focus")
+      }
+      try await Task.sleep(for: .milliseconds(100))
+      let bitmap = try await fixture.captureRow(for: app)
       var expectedGlyphPixels = 0
-      // Blue active selection and gray inactive backing independently
-      // distinguish white and dark title glyphs from their backgrounds.
+      let backing = try XCTUnwrap(bitmap.colorAt(x: 440, y: 104)?.usingColorSpace(.sRGB))
       for y in 18..<46 {
         for x in 116..<220 {
-          let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
-          if emphasized ? color.redComponent > 0.85 : color.redComponent < 0.15 {
+          let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+          // The real system label is not absolute black. Check its contrast
+          // with the selection fill in one color space, not device-RGB values.
+          let contrast =
+            emphasized
+            ? color.redComponent - backing.redComponent
+            : backing.redComponent - color.redComponent
+          if contrast > 0.4 {
             expectedGlyphPixels += 1
           }
         }
+      }
+      if expectedGlyphPixels <= 50 {
+        let attachment = XCTAttachment(
+          image: NSImage(cgImage: try XCTUnwrap(bitmap.cgImage), size: bitmap.size))
+        attachment.name = "production-row-emphasis-\(emphasized)"
+        attachment.lifetime = .keepAlways
+        add(attachment)
       }
       XCTAssertGreaterThan(
         expectedGlyphPixels, 50, "Incorrect title color with emphasis=\(emphasized)")
@@ -334,51 +380,23 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
   }
 
   @MainActor
-  private func captureSidebarRow(
-    app: Latest.App, emphasized: Bool = false, referenceVersion: String? = nil
-  ) async throws -> CGImage {
-    let row = UpdateRowHostingCell(
-      frame: NSRect(x: 0, y: 0, width: 308, height: 60))
-    let nativeRow = emphasized ? NSTableRowView(frame: row.bounds) : nil
-    let backing = NSView(
-      frame: NSRect(x: 0, y: 0, width: referenceVersion == nil ? 308 : 616, height: 60))
-    backing.wantsLayer = true
-    backing.layer?.backgroundColor = NSColor(calibratedWhite: 0.3, alpha: 1).cgColor
-    if let nativeRow {
-      nativeRow.backgroundColor = .clear
-      nativeRow.addSubview(row)
-      backing.addSubview(nativeRow)
-    } else {
-      backing.addSubview(row)
-    }
-    if let referenceVersion {
-      let reference = NSTextField(labelWithString: referenceVersion)
-      reference.font = NSFont.systemFont(ofSize: 11)
-      reference.textColor = .secondaryLabelColor
-      // A standalone NSTextField includes 2pt of leading cell padding.
-      reference.frame = NSRect(x: 364, y: 15, width: 216, height: 14)
-      backing.addSubview(reference)
-    }
-    let window = NSWindow(
-      contentRect: backing.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.appearance = NSAppearance(named: .aqua)
-    window.contentView = backing
-    window.orderFront(nil)
-    defer { window.close() }
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    row.update(app: app, isSelected: nativeRow == nil, dateFormatter: formatter)
-    // Native selection precedes the model's deferred row-content update.
-    // Its first painted frame must already use the selected text color.
-    nativeRow?.isSelected = true
-    nativeRow?.isEmphasized = emphasized
-    row.backgroundStyle = emphasized ? .emphasized : .normal
-    window.layoutIfNeeded()
-    row.layoutSubtreeIfNeeded()
-    try await Task.sleep(for: .milliseconds(100))
-    let bitmap = try await captureWindowBitmap(window)
-    return try XCTUnwrap(bitmap.cgImage)
+  private func nativeVersionReference(_ version: String) throws -> NSBitmapImageRep {
+    let host = NSView(frame: NSRect(x: 0, y: 0, width: 308, height: 60))
+    host.appearance = NSAppearance(named: .aqua)
+    let reference = NSTextField(labelWithString: version)
+    reference.font = NSFont.systemFont(ofSize: 11)
+    reference.textColor = .secondaryLabelColor
+    // NSTextField has 2pt of leading padding relative to the production Text.
+    reference.frame = NSRect(x: 56, y: 15, width: 216, height: 14)
+    host.addSubview(reference)
+    let bitmap = try XCTUnwrap(
+      NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: 616, pixelsHigh: 120,
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+    bitmap.size = host.frame.size
+    host.cacheDisplay(in: host.bounds, to: bitmap)
+    return bitmap
   }
 
   private func makeApp(
