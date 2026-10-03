@@ -562,6 +562,83 @@ private enum VisualRegressionError: LocalizedError {
 /// strict full-frame comparison without accepting any changed RGBA pixels.
 final class ProductionVisualParityTest: XCTestCase {
   @MainActor
+  func testToolbarScanBecomesVisibleLinearProgressAndClearsOnCompletion() async throws {
+    try requireUITests()
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+    let set =
+      (try? String(
+        contentsOf: root.appendingPathComponent("build/sidebar-control-capture-set"),
+        encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "current"
+    let output = root.appendingPathComponent("build/toolbar-control-\(set)")
+    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+    for dark in [false, true] {
+      let environment = AppEnvironment.localUATFixture(
+        settings: try isolatedAppListSettings(for: self))
+      let service = environment.updateCheckingService
+      let coordinator = UpdateCheckCoordinator()
+      let window = try await makeLatestTestWindow(
+        environment: environment, dark: dark, testCase: self)
+      defer { window.close() }
+      var captures: [String: NSBitmapImageRep] = [:]
+      for state in ["idle", "scanning", "quarter", "three-quarters", "finished"] {
+        switch state {
+        case "idle": break
+        case "scanning": service.updateCheckerDidStartScanningForApps(coordinator)
+        case "quarter":
+          service.updateChecker(coordinator, didStartCheckingApps: 4, generation: 1)
+          service.updateChecker(coordinator, didCheckApp: LocalUATFixture.apps[0])
+        case "three-quarters":
+          for app in LocalUATFixture.apps[1...2] {
+            service.updateChecker(coordinator, didCheckApp: app)
+          }
+        default: service.updateCheckerDidFinishCheckingForUpdates(coordinator, generation: 1)
+        }
+        try await Task.sleep(for: .milliseconds(350))
+        window.layoutIfNeeded()
+        let bitmap = try await captureWindowBitmap(window)
+        let toolbar = try XCTUnwrap(
+          bitmap.cgImage?.cropping(
+            to: CGRect(
+              x: bitmap.pixelsWide - 440, y: 0, width: 440, height: 110)))
+        let crop = NSBitmapImageRep(cgImage: toolbar)
+        let name = "\(dark ? "dark" : "light")-\(state)"
+        try XCTUnwrap(crop.representation(using: .png, properties: [:])).write(
+          to: output.appendingPathComponent("\(name).png"))
+        captures[state] = crop
+      }
+      func difference(_ first: String, _ second: String, x: Int, y: Int) throws -> CGFloat {
+        let a = try XCTUnwrap(captures[first]?.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+        let b = try XCTUnwrap(captures[second]?.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+        return max(
+          abs(a.redComponent - b.redComponent),
+          abs(a.greenComponent - b.greenComponent), abs(a.blueComponent - b.blueComponent))
+      }
+      // Native toolbars use a neutral fill. Measure actual changed columns,
+      // excluding the refresh button, rather than requiring an accent color.
+      var changedColumns = Set<Int>()
+      var scanPixels = 0
+      var completionPixels = 0
+      for y in 0..<110 {
+        for x in 0..<300 {
+          if try difference("quarter", "three-quarters", x: x, y: y) > 0.04 {
+            changedColumns.insert(x)
+          }
+          if try difference("idle", "scanning", x: x, y: y) > 0.04 { scanPixels += 1 }
+          if try difference("idle", "finished", x: x, y: y) > 0.04 { completionPixels += 1 }
+        }
+      }
+      XCTAssertGreaterThan(
+        changedColumns.count, 40, "The horizontal bar must advance with checked apps")
+      XCTAssertGreaterThan(scanPixels, 20, "Scanning must paint an indeterminate indicator")
+      XCTAssertEqual(completionPixels, 0, "Completion must remove the progress indicator")
+      XCTAssertLessThan(
+        try difference("quarter", "finished", x: 240, y: 20), 0.02,
+        "Passive progress must not expand the refresh button's glass background")
+    }
+  }
+
+  @MainActor
   func testDetailCapsulePaintsAndRoutesMouseActions() throws {
     try requireUITests()
     try runApplicationTest { try await self.checkDetailCapsulePaintsAndRoutesMouseActions() }
@@ -738,10 +815,11 @@ final class ProductionVisualParityTest: XCTestCase {
           try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
             to: output.appendingPathComponent(filename))
           // The status dot returns after a failure; an active operation instead
-          // paints its indicator at the established center (264, 30).
+          // paints its indicator below the date, with a visible gap.
           var greenStatusPixels = 0
           var indicatorPixels = 0
-          for y in 35..<83 {
+          var firstIndicatorY = bitmap.pixelsHigh
+          for y in 40..<110 {
             for x in 502..<555 {
               let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
               if color.greenComponent - max(color.redComponent, color.blueComponent) > 0.2 {
@@ -751,6 +829,7 @@ final class ProductionVisualParityTest: XCTestCase {
                 ? color.redComponent > 0.9 : color.blueComponent - color.redComponent > 0.2
               {
                 indicatorPixels += 1
+                firstIndicatorY = min(firstIndicatorY, y)
               }
             }
           }
@@ -760,6 +839,11 @@ final class ProductionVisualParityTest: XCTestCase {
             XCTAssertEqual(greenStatusPixels, 0, filename)
             if name != "waiting" || selected {
               XCTAssertGreaterThan(indicatorPixels, 20, filename)
+              if selected {
+                XCTAssertGreaterThanOrEqual(
+                  firstIndicatorY, 50,
+                  "The indicator must leave space below the date: \(filename)")
+              }
             }
           }
         }

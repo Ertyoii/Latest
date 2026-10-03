@@ -63,7 +63,7 @@ struct SidebarUpdateStatus: View {
       case .update, .open, .failed:
         Image(nsImage: app.source.supportState.statusImage)
           .frame(width: 16, height: 16)
-          .offset(y: -3)
+          .offset(y: -13)
           .opacity(showsSupportStatus ? 1 : 0)
           .help(app.source.supportState.label)
           .accessibilityLabel(app.source.supportState.label)

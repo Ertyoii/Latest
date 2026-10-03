@@ -98,10 +98,11 @@ struct UpdateRowView: View {
         .padding(.top, 3.5)
         .padding(.trailing, 35.75)
     }
-    .overlay(alignment: .trailing) {
+    .overlay(alignment: .bottomTrailing) {
       SidebarUpdateStatus(
         app: app, selection: selection, showsSupportStatus: showsSupportStatus, updating: updating
       )
+      .padding(.bottom, 8)
       .padding(.trailing, 32)
     }
     .overlay(alignment: .bottom) {

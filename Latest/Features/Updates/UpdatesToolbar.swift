@@ -21,6 +21,8 @@ struct UpdatesToolbar: ToolbarContent {
         presentation: ToolbarProgressPresentation(
           isRunning: service.isRunning, fraction: service.progressFraction))
     }
+    // Passive scan status stays outside the refresh action's glass group.
+    .sharedBackgroundVisibility(.hidden)
     ToolbarItem(placement: .primaryAction) {
       RefreshToolbarButton(isEnabled: !service.isRunning, action: reload)
     }
@@ -77,12 +79,14 @@ struct ToolbarUpdateProgressView: View {
     case .indeterminate:
       ProgressView()
         .id(ToolbarProgressMetrics.indeterminateIdentity)
+        .progressViewStyle(.circular)
         .controlSize(.small)
         .toolbarProgressFrame()
         .accessibilityLabel("Scanning applications")
     case .determinate(let fraction):
       ProgressView(value: fraction)
         .id(ToolbarProgressMetrics.determinateIdentity)
+        .progressViewStyle(.linear)
         .toolbarProgressFrame()
         .accessibilityLabel("Checking for updates")
     }
