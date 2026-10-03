@@ -98,34 +98,38 @@ enum InstalledAppVersion {
       let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
       let size = values.fileSize, size <= 512 * 1_024 * 1_024
     else { return nil }
-    return deltaVersions.withLock { cache in
-      if let existing = cache[url], existing.size == size,
-        existing.date == values.contentModificationDate
-      {
-        return existing.version
-      }
-      var version: String?
-      if let data = try? Data(contentsOf: url, options: .mappedIfSafe) {
-        let marker = Data("delta_version".utf8)
-        var position = data.startIndex
-        while position < data.endIndex,
-          let range = data.range(of: marker, in: position..<data.endIndex)
-        {
-          position = range.upperBound
-          let bytes = data[position...].prefix(32).prefix { (48...57).contains($0) || $0 == 46 }
-          if let number = String(bytes: bytes, encoding: .utf8), isVersion(number),
-            data.dropFirst(position + bytes.count).starts(with: Data("zed_username".utf8))
-          {
-            version = number
-            break
-          }
-        }
-      }
+    if let cached = deltaVersions.withLock({ $0[url] }),
+      cached.size == size, cached.date == values.contentModificationDate
+    {
+      return cached.version
+    }
+    // Map and scan outside the cache lock so unrelated discovery is never blocked by I/O.
+    let version = readDeltaVersion(at: url)
+    deltaVersions.withLock { cache in
       if cache.count >= 64 { cache.removeAll(keepingCapacity: true) }
       cache[url] = DeltaVersionCache(
         size: size, date: values.contentModificationDate, version: version)
-      return version
     }
+    return version
+  }
+
+  private static func readDeltaVersion(at url: URL) -> String? {
+    guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+    let marker = Data("delta_version".utf8)
+    let suffix = Data("zed_username".utf8)
+    var position = data.startIndex
+    while position < data.endIndex,
+      let range = data.range(of: marker, in: position..<data.endIndex)
+    {
+      position = range.upperBound
+      let bytes = data[position...].prefix(32).prefix { (48...57).contains($0) || $0 == 46 }
+      if let number = String(bytes: bytes, encoding: .utf8), isVersion(number),
+        data.dropFirst(position + bytes.count).starts(with: suffix)
+      {
+        return number
+      }
+    }
+    return nil
   }
 
   private static func isVersion(_ string: String) -> Bool {

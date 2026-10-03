@@ -84,10 +84,14 @@ class ReleaseNotesProvider {
           )))
       return
     }
-    if app.releaseNotes == nil,
-      ReleaseNotesSourceCatalog.releaseNotes(
-        for: app.bundle, remoteVersion: app.releaseNotesVersion, allowNameFallback: false) == nil
-    {
+    let catalog = ReleaseNotesSourceCatalog.releaseNotes(
+      for: app.bundle, remoteVersion: app.releaseNotesVersion, allowNameFallback: false)
+    // A self-updated payload can be newer than the remote installer metadata.
+    let localIsNewer =
+      app.remoteVersion.map {
+        app.version.comparisonForUpdate(to: $0) == .newer
+      } ?? false
+    guard let primary = localIsNewer ? catalog : (app.releaseNotes ?? catalog) else {
       completion(.failure(LatestError.releaseNotesUnavailable))
       return
     }
@@ -134,7 +138,7 @@ class ReleaseNotesProvider {
       }
 
       guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
-      self.loadReleaseNotes(for: app, with: finish)
+      self.loadReleaseNotes(primary, fallback: catalog, for: app, with: finish)
     }
   }
 
@@ -158,20 +162,11 @@ class ReleaseNotesProvider {
     return webContentLoader
   }
 
-  private func loadReleaseNotes(for app: App, with completion: @escaping ResolvedCompletion) {
+  private func loadReleaseNotes(
+    _ primary: App.Update.ReleaseNotes, fallback: App.Update.ReleaseNotes?, for app: App,
+    with completion: @escaping ResolvedCompletion
+  ) {
     let requestID = currentRequestID
-    let catalog = ReleaseNotesSourceCatalog.releaseNotes(
-      for: app.bundle, remoteVersion: app.releaseNotesVersion, allowNameFallback: false)
-    // A self-updated payload can be newer than the installer listed by Homebrew.
-    let localIsNewer =
-      app.remoteVersion.map {
-        app.version.comparisonForUpdate(to: $0) == .newer
-      } ?? false
-    let primary = localIsNewer ? catalog : (app.releaseNotes ?? catalog)
-    guard let primary else {
-      completion(.failure(LatestError.releaseNotesUnavailable))
-      return
-    }
     loadReleaseNotes(primary, for: app) { result in
       guard self.isCurrentRequest(requestID) else { return }
       let validated = Self.validated(result)
@@ -179,11 +174,11 @@ class ReleaseNotesProvider {
         completion(validated)
         return
       }
-      guard let catalog, catalog.cacheIdentifier != primary.cacheIdentifier else {
+      guard let fallback, fallback.cacheIdentifier != primary.cacheIdentifier else {
         completion(validated)
         return
       }
-      self.loadReleaseNotes(catalog, for: app) { fallback in
+      self.loadReleaseNotes(fallback, for: app) { fallback in
         guard self.isCurrentRequest(requestID) else { return }
         if case .success(let notes) = Self.validated(fallback),
           notes.quality > ((try? validated.get().quality) ?? .rejected)
@@ -202,78 +197,76 @@ class ReleaseNotesProvider {
   ) {
     let requestID = currentRequestID
     let relevantVersion = app.releaseNotesVersion.versionNumber
-    do {
-      switch releaseNotes {
-      case .html(let html), .genericMetadata(let html):
-        currentReleaseNotesTask = Task { [weak self] in
-          guard let self else { return }
-          let releaseNotes = await self.pipeline.resolve(
-            ReleaseNotesCandidate(
-              markup: html,
-              baseURL: nil,
-              provenance: app.source == .appStore ? .appStore : releaseNotes.provenance,
-              qualityHint: releaseNotes.qualityHint
-            ),
-            for: ReleaseNotesContext(app: app)
-          )
-          guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
-          completion(releaseNotes)
-        }
-      case .url(let url):
-        self.releaseNotes(
-          from: url, relevantVersion: relevantVersion, requestID: requestID,
-          with: completion)
-      case .encoded(let data):
-        let provenance: ReleaseNotesProvenance =
-          app.source == .appStore ? .appStore : releaseNotes.provenance
-        let quality = releaseNotes.qualityHint
-        currentReleaseNotesTask = Task { [weak self] in
-          guard let self else { return }
-          let releaseNotes = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
-            from: data,
+    switch releaseNotes {
+    case .html(let html), .genericMetadata(let html):
+      currentReleaseNotesTask = Task { [weak self] in
+        guard let self else { return }
+        let releaseNotes = await self.pipeline.resolve(
+          ReleaseNotesCandidate(
+            markup: html,
             baseURL: nil,
-            relevantVersion: relevantVersion
-          )
-          guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
-          completion(
-            releaseNotes.map {
-              ResolvedReleaseNotes(
-                content: $0,
-                quality: quality,
-                provenance: provenance
-              )
-            })
-        }
-      case .githubRelease(let apiURL, let fallbackHTML):
-        currentReleaseNotesTask = Task { [weak self] in
-          guard let self else { return }
-          let releaseNotes = await self.githubReleaseNotes(
-            from: apiURL, relevantVersion: relevantVersion,
-            fallbackHTML: fallbackHTML)
-          guard !Task.isCancelled else { return }
-          completion(releaseNotes)
-        }
-      case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML):
-        self.changelogReleaseNotes(
-          from: urls, versionPrefix: versionPrefix ?? relevantVersion,
-          allowsLatestFallback: allowsLatestFallback, fallbackHTML: fallbackHTML,
-          requestID: requestID,
-          with: { result in
-            let broadVersion =
-              versionPrefix.map {
-                !ReleaseNotesMarkup.versionCandidates(from: relevantVersion)
-                  .contains($0)
-              } ?? false
-            completion(
-              result.map { resolved in
-                ResolvedReleaseNotes(
-                  content: resolved.content,
-                  quality: allowsLatestFallback || broadVersion
-                    ? min(resolved.quality, .degraded) : resolved.quality,
-                  provenance: resolved.provenance)
-              })
+            provenance: app.source == .appStore ? .appStore : releaseNotes.provenance,
+            qualityHint: releaseNotes.qualityHint
+          ),
+          for: ReleaseNotesContext(app: app)
+        )
+        guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
+        completion(releaseNotes)
+      }
+    case .url(let url):
+      self.releaseNotes(
+        from: url, relevantVersion: relevantVersion, requestID: requestID,
+        with: completion)
+    case .encoded(let data):
+      let provenance: ReleaseNotesProvenance =
+        app.source == .appStore ? .appStore : releaseNotes.provenance
+      let quality = releaseNotes.qualityHint
+      currentReleaseNotesTask = Task { [weak self] in
+        guard let self else { return }
+        let releaseNotes = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
+          from: data,
+          baseURL: nil,
+          relevantVersion: relevantVersion
+        )
+        guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
+        completion(
+          releaseNotes.map {
+            ResolvedReleaseNotes(
+              content: $0,
+              quality: quality,
+              provenance: provenance
+            )
           })
       }
+    case .githubRelease(let apiURL, let fallbackHTML):
+      currentReleaseNotesTask = Task { [weak self] in
+        guard let self else { return }
+        let releaseNotes = await self.githubReleaseNotes(
+          from: apiURL, relevantVersion: relevantVersion,
+          fallbackHTML: fallbackHTML)
+        guard !Task.isCancelled else { return }
+        completion(releaseNotes)
+      }
+    case .changelog(let urls, let versionPrefix, let allowsLatestFallback, let fallbackHTML):
+      self.changelogReleaseNotes(
+        from: urls, versionPrefix: versionPrefix ?? relevantVersion,
+        allowsLatestFallback: allowsLatestFallback, fallbackHTML: fallbackHTML,
+        requestID: requestID,
+        with: { result in
+          let broadVersion =
+            versionPrefix.map {
+              !ReleaseNotesMarkup.versionCandidates(from: relevantVersion)
+                .contains($0)
+            } ?? false
+          completion(
+            result.map { resolved in
+              ResolvedReleaseNotes(
+                content: resolved.content,
+                quality: allowsLatestFallback || broadVersion
+                  ? min(resolved.quality, .degraded) : resolved.quality,
+                provenance: resolved.provenance)
+            })
+        })
     }
   }
 

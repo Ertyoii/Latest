@@ -23,6 +23,14 @@ enum AppDownloadSource: Sendable {
     return .homebrew(token)
   }
 
+  #if arch(arm64)
+    static let hostArchitecture = NSBundleExecutableArchitectureARM64
+    static let hostArchitectureName = "arm64"
+  #else
+    static let hostArchitecture = NSBundleExecutableArchitectureX86_64
+    static let hostArchitectureName = "x86_64"
+  #endif
+
   func release() async throws -> AppDownloadRelease {
     let endpoint: URL
     switch self {
@@ -31,7 +39,8 @@ enum AppDownloadSource: Sendable {
     case .delta:
       endpoint = URL(
         string:
-          "https://delta.dev/api/releases/stable/latest/asset?asset=delta&os=macos&arch=aarch64")!
+          "https://delta.dev/api/releases/stable/latest/asset?asset=delta&os=macos&arch=\(Self.hostArchitectureName == "arm64" ? "aarch64" : "x86_64")"
+      )!
     }
     var request = URLRequest(url: endpoint, cachePolicy: .reloadIgnoringLocalCacheData)
     request.timeoutInterval = 30
@@ -62,9 +71,10 @@ struct AppDownloadRelease: Sendable {
         hash == "no_check"
           || hash.range(of: #"^[a-fA-F0-9]{64}$"#, options: .regularExpression) != nil,
         let artifacts = object["artifacts"] as? [[String: Any]],
-        !artifacts.contains(where: { $0["pkg"] != nil || $0["installer"] != nil }),
-        let paths = artifacts.compactMap({ ($0["app"] as? [Any])?.first as? String }) as [String]?,
-        paths.count == 1, let path = paths.first, Self.isSafeAppPath(path)
+        !artifacts.contains(where: { $0["pkg"] != nil || $0["installer"] != nil })
+      else { throw AppDownloadError.invalidMetadata }
+      let paths = artifacts.compactMap { ($0["app"] as? [Any])?.first as? String }
+      guard paths.count == 1, let path = paths.first, Self.isSafeAppPath(path)
       else { throw AppDownloadError.invalidMetadata }
       sha256 = hash == "no_check" ? nil : hash.lowercased()
       appPath = path
@@ -102,7 +112,7 @@ struct AppDownloadRelease: Sendable {
 
 enum AppDownloadError: LocalizedError {
   case invalidMetadata, invalidDownload, checksumMismatch, identityMismatch, versionMismatch
-  case applicationStillRunning
+  case incompatibleSystem, applicationStillRunning
   case replacementFailed(String)
   case toolFailed(String)
 
@@ -114,6 +124,7 @@ enum AppDownloadError: LocalizedError {
     case .identityMismatch:
       "The downloaded app does not match the installed app’s signing identity."
     case .versionMismatch: "The downloaded app is not the expected newer version."
+    case .incompatibleSystem: "The downloaded app does not support this Mac or macOS version."
     case .applicationStillRunning: "Quit the app, then try updating again."
     case .replacementFailed(let message): message
     case .toolFailed(let message): "Could not prepare the update: \(message)"

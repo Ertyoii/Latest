@@ -47,18 +47,18 @@ final class HomebrewCheckerOperation: Sendable {
       throw LatestError.updateInfoUnavailable
     }
 
-    let info = await repository.updateInfo(for: bundle)
-    try Task.checkCancellation()
-    guard let version = info.version else {
+    guard let entry = await repository.entry(for: bundle) else {
       throw LatestError.updateInfoUnavailable
     }
+    try Task.checkCancellation()
+    let version = entry.version
     let releaseNotes =
       ReleaseNotesSourceCatalog.releaseNotes(
-        for: info.bundle,
+        for: bundle,
         remoteVersion: version,
         allowNameFallback: false
-      ) ?? info.releaseNotes
-    let downloadSource = AppDownloadSource.homebrewSource(for: bundle, token: info.caskToken)
+      ) ?? entry.releaseNotes
+    let downloadSource = AppDownloadSource.homebrewSource(for: bundle, token: entry.token)
     let action: App.Update.Action
     if let downloadSource {
       action = .builtIn { app in
@@ -66,14 +66,14 @@ final class HomebrewCheckerOperation: Sendable {
           AppDownloadUpdateOperation(app: app, source: downloadSource))
       }
     } else {
-      action = .external(label: info.bundle.name) { app in
+      action = .external(label: bundle.name) { app in
         Task { @MainActor in MacApplicationWorkspace.shared.openApplication(at: app.fileURL) }
       }
     }
     return App.Update(
-      app: info.bundle,
+      app: bundle,
       remoteVersion: version,
-      minimumOSVersion: info.minimumOSVersion,
+      minimumOSVersion: entry.minimumOSVersion,
       source: downloadSource == nil ? .homebrew : .directDownload,
       date: nil,
       releaseNotes: releaseNotes,

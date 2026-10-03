@@ -1,7 +1,6 @@
 import CryptoKit
 import Foundation
 import Security
-import Synchronization
 
 enum ObsidianUpdate {
   struct Release: Decodable, Sendable {
@@ -18,17 +17,14 @@ enum ObsidianUpdate {
   }
 
   private struct Manifest: Decodable {
-    let minimumVersion: String
-    let latestVersion: String
-    let downloadUrl: URL
-    let hash: String
-    let signature: String
+    let stable: Release
     let beta: Release?
+    private enum CodingKeys: String, CodingKey { case beta }
 
-    var stable: Release {
-      Release(
-        minimumVersion: minimumVersion, latestVersion: latestVersion,
-        downloadUrl: downloadUrl, hash: hash, signature: signature)
+    init(from decoder: Decoder) throws {
+      stable = try Release(from: decoder)
+      beta = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent(
+        Release.self, forKey: .beta)
     }
   }
 
@@ -62,15 +58,7 @@ enum ObsidianUpdate {
     let release = try release(
       from: data, includesEarlyAccess: settings?["insider"] as? Bool == true)
     let version = Version(versionNumber: release.latestVersion, buildNumber: nil)
-    let plist = try Data(contentsOf: bundle.fileURL.appendingPathComponent("Contents/Info.plist"))
-    let information =
-      try PropertyListSerialization.propertyList(from: plist, format: nil) as? [String: Any]
-    let installer = Version(
-      versionNumber: information?["CFBundleShortVersionString"] as? String, buildNumber: nil)
-    let compatible = [.samePrecedence, .newer].contains(
-      installer.comparisonForUpdate(
-        to:
-          Version(versionNumber: release.minimumVersion, buildNumber: nil)))
+    let compatible = try installerIsCompatible(bundle, with: release)
     let canInstall = compatible && !release.isEarlyAccess
     let action: App.Update.Action
     if canInstall {
@@ -97,6 +85,16 @@ enum ObsidianUpdate {
       updateAction: action)
   }
 
+  static func installerIsCompatible(_ bundle: App.Bundle, with release: Release) throws -> Bool {
+    let plist = try Data(contentsOf: bundle.fileURL.appendingPathComponent("Contents/Info.plist"))
+    let information =
+      try PropertyListSerialization.propertyList(from: plist, format: nil) as? [String: Any]
+    let installer = Version(
+      versionNumber: information?["CFBundleShortVersionString"] as? String, buildNumber: nil)
+    let minimum = Version(versionNumber: release.minimumVersion, buildNumber: nil)
+    return [.samePrecedence, .newer].contains(installer.comparisonForUpdate(to: minimum))
+  }
+
   static func verify(_ data: Data, release: Release) throws {
     guard
       SHA256.hash(data: data).withUnsafeBytes({ Data($0).base64EncodedString() }) == release.hash,
@@ -114,66 +112,32 @@ enum ObsidianUpdate {
     "MIIDjzCCAnegAwIBAgIJAOFHLJ2gTCBzMA0GCSqGSIb3DQEBCwUAMF4xCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApTb21lLVN0YXRlMREwDwYDVQQKDAhEeW5hbGlzdDERMA8GA1UECwwIRHluYWxpc3QxFDASBgNVBAMMC2R5bmFsaXN0LmlvMB4XDTE2MDUxNjAyMTA1NFoXDTQwMDUxMDAyMTA1NFowXjELMAkGA1UEBhMCVVMxEzARBgNVBAgMClNvbWUtU3RhdGUxETAPBgNVBAoMCER5bmFsaXN0MREwDwYDVQQLDAhEeW5hbGlzdDEUMBIGA1UEAwwLZHluYWxpc3QuaW8wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDcodSNp30B0oE+2vRUdr//SGfbDow+67OtGuRYQSjn86bn55fQXhMJb5xgZ0natiCriCyllLWgPf+4PnxGRSJZGbm38QSArb0MWR8/yXA+q+7nZisIsN2dXih8B3APImxJ4A50nsK/C+fl7nYdo04iz3oerP0UhLDrsLbL+9rdmshjB1boLPf6QpAAC57OTPQpFBd2hFoS6xAnIb708SHOndsrWDIFEFVCPDYcme3WF5jznuT05OFGMIX8SZe2jXpg2Vco/1oKRPC7mYFN5B0JTZ7mOH48vB/zPNIsVz8KHh3P9Ru2fC2r3nPDXFGKzcUZneJmXh4LIUVqwdEPw7hvAgMBAAGjUDBOMB0GA1UdDgQWBBTF2xMx8xVDZ2wteJPsHUe0OCu18TAfBgNVHSMEGDAWgBTF2xMx8xVDZ2wteJPsHUe0OCu18TAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQB6rgBF+DvDHifP+U6ZFqJ4mX1nalEXEPI1jvRZaOheKpkOEBbhkCAosbBEmYxfj8xay1GGgB9nkJk2dodRsGVhrZz+CwGR+hSEfYDQwMBvmzm3OcETfEtvwEAU1P93prbxul2oSWP48AVDDYKepxTZvW/yZcnoHI9XzhLNMYIEvOs+wKWAOF0+BjsIukQouaXs6gklul2J99IqpdPhw2l4l7mkPx8htCbTE47GTraHt2i2mwyBZSKbfqzi73Fj5SFRtZlWJDNPKoWxcFg291B7IHumd5jwAUdVJit3K5Tgt/q4OzwokcDZcrh5lJg0+Kstsz4RDWDbfzTNJuKnoueR"
 }
 
-final class ObsidianUpdateOperation: UpdateOperation, @unchecked Sendable {
-  private let app: App.Bundle
+final class ObsidianUpdateOperation: DownloadUpdateOperation, @unchecked Sendable {
   private let release: ObsidianUpdate.Release
-  private let task = Mutex<Task<Void, Never>?>(nil)
 
   init(app: App.Bundle, release: ObsidianUpdate.Release) {
-    self.app = app
     self.release = release
-    super.init(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+    super.init(app: app)
   }
 
-  override func execute() {
-    super.execute()
-    task.withLock { task in
-      task = Task.detached { [self] in
-        do {
-          try await install()
-          finish()
-        } catch is CancellationError {
-          cancel()
-          finish()
-        } catch {
-          if isCancelled { finish() } else { finish(with: error) }
-        }
-      }
-      if isCancelled { task?.cancel() }
-    }
-  }
-
-  override func cancel() {
-    super.cancel()
-    task.withLock { $0?.cancel() }
-  }
-
-  private func install() async throws {
-    guard !release.isEarlyAccess, release.downloadUrl.scheme == "https",
+  override func performUpdate() async throws {
+    guard !release.isEarlyAccess,
       release.latestVersion.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression)
         != nil,
-      app.version.comparisonForUpdate(
-        to:
-          Version(versionNumber: release.latestVersion, buildNumber: nil)) == .older
+      try ObsidianUpdate.installerIsCompatible(app, with: release)
     else { throw AppDownloadError.invalidMetadata }
-    progressState = .downloading(loadedSize: 0, totalSize: 0)
-    let (url, response) = try await URLSession.shared.download(
-      from: release.downloadUrl,
-      delegate: InstallerDownloadProgress { [weak self] loaded, total in
-        self?.progressState = .downloading(loadedSize: loaded, totalSize: max(total, loaded))
-      })
-    guard (response as? HTTPURLResponse)?.statusCode == 200, response.url?.scheme == "https",
-      (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 128 * 1_024 * 1_024
-    else { throw AppDownloadError.invalidDownload }
-    let compressed = try Data(contentsOf: url, options: .mappedIfSafe)
-    try ObsidianUpdate.verify(compressed, release: release)
+    let version = Version(versionNumber: release.latestVersion, buildNumber: nil)
+    guard app.version.comparisonForUpdate(to: version) == .older else {
+      throw AppDownloadError.versionMismatch
+    }
     let manager = FileManager.default
-    let directory = manager.temporaryDirectory.appendingPathComponent(
+    let work = manager.temporaryDirectory.appendingPathComponent(
       "Latest-Obsidian-" + UUID().uuidString)
-    try manager.createDirectory(at: directory, withIntermediateDirectories: true)
-    defer { try? manager.removeItem(at: directory) }
-    let archive = directory.appendingPathComponent("payload.asar.gz")
-    try manager.moveItem(at: url, to: archive)
+    try manager.createDirectory(at: work, withIntermediateDirectories: true)
+    defer { try? manager.removeItem(at: work) }
+    let archive = try await download(
+      from: release.downloadUrl, into: work, maximumSize: 128 * 1_024 * 1_024)
+    try ObsidianUpdate.verify(Data(contentsOf: archive, options: .mappedIfSafe), release: release)
     progressState = .extracting(progress: 0)
     _ = try await InstallerCommand.run("/usr/bin/gzip", ["-d", archive.path])
     let payload = archive.deletingPathExtension()
@@ -182,18 +146,23 @@ final class ObsidianUpdateOperation: UpdateOperation, @unchecked Sendable {
     }
     let support = manager.homeDirectoryForCurrentUser.appendingPathComponent(
       "Library/Application Support/obsidian")
-    try manager.createDirectory(at: support, withIntermediateDirectories: true)
+    let stage = support.appendingPathComponent(".latest-update-" + UUID().uuidString)
+    try manager.createDirectory(at: stage, withIntermediateDirectories: true)
+    defer { Self.removeStageUnlessRecoveryIsNeeded(stage) }
+    let candidate = stage.appendingPathComponent("candidate.asar")
+    try manager.copyItem(at: payload, to: candidate)
     let target = support.appendingPathComponent("obsidian-\(release.latestVersion).asar")
-    if InstalledAppVersion.asarVersion(at: target) == release.latestVersion { return }
-    let staged = support.appendingPathComponent(".latest-" + UUID().uuidString + ".asar")
-    try manager.copyItem(at: payload, to: staged)
-    defer { try? manager.removeItem(at: staged) }
-    let reopen = try await AppDownloadUpdateOperation.quitApplicationIfNeeded(app)
-    try Task.checkCancellation()
-    progressState = .installing
-    try manager.moveItem(at: staged, to: target)
-    if reopen {
-      await MainActor.run { MacApplicationWorkspace.shared.openApplication(at: app.fileURL) }
+    try await withApplicationClosed { [self] in
+      // The vendor may have completed the same update while Latest was downloading.
+      if InstalledAppVersion.asarVersion(at: target) == release.latestVersion { return }
+      guard let current = BundleCollector.collectBundle(at: app.fileURL),
+        current.version.comparisonForUpdate(to: version) == .older,
+        try ObsidianUpdate.installerIsCompatible(current, with: release)
+      else { throw AppDownloadError.versionMismatch }
+      try beginCommit()
+      progressState = .installing
+      // Replace a partial same-name payload too; the previous usable version stays intact.
+      try Self.replaceItem(at: target, with: candidate, backupDirectory: stage)
     }
   }
 }
