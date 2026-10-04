@@ -102,6 +102,8 @@ final class MigrationVisualRegressionTest: XCTestCase {
     let environment = AppEnvironment.localUATFixture(
       settings: try isolatedAppListSettings(for: self))
     let viewModel = environment.updatesListViewModel
+    let app = try XCTUnwrap(
+      viewModel.snapshot.apps.first, "The sidebar fixture must contain an app")
     let window = try await makeLatestTestWindow(environment: environment, testCase: self)
     let hostingView = try XCTUnwrap(window.contentView)
     defer { window.close() }
@@ -117,6 +119,9 @@ final class MigrationVisualRegressionTest: XCTestCase {
       XCTAssertEqual(tableView.style, .sourceList)
       XCTAssertEqual(tableView.frame.minX, 0, accuracy: 0.5)
       XCTAssertEqual(tableView.numberOfRows, viewModel.snapshot.entries.count)
+      // Assertions do not stop execution. A mismatched table must fail this
+      // test before invalid row access can terminate the entire test host.
+      guard tableView.numberOfRows == viewModel.snapshot.entries.count else { return }
 
       let firstSectionRow = try XCTUnwrap(
         viewModel.snapshot.entries.firstIndex(where: {
@@ -124,7 +129,7 @@ final class MigrationVisualRegressionTest: XCTestCase {
           return false
         })
       )
-      let firstAppRow = try XCTUnwrap(viewModel.snapshot.firstIndex(of: viewModel.snapshot.apps[0]))
+      let firstAppRow = try XCTUnwrap(viewModel.snapshot.firstIndex(of: app))
       XCTAssertEqual(
         tableView.rect(ofRow: firstSectionRow).height, VisualMetrics.sectionHeaderHeight)
       XCTAssertEqual(tableView.rect(ofRow: firstAppRow).height, 60)
@@ -132,19 +137,17 @@ final class MigrationVisualRegressionTest: XCTestCase {
       tableView.scrollRowToVisible(firstAppRow)
       try await Task.sleep(for: .milliseconds(100))
 
-      for row in firstAppRow..<min(tableView.numberOfRows, firstAppRow + 5) {
-        _ = tableView.view(atColumn: 0, row: row, makeIfNecessary: true)
-      }
       tableView.layoutSubtreeIfNeeded()
+      XCTAssertLessThan(firstAppRow, tableView.numberOfRows)
+      guard firstAppRow < tableView.numberOfRows else { return }
       let cell = try XCTUnwrap(
-        tableView.view(atColumn: 0, row: firstAppRow, makeIfNecessary: false))
+        tableView.view(atColumn: 0, row: firstAppRow, makeIfNecessary: true))
       cell.layoutSubtreeIfNeeded()
       accessibilityLabel = try XCTUnwrap(cell.accessibilityLabel())
       let row = tableView.convert(tableView.rect(ofRow: firstAppRow), to: nil)
       icon = NSRect(x: row.minX + 16, y: row.midY - 25, width: 50, height: 50)
     } else {
       let sidebar = try SidebarInputFixture(window: window, model: viewModel)
-      let app = viewModel.snapshot.apps[0]
       let rowIndex = try XCTUnwrap(viewModel.snapshot.firstIndex(of: app))
       sidebar.scroll(to: max(0, sidebar.rowRect(rowIndex).minY - 37))
       try await Task.sleep(for: .milliseconds(100))
@@ -173,7 +176,6 @@ final class MigrationVisualRegressionTest: XCTestCase {
           first.accessibilityFrame().minY - second.accessibilityFrame().minY, 60, accuracy: 0.5)
       }
     }
-    let app = viewModel.snapshot.apps[0]
     let versions = try XCTUnwrap(app.localizedVersionInformation)
     XCTAssertTrue(accessibilityLabel.contains(app.name))
     XCTAssertTrue(accessibilityLabel.contains(versions.rawCurrent))
