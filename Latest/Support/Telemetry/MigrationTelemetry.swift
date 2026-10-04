@@ -11,10 +11,7 @@
 import Foundation
 import OSLog
 
-/// Signposts the user-visible paths protected by the SwiftUI migration gates.
-///
-/// This intentionally records phases instead of view implementation details so
-/// Instruments traces remain comparable while AppKit surfaces are cut over.
+/// Signposts discovery, selection, scrolling, and release-note loading for Instruments.
 @MainActor
 final class MigrationTelemetry {
   static let shared = MigrationTelemetry()

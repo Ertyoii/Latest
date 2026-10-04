@@ -929,12 +929,14 @@ final class MigrationInteractionContractTest: XCTestCase {
   @MainActor
   func testReleaseNotesWebViewReusesRendererAndResetsScrollOnSelection() async throws {
     try requireUITests()
+    let firstApp = makeApp(name: "First app", version: "1", remoteVersion: "2")
+    let secondApp = makeApp(name: "Second app", version: "3", remoteVersion: "4")
     let short = ReleaseNotesContent(string: "Short release notes")
     let long = ReleaseNotesContent(
       string: Array(repeating: "Long release notes", count: 150)
         .joined(separator: "\n"))
     let host = NSHostingView(
-      rootView: ReleaseNotesDetailSurface(app: nil, contentState: .text(long)))
+      rootView: ReleaseNotesDetailSurface(app: firstApp, contentState: .text(long)))
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 480, height: 280),
       styleMask: [.titled, .resizable], backing: .buffered, defer: false)
@@ -948,16 +950,28 @@ final class MigrationInteractionContractTest: XCTestCase {
     _ = try await web.evaluateJavaScript("window.scrollTo(0, document.body.scrollHeight)")
     let scrolled = try await web.evaluateJavaScript("window.scrollY") as? Double
     XCTAssertGreaterThan(scrolled ?? 0, 0)
-    _ = try await web.evaluateJavaScript("window.rendererReuseMarker = 42")
-    host.rootView = ReleaseNotesDetailSurface(app: nil, contentState: .text(long))
+    _ = try await web.evaluateJavaScript(
+      """
+      window.rendererReuseMarker = 42;
+      var range = document.createRange();
+      range.selectNodeContents(document.querySelector('main'));
+      window.getSelection().removeAllRanges(); window.getSelection().addRange(range);
+      """)
+    // Held arrows change the header while the previous notes remain displayed.
+    host.rootView = ReleaseNotesDetailSurface(app: secondApp, contentState: .text(long))
     host.layoutSubtreeIfNeeded()
     try await Task.sleep(for: .milliseconds(100))
     let marker = try await web.evaluateJavaScript("window.rendererReuseMarker") as? Int
     XCTAssertEqual(marker, 42, "Unchanged notes must not reload the page")
+    let retainedScroll = try await web.evaluateJavaScript("window.scrollY") as? Double
+    XCTAssertEqual(retainedScroll, scrolled, "Header selection must preserve notes scroll position")
+    let retainedSelection =
+      try await web.evaluateJavaScript("window.getSelection().toString()") as? String
+    XCTAssertEqual(retainedSelection, long.string, "Header selection must preserve text selection")
     // A different selection can have identical text. Its new content identity
     // must still reset scroll while the same content object above stays loaded.
     host.rootView = ReleaseNotesDetailSurface(
-      app: nil, contentState: .text(ReleaseNotesContent(string: long.string)))
+      app: secondApp, contentState: .text(ReleaseNotesContent(string: long.string)))
     host.layoutSubtreeIfNeeded()
     var reloaded = false
     for _ in 0..<100 {
@@ -970,10 +984,10 @@ final class MigrationInteractionContractTest: XCTestCase {
     XCTAssertTrue(reloaded, "Distinct notes with equal text must reload the page")
     let equalTextScroll = try await web.evaluateJavaScript("window.scrollY") as? Double
     XCTAssertEqual(equalTextScroll, 0)
-    host.rootView = ReleaseNotesDetailSurface(app: nil, contentState: .loading)
+    host.rootView = ReleaseNotesDetailSurface(app: secondApp, contentState: .loading)
     host.layoutSubtreeIfNeeded()
     XCTAssertTrue(host.descendant(of: WKWebView.self) === web)
-    host.rootView = ReleaseNotesDetailSurface(app: nil, contentState: .text(short))
+    host.rootView = ReleaseNotesDetailSurface(app: secondApp, contentState: .text(short))
     window.setContentSize(NSSize(width: 360, height: 280))
     host.layoutSubtreeIfNeeded()
     try await waitForWebContent(web, containing: "Short release notes")
@@ -1144,6 +1158,38 @@ final class MigrationInteractionContractTest: XCTestCase {
       return XCTFail("Expected no-selection content")
     }
     XCTAssertEqual(message, .noSelection)
+  }
+
+  @MainActor
+  func testKeyboardSelectionCancelsStaleNotesAndRetriesWhenReturning() async throws {
+    let provider = ReleaseNotesProviderProbe()
+    let model = ReleaseNotesDetailViewModel(releaseNotesProvider: provider)
+    let first = makeApp(name: "First", version: "1", remoteVersion: "2")
+    let second = makeApp(name: "Second", version: "3", remoteVersion: "4")
+    model.display(first)
+    model.display(second, waitForSelectionToSettle: true)
+    provider.completeRequest(at: 0, with: .success(ReleaseNotesContent(string: "Stale notes")))
+    guard case .message(.noSelection) = model.contentState else {
+      return XCTFail("A pending keyboard selection must reject the previous request's result")
+    }
+    model.display(first, waitForSelectionToSettle: true)
+    let deadline = ContinuousClock.now + .seconds(1)
+    while provider.requests.count < 2 && ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(provider.requests.count, 2, "Returning must retry the cancelled request")
+    guard provider.requests.count == 2 else { return }
+    XCTAssertTrue(provider.requests[1].app === first)
+    let notes = ReleaseNotesContent(string: "Current notes")
+    provider.completeRequest(at: 1, with: .success(notes))
+    let refreshed = makeApp(name: "First", version: "1", remoteVersion: "2")
+    model.display(refreshed)
+    XCTAssertTrue(model.app === refreshed, "Equivalent notes must not suppress refreshed metadata")
+    XCTAssertEqual(provider.requests.count, 2, "A completed result with the same key can be reused")
+    guard case .text(let displayed) = model.contentState else {
+      return XCTFail("Expected current notes")
+    }
+    XCTAssertTrue(displayed === notes)
   }
 
   @MainActor

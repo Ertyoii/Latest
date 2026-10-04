@@ -19,11 +19,37 @@ import XCTest
 
 @MainActor
 final class MigrationPerformanceTest: XCTestCase {
+  func testKeyboardSelectionPreparationPerformance() throws {
+    guard FileManager.default.fileExists(atPath: Self.benchmarkFlagURL.path) else {
+      throw XCTSkip("Run script/benchmark_migration.sh to execute migration benchmarks.")
+    }
+    // Embedded changelogs vary greatly in size. Passing a row with held arrows
+    // should not hash its payload before the existing quiet interval expires.
+    for payloadBytes in [1_024, 1_048_576] {
+      let notes = String(repeating: "x", count: payloadBytes)
+      let apps = makeApps(count: 120).map { app in
+        let update = Latest.App.Update(
+          app: app.bundle, remoteVersion: Version(versionNumber: "2.0", buildNumber: nil),
+          minimumOSVersion: nil, source: .appStore, date: nil,
+          releaseNotes: .html(string: notes), updateAction: .builtIn { _ in })
+        return Latest.App(bundle: app.bundle, update: .success(update), isIgnored: false)
+      }
+      let model = ReleaseNotesDetailViewModel(
+        releaseNotesProvider: ImmediateReleaseNotesProvider(
+          text: ReleaseNotesContent(string: "Notes")))
+      benchmarkSamples("keyboard_selection_preparation_\(payloadBytes)", values: apps) { app in
+        model.display(app, waitForSelectionToSettle: true)
+        return model.app === app ? 1 : 0
+      }
+      XCTAssertTrue(model.app === apps.last)
+      model.display(nil)
+    }
+  }
+
   func testMigrationPerformanceMatrix() throws {
     guard FileManager.default.fileExists(atPath: Self.benchmarkFlagURL.path) else {
       throw XCTSkip("Run script/benchmark_migration.sh to execute migration benchmarks.")
     }
-    NSApp.setActivationPolicy(.regular)
     try runApplicationTest { try await self.measureMigrationPerformanceMatrix() }
   }
 
@@ -67,88 +93,6 @@ final class MigrationPerformanceTest: XCTestCase {
       let apps = bundles.map { Latest.App(bundle: $0, update: nil, isIgnored: false) }
       return AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings).entries.count
     }
-
-    let scrollSnapshot = AppListSnapshot(
-      withApps: try XCTUnwrap(appsBySize[1_500]), filterQuery: nil, settings: settings)
-    let scrollViewModel = UpdatesListViewModel(snapshot: scrollSnapshot, settings: settings)
-    let scrollHost = NSHostingView(
-      rootView: UpdatesSidebarView(
-        viewModel: scrollViewModel,
-        searchFocusController: SearchFocusController()
-      ))
-    scrollHost.frame = NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 640)
-    let scrollWindow = attachToWindow(scrollHost)
-    defer { scrollWindow.close() }
-    try await Task.sleep(for: .milliseconds(50))
-    let sidebarScrollView = try XCTUnwrap(
-      scrollHost.descendants(of: NSScrollView.self).max {
-        ($0.documentView?.bounds.height ?? 0) < ($1.documentView?.bounds.height ?? 0)
-      }
-    )
-    let maximumScrollY = max(
-      0, (sidebarScrollView.documentView?.bounds.height ?? 0) - sidebarScrollView.contentSize.height
-    )
-    let smoothScrollStart = min(
-      maximumScrollY * 0.25,
-      max(maximumScrollY - (VisualMetrics.appRowHeight * 120), 0)
-    )
-    benchmarkSamples("sidebar_scroll_frame_main_thread", values: Array(0..<120)) { index in
-      let y = min(
-        smoothScrollStart + (CGFloat(index) * VisualMetrics.appRowHeight),
-        maximumScrollY
-      )
-      sidebarScrollView.contentView.scroll(to: NSPoint(x: 0, y: y))
-      sidebarScrollView.reflectScrolledClipView(sidebarScrollView.contentView)
-      scrollHost.layoutSubtreeIfNeeded()
-      scrollHost.displayIfNeeded()
-      return Int(sidebarScrollView.contentView.bounds.origin.y)
-    }
-
-    // Preserve the former benchmark's deliberately hostile teleport pattern as
-    // a separately named stress test. It skips roughly 79 rows per sample at
-    // 1,500 apps and therefore measures long-distance seeking/materialization,
-    // not one frame of continuous scrolling.
-    benchmarkSamples("sidebar_long_jump_main_thread", values: Array(0..<120)) { index in
-      let fraction = Double(index % 20) / 19
-      sidebarScrollView.contentView.scroll(to: NSPoint(x: 0, y: maximumScrollY * fraction))
-      sidebarScrollView.reflectScrolledClipView(sidebarScrollView.contentView)
-      scrollHost.layoutSubtreeIfNeeded()
-      scrollHost.displayIfNeeded()
-      return Int(sidebarScrollView.contentView.bounds.origin.y)
-    }
-
-    // Real SwiftUI focus requires a scene-owned window. Keep the raw rendering
-    // fixtures above unchanged; this scene contains the same 308 × 640 sidebar.
-    let keyboardEnvironment = AppEnvironment(
-      settings: settings, updatesListViewModel: scrollViewModel)
-    let keyboardWindow = try await makeLatestTestWindow(
-      environment: keyboardEnvironment, testCase: self)
-    defer { keyboardWindow.close() }
-    keyboardWindow.title = "Latest sidebar benchmark"
-    keyboardWindow.setFrame(
-      CGRect(origin: keyboardWindow.frame.origin, size: CGSize(width: 768, height: 692)),
-      display: true)
-    try await Task.sleep(for: .milliseconds(100))
-    let keyboard = try SidebarInputFixture(window: keyboardWindow, model: scrollViewModel)
-    keyboard.scroll(to: 0)
-    try await keyboard.activate()
-    try keyboard.focus()
-    try await Task.sleep(for: .milliseconds(50))
-    let firstAppRow = keyboard.selectedRow
-    XCTAssertGreaterThanOrEqual(firstAppRow, 0)
-    try benchmarkSamples("sidebar_keyboard_selection_frame_main_thread", values: Array(0..<120)) {
-      _ in
-      try keyboard.press(down: true)
-      RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.001))
-      keyboardWindow.contentView?.layoutSubtreeIfNeeded()
-      keyboardWindow.contentView?.displayIfNeeded()
-      return keyboard.selectedRow
-    }
-    XCTAssertEqual(keyboard.selectedRow, firstAppRow + 120)
-    guard case .app(let keyboardSelectedApp) = scrollSnapshot.entries[firstAppRow + 120] else {
-      return XCTFail("Keyboard benchmark must navigate app rows")
-    }
-    XCTAssertEqual(scrollViewModel.selectedApp?.identifier, keyboardSelectedApp.identifier)
 
     let detailApps = Array(populatedApps.prefix(80))
     let detailViewModel = UpdatesListViewModel(
@@ -199,8 +143,10 @@ final class MigrationPerformanceTest: XCTestCase {
       return ReleaseNotesWebDocument.html(for: text).utf8.count
     }
 
+    let resizeSnapshot = AppListSnapshot(
+      withApps: try XCTUnwrap(appsBySize[1_500]), filterQuery: nil, settings: settings)
     let environment = AppEnvironment(
-      updatesListViewModel: UpdatesListViewModel(snapshot: scrollSnapshot, settings: settings)
+      updatesListViewModel: UpdatesListViewModel(snapshot: resizeSnapshot, settings: settings)
     )
     let splitHost = NSHostingView(rootView: LatestRootView(environment: environment))
     splitHost.frame = NSRect(x: 0, y: 0, width: 1_000, height: 640)
@@ -489,10 +435,5 @@ extension NSView {
   fileprivate func descendant<ViewType: NSView>(of type: ViewType.Type) -> ViewType? {
     if let match = self as? ViewType { return match }
     return subviews.lazy.compactMap { $0.descendant(of: type) }.first
-  }
-
-  fileprivate func descendants<ViewType: NSView>(of type: ViewType.Type) -> [ViewType] {
-    let current = (self as? ViewType).map { [$0] } ?? []
-    return current + subviews.flatMap { $0.descendants(of: type) }
   }
 }

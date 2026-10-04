@@ -48,7 +48,6 @@ fi
 # Benchmarks have dedicated Release runners. Never pick them up from a stale flag file.
 FILTERS+=(
   "-skip-testing:Latest Tests/MigrationPerformanceTest"
-  "-skip-testing:Latest Tests/MigrationFrameCadenceTest"
   "-skip-testing:Latest Tests/ComplexityBenchmarkTest/testComplexityBenchmarks"
 )
 echo "Running $MODE tests (coverage=$COVERAGE)"

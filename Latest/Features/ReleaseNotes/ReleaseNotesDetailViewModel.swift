@@ -70,6 +70,7 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
   private var requestTask: Task<Void, Never>?
   private var displayRequestID: UInt64 = 0
   private var displayedKey: String?
+  private var selectionCatalogRevision = ReleaseNotesSourceCatalog.revision
 
   init(releaseNotesProvider: ReleaseNotesProviding = ReleaseNotesProvider()) {
     self.releaseNotesProvider = releaseNotesProvider
@@ -81,13 +82,22 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
   }
 
   func display(_ app: App?, waitForSelectionToSettle: Bool = false) {
+    let catalogRevision = ReleaseNotesSourceCatalog.revision
+    guard self.app !== app || catalogRevision != selectionCatalogRevision else { return }
+    selectionCatalogRevision = catalogRevision
     if self.app !== app { self.app = app }
-    let nextKey = app.map { ReleaseNotesCacheKey(app: $0).stableIdentifier }
-    guard nextKey != displayedKey else { return }
-    displayedKey = nextKey
+    let nextKey =
+      waitForSelectionToSettle ? nil : app.map { ReleaseNotesCacheKey(app: $0).stableIdentifier }
+    // Presentation-only refreshes keep an equivalent request in flight. A
+    // pending keyboard selection still needs cancellation when a click returns
+    // to the notes already on screen.
+    if !waitForSelectionToSettle && nextKey == displayedKey && requestTask == nil { return }
 
     displayRequestID &+= 1
     let requestID = displayRequestID
+    // A cancelled request has no reusable result. Returning to that app must
+    // request its notes again; a completed result can remain visible and reused.
+    if loadingTask != nil { displayedKey = nil }
     loadingTask?.cancel()
     loadingTask = nil
     requestTask?.cancel()
@@ -95,6 +105,7 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
     MigrationTelemetry.shared.detailCommitted()
 
     guard let app else {
+      displayedKey = nil
       contentState = .message(.noSelection)
       return
     }
@@ -110,11 +121,17 @@ final class ReleaseNotesDetailViewModel: ObservableObject {
         self.requestNotes(for: app, requestID: requestID)
       }
     } else {
-      requestNotes(for: app, requestID: requestID)
+      requestNotes(for: app, requestID: requestID, key: nextKey)
     }
   }
 
-  private func requestNotes(for app: App, requestID: UInt64) {
+  private func requestNotes(for app: App, requestID: UInt64, key: String? = nil) {
+    // App metadata is immutable. Hash embedded notes only after keyboard
+    // selection settles, rather than doing work proportional to every passed
+    // changelog's size on the main thread.
+    let nextKey = key ?? ReleaseNotesCacheKey(app: app).stableIdentifier
+    guard nextKey != displayedKey else { return }
+    displayedKey = nextKey
     loadingTask = Task { [weak self] in
       try? await Task.sleep(for: .milliseconds(200))
       guard !Task.isCancelled,

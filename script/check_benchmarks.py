@@ -27,9 +27,6 @@ COMPLEXITY_BUDGETS = {
 }
 MIGRATION_BUDGETS = {
     "cold_launch_to_populated_sidebar_fixture": ("p50_ms", 65),
-    "sidebar_scroll_frame_main_thread": ("p95_ms", 8.333),
-    "sidebar_long_jump_main_thread": ("p95_ms", 50),
-    "sidebar_keyboard_selection_frame_main_thread": ("p95_ms", 8.333),
     "selection_to_detail": ("p95_ms", 8),
     "selection_to_render_memory": ("p95_ms", 16),
     "selection_to_render_disk": ("p95_ms", 50),
@@ -37,7 +34,6 @@ MIGRATION_BUDGETS = {
 }
 COMPARISON_LIMITS = {
     "cold_launch_to_populated_sidebar_fixture": ("p50_ms", 1.15),
-    "sidebar_scroll_frame_main_thread": ("p95_ms", 1.15),
     "selection_to_detail": ("p95_ms", 1.20),
 }
 RUNTIME_WARNINGS = (

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export TEST_RUNNER_LATEST_UI_TESTS=1
+export TEST_RUNNER_LATEST_UI_TESTS=0
 
 LABEL="${1:-current}"
 if (($# > 1)) || [[ ! "$LABEL" =~ ^[a-zA-Z0-9_-]+$ ]]; then

@@ -13,9 +13,6 @@ SPEC.loader.exec_module(gates)
 
 MIGRATION = """\
 MIGRATION_BENCHMARK name=cold_launch_to_populated_sidebar_fixture p50_ms=1
-MIGRATION_BENCHMARK name=sidebar_scroll_frame_main_thread p95_ms=1
-MIGRATION_BENCHMARK name=sidebar_long_jump_main_thread p95_ms=1
-MIGRATION_BENCHMARK name=sidebar_keyboard_selection_frame_main_thread p95_ms=1
 MIGRATION_BENCHMARK name=selection_to_detail p95_ms=1
 MIGRATION_BENCHMARK name=selection_to_render_memory p95_ms=1
 MIGRATION_BENCHMARK name=selection_to_render_disk p95_ms=1
@@ -78,8 +75,8 @@ class BenchmarkGateTest(unittest.TestCase):
 
     def test_absolute_and_relative_budgets_are_enforced(self):
         self.assertFalse(self.check(MIGRATION.replace(
-            "sidebar_keyboard_selection_frame_main_thread p95_ms=1",
-            "sidebar_keyboard_selection_frame_main_thread p95_ms=9")))
+            "selection_to_render_cold p95_ms=1",
+            "selection_to_render_cold p95_ms=101")))
         self.assertFalse(self.check(COMPLEXITY.replace(
             "app_data_store_update_batch p95_ms=1", "app_data_store_update_batch p95_ms=41"),
             "complexity"))

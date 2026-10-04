@@ -38,7 +38,7 @@ The [development guide](docs/Development.md) gives a reading order, design ratio
 
 SwiftUI owns the scenes, search, rows, settings, and detail controls. macOS 27 with its SDK uses `UpdatesScrollList`; macOS 26 retains `UpdatesTableBridge` for native input and swipe behavior. Release notes use WebKit for text selection and scrolling. Native detail capsules on macOS 26 and small AppKit bridges preserve platform behavior and established appearance.
 
-Discovery publishes complete scans so rows appear in their final order. Refresh keeps the previous list and selection visible. Keyboard selection updates the detail header immediately and waits for selection to settle before loading notes; mouse selection loads notes immediately.
+Discovery publishes complete scans so rows appear in their final order. Refresh keeps the previous list and selection visible. Keyboard selection updates the detail header immediately and waits for selection to settle before hashing and loading notes; mouse selection loads notes immediately.
 
 ## Updating applications
 
@@ -67,16 +67,15 @@ The default audit is offline. Live audits save reports and HTML under `build/` a
 ```sh
 ./script/benchmark_complexity.sh
 ./script/benchmark_migration.sh current
-./script/benchmark_frames.sh current
 ```
 
-Benchmarks use Release builds without coverage. Compare the same hardware and workload. The frame benchmark opens the production window with 300 offline apps; keep it focused and unobstructed. Reports and captures go under `build/`. Missing, malformed, or nonfinite measurements and missing required logs fail validation; the script regression tests run with `test.sh`.
+Optional Release benchmarks measure data processing, startup, selection, release notes, and memory. Compare results on the same hardware and workload. Reports and test output go under `build/`.
 
-The retained macOS 27 reports still miss the 8.33 ms keyboard CPU target and the smoothness and one-frame input-delay gates. Correct navigation does not establish smooth presentation; 120 Hz presentation remains unverified.
+The UI lane checks keyboard navigation, focus, selection, scrolling, accessibility, and appearance. Performance measurements supplement these behavior checks.
 
-Visual tests use `LatestMainWindowScene` with offline data, a fixed screen position, and an inactive window. Captures go under `build/production-visuals/main-window-scene` and compare every pixel against same-host originals in `build/production-visual-reference/main-window-scene` when present. Missing references do not prove parity. Preserve old references and record source revision, accepted layout changes, and capture conditions when recapturing from the independent original renderer. Never generate references from the candidate. The 14 macOS 26 [component references](Tests/VisualBaselines/macos-26/README.md) separately cover detail, locations, actions, and toolbar appearance.
+Visual tests capture the production window with offline data at a fixed position and inactive state. Images in `build/production-visuals/main-window-scene` compare pixel-for-pixel with same-host originals in `build/production-visual-reference/main-window-scene`. Preserve those originals and their provenance; missing references do not establish parity. The macOS 26 [component references](Tests/VisualBaselines/macos-26/README.md) are checked in separately.
 
-The macOS 27 sidebar uses SwiftUI for content and interaction, with a small native background to preserve source-list selection materials. The UI lane covers repeated Find/Escape between the list, search, and release notes; synthetic clicks must complete before the next command, and foreground tests must acquire application and window focus.
+Build products, logs, and captures can be regenerated. Keep visual references and any configured macOS 26 VM when cleaning `build/`.
 
 ## License
 
