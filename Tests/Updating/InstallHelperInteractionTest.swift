@@ -59,21 +59,21 @@ final class InstallHelperInteractionTest: XCTestCase {
   func testHelperDialogRemembersManualUpdatesAndDismissesWithCancelOrEscape() async throws {
     try requireUITests()
     let stored = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
-    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
     defer { AppStoreUpdateSettings.alwaysPerformManualUpdates.active = stored }
-    let presenter = UpdateInstallHelperAlert(helper: HelperRegistrationFixture())
-    let host = NSHostingView(
-      rootView: Color(nsColor: .windowBackgroundColor)
-        .background(WindowAccessor())
-        .modifier(UpdateInstallHelperPresentation(presenter: presenter)))
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
-      styleMask: [.titled], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.contentView = host
-    defer { window.close() }
-    try await activateTestWindow(window)
     for error in [InstallHelperError.installHelperNotRegistered, .installHelperRequiresApproval] {
+      AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
+      let presenter = UpdateInstallHelperAlert(helper: HelperRegistrationFixture())
+      let host = NSHostingView(
+        rootView: Color(nsColor: .windowBackgroundColor)
+          .background(WindowAccessor())
+          .modifier(UpdateInstallHelperPresentation(presenter: presenter)))
+      let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+        styleMask: [.titled], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
+      window.contentView = host
+      defer { window.close() }
+      try await activateTestWindow(window)
       presenter.present(error, fallbackURL: URL(string: "https://example.com")!, retry: {})
       for _ in 0..<80 {
         if window.attachedSheet != nil { break }
@@ -86,8 +86,10 @@ final class InstallHelperInteractionTest: XCTestCase {
         buttons.first {
           $0.title == NSLocalizedString("UpdateInstallHelperAlert.SuppressionTitle", comment: "")
         })
+      XCTAssertEqual(suppression.state, .off, "Initial suppression state for \(error)")
       suppression.performClick(nil)
       try await Task.sleep(for: .milliseconds(25))
+      XCTAssertEqual(suppression.state, .on, "Clicked suppression state for \(error)")
       if error == .installHelperRequiresApproval {
         let escape = try XCTUnwrap(
           NSEvent.keyEvent(
@@ -108,8 +110,15 @@ final class InstallHelperInteractionTest: XCTestCase {
       }
       XCTAssertNil(window.attachedSheet)
       XCTAssertFalse(presenter.isPresented)
-      XCTAssertTrue(AppStoreUpdateSettings.alwaysPerformManualUpdates.active)
-      AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
+      // SwiftUI writes the suppression binding after the sheet dismisses.
+      // Wait for the saved preference before tearing down this presentation.
+      for _ in 0..<80 {
+        if AppStoreUpdateSettings.alwaysPerformManualUpdates.active { break }
+        try await Task.sleep(for: .milliseconds(25))
+      }
+      XCTAssertTrue(
+        AppStoreUpdateSettings.alwaysPerformManualUpdates.active,
+        "Saved suppression state for \(error), checkbox=\(suppression.state.rawValue)")
     }
   }
 }
