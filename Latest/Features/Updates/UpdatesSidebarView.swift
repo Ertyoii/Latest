@@ -18,7 +18,6 @@ struct UpdatesSidebarView: View {
   @FocusState private var focus: SidebarFocus?
   @Environment(\.windowFocus) private var windowFocus
   @State private var previousFocus = SidebarFocus.list
-  @State private var keyboardFocusRequest: UInt = 0
 
   private var activeFocus: FocusState<SidebarFocus?>.Binding { windowFocus ?? $focus }
 
@@ -41,17 +40,9 @@ struct UpdatesSidebarView: View {
       // Keep the glass shadow above the scrolling content so the first
       // opaque section header does not cut it off at the search/list seam.
       .zIndex(1)
-      #if compiler(>=6.4)
-        if #available(macOS 27.0, *) {
-          UpdatesScrollList(
-            viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride,
-            focus: activeFocus)
-        } else {
-          nativeList
-        }
-      #else
-        nativeList
-      #endif
+      UpdatesScrollList(
+        viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride,
+        focus: activeFocus)
     }
     .onChange(of: activeFocus.wrappedValue) { _, new in
       if let new, new != .search { previousFocus = new }
@@ -59,22 +50,10 @@ struct UpdatesSidebarView: View {
     .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea(.container, edges: .top))
   }
 
-  private var nativeList: some View {
-    UpdatesTableBridge(
-      viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride,
-      keyboardFocusRequest: keyboardFocusRequest,
-      keyboardFocusDidBegin: { previousFocus = .list })
-  }
-
   private func restorePreviousFocus() {
     if searchFocusController.restorePreviousResponder() { return }
     activeFocus.wrappedValue = previousFocus
-    if previousFocus == .list {
-      // The macOS 26 compatibility renderer owns its native responder.
-      keyboardFocusRequest &+= 1
-    }
   }
-
 }
 
 enum SidebarFocus: Hashable {

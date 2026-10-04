@@ -55,7 +55,7 @@ else
 fi
 
 allowed_bridges=(
-	"Latest/Platform/AppKit/UpdatesTableBridge.swift"
+	"Latest/Platform/AppKit/SidebarScrollConfiguration.swift"
 	"Latest/Platform/AppKit/WindowAccessor.swift"
 )
 

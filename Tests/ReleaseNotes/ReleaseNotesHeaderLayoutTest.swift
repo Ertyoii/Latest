@@ -87,11 +87,6 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
   }
 
   @MainActor
-  func testLocationsLabelKeepsOriginalAsymmetricAlignment() {
-    XCTAssertEqual(VisualMetrics.locationsLabelOffset, CGSize(width: -2, height: 1))
-  }
-
-  @MainActor
   func testToolbarProgressTrackHasFixedWidthAndClampsItsValue() {
     XCTAssertEqual(ToolbarProgressMetrics.width, 64)
     XCTAssertGreaterThanOrEqual(ToolbarProgressMetrics.leadingPadding, 8)
@@ -142,21 +137,6 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
   }
 
   @MainActor
-  func testSidebarTableDoesNotShiftItsSelectionTowardTheRight() {
-    let scroll = LockedHorizontalScrollView(frame: NSRect(x: 0, y: 0, width: 308, height: 400))
-    let table = SwiftUIUpdateTableView(frame: scroll.bounds)
-    table.style = .sourceList
-    scroll.documentView = table
-    for width in [308.0, 360.0] {
-      scroll.setFrameSize(NSSize(width: width, height: 400))
-      table.setFrameOrigin(NSPoint(x: 4, y: 0))
-      table.layout()
-      XCTAssertEqual(table.frame.minX, 0)
-      XCTAssertEqual(table.frame.maxX, scroll.contentSize.width, accuracy: 0.5)
-    }
-  }
-
-  @MainActor
   func testMainWindowHasNoFloatingSidebarGlass() throws {
     try requireUITests()
     let environment = AppEnvironment.localUATFixture(
@@ -186,15 +166,6 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
         "The sidebar must remain attached, without a floating glass surface."
       )
     }
-  }
-
-  @MainActor
-  func testSectionHeadersNeverAcquireSelectionHighlight() {
-    let row = SidebarSectionRowView()
-    row.selectionHighlightStyle = .regular
-    row.isSelected = true
-    XCTAssertEqual(row.selectionHighlightStyle, .none)
-    XCTAssertFalse(row.isSelected)
   }
 
   @MainActor

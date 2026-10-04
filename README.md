@@ -36,7 +36,7 @@ The [development guide](docs/Development.md) gives a reading order, design ratio
 | `Tests` | Behavior, integration, visual, and performance contracts |
 | `script` | Local build, validation, measurement, and audit commands |
 
-SwiftUI owns the scenes, search, rows, settings, and detail controls. macOS 27 with its SDK uses `UpdatesScrollList`; macOS 26 retains `UpdatesTableBridge` for native input and swipe behavior. Release notes use WebKit for text selection and scrolling. Native detail capsules on macOS 26 and small AppKit bridges preserve platform behavior and established appearance.
+SwiftUI owns the scenes, search, rows, settings, and detail controls. macOS 26 and 27 share `UpdatesScrollList`, including row geometry, selection, keyboard navigation, menus, and swipe actions. A small AppKit bridge configures overlay scroll indicators, disables edge bounce, and forwards horizontal trackpad input to the SwiftUI rows. Release notes use WebKit for text selection and scrolling; native services and window hooks remain at platform boundaries.
 
 Discovery publishes complete scans so rows appear in their final order. Refresh keeps the previous list and selection visible. Keyboard selection updates the detail header immediately and waits for selection to settle before hashing and loading notes; mouse selection loads notes immediately.
 

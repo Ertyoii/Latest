@@ -160,58 +160,6 @@ final class AppListSnapshotTest: XCTestCase {
       ["Alpha", "Amazon Kindle", "WhatsApp", "BetterDisplay"])
   }
 
-  func testTableAppendReloadsWhenExistingAppContentChanged() {
-    let original = makeApp(name: "Alpha", versionNumber: "1.0")
-    let refreshed = makeApp(
-      name: "Alpha", versionNumber: "1.0", remoteVersionNumber: "2.0", appURL: original.fileURL)
-    let appended = makeApp(name: "Beta", versionNumber: "1.0")
-    let diff = TableViewSnapshotDiff(from: [.app(original)], to: [.app(refreshed), .app(appended)])
-    guard case .reloadAll = diff.change else {
-      return XCTFail("Appending must not leave changed existing rows stale")
-    }
-  }
-
-  func testTableAppendAndRemovalPreserveUnchangedPrefix() {
-    let app = makeApp(name: "Alpha", versionNumber: "1.0")
-    let other = makeApp(name: "Beta", versionNumber: "1.0")
-    let append = TableViewSnapshotDiff(from: [.app(app)], to: [.app(app), .app(other)])
-    guard case .append(let appended) = append.change else { return XCTFail("Expected append") }
-    XCTAssertEqual(appended, IndexSet(integer: 1))
-    let removal = TableViewSnapshotDiff(from: [.app(app), .app(other)], to: [.app(app)])
-    guard case .remove(let removed) = removal.change else { return XCTFail("Expected removal") }
-    XCTAssertEqual(removed, IndexSet(integer: 1))
-    let changedRemoval = TableViewSnapshotDiff(
-      from: [.app(app), .app(other)], to: [.app(app.with(ignoredState: true))])
-    guard case .reloadAll = changedRemoval.change else {
-      return XCTFail("Removing must not leave changed existing rows stale")
-    }
-  }
-
-  func testTableDiffReloadsChangedRowsAndRejectsReorderedIdentities() {
-    let original = makeApp(name: "Alpha", versionNumber: "1.0")
-    let refreshed = makeApp(name: "Alpha", versionNumber: "2.0", appURL: original.fileURL)
-    let other = makeApp(name: "Beta", versionNumber: "1.0")
-    let entries: [AppListSnapshot.Entry] = [.app(original), .app(other)]
-    XCTAssertNil(TableViewSnapshotDiff(from: entries, to: entries).change)
-    let changed = TableViewSnapshotDiff(from: entries, to: [.app(refreshed), .app(other)])
-    guard case .reload(let rows) = changed.change else { return XCTFail("Expected row reload") }
-    XCTAssertEqual(rows, IndexSet(integer: 0), "Keep the unaffected row intact")
-    let reordered = TableViewSnapshotDiff(from: entries, to: [.app(other), .app(original)])
-    guard case .reloadAll = reordered.change else {
-      return XCTFail("Expected reordered rows to reload")
-    }
-  }
-
-  func testTableDiffReloadsChangedVersionTextWithEquivalentUpdatePrecedence() {
-    let original = makeApp(name: "Alpha", versionNumber: "1.0")
-    let refreshed = makeApp(name: "Alpha", versionNumber: "1.0.0", appURL: original.fileURL)
-    let diff = TableViewSnapshotDiff(from: [.app(original)], to: [.app(refreshed)])
-    guard case .reload(let rows) = diff.change else {
-      return XCTFail("Changed displayed version text must reload the row")
-    }
-    XCTAssertEqual(rows, IndexSet(integer: 0))
-  }
-
   private func section(at index: Int, in snapshot: AppListSnapshot) -> AppListSnapshot.Section? {
     guard case .section(let section) = snapshot.entries[index] else { return nil }
     return section

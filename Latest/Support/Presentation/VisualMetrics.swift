@@ -17,7 +17,7 @@ enum VisualMetrics {
   /// 65-point synthetic fixture made every following row drift farther down.
   static let appRowHeight: CGFloat = 60
   static let sectionHeaderHeight: CGFloat = 27
-  static let scrollBottomInset: CGFloat = 10
+  static let sectionHeaderSpacing: CGFloat = 10
 
   static let mainWindowDefaultWidth: CGFloat = 768
   static let mainWindowDefaultHeight: CGFloat = 516
@@ -27,7 +27,6 @@ enum VisualMetrics {
   static let sidebarIdealWidth: CGFloat = 308
   static let detailMinWidth: CGFloat = 460
 
-  static let appIconSize: CGFloat = 50
   static let detailIconSize: CGFloat = 64
 
   // The app header sits below the native window toolbar.
@@ -44,8 +43,4 @@ enum VisualMetrics {
   static let detailUpdateButtonWidth: CGFloat = 59
   static let detailUpdateButtonHeight: CGFloat = 24
 
-  // The original settings label intentionally starts 2pt before the table and
-  // one point lower. Keep that small asymmetry explicit instead of changing the
-  // native Table's content geometry.
-  static let locationsLabelOffset = CGSize(width: -2, height: 1)
 }

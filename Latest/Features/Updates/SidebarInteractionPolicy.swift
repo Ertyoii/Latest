@@ -10,8 +10,7 @@
 
 import Foundation
 
-/// Renderer-independent sidebar behavior. Keeping these decisions outside the
-/// view makes row selection and swipe availability directly testable.
+/// Available actions for an app, shared by gesture handling and presentation.
 @MainActor
 struct SidebarInteractionPolicy {
   enum SwipeEdge {
@@ -19,43 +18,15 @@ struct SidebarInteractionPolicy {
     case trailing
   }
 
-  enum Action: Equatable {
+  enum Action: Hashable {
     case update
     case open
     case revealInFinder
   }
 
-  let entries: [AppListSnapshot.Entry]
   var updating: any AppUpdating = AppUpdateService.shared
 
-  func isSelectable(row: Int) -> Bool {
-    app(at: row) != nil
-  }
-
-  func isSectionHeader(row: Int) -> Bool {
-    guard entries.indices.contains(row) else { return false }
-    if case .section = entries[row] {
-      return true
-    }
-    return false
-  }
-
-  func app(at row: Int) -> App? {
-    guard entries.indices.contains(row), case .app(let app) = entries[row] else {
-      return nil
-    }
-    return app
-  }
-
-  func targetApp(clickedRow: Int, selectedRow: Int) -> App? {
-    if let clickedApp = app(at: clickedRow) {
-      return clickedApp
-    }
-    return app(at: selectedRow)
-  }
-
-  func swipeActions(for row: Int, edge: SwipeEdge) -> [Action] {
-    guard let app = app(at: row) else { return [] }
+  func swipeActions(for app: App, edge: SwipeEdge) -> [Action] {
     switch edge {
     case .leading:
       return [.open, .revealInFinder]
@@ -63,5 +34,22 @@ struct SidebarInteractionPolicy {
       return app.updateAvailable && !updating.isUpdating(app) ? [.update] : []
     }
   }
+}
 
+@MainActor
+enum SidebarUpdateActionTitle {
+  static func text(for app: App) -> String {
+    if let externalUpdater = app.externalUpdaterName {
+      return String(
+        format: NSLocalizedString(
+          "ExternalUpdateAction",
+          comment:
+            "Action to update a given app outside of Latest. The placeholder is the external updater."
+        ),
+        externalUpdater
+      )
+    }
+
+    return NSLocalizedString("UpdateAction", comment: "Action to update a given app.")
+  }
 }

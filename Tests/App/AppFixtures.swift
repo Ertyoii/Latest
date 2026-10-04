@@ -103,6 +103,14 @@ enum LocalUATFixture {
 func makeLatestTestWindow(
   environment: AppEnvironment, dark: Bool = false, testCase: XCTestCase
 ) async throws -> NSWindow {
+  try await makeLatestTestWindow(
+    content: LatestRootView(environment: environment), dark: dark, testCase: testCase)
+}
+
+@MainActor
+func makeLatestTestWindow<Content: View>(
+  content: Content, dark: Bool = false, testCase: XCTestCase
+) async throws -> NSWindow {
   try requireUITests()
   let originalAppearanceName = NSApp.appearance?.name.rawValue
   testCase.addTeardownBlock {
@@ -116,7 +124,7 @@ func makeLatestTestWindow(
   NSApp.setActivationPolicy(.regular)
   let scene = NSHostingSceneRepresentation {
     LatestMainWindowScene(id: id) {
-      LatestRootView(environment: environment)
+      content
         .environment(\.colorScheme, dark ? .dark : .light)
         .environment(\.locale, Locale(identifier: "en_US"))
     }
@@ -137,6 +145,27 @@ func makeLatestTestWindow(
   }
   XCTFail("The production Latest scene did not open")
   throw CocoaError(.coderInvalidValue)
+}
+
+@MainActor
+func activateTestWindow(_ window: NSWindow) async throws {
+  NSApp.setActivationPolicy(.regular)
+  let deadline = ContinuousClock.now + .seconds(5)
+  repeat {
+    NSRunningApplication.current.activate(options: [
+      .activateAllWindows, .activateIgnoringOtherApps,
+    ])
+    window.makeKeyAndOrderFront(nil)
+    if NSApp.isActive && window.isKeyWindow {
+      try await Task.sleep(for: .milliseconds(20))
+      if NSApp.isActive && window.isKeyWindow { return }
+    }
+    try await Task.sleep(for: .milliseconds(20))
+  } while ContinuousClock.now < deadline
+  XCTFail(
+    "UI test window could not acquire focus: title=\(window.title), class=\(type(of: window)), visible=\(window.isVisible), canBecomeKey=\(window.canBecomeKey), onActiveSpace=\(window.isOnActiveSpace), active=\(NSApp.isActive), policy=\(NSApp.activationPolicy().rawValue). Run --ui when the desktop is available."
+  )
+  throw CocoaError(.userCancelled)
 }
 
 /// Supply the release before a native view enters its synchronous tracking loop.

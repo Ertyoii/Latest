@@ -46,6 +46,32 @@ final class MigrationPerformanceTest: XCTestCase {
     }
   }
 
+  func testSidebarRowLookupPerformance() throws {
+    guard FileManager.default.fileExists(atPath: Self.benchmarkFlagURL.path) else {
+      throw XCTSkip("Run script/benchmark_migration.sh to execute sidebar benchmarks.")
+    }
+    let settings = try isolatedAppListSettings(for: self)
+    for count in [100, 500, 1_500] {
+      let snapshot = AppListSnapshot(
+        withApps: makeApps(count: count), filterQuery: nil, settings: settings)
+      let layout = SidebarLayout(entries: snapshot.entries)
+      let points = (0..<1_000).map { Double($0) * layout.contentHeight / 1_000 }
+      // Same ordered frames and pointers: compare the shipping lookup with the
+      // former linear scan. A checksum prevents an optimized-away workload.
+      for linear in [true, false] {
+        benchmark("sidebar_row_lookup_\(linear ? "linear_" : "")\(count)", iterations: 60) {
+          points.reduce(0) { checksum, y in
+            let row =
+              linear
+              ? layout.frames.firstIndex(where: { $0.minY <= y && y < $0.maxY })
+              : layout.row(at: y)
+            return checksum &+ (row ?? -1)
+          }
+        }
+      }
+    }
+  }
+
   func testMigrationPerformanceMatrix() throws {
     guard FileManager.default.fileExists(atPath: Self.benchmarkFlagURL.path) else {
       throw XCTSkip("Run script/benchmark_migration.sh to execute migration benchmarks.")
@@ -83,7 +109,7 @@ final class MigrationPerformanceTest: XCTestCase {
       withExtendedLifetime(window) {
         host.displayIfNeeded()
       }
-      return host.descendant(of: SwiftUIUpdateTableView.self)?.numberOfRows ?? snapshot.apps.count
+      return snapshot.apps.count
     }
 
     let scanRoot = try makeSyntheticAppRoot(count: 120)
@@ -333,7 +359,7 @@ final class MigrationPerformanceTest: XCTestCase {
     #else
       let configuration = "Release"
     #endif
-    let line = "MIGRATION_CONFIGURATION sidebar=appkit-parity configuration=\(configuration)"
+    let line = "MIGRATION_CONFIGURATION sidebar=swiftui configuration=\(configuration)"
     FileHandle.standardError.write(Data((line + "\n").utf8))
   }
 

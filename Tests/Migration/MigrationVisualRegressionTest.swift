@@ -97,7 +97,7 @@ final class MigrationVisualRegressionTest: XCTestCase {
   }
 
   @MainActor
-  func testProductionSidebarUsesMeasuredOriginalTableGeometryAndRealIcons() async throws {
+  func testProductionSidebarPreservesRowGeometryAndRealIcons() async throws {
     try requireUITests()
     let environment = AppEnvironment.localUATFixture(
       settings: try isolatedAppListSettings(for: self))
@@ -113,68 +113,33 @@ final class MigrationVisualRegressionTest: XCTestCase {
 
     let icon: NSRect
     let accessibilityLabel: String
-    if let tableView = hostingView.firstDescendant(of: SwiftUIUpdateTableView.self) {
-      XCTAssertEqual(tableView.rowHeight, 60)
-      XCTAssertEqual(tableView.intercellSpacing, .zero)
-      XCTAssertEqual(tableView.style, .sourceList)
-      XCTAssertEqual(tableView.frame.minX, 0, accuracy: 0.5)
-      XCTAssertEqual(tableView.numberOfRows, viewModel.snapshot.entries.count)
-      // Assertions do not stop execution. A mismatched table must fail this
-      // test before invalid row access can terminate the entire test host.
-      guard tableView.numberOfRows == viewModel.snapshot.entries.count else { return }
-
-      let firstSectionRow = try XCTUnwrap(
-        viewModel.snapshot.entries.firstIndex(where: {
-          if case .section = $0 { return true }
-          return false
-        })
-      )
-      let firstAppRow = try XCTUnwrap(viewModel.snapshot.firstIndex(of: app))
-      XCTAssertEqual(
-        tableView.rect(ofRow: firstSectionRow).height, VisualMetrics.sectionHeaderHeight)
-      XCTAssertEqual(tableView.rect(ofRow: firstAppRow).height, 60)
-      // Snapshot.apps retains input order; Notes sorts below the initial viewport.
-      tableView.scrollRowToVisible(firstAppRow)
-      try await Task.sleep(for: .milliseconds(100))
-
-      tableView.layoutSubtreeIfNeeded()
-      XCTAssertLessThan(firstAppRow, tableView.numberOfRows)
-      guard firstAppRow < tableView.numberOfRows else { return }
-      let cell = try XCTUnwrap(
-        tableView.view(atColumn: 0, row: firstAppRow, makeIfNecessary: true))
-      cell.layoutSubtreeIfNeeded()
-      accessibilityLabel = try XCTUnwrap(cell.accessibilityLabel())
-      let row = tableView.convert(tableView.rect(ofRow: firstAppRow), to: nil)
-      icon = NSRect(x: row.minX + 16, y: row.midY - 25, width: 50, height: 50)
-    } else {
-      let sidebar = try SidebarInputFixture(window: window, model: viewModel)
-      let rowIndex = try XCTUnwrap(viewModel.snapshot.firstIndex(of: app))
-      sidebar.scroll(to: max(0, sidebar.rowRect(rowIndex).minY - 37))
-      try await Task.sleep(for: .milliseconds(100))
-      // SwiftUI builds virtual accessibility children only after inspection is
-      // enabled. This is the same application attribute an AX client requests.
-      NSApp.accessibilitySetValue(true, forAttribute: .init(rawValue: "AXEnhancedUserInterface"))
-      let elements = sidebar.accessibilityElements()
-      let row = try XCTUnwrap(
-        elements.first {
-          $0.accessibilityIdentifier() == "updates.app.\(app.identifier)"
-            && $0.accessibilityFrame().intersects(window.frame)
-        })
-      XCTAssertEqual(row.accessibilityFrame().height, 60, accuracy: 0.5)
-      accessibilityLabel = try XCTUnwrap(row.accessibilityLabel())
-      let rect = window.convertFromScreen(row.accessibilityFrame())
-      XCTAssertEqual(rect.minX, 0, accuracy: 0.5)
-      icon = NSRect(x: rect.minX + 16, y: rect.maxY - 55, width: 50, height: 50)
-      let paintedRows = elements.filter {
-        $0.accessibilityIdentifier()?.hasPrefix("updates.app.") == true
+    let sidebar = try SidebarInputFixture(window: window, model: viewModel)
+    let rowIndex = try XCTUnwrap(viewModel.snapshot.firstIndex(of: app))
+    sidebar.scroll(to: max(0, sidebar.rowRect(rowIndex).minY - 37))
+    try await Task.sleep(for: .milliseconds(100))
+    // SwiftUI builds virtual accessibility children only after inspection is
+    // enabled. This is the same application attribute an AX client requests.
+    NSApp.accessibilitySetValue(true, forAttribute: .init(rawValue: "AXEnhancedUserInterface"))
+    let elements = sidebar.accessibilityElements()
+    let row = try XCTUnwrap(
+      elements.first {
+        $0.accessibilityIdentifier() == "updates.app.\(app.identifier)"
           && $0.accessibilityFrame().intersects(window.frame)
-      }.sorted { $0.accessibilityFrame().minY > $1.accessibilityFrame().minY }
-      XCTAssertGreaterThan(paintedRows.count, 5)
-      for (first, second) in zip(paintedRows, paintedRows.dropFirst()) {
-        XCTAssertEqual(first.accessibilityFrame().height, 60, accuracy: 0.5)
-        XCTAssertEqual(
-          first.accessibilityFrame().minY - second.accessibilityFrame().minY, 60, accuracy: 0.5)
-      }
+      })
+    XCTAssertEqual(row.accessibilityFrame().height, 60, accuracy: 0.5)
+    accessibilityLabel = try XCTUnwrap(row.accessibilityLabel())
+    let rect = window.convertFromScreen(row.accessibilityFrame())
+    XCTAssertEqual(rect.minX, 0, accuracy: 0.5)
+    icon = NSRect(x: rect.minX + 16, y: rect.maxY - 55, width: 50, height: 50)
+    let paintedRows = elements.filter {
+      $0.accessibilityIdentifier()?.hasPrefix("updates.app.") == true
+        && $0.accessibilityFrame().intersects(window.frame)
+    }.sorted { $0.accessibilityFrame().minY > $1.accessibilityFrame().minY }
+    XCTAssertGreaterThan(paintedRows.count, 5)
+    for (first, second) in zip(paintedRows, paintedRows.dropFirst()) {
+      XCTAssertEqual(first.accessibilityFrame().height, 60, accuracy: 0.5)
+      XCTAssertEqual(
+        first.accessibilityFrame().minY - second.accessibilityFrame().minY, 60, accuracy: 0.5)
     }
     let versions = try XCTUnwrap(app.localizedVersionInformation)
     XCTAssertTrue(accessibilityLabel.contains(app.name))
@@ -209,7 +174,7 @@ final class MigrationVisualRegressionTest: XCTestCase {
   func testMigrationGalleryRenderedRegions() async throws {
     try requireUITests()
     guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 else {
-      throw XCTSkip("Visual baselines are scoped to the macOS 26 renderer.")
+      throw XCTSkip("Visual baselines are scoped to the macOS 26 appearance.")
     }
 
     for scenario in MigrationGalleryScenario.regressionCases {
@@ -560,8 +525,8 @@ private enum VisualRegressionError: LocalizedError {
   }
 }
 
-/// Captures the shipping scene and the sidebar renderer selected by the OS. A same-machine reference directory enables
-/// strict full-frame comparison without accepting any changed RGBA pixels.
+/// Captures the shipping scene with the shared SwiftUI sidebar. A same-machine
+/// reference directory enables strict comparison of every RGBA pixel.
 final class ProductionVisualParityTest: XCTestCase {
   @MainActor
   func testToolbarScanBecomesVisibleLinearProgressAndClearsOnCompletion() async throws {
@@ -675,25 +640,36 @@ final class ProductionVisualParityTest: XCTestCase {
     for dark in [false, true] {
       for (name, presentation) in states {
         var actions = 0
-        let host = NSHostingView(
-          rootView:
+        let window = try await makeLatestTestWindow(
+          content:
             UpdateActionSurface(
               app: app, presentation: presentation, performAction: { actions += 1 }
             )
             .frame(width: 160, height: 80)
-            .background(Color(nsColor: .textBackgroundColor)))
-        let window = NSWindow(
-          contentRect: NSRect(x: 0, y: 0, width: 160, height: 80),
-          styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        window.contentView = host
-        window.orderFront(nil)
+            .background(Color(nsColor: .textBackgroundColor))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea(),
+          dark: dark, testCase: self)
         defer { window.close() }
+        try await activateTestWindow(window)
+        let host = try XCTUnwrap(window.contentView)
         try await Task.sleep(for: .milliseconds(150))
         host.layoutSubtreeIfNeeded()
+        _ = try await settledWindowBitmap(window)
         let filename = "\(dark ? "dark" : "light")-\(name)"
-        let bitmap = try await captureWindowBitmap(window)
+        // macOS 26 VM capture fails for tiny windows. Capture a full-size
+        // surface and inspect the same 160 x 80pt component crop on both OSes.
+        func captureCapsule() async throws -> NSBitmapImageRep {
+          let bitmap = try await captureWindowBitmap(window)
+          let component = host.convert(
+            CGRect(x: host.bounds.midX - 80, y: host.bounds.midY - 40, width: 160, height: 80),
+            to: nil)
+          let crop = CGRect(
+            x: component.minX * 2, y: (window.frame.height - component.maxY) * 2,
+            width: 320, height: 160)
+          return NSBitmapImageRep(cgImage: try XCTUnwrap(bitmap.cgImage?.cropping(to: crop)))
+        }
+        let bitmap = try await captureCapsule()
         try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
           to: output.appendingPathComponent("\(filename).png"))
         // Independently inspect the original 59 x 24pt capsule and its blue ink.
@@ -712,7 +688,8 @@ final class ProductionVisualParityTest: XCTestCase {
         let down = try XCTUnwrap(
           NSEvent.mouseEvent(
             with: .leftMouseDown,
-            location: NSPoint(x: 80, y: 40), modifierFlags: [],
+            location: host.convert(NSPoint(x: host.bounds.midX, y: host.bounds.midY), to: nil),
+            modifierFlags: [],
             timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
             context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
         let up = try XCTUnwrap(
@@ -721,15 +698,15 @@ final class ProductionVisualParityTest: XCTestCase {
             location: down.locationInWindow, modifierFlags: [], timestamp: down.timestamp + 0.05,
             windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1,
             pressure: 0))
-        // AppKit tracking runs outside this async task so we can capture the
-        // genuine pressed pixels before queuing the matching release.
+        // Dispatch to the owning window: macOS 26 does not reliably route a
+        // queued synthetic press. Capture the held state before its release.
         let pressed = try await { @MainActor in
-          NSApp.postEvent(down, atStart: false)
-          defer { NSApp.postEvent(up, atStart: false) }
+          window.sendEvent(down)
+          defer { window.sendEvent(up) }
           var pressed: NSBitmapImageRep?
           for _ in 0..<40 {
             try await Task.sleep(for: .milliseconds(25))
-            let bitmap = try await captureWindowBitmap(window)
+            let bitmap = try await captureCapsule()
             let fill = try XCTUnwrap(bitmap.colorAt(x: 160, y: 58)?.usingColorSpace(.sRGB))
             if fill.redComponent < center.redComponent - 0.1 {
               pressed = bitmap

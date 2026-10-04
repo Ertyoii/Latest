@@ -267,18 +267,6 @@ extension AppListSnapshot {
     /// Represents one section header in the list.
     case section(Section)
 
-    /// Stable identity comparison used by the AppKit table diff. Content
-    /// changes are handled separately so unchanged rows are not rebuilt.
-    func isSimilar(to entry: Entry) -> Bool {
-      switch (self, entry) {
-      case (.app(let app), .app(let other)):
-        app.identifier == other.identifier
-      case (.section(let section), .section(let other)):
-        section.title == other.title
-      default:
-        false
-      }
-    }
   }
 
   /// A section used for grouping multiple results.

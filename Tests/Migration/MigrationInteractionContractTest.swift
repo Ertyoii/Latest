@@ -387,105 +387,11 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testSidebarSearchAcceptsTypingClearAndEscapeRestoresTableFocus() throws {
+  func testSidebarSearchAcceptsTypingClearAndEscapeRestoresListFocus() throws {
     try requireUITests()
     try runApplicationTest {
-      #if compiler(>=6.4)
-        if #available(macOS 27.0, *) {
-          try await self.checkSwiftUISidebarSearch()
-          return
-        }
-      #endif
-      try await self.checkNativeSidebarSearchAcceptsTypingClearAndEscapeRestoresTableFocus()
+      try await self.checkSwiftUISidebarSearch()
     }
-  }
-
-  @MainActor
-  private func checkNativeSidebarSearchAcceptsTypingClearAndEscapeRestoresTableFocus() async throws
-  {
-    // FocusState and the native table settle on separate main-actor turns.
-    // Await the actual responder transition rather than a fixed 50-ms delay.
-    func waitForFocus(_ condition: () -> Bool) async throws {
-      for _ in 0..<100 {
-        if condition() { return }
-        try await Task.sleep(for: .milliseconds(10))
-      }
-    }
-    let app = makeApp(name: "Notes", version: "1", remoteVersion: "2")
-    let viewModel = UpdatesListViewModel(
-      snapshot: AppListSnapshot(withApps: [app], filterQuery: nil))
-    let focusController = SearchFocusController()
-    let host = NSHostingView(
-      rootView: UpdatesSidebarView(viewModel: viewModel, searchFocusController: focusController))
-    host.frame = NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 420)
-    let window = NSWindow(
-      contentRect: host.bounds, styleMask: [.titled], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.contentView = host
-    window.makeKeyAndOrderFront(nil)
-    defer { window.close() }
-    window.layoutIfNeeded()
-    host.layoutSubtreeIfNeeded()
-    let table = try XCTUnwrap(host.descendant(of: NSTableView.self))
-    XCTAssertTrue(window.makeFirstResponder(table))
-
-    AppCommands(
-      updateCheckingService: UpdateCheckingService(),
-      updatesListViewModel: viewModel, searchFocusController: focusController
-    ).focusSearch()
-    try await Task.sleep(for: .milliseconds(100))
-    host.layoutSubtreeIfNeeded()
-    let search = try XCTUnwrap(host.descendant(of: NSTextField.self))
-    XCTAssertTrue(search.currentEditor() === window.firstResponder)
-
-    search.currentEditor()?.insertText("Notes")
-    try await Task.sleep(for: .milliseconds(50))
-    XCTAssertEqual(viewModel.searchQuery, "Notes")
-
-    // Repeating Find while editing must not replace the restoration target.
-    focusController.focus()
-    try await Task.sleep(for: .milliseconds(50))
-    let escape = try XCTUnwrap(
-      NSEvent.keyEvent(
-        with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
-        windowNumber: window.windowNumber, context: nil,
-        characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}",
-        isARepeat: false, keyCode: 53))
-    window.sendEvent(escape)
-    try await waitForFocus { window.firstResponder === table }
-    XCTAssertTrue(window.firstResponder === table)
-    XCTAssertEqual(viewModel.searchQuery, "Notes")
-
-    AppCommands(
-      updateCheckingService: UpdateCheckingService(),
-      updatesListViewModel: viewModel, searchFocusController: focusController
-    ).focusSearch()
-    try await waitForFocus { search.currentEditor() === window.firstResponder }
-    let searchFrame = search.convert(search.bounds, to: nil)
-    try await SidebarInputFixture(window: window, model: viewModel).clickSearchClearButton()
-    try await Task.sleep(for: .milliseconds(50))
-    XCTAssertEqual(viewModel.searchQuery, "")
-    try await waitForFocus { search.currentEditor() === window.firstResponder }
-    XCTAssertTrue(search.currentEditor() === window.firstResponder)
-    window.sendEvent(escape)
-    try await waitForFocus { window.firstResponder === table }
-    XCTAssertTrue(window.firstResponder === table)
-    try clickTestWindow(window, at: NSPoint(x: searchFrame.midX, y: searchFrame.midY))
-    try await Task.sleep(for: .milliseconds(50))
-    XCTAssertTrue(search.currentEditor() === window.firstResponder)
-    window.sendEvent(escape)
-    try await waitForFocus { window.firstResponder === table }
-    XCTAssertTrue(
-      window.firstResponder === table, "Mouse entry must also restore sidebar navigation")
-    focusController.focus()
-    try await Task.sleep(for: .milliseconds(50))
-    search.currentEditor()?.insertText("No matching app")
-    try await Task.sleep(for: .milliseconds(50))
-    XCTAssertTrue(viewModel.snapshot.sections.isEmpty)
-    window.sendEvent(escape)
-    try await waitForFocus { window.firstResponder === table }
-    XCTAssertTrue(
-      window.firstResponder === table, "An empty search result must still restore keyboard focus")
   }
 
   @MainActor
@@ -568,188 +474,11 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testNativeCompatibilityTableArrowMovementSkipsSectionHeaders() throws {
-    let (window, table, viewModel) = try makeNativeCompatibilitySidebar()
-    defer { window.close() }
-    let appRows = viewModel.snapshot.entries.indices.filter {
-      if case .app = viewModel.snapshot.entries[$0] { return true }
-      return false
-    }
-    XCTAssertEqual(appRows.count, 2)
-    table.selectRowIndexes(IndexSet(integer: appRows[0]), byExtendingSelection: false)
-    func pressArrow(keyCode: UInt16, character: String) throws {
-      let event = try XCTUnwrap(
-        NSEvent.keyEvent(
-          with: .keyDown, location: .zero, modifierFlags: [.function, .numericPad],
-          timestamp: 0, windowNumber: window.windowNumber, context: nil,
-          characters: character, charactersIgnoringModifiers: character,
-          isARepeat: false, keyCode: keyCode
-        ))
-      window.firstResponder?.keyDown(with: event)
-    }
-    let cell = try XCTUnwrap(table.view(atColumn: 0, row: appRows[0], makeIfNecessary: true))
-    let point = cell.convert(NSPoint(x: 70, y: cell.bounds.midY), to: cell.superview)
-    let target = try XCTUnwrap(cell.hitTest(point))
-    let location = cell.convert(NSPoint(x: 70, y: cell.bounds.midY), to: nil)
-    let mouseDown = try XCTUnwrap(
-      NSEvent.mouseEvent(
-        with: .leftMouseDown, location: location, modifierFlags: [], timestamp: 0,
-        windowNumber: window.windowNumber, context: nil,
-        eventNumber: 0, clickCount: 1, pressure: 1))
-    let mouseUp = try XCTUnwrap(
-      NSEvent.mouseEvent(
-        with: .leftMouseUp, location: location, modifierFlags: [], timestamp: 0,
-        windowNumber: window.windowNumber, context: nil,
-        eventNumber: 1, clickCount: 1, pressure: 0))
-    NSApp.postEvent(mouseUp, atStart: true)
-    target.mouseDown(with: mouseDown)
-    try pressArrow(keyCode: 125, character: "\u{F701}")
-    XCTAssertEqual(table.selectedRow, appRows[1])
-    XCTAssertEqual(
-      viewModel.selectedApp?.identifier, viewModel.snapshot.sections.last?.apps.first?.identifier)
-    try pressArrow(keyCode: 126, character: "\u{F700}")
-    XCTAssertEqual(table.selectedRow, appRows[0])
-  }
-
-  @MainActor
   func testHeldArrowNavigationKeepsRowsVisibleAndSeparate() throws {
     try requireUITests()
     try runApplicationTest {
-      #if compiler(>=6.4)
-        if #available(macOS 27.0, *) {
-          try await self.checkSwiftUISidebarNavigation()
-          return
-        }
-      #endif
-      try await self.checkNativeHeldArrowNavigationKeepsRowsVisibleAndSeparate()
+      try await self.checkSwiftUISidebarNavigation()
     }
-  }
-
-  @MainActor
-  private func checkNativeHeldArrowNavigationKeepsRowsVisibleAndSeparate() async throws {
-    let settings = try isolatedAppListSettings(for: self)
-    let apps = (0..<40).map {
-      makeApp(name: String(format: "App %02d", $0), version: "1", remoteVersion: "2")
-    }
-    let viewModel = UpdatesListViewModel(
-      snapshot: AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings),
-      settings: settings)
-    let host = NSHostingView(
-      rootView: UpdatesSidebarView(
-        viewModel: viewModel, searchFocusController: SearchFocusController()))
-    host.frame = NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 420)
-    let window = NSWindow(
-      contentRect: host.bounds, styleMask: [.titled], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.contentView = host
-    window.makeKeyAndOrderFront(nil)
-    defer { window.close() }
-    try await Task.sleep(for: .milliseconds(100))
-    let table = try XCTUnwrap(host.descendant(of: NSTableView.self))
-    let scroll = try XCTUnwrap(table.enclosingScrollView)
-    table.selectRowIndexes(IndexSet(integer: 10), byExtendingSelection: false)
-    table.scrollRowToVisible(10)
-    window.makeFirstResponder(table)
-    func isVerticallyVisible(_ index: Int) -> Bool {
-      let row = table.rect(ofRow: index)
-      let viewport = table.visibleRect
-      // Native source-list rows include horizontal margins outside the viewport.
-      return row.minY >= viewport.minY && row.maxY <= viewport.maxY
-    }
-    var previousViewport: NSRect?
-    var stableFrames = 0
-    for _ in 0..<100 {
-      window.layoutIfNeeded()
-      host.layoutSubtreeIfNeeded()
-      scroll.layoutSubtreeIfNeeded()
-      table.layoutSubtreeIfNeeded()
-      let viewport = table.visibleRect
-      let ready =
-        table.numberOfRows == viewModel.snapshot.entries.count
-        && viewport.height > 0 && isVerticallyVisible(10)
-      stableFrames = ready && viewport == previousViewport ? stableFrames + 1 : 0
-      if stableFrames >= 3 { break }
-      previousViewport = viewport
-      try await Task.sleep(for: .milliseconds(25))
-    }
-    XCTAssertGreaterThanOrEqual(
-      stableFrames, 3,
-      "Initial viewport must settle before input: visible=\(table.visibleRect), frame=\(table.frame), clip=\(scroll.contentView.bounds)"
-    )
-    func presentedY() -> CGFloat {
-      scroll.contentView.layer?.presentation()?.bounds.minY ?? scroll.contentView.bounds.minY
-    }
-    func press(_ key: UInt16) throws {
-      let character = key == 125 ? "\u{F701}" : "\u{F700}"
-      let event = try XCTUnwrap(
-        NSEvent.keyEvent(
-          with: .keyDown, location: .zero, modifierFlags: [.function, .numericPad],
-          timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-          context: nil, characters: character, charactersIgnoringModifiers: character,
-          isARepeat: true, keyCode: key))
-      window.sendEvent(event)
-    }
-    try press(125)
-    XCTAssertEqual(table.selectedRow, 11, "Selection must respond immediately.")
-    XCTAssertTrue(viewModel.isKeyboardSelection, "Held arrows must coalesce release-note requests.")
-    XCTAssertTrue(
-      isVerticallyVisible(11),
-      "Arrow must immediately reveal row=\(table.rect(ofRow: 11)), visible=\(table.visibleRect), frame=\(table.frame), clip=\(scroll.contentView.bounds)"
-    )
-    var positions = [presentedY()]
-    var largestOverlap: CGFloat = 0
-    func paintedRow(_ index: Int) -> NSRect {
-      var rect = table.rect(ofRow: index)
-      if let layer = table.rowView(atRow: index, makeIfNecessary: false)?.layer {
-        rect.origin.y += (layer.presentation()?.position.y ?? layer.position.y) - layer.position.y
-      }
-      return rect
-    }
-    for index in 0..<24 {
-      try await Task.sleep(for: .milliseconds(8))
-      positions.append(presentedY())
-      largestOverlap = max(
-        largestOverlap,
-        paintedRow(table.selectedRow - 1).maxY - paintedRow(table.selectedRow).minY)
-      if index == 3 { try press(125) }
-    }
-    XCTAssertLessThanOrEqual(
-      largestOverlap, 0.5, "Selection must not cover the preceding row's version lines.")
-    XCTAssertEqual(table.selectedRow, 12)
-    XCTAssertEqual(viewModel.selectedApp?.identifier, apps[11].identifier)
-    XCTAssertTrue(
-      zip(positions, positions.dropFirst()).allSatisfy { $1 >= $0 - 0.5 },
-      "Held Down must not restore an obsolete scroll position.")
-    XCTAssertTrue(
-      isVerticallyVisible(12), "The final selected row must be visible.")
-
-    // Reversing toward a row already in view stops the pending forward scroll.
-    try press(125)
-    try await Task.sleep(for: .milliseconds(16))
-    try press(126)
-    XCTAssertEqual(table.selectedRow, 12)
-    let reversedPosition = presentedY()
-    try await Task.sleep(for: .milliseconds(150))
-    XCTAssertEqual(
-      presentedY(), reversedPosition, accuracy: 0.5,
-      "Changing direction must not keep moving toward the previous selection.")
-
-    // Programmatic navigation must remain stable after the keyboard event.
-    try press(125)
-    table.scrollRowToVisible(1)
-    let interruptedPosition = scroll.contentView.bounds.origin.y
-    try await Task.sleep(for: .milliseconds(150))
-    XCTAssertEqual(scroll.contentView.bounds.origin.y, interruptedPosition, accuracy: 0.5)
-
-    // Filtering must not leave the viewport beyond rows that disappeared.
-    table.selectRowIndexes(IndexSet(integer: 10), byExtendingSelection: false)
-    table.scrollRowToVisible(10)
-    try press(125)
-    viewModel.setSearchQuery("App 00")
-    try await Task.sleep(for: .milliseconds(150))
-    XCTAssertEqual(table.numberOfRows, 2)
-    XCTAssertEqual(scroll.contentView.bounds.origin.y, 0, accuracy: 0.5)
-    XCTAssertEqual(viewModel.selectedApp?.identifier, apps[0].identifier)
   }
 
   @MainActor
@@ -801,36 +530,54 @@ final class MigrationInteractionContractTest: XCTestCase {
   }
 
   @MainActor
-  func testContextMenuPrefersClickedRowAndFallsBackToSelection() throws {
-    let selectedApp = makeApp(name: "Discord", version: "1", remoteVersion: "2")
-    let clickedApp = makeApp(name: "Cursor", version: "3")
-    let snapshot = AppListSnapshot(withApps: [selectedApp, clickedApp], filterQuery: nil)
-    let policy = SidebarInteractionPolicy(entries: snapshot.entries)
-    let selectedRow = try XCTUnwrap(snapshot.firstIndex(of: selectedApp))
-    let clickedRow = try XCTUnwrap(snapshot.firstIndex(of: clickedApp))
-    let sectionRow = try XCTUnwrap(
-      snapshot.entries.indices.first(where: policy.isSectionHeader(row:)))
-
-    XCTAssertTrue(policy.targetApp(clickedRow: clickedRow, selectedRow: selectedRow) === clickedApp)
-    XCTAssertTrue(
-      policy.targetApp(clickedRow: sectionRow, selectedRow: selectedRow) === selectedApp)
-    XCTAssertTrue(policy.targetApp(clickedRow: -1, selectedRow: selectedRow) === selectedApp)
+  func testSidebarLayoutTargetsRowsAndExcludesSectionGaps() throws {
+    let apps = [
+      makeApp(name: "Alpha", version: "1", remoteVersion: "2"),
+      makeApp(name: "Beta", version: "1", remoteVersion: "2"),
+      makeApp(name: "Gamma", version: "1"),
+    ]
+    let snapshot = AppListSnapshot(
+      withApps: apps, filterQuery: nil, settings: try isolatedAppListSettings(for: self))
+    let layout = SidebarLayout(entries: snapshot.entries)
+    XCTAssertEqual(layout.contentHeight, 254)
+    // 27pt headers, 10pt gaps, and 60pt app rows are independent layout contracts.
+    for (y, row) in [(0.0, 0), (37, 1), (96.9, 1), (97, 2), (157, 3), (194, 4), (253.9, 4)] {
+      XCTAssertEqual(layout.row(at: y), row)
+    }
+    for y in [-1.0, 27, 36.9, 184, 193.9, 254, 1_000] {
+      XCTAssertNil(layout.row(at: y))
+    }
+    let filtered = SidebarLayout(entries: snapshot.refiltered(with: "Gamma").entries)
+    XCTAssertEqual(filtered.contentHeight, 97)
+    XCTAssertEqual(filtered.row(at: 37), 1)
+    XCTAssertNil(filtered.row(at: 194), "Filtered layouts must retire the former row positions")
+    XCTAssertNil(SidebarLayout(entries: []).row(at: 0))
   }
 
   @MainActor
   func testSwipeActionsPreserveAvailabilityRules() throws {
     let updatable = makeApp(name: "Discord", version: "1", remoteVersion: "2")
     let installed = makeApp(name: "Cursor", version: "3")
-    let snapshot = AppListSnapshot(withApps: [updatable, installed], filterQuery: nil)
-    let policy = SidebarInteractionPolicy(entries: snapshot.entries)
-    let updatableRow = try XCTUnwrap(snapshot.firstIndex(of: updatable))
-    let installedRow = try XCTUnwrap(snapshot.firstIndex(of: installed))
+    let policy = SidebarInteractionPolicy()
     let leadingActions: [SidebarInteractionPolicy.Action] = [.open, .revealInFinder]
     let trailingUpdateActions: [SidebarInteractionPolicy.Action] = [.update]
 
-    XCTAssertEqual(policy.swipeActions(for: updatableRow, edge: .leading), leadingActions)
-    XCTAssertEqual(policy.swipeActions(for: updatableRow, edge: .trailing), trailingUpdateActions)
-    XCTAssertEqual(policy.swipeActions(for: installedRow, edge: .trailing), [])
+    XCTAssertEqual(policy.swipeActions(for: updatable, edge: .leading), leadingActions)
+    XCTAssertEqual(policy.swipeActions(for: updatable, edge: .trailing), trailingUpdateActions)
+    XCTAssertEqual(policy.swipeActions(for: installed, edge: .trailing), [])
+
+    let queue = UpdateQueue()
+    queue.isSuspended = true
+    defer {
+      queue.cancelAllOperations()
+      queue.isSuspended = false
+    }
+    queue.addOperation(
+      UpdateOperation(
+        bundleIdentifier: updatable.bundleIdentifier, appIdentifier: updatable.identifier))
+    let queued = SidebarInteractionPolicy(updating: AppUpdateService(queue: queue))
+    XCTAssertEqual(queued.swipeActions(for: updatable, edge: .trailing), [])
+    XCTAssertEqual(queued.swipeActions(for: updatable, edge: .leading), leadingActions)
   }
 
   @MainActor
@@ -1241,51 +988,6 @@ final class MigrationInteractionContractTest: XCTestCase {
       return XCTFail("Expected the no-selection message.")
     }
     XCTAssertEqual(noSelectionMessage, .noSelection)
-  }
-
-  @MainActor
-  func testNativeCompatibilityMenuValidatesSelectedAppActions() throws {
-    let (window, table, viewModel) = try makeNativeCompatibilitySidebar()
-    defer { window.close() }
-    let menu = try XCTUnwrap(table.menu)
-    for (row, entry) in viewModel.snapshot.entries.enumerated() {
-      guard case .app(let app) = entry else { continue }
-      table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-      menu.update()
-      let updateItem = try XCTUnwrap(
-        menu.items.first { $0.action == NSSelectorFromString("updateApp:") })
-      let ignoreItem = try XCTUnwrap(
-        menu.items.first { $0.action == NSSelectorFromString("ignoreApp:") })
-      let unignoreItem = try XCTUnwrap(
-        menu.items.first { $0.action == NSSelectorFromString("unignoreApp:") })
-      XCTAssertEqual(updateItem.isEnabled, app.updateAvailable)
-      XCTAssertEqual(ignoreItem.isHidden, app.isIgnored)
-      XCTAssertEqual(unignoreItem.isHidden, !app.isIgnored)
-    }
-  }
-
-  @MainActor
-  private func makeNativeCompatibilitySidebar() throws -> (
-    NSWindow, NSTableView, UpdatesListViewModel
-  ) {
-    let apps = [
-      makeApp(name: "Discord", version: "1", remoteVersion: "2"),
-      makeApp(name: "Cursor", version: "3"),
-    ]
-    let viewModel = UpdatesListViewModel(
-      snapshot: AppListSnapshot(withApps: apps, filterQuery: nil))
-    let host = NSHostingView(
-      rootView: UpdatesTableBridge(viewModel: viewModel, showsSupportStatusOverride: nil))
-    host.frame = NSRect(x: 0, y: 0, width: VisualMetrics.sidebarIdealWidth, height: 420)
-    let window = NSWindow(
-      contentRect: host.bounds, styleMask: [.titled], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.contentView = host
-    window.layoutIfNeeded()
-    host.layoutSubtreeIfNeeded()
-    let table = try XCTUnwrap(host.descendant(of: NSTableView.self))
-    XCTAssertTrue(table is SwiftUIUpdateTableView)
-    return (window, table, viewModel)
   }
 
   private func assertWaiting(

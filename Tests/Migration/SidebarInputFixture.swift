@@ -2,6 +2,7 @@
 
 import AppKit
 import SwiftUI
+import Synchronization
 import XCTest
 
 @testable import Latest
@@ -13,7 +14,7 @@ struct SidebarInputFixture {
   let window: NSWindow
   let model: UpdatesListViewModel
 
-  /// The production scene chooses the renderer for the current OS. Fixtures
+  /// The production scene uses the shared SwiftUI renderer. Fixtures
   /// supply data and services only; they never assemble or restyle a row.
   static func make(
     apps: [Latest.App], selected: Latest.App? = nil, dark: Bool = false,
@@ -37,12 +38,6 @@ struct SidebarInputFixture {
   }
 
   func contentFrame(for app: Latest.App) throws -> CGRect {
-    if let table = scroll.documentView as? NSTableView {
-      let index = try XCTUnwrap(model.snapshot.firstIndex(of: app))
-      let cell = try XCTUnwrap(table.view(atColumn: 0, row: index, makeIfNecessary: true))
-      return cell.convert(cell.bounds, to: nil)
-    }
-    NSApp.accessibilitySetValue(true, forAttribute: .init(rawValue: "AXEnhancedUserInterface"))
     let row = try XCTUnwrap(
       accessibilityElements().first {
         $0.accessibilityIdentifier() == "updates.app.\(app.identifier)"
@@ -133,6 +128,7 @@ struct SidebarInputFixture {
   }
 
   func accessibilityElements() -> [SidebarAccessibilityElement] {
+    NSApp.accessibilitySetValue(true, forAttribute: .init(rawValue: "AXEnhancedUserInterface"))
     var seen = Set<ObjectIdentifier>()
     var elements: [SidebarAccessibilityElement] = []
     func visit(_ value: Any) {
@@ -151,7 +147,6 @@ struct SidebarInputFixture {
   }
 
   func clickSearchClearButton() async throws {
-    NSApp.accessibilitySetValue(true, forAttribute: .init(rawValue: "AXEnhancedUserInterface"))
     for _ in 0..<100 {
       window.contentView?.layoutSubtreeIfNeeded()
       if let button = accessibilityElements().first(where: {
@@ -170,28 +165,16 @@ struct SidebarInputFixture {
   }
 
   func activate() async throws {
-    NSApp.setActivationPolicy(.regular)
-    print("SIDEBAR_TEST_WAITING_FOR_FOCUS pid=\(ProcessInfo.processInfo.processIdentifier)")
-    fflush(stdout)
-    let deadline = ContinuousClock.now + .seconds(5)
-    repeat {
-      NSApp.activate()
-      window.makeKeyAndOrderFront(nil)
-      if NSApp.isActive && window.isKeyWindow { return }
-      try await Task.sleep(for: .milliseconds(20))
-    } while ContinuousClock.now < deadline
-    XCTFail(
-      "UI test window could not acquire focus: title=\(window.title), class=\(type(of: window)), visible=\(window.isVisible), canBecomeKey=\(window.canBecomeKey), onActiveSpace=\(window.isOnActiveSpace), active=\(NSApp.isActive), policy=\(NSApp.activationPolicy().rawValue). Run --ui when the desktop is available."
-    )
-    throw CocoaError(.userCancelled)
+    try await activateTestWindow(window)
   }
 
   func click(row: Int) throws {
-    let document = try XCTUnwrap(scroll.documentView)
-    let rect = rowRect(row)
-    let y = document.isFlipped ? rect.midY : document.bounds.height - rect.midY
-    let point = document.convert(CGPoint(x: 110, y: y), to: nil)
-    try clickTestWindow(window, at: point)
+    guard case .app(let app) = model.snapshot.entries[row] else {
+      XCTFail("Mouse targeting requires an app row")
+      return
+    }
+    let frame = try contentFrame(for: app)
+    try clickTestWindow(window, at: CGPoint(x: frame.minX + 110, y: frame.midY))
   }
 
   func press(down: Bool, repeatKey: Bool = true) throws {
@@ -203,6 +186,33 @@ struct SidebarInputFixture {
         context: nil, characters: character, charactersIgnoringModifiers: character,
         isARepeat: repeatKey, keyCode: down ? 125 : 126))
     window.sendEvent(event)
+  }
+
+  func wheel(dx: Int32 = 0, dy: Int32) throws {
+    let event = try XCTUnwrap(
+      CGEvent(
+        scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
+        wheel1: dy, wheel2: dx, wheel3: 0))
+    event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+    scroll.scrollWheel(with: try XCTUnwrap(NSEvent(cgEvent: event)))
+  }
+
+  func horizontalWheel(row: Int, dx: Int32) throws {
+    guard case .app(let app) = model.snapshot.entries[row] else {
+      throw CocoaError(.coderInvalidValue)
+    }
+    let frame = try contentFrame(for: app)
+    let point = window.convertPoint(toScreen: CGPoint(x: frame.minX + 194, y: frame.midY))
+    let screen = try XCTUnwrap(NSScreen.screens.first)
+    let event = try XCTUnwrap(
+      CGEvent(
+        scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
+        wheel1: 0, wheel2: dx, wheel3: 0))
+    event.location = CGPoint(x: point.x, y: screen.frame.maxY - point.y)
+    event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+    // Queue the event through NSApplication so the production input monitor
+    // receives the same windowless scroll events as a mouse or VM.
+    NSApp.postEvent(try XCTUnwrap(NSEvent(cgEvent: event)), atStart: false)
   }
 }
 
@@ -225,7 +235,10 @@ struct SidebarAccessibilityElement {
 
 @MainActor
 extension MigrationInteractionContractTest {
-  private func makeFixture() async throws -> (SidebarInputFixture, AppEnvironment) {
+  private func makeFixture(
+    updating: any AppUpdating = AppUpdateService.shared,
+    onUpdate: @escaping @Sendable (Int) -> Void = { _ in }
+  ) async throws -> (SidebarInputFixture, AppEnvironment) {
     let settings = try isolatedAppListSettings(for: self)
     let apps = (0..<40).map { index in
       let bundle = Latest.App.Bundle(
@@ -236,14 +249,16 @@ extension MigrationInteractionContractTest {
       let update = Latest.App.Update(
         app: bundle,
         remoteVersion: Version(versionNumber: "2.0", buildNumber: nil), minimumOSVersion: nil,
-        source: .appStore, date: nil, releaseNotes: nil, updateAction: .builtIn { _ in })
+        source: .appStore, date: nil, releaseNotes: nil,
+        updateAction: .builtIn { _ in onUpdate(index) })
       return Latest.App(
         bundle: bundle, update: index < 25 ? .success(update) : nil, isIgnored: false)
     }
     let model = UpdatesListViewModel(
       snapshot: AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings),
-      settings: settings)
-    let environment = AppEnvironment(settings: settings, updatesListViewModel: model)
+      settings: settings, updating: updating)
+    let environment = AppEnvironment(
+      settings: settings, updating: updating, updatesListViewModel: model)
     NSApp.setActivationPolicy(.regular)
     let window = try await makeLatestTestWindow(environment: environment, testCase: self)
     let fixture = try SidebarInputFixture(window: window, model: model)
@@ -262,6 +277,7 @@ extension MigrationInteractionContractTest {
     try await Task.sleep(for: .milliseconds(30))
     XCTAssertEqual(fixture.selectedRow, 2)
     XCTAssertTrue(fixture.model.isKeyboardSelection)
+
     var previousY: CGFloat = 0
     for _ in 0..<30 {
       try fixture.press(down: true)
@@ -332,6 +348,16 @@ extension MigrationInteractionContractTest {
     try await Task.sleep(for: .milliseconds(50))
     XCTAssertEqual(fixture.selectedRow, 2)
     XCTAssertTrue(fixture.model.isKeyboardSelection)
+    let search = try XCTUnwrap(
+      fixture.accessibilityElements().compactMap { $0.object as? NSTextField }.first)
+    let searchFrame = search.convert(search.bounds, to: nil)
+    try clickTestWindow(fixture.window, at: CGPoint(x: searchFrame.midX, y: searchFrame.midY))
+    try await Task.sleep(for: .milliseconds(50))
+    fixture.window.sendEvent(escape)
+    try await Task.sleep(for: .milliseconds(100))
+    try fixture.press(down: true)
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertEqual(fixture.selectedRow, 3, "Mouse entry into search must also restore navigation")
     fixture.model.setSearchQuery("No matching app")
     try await Task.sleep(for: .milliseconds(100))
     XCTAssertTrue(fixture.model.snapshot.sections.isEmpty)
@@ -341,5 +367,107 @@ extension MigrationInteractionContractTest {
     try fixture.press(down: true)
     try await Task.sleep(for: .milliseconds(50))
     XCTAssertEqual(fixture.selectedRow, 2)
+  }
+
+  func testSidebarScrollbarsAndEdgesKeepRowsInPlace() throws {
+    try requireUITests()
+    try runApplicationTest {
+      let (fixture, _) = try await self.makeFixture()
+      defer { fixture.window.close() }
+      let app = try XCTUnwrap(fixture.model.snapshot.sections.first?.apps.first)
+      let before = try fixture.contentFrame(for: app)
+      fixture.scroll.flashScrollers()
+      try await Task.sleep(for: .milliseconds(100))
+      XCTAssertEqual(try fixture.contentFrame(for: app), before)
+      XCTAssertEqual(fixture.scroll.contentSize.width, 308, accuracy: 0.5)
+      for (position, delta) in [
+        (CGFloat(0), Int32(1000)), (CGFloat.greatestFiniteMagnitude, Int32(-1000)),
+      ] {
+        let document = try XCTUnwrap(fixture.scroll.documentView)
+        let maximum = max(0, document.bounds.height - fixture.scroll.contentSize.height)
+        fixture.scroll(to: min(position, maximum))
+        try fixture.wheel(dy: delta)
+        for _ in 0..<8 {
+          try await Task.sleep(for: .milliseconds(16))
+          let bounds =
+            fixture.scroll.contentView.layer?.presentation()?.bounds
+            ?? fixture.scroll.contentView.bounds
+          XCTAssertGreaterThanOrEqual(bounds.minY, -0.5)
+          XCTAssertLessThanOrEqual(bounds.minY, maximum + 0.5)
+        }
+      }
+      try fixture.wheel(dx: 200, dy: 0)
+      try await Task.sleep(for: .milliseconds(50))
+      XCTAssertEqual(fixture.scroll.contentView.bounds.minX, 0, accuracy: 0.5)
+    }
+  }
+
+  func testSidebarSwipesRevealActionsAndExecuteOnlyOnClick() throws {
+    try requireUITests()
+    try runApplicationTest {
+      let calls = Mutex<[Int]>([])
+      let queue = UpdateQueue()
+      let service = AppUpdateService(queue: queue)
+      let (fixture, _) = try await self.makeFixture(updating: service) { index in
+        calls.withLock { $0.append(index) }
+      }
+      defer { fixture.window.close() }
+      try fixture.horizontalWheel(row: 3, dx: 180)
+      try await Task.sleep(for: .milliseconds(350))
+      let bitmap = try await captureWindowBitmap(fixture.window)
+      let background = try XCTUnwrap(NSColor.windowBackgroundColor.usingColorSpace(.deviceRGB))
+      for title in ["OpenAction", "RevealAction"] {
+        let action = try XCTUnwrap(
+          fixture.accessibilityElements().first {
+            $0.accessibilityLabel() == NSLocalizedString(title, comment: "")
+              && $0.accessibilityFrame().intersects(fixture.window.frame)
+          })
+        let frame = fixture.window.convertFromScreen(action.accessibilityFrame())
+        // Both controls must actually be painted, not merely exposed by AX
+        // while most of the action strip is still clipped behind the row.
+        let color = try XCTUnwrap(
+          bitmap.colorAt(
+            x: Int((frame.maxX - 5) * 2), y: Int((fixture.window.frame.height - frame.minY - 5) * 2)
+          )?
+          .usingColorSpace(.deviceRGB))
+        let contrast =
+          abs(color.redComponent - background.redComponent)
+          + abs(color.greenComponent - background.greenComponent)
+          + abs(color.blueComponent - background.blueComponent)
+        XCTAssertGreaterThan(contrast, 0.3, "Both revealed controls must be fully visible")
+      }
+      try fixture.horizontalWheel(row: 3, dx: -144)
+      try await Task.sleep(for: .milliseconds(350))
+      XCTAssertFalse(
+        fixture.accessibilityElements().contains {
+          ["OpenAction", "RevealAction"].map { NSLocalizedString($0, comment: "") }
+            .contains($0.accessibilityLabel() ?? "")
+        }, "Reversing the swipe must close both actions")
+      try fixture.horizontalWheel(row: 2, dx: -180)
+      try await Task.sleep(for: .milliseconds(350))
+      XCTAssertTrue(calls.withLock { $0.isEmpty }, "Full swipe must only reveal an action")
+      let update = try XCTUnwrap(
+        fixture.accessibilityElements().first {
+          $0.accessibilityLabel() == NSLocalizedString("UpdateAction", comment: "")
+            && $0.accessibilityFrame().intersects(fixture.window.frame)
+        })
+      let frame = fixture.window.convertFromScreen(update.accessibilityFrame())
+      try clickTestWindow(fixture.window, at: CGPoint(x: frame.midX, y: frame.midY))
+      try await Task.sleep(for: .milliseconds(100))
+      XCTAssertEqual(calls.withLock { $0 }, [1], "The revealed action must target its own row once")
+      try fixture.horizontalWheel(row: 3, dx: -100)
+      try await Task.sleep(for: .milliseconds(300))
+      XCTAssertEqual(calls.withLock { $0 }, [1], "Horizontal scrolling must only reveal an action")
+      let wheelUpdate = try XCTUnwrap(
+        fixture.accessibilityElements().first {
+          $0.accessibilityLabel() == NSLocalizedString("UpdateAction", comment: "")
+            && $0.accessibilityFrame().intersects(fixture.window.frame)
+        })
+      let wheelFrame = fixture.window.convertFromScreen(wheelUpdate.accessibilityFrame())
+      try clickTestWindow(fixture.window, at: CGPoint(x: wheelFrame.midX, y: wheelFrame.midY))
+      try await Task.sleep(for: .milliseconds(100))
+      XCTAssertEqual(calls.withLock { $0 }, [1, 2])
+      XCTAssertEqual(fixture.scroll.contentView.bounds.minX, 0, accuracy: 0.5)
+    }
   }
 }
