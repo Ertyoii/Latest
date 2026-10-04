@@ -1,5 +1,5 @@
 //
-//  MigrationGallery.swift
+//  AppearanceFixture.swift
 //  Latest
 //
 //  Created by ertyoii on 19.07.26.
@@ -15,16 +15,14 @@ import SwiftUI
 
 private typealias App = Latest.App
 
-/// Deterministic fixtures used by the SwiftUI migration's rendered regression suite.
+/// Deterministic fixtures used by the detail and settings appearance checks.
 ///
 /// Only production controls belong here. Main-window and sidebar coverage uses
 /// LatestMainWindowScene with offline models, never a second UI implementation.
-struct MigrationGalleryScenario: Identifiable {
+struct AppearanceFixtureScenario: Identifiable {
   enum Surface {
     case detail(DetailState)
     case locations
-    case updateStateShelf
-    case toolbarStateShelf
   }
 
   enum DetailState {
@@ -49,7 +47,7 @@ struct MigrationGalleryScenario: Identifiable {
   init(
     _ id: String,
     surface: Surface,
-    size: CGSize = MigrationGalleryMetrics.defaultWindowSize,
+    size: CGSize = AppearanceFixtureMetrics.defaultWindowSize,
     colorScheme: ColorScheme = .light,
     controlActiveState: ControlActiveState = .active,
     tint: Color = .blue,
@@ -72,54 +70,54 @@ struct MigrationGalleryScenario: Identifiable {
     self.layoutDirection = layoutDirection
   }
 
-  static let regressionCases: [MigrationGalleryScenario] = [
-    MigrationGalleryScenario("main-default-light", surface: .detail(.releaseNotes)),
-    MigrationGalleryScenario(
+  static let regressionCases: [AppearanceFixtureScenario] = [
+    AppearanceFixtureScenario("main-default-light", surface: .detail(.releaseNotes)),
+    AppearanceFixtureScenario(
       "main-minimum-dark-empty",
       surface: .detail(.empty),
-      size: MigrationGalleryMetrics.minimumWindowSize,
+      size: AppearanceFixtureMetrics.minimumWindowSize,
       colorScheme: .dark,
       tint: .green
     ),
-    MigrationGalleryScenario(
+    AppearanceFixtureScenario(
       "main-inactive-graphite",
       surface: .detail(.releaseNotes),
       controlActiveState: .inactive,
       tint: .gray
     ),
-    MigrationGalleryScenario(
+    AppearanceFixtureScenario(
       "main-increased-contrast-orange",
       surface: .detail(.releaseNotes),
       colorScheme: .dark,
       tint: .orange,
       contrast: .increased
     ),
-    MigrationGalleryScenario(
+    AppearanceFixtureScenario(
       "main-reduce-transparency-purple",
       surface: .detail(.loading),
       tint: .purple,
       reduceTransparency: true
     ),
-    MigrationGalleryScenario(
+    AppearanceFixtureScenario(
       "main-large-text-error",
       surface: .detail(.error),
       dynamicTypeSize: .accessibility1
     ),
-    MigrationGalleryScenario(
+    AppearanceFixtureScenario(
       "main-rtl-long-localization",
       surface: .detail(.releaseNotes),
       locale: Locale(identifier: "ar"),
       layoutDirection: .rightToLeft
     ),
-    MigrationGalleryScenario("locations-light", surface: .locations),
-    MigrationGalleryScenario(
+    AppearanceFixtureScenario("locations-light", surface: .locations),
+    AppearanceFixtureScenario(
       "locations-dark-inactive",
       surface: .locations,
       colorScheme: .dark,
       controlActiveState: .inactive,
       tint: .pink
     ),
-    MigrationGalleryScenario(
+    AppearanceFixtureScenario(
       "locations-contrast-large-rtl",
       surface: .locations,
       contrast: .increased,
@@ -127,29 +125,10 @@ struct MigrationGalleryScenario: Identifiable {
       locale: Locale(identifier: "ar"),
       layoutDirection: .rightToLeft
     ),
-    MigrationGalleryScenario("update-state-shelf-light", surface: .updateStateShelf),
-    MigrationGalleryScenario(
-      "update-state-shelf-dark",
-      surface: .updateStateShelf,
-      colorScheme: .dark,
-      tint: .orange
-    ),
-    MigrationGalleryScenario(
-      "toolbar-state-shelf-light",
-      surface: .toolbarStateShelf,
-      size: MigrationGalleryMetrics.minimumWindowSize
-    ),
-    MigrationGalleryScenario(
-      "toolbar-state-shelf-dark",
-      surface: .toolbarStateShelf,
-      size: MigrationGalleryMetrics.minimumWindowSize,
-      colorScheme: .dark,
-      tint: .orange
-    ),
   ]
 }
 
-enum MigrationGalleryMetrics {
+enum AppearanceFixtureMetrics {
   static let defaultWindowSize = CGSize(width: 768, height: 516)
   static let minimumWindowSize = CGSize(width: 560, height: 360)
   static let sidebarWidth: CGFloat = 308
@@ -164,8 +143,8 @@ enum MigrationGalleryMetrics {
   }
 }
 
-struct MigrationGalleryView: View {
-  let scenario: MigrationGalleryScenario
+struct AppearanceFixtureView: View {
+  let scenario: AppearanceFixtureScenario
 
   var body: some View {
     content
@@ -191,24 +170,20 @@ struct MigrationGalleryView: View {
       // Preserve the reviewed detail coordinates. The blank area replaces the
       // old mock sidebar, which was never part of the pixel comparison.
       HStack(spacing: 0) {
-        Color.clear.frame(width: MigrationGalleryMetrics.sidebarWidth)
+        Color.clear.frame(width: AppearanceFixtureMetrics.sidebarWidth)
         Divider()
-        MigrationDetailFixture(state: state)
+        DetailFixture(state: state)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
       .background(.background)
     case .locations:
-      MigrationLocationsFixture()
-    case .updateStateShelf:
-      MigrationUpdateStateShelf()
-    case .toolbarStateShelf:
-      MigrationToolbarStateShelf()
+      LocationsFixture()
     }
   }
 }
 
-private struct MigrationDetailFixture: View {
-  let state: MigrationGalleryScenario.DetailState
+private struct DetailFixture: View {
+  let state: AppearanceFixtureScenario.DetailState
 
   var body: some View {
     ReleaseNotesDetailSurface(app: fixtureApp, contentState: contentState)
@@ -279,7 +254,7 @@ private struct MigrationDetailFixture: View {
   }
 }
 
-private struct MigrationLocationsFixture: View {
+private struct LocationsFixture: View {
   private static let applicationsURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
   private static let utilitiesURL = URL(
     fileURLWithPath: "/Applications/Utilities", isDirectory: true)
@@ -299,8 +274,8 @@ private struct MigrationLocationsFixture: View {
         loadDetails: Self.loadDetails
       )
       .frame(
-        width: MigrationGalleryMetrics.locationsTableSize.width,
-        height: MigrationGalleryMetrics.locationsTableSize.height
+        width: AppearanceFixtureMetrics.locationsTableSize.width,
+        height: AppearanceFixtureMetrics.locationsTableSize.height
       )
 
       ControlGroup {
@@ -315,8 +290,8 @@ private struct MigrationLocationsFixture: View {
     .padding(.horizontal, 20)
     .padding(.top, 19)
     .frame(
-      width: MigrationGalleryMetrics.locationsContentSize.width,
-      height: MigrationGalleryMetrics.locationsContentSize.height,
+      width: AppearanceFixtureMetrics.locationsContentSize.width,
+      height: AppearanceFixtureMetrics.locationsContentSize.height,
       alignment: .topLeading
     )
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -332,166 +307,6 @@ private struct MigrationLocationsFixture: View {
       return DirectoryLocationDetails(isReachable: false, appCount: 0)
     default:
       return DirectoryLocationDetails(isReachable: true, appCount: 38)
-    }
-  }
-}
-
-@MainActor
-private enum MigrationUpdateFixtureState: String, CaseIterable, Identifiable {
-  case ready = "Ready to Update"
-  case open = "Up to Date / Open"
-  case pending = "Pending"
-  case initializing = "Initializing"
-  case downloading = "Downloading 42%"
-  case extracting = "Extracting 50%"
-  case installing = "Installing"
-  case cancelling = "Cancelling"
-  case failed = "Failed"
-  case external = "External Updater"
-
-  var id: String { rawValue }
-
-  var fixture: (app: App, presentation: UpdateActionPresentation) {
-    let app: App
-    let progressState: UpdateOperation.ProgressState
-    switch self {
-    case .ready:
-      app = Self.makeApp(remoteVersion: "2.0", action: .builtIn { _ in })
-      progressState = .none
-    case .open:
-      app = Self.makeApp(remoteVersion: "1.0", action: .builtIn { _ in })
-      progressState = .none
-    case .pending:
-      app = Self.makeApp(remoteVersion: "2.0", action: .builtIn { _ in })
-      progressState = .pending
-    case .initializing:
-      app = Self.makeApp(remoteVersion: "2.0", action: .builtIn { _ in })
-      progressState = .initializing
-    case .downloading:
-      app = Self.makeApp(remoteVersion: "2.0", action: .builtIn { _ in })
-      progressState = .downloading(loadedSize: 42, totalSize: 100)
-    case .extracting:
-      app = Self.makeApp(remoteVersion: "2.0", action: .builtIn { _ in })
-      progressState = .extracting(progress: 0.5)
-    case .installing:
-      app = Self.makeApp(remoteVersion: "2.0", action: .builtIn { _ in })
-      progressState = .installing
-    case .cancelling:
-      app = Self.makeApp(remoteVersion: "2.0", action: .builtIn { _ in })
-      progressState = .cancelling
-    case .failed:
-      app = Self.makeApp(remoteVersion: "2.0", action: .builtIn { _ in })
-      progressState = .error(LatestError.updateInfoUnavailable)
-    case .external:
-      app = Self.makeApp(remoteVersion: "2.0", action: .external(label: "Zed") { _ in })
-      progressState = .none
-    }
-    return (app, UpdateActionPresentation.make(for: app, progressState: progressState))
-  }
-
-  private static func makeApp(remoteVersion: String, action: App.Update.Action) -> App {
-    let bundle = App.Bundle(
-      version: Version(versionNumber: "1.0", buildNumber: nil),
-      name: "Fixture",
-      bundleIdentifier: "com.example.update-action-fixture",
-      fileURL: URL(fileURLWithPath: "/Applications/Update Action Fixture.app"),
-      source: .appStore
-    )
-    let update = App.Update(
-      app: bundle,
-      remoteVersion: Version(versionNumber: remoteVersion, buildNumber: nil),
-      minimumOSVersion: nil,
-      source: .appStore,
-      date: Date(timeIntervalSince1970: 1_750_000_000),
-      releaseNotes: .html(string: "<p>Release notes</p>"),
-      updateAction: action
-    )
-    return App(bundle: bundle, update: .success(update), isIgnored: false)
-  }
-}
-
-private struct MigrationUpdateStateShelf: View {
-  private let columns = [
-    GridItem(.flexible(), spacing: 20, alignment: .leading),
-    GridItem(.flexible(), alignment: .leading),
-  ]
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      Text("Update Action States")
-        .font(.title2.weight(.semibold))
-      Text(
-        "Every state is rendered together so state-model changes cannot silently drop a label, progress indicator, or disabled treatment."
-      )
-      .foregroundStyle(.secondary)
-
-      LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-        ForEach(MigrationUpdateFixtureState.allCases) { state in
-          HStack(spacing: 8) {
-            Text(state.rawValue)
-              .frame(width: 142, alignment: .leading)
-            MigrationUpdateActionFixture(state: state)
-          }
-          .frame(maxWidth: .infinity, minHeight: VisualMetrics.detailIconSize, alignment: .leading)
-        }
-      }
-      Spacer()
-    }
-    .padding(20)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .background(.background)
-  }
-}
-
-private struct MigrationUpdateActionFixture: View {
-  let state: MigrationUpdateFixtureState
-
-  var body: some View {
-    let fixture = state.fixture
-    UpdateActionSurface(
-      app: fixture.app,
-      presentation: fixture.presentation,
-      pausesAnimations: true,
-      performAction: {}
-    )
-  }
-}
-
-private struct MigrationToolbarStateShelf: View {
-  var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
-      Text("Main Window Toolbar")
-        .font(.title2.weight(.semibold))
-      Text(
-        "The system owns sidebar toggling and Liquid Glass. Latest contributes only a refresh action and scan progress."
-      )
-      .foregroundStyle(.secondary)
-
-      toolbarRow("Ready", isRefreshEnabled: true, progress: .hidden)
-      toolbarRow("Scanning", isRefreshEnabled: false, progress: .determinate(0))
-      toolbarRow("Checking 42%", isRefreshEnabled: false, progress: .determinate(0.42))
-      Spacer()
-    }
-    .padding(20)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .background(.background)
-  }
-
-  private func toolbarRow(
-    _ label: String,
-    isRefreshEnabled: Bool,
-    progress: ToolbarProgressPresentation
-  ) -> some View {
-    HStack(spacing: 0) {
-      Text(label)
-        .frame(width: 120, alignment: .leading)
-      HStack(spacing: 10) {
-        RefreshToolbarButton(isEnabled: isRefreshEnabled) {}
-        ToolbarUpdateProgressView(presentation: progress)
-      }
-      .padding(.horizontal, 10)
-      .frame(width: 210, height: 42, alignment: .leading)
-      .background(.bar, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
   }
 }

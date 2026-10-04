@@ -42,10 +42,10 @@ else
   pass "Release executable has no LLVM coverage instrumentation"
 fi
 
-if rg -q 'MigrationGallery' < <(strings "$EXECUTABLE_PATH"); then
-  fail "test-only MigrationGallery is present in the Release executable"
+if rg -q 'AppearanceFixture' < <(strings "$EXECUTABLE_PATH"); then
+  fail "test-only AppearanceFixture is present in the Release executable"
 else
-  pass "test-only MigrationGallery is absent from the Release executable"
+  pass "test-only AppearanceFixture is absent from the Release executable"
 fi
 
 if rg -q 'LATEST_LOCAL_UAT_FIXTURE|Latest-UAT-' < <(strings "$EXECUTABLE_PATH"); then
@@ -64,7 +64,7 @@ while IFS= read -r bridge_file; do
   bridge_files+=("${bridge_file#"$ROOT_DIR/"}")
 done < <(rg -l 'NS(View|ViewController)Representable' "$ROOT_DIR/Latest" \
   --glob '*.swift' \
-  --glob '!**/MigrationGallery.swift' \
+  --glob '!**/AppearanceFixtures.swift' \
   | sort)
 
 unexpected_bridge_count=0

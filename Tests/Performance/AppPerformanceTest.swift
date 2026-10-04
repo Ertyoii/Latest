@@ -1,5 +1,5 @@
 //
-//  MigrationPerformanceTest.swift
+//  AppPerformanceTest.swift
 //  Latest Tests
 //
 //  Created by ertyoii on 19.07.26.
@@ -18,10 +18,10 @@ import XCTest
 @testable import Latest
 
 @MainActor
-final class MigrationPerformanceTest: XCTestCase {
+final class AppPerformanceTest: XCTestCase {
   func testKeyboardSelectionPreparationPerformance() throws {
     guard FileManager.default.fileExists(atPath: Self.benchmarkFlagURL.path) else {
-      throw XCTSkip("Run script/benchmark_migration.sh to execute migration benchmarks.")
+      throw XCTSkip("Run script/benchmark_app.sh to execute app-performance benchmarks.")
     }
     // Embedded changelogs vary greatly in size. Passing a row with held arrows
     // should not hash its payload before the existing quiet interval expires.
@@ -46,40 +46,14 @@ final class MigrationPerformanceTest: XCTestCase {
     }
   }
 
-  func testSidebarRowLookupPerformance() throws {
+  func testAppPerformanceMatrix() throws {
     guard FileManager.default.fileExists(atPath: Self.benchmarkFlagURL.path) else {
-      throw XCTSkip("Run script/benchmark_migration.sh to execute sidebar benchmarks.")
+      throw XCTSkip("Run script/benchmark_app.sh to execute app-performance benchmarks.")
     }
-    let settings = try isolatedAppListSettings(for: self)
-    for count in [100, 500, 1_500] {
-      let snapshot = AppListSnapshot(
-        withApps: makeApps(count: count), filterQuery: nil, settings: settings)
-      let layout = SidebarLayout(entries: snapshot.entries)
-      let points = (0..<1_000).map { Double($0) * layout.contentHeight / 1_000 }
-      // Same ordered frames and pointers: compare the shipping lookup with the
-      // former linear scan. A checksum prevents an optimized-away workload.
-      for linear in [true, false] {
-        benchmark("sidebar_row_lookup_\(linear ? "linear_" : "")\(count)", iterations: 60) {
-          points.reduce(0) { checksum, y in
-            let row =
-              linear
-              ? layout.frames.firstIndex(where: { $0.minY <= y && y < $0.maxY })
-              : layout.row(at: y)
-            return checksum &+ (row ?? -1)
-          }
-        }
-      }
-    }
+    try runApplicationTest { try await self.measureAppPerformanceMatrix() }
   }
 
-  func testMigrationPerformanceMatrix() throws {
-    guard FileManager.default.fileExists(atPath: Self.benchmarkFlagURL.path) else {
-      throw XCTSkip("Run script/benchmark_migration.sh to execute migration benchmarks.")
-    }
-    try runApplicationTest { try await self.measureMigrationPerformanceMatrix() }
-  }
-
-  private func measureMigrationPerformanceMatrix() async throws {
+  private func measureAppPerformanceMatrix() async throws {
     let settings = try isolatedAppListSettings(for: self)
     emitConfigurationLine()
     let appsBySize = Dictionary(
@@ -126,7 +100,7 @@ final class MigrationPerformanceTest: XCTestCase {
       settings: settings)
     let detailState = ReleaseNotesDetailViewModel(
       releaseNotesProvider: ImmediateReleaseNotesProvider(
-        text: ReleaseNotesContent(string: "Migration benchmark release notes")
+        text: ReleaseNotesContent(string: "App benchmark release notes")
       )
     )
     let detailHost = NSHostingView(
@@ -197,12 +171,12 @@ final class MigrationPerformanceTest: XCTestCase {
       .deletingLastPathComponent()
       .deletingLastPathComponent()
       .deletingLastPathComponent()
-      .appendingPathComponent("build/run-migration-benchmarks")
+      .appendingPathComponent("build/run-app-benchmarks")
   }
 
   func testReleaseNotesSelectionPerformance() throws {
     guard FileManager.default.fileExists(atPath: Self.benchmarkFlagURL.path) else {
-      throw XCTSkip("Run script/benchmark_migration.sh to execute selection benchmarks.")
+      throw XCTSkip("Run script/benchmark_app.sh to execute selection benchmarks.")
     }
     let settings = try isolatedAppListSettings(for: self)
     let apps = makeApps(count: 30)
@@ -282,7 +256,7 @@ final class MigrationPerformanceTest: XCTestCase {
       var heapAfter = malloc_statistics_t()
       malloc_zone_statistics(nil, &heapAfter)
       let line =
-        "MIGRATION_HEAP name=selection_to_render_\(mode) live_bytes_before=\(heapBefore.size_in_use) live_bytes_after=\(heapAfter.size_in_use) live_blocks_before=\(heapBefore.blocks_in_use) live_blocks_after=\(heapAfter.blocks_in_use)"
+        "APP_HEAP name=selection_to_render_\(mode) live_bytes_before=\(heapBefore.size_in_use) live_bytes_after=\(heapAfter.size_in_use) live_blocks_before=\(heapBefore.blocks_in_use) live_blocks_after=\(heapAfter.blocks_in_use)"
       FileHandle.standardError.write(Data((line + "\n").utf8))
     }
   }
@@ -340,7 +314,7 @@ final class MigrationPerformanceTest: XCTestCase {
   ) {
     let line = String(
       format:
-        "MIGRATION_BENCHMARK name=%@ iterations=%d min_ms=%.3f avg_ms=%.3f p50_ms=%.3f p95_ms=%.3f max_ms=%.3f checksum=%d",
+        "APP_BENCHMARK name=%@ iterations=%d min_ms=%.3f avg_ms=%.3f p50_ms=%.3f p95_ms=%.3f max_ms=%.3f checksum=%d",
       name, iterations, minimum, average, median, p95, maximum, checksum
     )
     FileHandle.standardError.write(Data((line + "\n").utf8))
@@ -349,7 +323,7 @@ final class MigrationPerformanceTest: XCTestCase {
   private func emitMemoryLine(name: String, before: UInt64, after: UInt64) {
     let delta = Int64(bitPattern: after) - Int64(bitPattern: before)
     let line =
-      "MIGRATION_MEMORY name=\(name) before_bytes=\(before) after_bytes=\(after) delta_bytes=\(delta)"
+      "APP_MEMORY name=\(name) before_bytes=\(before) after_bytes=\(after) delta_bytes=\(delta)"
     FileHandle.standardError.write(Data((line + "\n").utf8))
   }
 
@@ -359,7 +333,7 @@ final class MigrationPerformanceTest: XCTestCase {
     #else
       let configuration = "Release"
     #endif
-    let line = "MIGRATION_CONFIGURATION sidebar=swiftui configuration=\(configuration)"
+    let line = "APP_CONFIGURATION sidebar=swiftui configuration=\(configuration)"
     FileHandle.standardError.write(Data((line + "\n").utf8))
   }
 
@@ -394,8 +368,8 @@ final class MigrationPerformanceTest: XCTestCase {
       let bundle = Latest.App.Bundle(
         version: Version(versionNumber: "1.\(index)", buildNumber: nil),
         name: "Benchmark App \(index)",
-        bundleIdentifier: "com.example.migration.\(index)",
-        fileURL: URL(fileURLWithPath: "/Applications/Migration-\(index).app", isDirectory: true),
+        bundleIdentifier: "com.example.app-performance.\(index)",
+        fileURL: URL(fileURLWithPath: "/Applications/App-\(index).app", isDirectory: true),
         source: .appStore
       )
       let update = Latest.App.Update(
@@ -405,7 +379,7 @@ final class MigrationPerformanceTest: XCTestCase {
         source: .appStore,
         date: Date(timeIntervalSince1970: 1_750_000_000 + Double(index)),
         releaseNotes: .html(
-          string: "<h2>Version 2.\(index)</h2><p>Migration fixture notes for app \(index).</p>"),
+          string: "<h2>Version 2.\(index)</h2><p>App fixture notes for app \(index).</p>"),
         updateAction: .builtIn { _ in }
       )
       return Latest.App(bundle: bundle, update: .success(update), isIgnored: index % 17 == 0)
@@ -420,16 +394,16 @@ final class MigrationPerformanceTest: XCTestCase {
 
   private func makeSyntheticAppRoot(count: Int) throws -> URL {
     let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("LatestMigrationBenchmark-\(UUID().uuidString)", isDirectory: true)
+      .appendingPathComponent("LatestAppBenchmark-\(UUID().uuidString)", isDirectory: true)
     for index in 0..<count {
       let contents =
         root
         .appendingPathComponent("Group-\(index / 20)", isDirectory: true)
-        .appendingPathComponent("Migration-\(index).app/Contents", isDirectory: true)
+        .appendingPathComponent("App-\(index).app/Contents", isDirectory: true)
       try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
       let info: [String: Any] = [
-        "CFBundleIdentifier": "com.example.synthetic-migration.\(index)",
-        "CFBundleName": "Synthetic Migration \(index)",
+        "CFBundleIdentifier": "com.example.synthetic-app-performance.\(index)",
+        "CFBundleName": "Synthetic App \(index)",
         "CFBundleShortVersionString": "1.\(index)",
         "CFBundleVersion": "\(index)",
       ]
@@ -454,12 +428,5 @@ private final class ImmediateReleaseNotesProvider: ReleaseNotesProviding {
     with completion: @escaping ReleaseNotesProvider.Completion
   ) {
     completion(.success(text))
-  }
-}
-
-extension NSView {
-  fileprivate func descendant<ViewType: NSView>(of type: ViewType.Type) -> ViewType? {
-    if let match = self as? ViewType { return match }
-    return subviews.lazy.compactMap { $0.descendant(of: type) }.first
   }
 }

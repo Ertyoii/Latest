@@ -182,22 +182,19 @@ struct UpdateActionView: View {
 }
 
 /// Stateless rendering for the update action. Keeping queue observation and side effects
-/// outside this view makes every visual state deterministic in tests and the migration gallery.
+/// outside this view keeps action routing separate from presentation.
 struct UpdateActionSurface: View {
   let app: App
   let presentation: UpdateActionPresentation
-  let pausesAnimations: Bool
   let performAction: () -> Void
 
   init(
     app: App,
     presentation: UpdateActionPresentation,
-    pausesAnimations: Bool = false,
     performAction: @escaping () -> Void
   ) {
     self.app = app
     self.presentation = presentation
-    self.pausesAnimations = pausesAnimations
     self.performAction = performAction
   }
 
@@ -206,7 +203,6 @@ struct UpdateActionSurface: View {
       UpdateActionControl(
         appName: app.name,
         presentation: presentation,
-        pausesAnimations: pausesAnimations,
         performAction: performAction
       )
       .frame(
@@ -261,7 +257,6 @@ enum UpdateActionVisualStyle {
 private struct UpdateActionControl: View {
   let appName: String
   let presentation: UpdateActionPresentation
-  let pausesAnimations: Bool
   let performAction: () -> Void
 
   @ViewBuilder
@@ -280,7 +275,7 @@ private struct UpdateActionControl: View {
         performAction: performAction
       )
     case .waiting(let status):
-      UpdateActionIndeterminateIndicator(pausesAnimations: pausesAnimations)
+      UpdateActionIndeterminateIndicator()
         .help(status)
         .accessibilityLabel(status)
     case .progress(let fraction, let status):
@@ -352,10 +347,9 @@ private struct UpdateActionCapsuleStyle: ButtonStyle {
 
 private struct UpdateActionIndeterminateIndicator: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  let pausesAnimations: Bool
 
   var body: some View {
-    TimelineView(.animation(paused: reduceMotion || pausesAnimations)) { context in
+    TimelineView(.animation(paused: reduceMotion)) { context in
       Circle()
         .trim(from: 0, to: 0.75)
         .stroke(
@@ -367,7 +361,7 @@ private struct UpdateActionIndeterminateIndicator: View {
         )
         .rotationEffect(
           .degrees(
-            reduceMotion || pausesAnimations
+            reduceMotion
               ? 90 : context.date.timeIntervalSinceReferenceDate * 360
           ))
     }

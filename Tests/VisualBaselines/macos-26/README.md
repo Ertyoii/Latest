@@ -1,12 +1,13 @@
 # macOS 26 visual references
 
-The opt-in UI suite compares these 14 reviewed PNGs on macOS 26. The seven
+The opt-in UI suite compares ten reviewed PNGs on macOS 26. The seven
 `main-*` images are historical references whose compared regions contain only
 production detail-header/body content (including RTL, empty and error states).
 Their mock sidebar pixels are excluded. The current detail fixture leaves that
 area blank; sidebar tests open LatestMainWindowScene and inspect its real rows.
-The other seven references cover production locations, update-action and toolbar
-controls. The nine unchanged references retain their original pixels.
+Three references cover production locations. Four update-action and toolbar
+shelf PNGs are retained as historical references outside the executed suite.
+All retained PNGs preserve their reviewed pixels.
 Original provenance: commit `a0fb2c5`, [CI run 36529255081](https://github.com/Ertyoii/Latest/actions/runs/36529255081).
 
 The three `locations-*` references use SwiftUI folder symbols, matching the
@@ -29,3 +30,5 @@ For an intentional visual change, compare the original and candidate on the
 same system, then run `LATEST_RECORD_VISUAL_BASELINES=1 ./script/test.sh --ui` on
 macOS 26. Review `/tmp/latest-visual-candidates` before copying approved images
 here. Tests keep comparing against existing references until they are updated.
+
+The update-state and toolbar-state shelf PNGs are retained as historical reviewed references. They are no longer executed: functional state mapping, real toolbar lifecycle, and production actions own that coverage. Current component appearance checks cover detail content and locations.

@@ -36,7 +36,7 @@ The [development guide](docs/Development.md) gives a reading order, design ratio
 | `Tests` | Behavior, integration, visual, and performance contracts |
 | `script` | Local build, validation, measurement, and audit commands |
 
-SwiftUI owns the scenes, search, rows, settings, and detail controls. macOS 26 and 27 share `UpdatesScrollList`, including row geometry, selection, keyboard navigation, menus, and swipe actions. A small AppKit bridge configures overlay scroll indicators, disables edge bounce, and forwards horizontal trackpad input to the SwiftUI rows. Release notes use WebKit for text selection and scrolling; native services and window hooks remain at platform boundaries.
+SwiftUI owns the scenes, search, rows, settings, and detail controls. macOS 26 and 27 share `UpdatesScrollList`, including row geometry, selection, keyboard navigation, and context menus. A small AppKit bridge configures overlay scroll indicators and disables edge bounce. Release notes use WebKit for text selection and scrolling; native services and window hooks remain at platform boundaries.
 
 Discovery publishes complete scans so rows appear in their final order. Refresh keeps the previous list and selection visible. Keyboard selection updates the detail header immediately and waits for selection to settle before hashing and loading notes; mouse selection loads notes immediately.
 
@@ -66,14 +66,14 @@ The default audit is offline. Live audits save reports and HTML under `build/` a
 
 ```sh
 ./script/benchmark_complexity.sh
-./script/benchmark_migration.sh current
+./script/benchmark_app.sh current
 ```
 
 Optional Release benchmarks measure data processing, startup, selection, release notes, and memory. Compare results on the same hardware and workload. Reports and test output go under `build/`.
 
 The UI lane checks keyboard navigation, focus, selection, scrolling, accessibility, and appearance. Performance measurements supplement these behavior checks.
 
-Visual tests capture the production window with offline data at a fixed position and inactive state. Images in `build/production-visuals/main-window-scene` compare pixel-for-pixel with same-host originals in `build/production-visual-reference/main-window-scene`. Preserve those originals and their provenance; missing references do not establish parity. The macOS 26 [component references](Tests/VisualBaselines/macos-26/README.md) are checked in separately.
+Visual tests capture the production window with offline data at a fixed position and inactive state. Images in `build/production-visuals/main-window-scene` compare pixel-for-pixel with same-host originals in `build/production-visual-reference/main-window-scene`; the test skips explicitly when originals are absent. Preserve those originals and their provenance. The macOS 26 [component references](Tests/VisualBaselines/macos-26/README.md) are checked in separately.
 
 Build products, logs, and captures can be regenerated. Keep visual references and any configured macOS 26 VM when cleaning `build/`.
 

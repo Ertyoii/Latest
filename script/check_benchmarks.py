@@ -25,7 +25,7 @@ COMPLEXITY_BUDGETS = {
     # Sleeping child tasks measure scheduler overhead, not network latency.
     "update_check_scheduler_fixture": 120,
 }
-MIGRATION_BUDGETS = {
+APP_BUDGETS = {
     "cold_launch_to_populated_sidebar_fixture": ("p50_ms", 65),
     "selection_to_detail": ("p95_ms", 8),
     "selection_to_render_memory": ("p95_ms", 16),
@@ -46,7 +46,8 @@ def records(path, prefix):
     result = {}
     for line in path.read_text().splitlines():
         fields = line.split()
-        if not fields or fields[0] != prefix:
+        # Existing same-hardware originals remain usable after the suite rename.
+        if not fields or fields[0] not in (prefix, prefix.replace("APP_", "MIGRATION_")):
             continue
         values = dict(field.split("=", 1) for field in fields[1:] if "=" in field)
         name = values.get("name")
@@ -82,7 +83,7 @@ def check(mode, report, *, log=None, baseline=None):
         if not passed:
             failures.append(name)
 
-    data = records(report, "BENCHMARK" if mode == "complexity" else "MIGRATION_BENCHMARK")
+    data = records(report, "BENCHMARK" if mode == "complexity" else "APP_BENCHMARK")
     if mode == "complexity":
         for name, budget in COMPLEXITY_BUDGETS.items():
             ceiling(name, measurement(data, name, "p95_ms"), budget)
@@ -95,17 +96,17 @@ def check(mode, report, *, log=None, baseline=None):
                 raise ValueError(f"comparison baseline must be positive: {control}.p95_ms")
             ceiling(candidate + "_relative", measurement(data, candidate, "p95_ms"),
                     previous * ratio)
-    elif mode == "migration":
-        for name, (statistic, budget) in MIGRATION_BUDGETS.items():
+    elif mode == "app":
+        for name, (statistic, budget) in APP_BUDGETS.items():
             ceiling(name, measurement(data, name, statistic), budget)
-        memory = records(report, "MIGRATION_MEMORY")
+        memory = records(report, "APP_MEMORY")
         deltas = [measurement(memory, name, "delta_bytes", allow_negative=True)
                   for name in memory if re.fullmatch(r"repeated_selection(?:_\d+)?", name)]
         if not deltas:
             raise ValueError("missing repeated_selection memory measurement")
         ceiling("repeated_selection_memory", max(deltas), 24 * 1024 * 1024)
     else:
-        control = records(baseline, "MIGRATION_BENCHMARK")
+        control = records(baseline, "APP_BENCHMARK")
         for name, (statistic, ratio) in COMPARISON_LIMITS.items():
             previous = measurement(control, name, statistic)
             if previous <= 0:
@@ -120,9 +121,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="mode", required=True)
     commands.add_parser("complexity").add_argument("report", type=Path)
-    migration = commands.add_parser("migration")
-    migration.add_argument("report", type=Path)
-    migration.add_argument("log", type=Path)
+    app = commands.add_parser("app")
+    app.add_argument("report", type=Path)
+    app.add_argument("log", type=Path)
     comparison = commands.add_parser("compare")
     comparison.add_argument("baseline", type=Path)
     comparison.add_argument("report", type=Path)

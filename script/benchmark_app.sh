@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export TEST_RUNNER_LATEST_UI_TESTS=0
+export TEST_RUNNER_LATEST_UI_TESTS=1
 
 LABEL="${1:-current}"
 if (($# > 1)) || [[ ! "$LABEL" =~ ^[a-zA-Z0-9_-]+$ ]]; then
@@ -13,10 +13,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
 DERIVED_DATA="$BUILD_DIR/DerivedData"
 MODULE_CACHE="$BUILD_DIR/ModuleCache"
-RESULT_BUNDLE="$BUILD_DIR/Latest-Migration-Benchmark-$LABEL-$(date +%Y%m%d-%H%M%S).xcresult"
-LOG_FILE="$BUILD_DIR/migration-benchmark-$LABEL.log"
-REPORT_FILE="$BUILD_DIR/migration-benchmark-$LABEL.txt"
-FLAG_FILE="$BUILD_DIR/run-migration-benchmarks"
+RESULT_BUNDLE="$BUILD_DIR/Latest-App-Benchmark-$LABEL-$(date +%Y%m%d-%H%M%S).xcresult"
+LOG_FILE="$BUILD_DIR/app-benchmark-$LABEL.log"
+REPORT_FILE="$BUILD_DIR/app-benchmark-$LABEL.txt"
+FLAG_FILE="$BUILD_DIR/run-app-benchmarks"
 
 mkdir -p "$BUILD_DIR" "$MODULE_CACHE"
 rm -f "$LOG_FILE" "$REPORT_FILE"
@@ -38,13 +38,13 @@ xcodebuild \
   CODE_SIGN_IDENTITY="" \
   -enableCodeCoverage NO \
   ENABLE_TESTABILITY=YES \
-  -only-testing:'Latest Tests/MigrationPerformanceTest' \
+  -only-testing:'Latest Tests/AppPerformanceTest' \
   test 2>&1 | tee "$LOG_FILE"
 
-rg '^MIGRATION_(CONFIGURATION|BENCHMARK|MEMORY|HEAP)' "$LOG_FILE" > "$REPORT_FILE"
+rg '^APP_(CONFIGURATION|BENCHMARK|MEMORY|HEAP)' "$LOG_FILE" > "$REPORT_FILE"
 
 echo
-echo "Migration benchmark summary ($LABEL):"
+echo "App benchmark summary ($LABEL):"
 cat "$REPORT_FILE"
 
-/usr/bin/python3 "$ROOT_DIR/script/check_benchmarks.py" migration "$REPORT_FILE" "$LOG_FILE"
+/usr/bin/python3 "$ROOT_DIR/script/check_benchmarks.py" app "$REPORT_FILE" "$LOG_FILE"

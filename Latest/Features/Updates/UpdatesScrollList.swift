@@ -24,7 +24,7 @@ struct UpdatesScrollList: View {
                 app: app, viewModel: viewModel,
                 showsSupportStatus: showsSupportStatusOverride ?? true,
                 focus: focus,
-                selection: navigation.selection(for: app), navigation: navigation,
+                selection: navigation.selection(for: app),
                 select: { select(app, keyboard: false) })
             }
           } header: {
@@ -58,7 +58,6 @@ struct UpdatesScrollList: View {
       if phase == .idle {
         MigrationTelemetry.shared.endSidebarScroll()
       } else {
-        navigation.closeSwipe()
         MigrationTelemetry.shared.beginSidebarScroll()
       }
     }
@@ -71,13 +70,9 @@ struct UpdatesScrollList: View {
       }
     }
     .onChange(of: focus.wrappedValue, initial: true) { _, _ in
-      // Starting a drag can temporarily clear focus. Close only when another
-      // destination gains focus, so that transition cannot cancel the swipe.
-      if let destination = focus.wrappedValue, destination != .list { navigation.closeSwipe() }
       navigation.setEmphasized(focus.wrappedValue == .list && controlActiveState != .inactive)
     }
     .onChange(of: controlActiveState) { _, _ in
-      if controlActiveState == .inactive { navigation.closeSwipe() }
       navigation.setEmphasized(focus.wrappedValue == .list && controlActiveState != .inactive)
     }
     .accessibilityIdentifier("updates.list")
@@ -118,14 +113,13 @@ struct UpdatesScrollList: View {
   }
 
   private func select(_ app: App, keyboard: Bool) {
-    navigation.closeSwipe()
     navigation.synchronize(app.identifier)
     viewModel.select(app, isKeyboardSelection: keyboard)
   }
 }
 
 // Selection and ScrollPosition invalidate only this viewport. The lazy
-// stack's view value stays stable across arrows and retains its swipe/AX rows.
+// stack's view value stays stable across arrows and retains its accessibility rows.
 private struct SidebarScrollingViewport<Content: View>: View {
   let viewModel: UpdatesListViewModel
   @Bindable var navigation: SidebarScrollState
@@ -143,10 +137,8 @@ private struct SidebarScrollingViewport<Content: View>: View {
   var body: some View {
     ScrollView(.vertical) {
       content.background {
-        SidebarScrollConfiguration { y, dx, finished in
-          navigation.swipe(at: y, delta: dx, finished: finished, viewModel: viewModel)
-        }
-        .accessibilityHidden(true)
+        SidebarScrollConfiguration()
+          .accessibilityHidden(true)
       }
     }
     .scrollPosition($navigation.position)
@@ -172,7 +164,6 @@ private final class SidebarScrollState {
   @ObservationIgnored private(set) var layout = SidebarLayout(entries: [])
   @ObservationIgnored private var selections: [App.Bundle.Identifier: UpdateRowSelection] = [:]
   @ObservationIgnored private var selected: App.Bundle.Identifier?
-  @ObservationIgnored private var swiped: App.Bundle.Identifier?
 
   func selection(for app: App) -> UpdateRowSelection {
     if let selection = selections[app.identifier] { return selection }
@@ -185,7 +176,6 @@ private final class SidebarScrollState {
   }
 
   func apply(snapshot: AppListSnapshot) {
-    closeSwipe()
     layout = SidebarLayout(entries: snapshot.entries)
     let identifiers = Set(
       snapshot.entries.compactMap { entry in
@@ -223,42 +213,6 @@ private final class SidebarScrollState {
   private func updateSelectionStyle() {
     if let selected { selections[selected]?.style = emphasized ? .active : .inactive }
   }
-
-  func closeSwipe() {
-    if let swiped { selections[swiped]?.swipeOffset = 0 }
-    swiped = nil
-  }
-
-  func swipe(at y: CGFloat, delta: CGFloat, finished: Bool, viewModel: UpdatesListViewModel) {
-    // A pinned header covers the first 27pt of the viewport.
-    guard y >= viewport.minY + VisualMetrics.sectionHeaderHeight,
-      let row = layout.row(at: y),
-      case .app(let app) = viewModel.snapshot.entries[row]
-    else { return }
-    swipe(app: app, delta: delta, finished: finished, viewModel: viewModel)
-  }
-
-  func swipe(app: App, delta: CGFloat, finished: Bool, viewModel: UpdatesListViewModel) {
-    if swiped != app.identifier {
-      closeSwipe()
-      swiped = app.identifier
-    }
-    guard viewModel.snapshot.firstIndex(of: app) != nil else { return }
-    let policy = SidebarInteractionPolicy(updating: viewModel.updating)
-    let leading =
-      CGFloat(policy.swipeActions(for: app, edge: .leading).count) * SidebarSwipeAction.width
-    let trailing =
-      CGFloat(policy.swipeActions(for: app, edge: .trailing).count) * SidebarSwipeAction.width
-    let state = selection(for: app)
-    state.swipeOffset = min(leading, max(-trailing, state.swipeOffset + delta))
-    if finished {
-      let target: CGFloat =
-        state.swipeOffset > SidebarSwipeAction.width / 3
-        ? leading : (state.swipeOffset < -SidebarSwipeAction.width / 3 ? -trailing : 0)
-      withAnimation(.easeOut(duration: 0.16)) { state.swipeOffset = target }
-      if target == 0 { swiped = nil }
-    }
-  }
 }
 
 private struct UpdatesScrollRow: View {
@@ -266,22 +220,19 @@ private struct UpdatesScrollRow: View {
   let viewModel: UpdatesListViewModel
   let focus: FocusState<SidebarFocus?>.Binding
   let selection: UpdateRowSelection
-  let navigation: SidebarScrollState
   let select: () -> Void
   private let content: UpdateRowView
-  @State private var dragX: CGFloat = 0
   private var isSelected: Bool { selection.isSelected }
 
   init(
     app: App, viewModel: UpdatesListViewModel, showsSupportStatus: Bool,
     focus: FocusState<SidebarFocus?>.Binding, selection: UpdateRowSelection,
-    navigation: SidebarScrollState, select: @escaping () -> Void
+    select: @escaping () -> Void
   ) {
     self.app = app
     self.viewModel = viewModel
     self.focus = focus
     self.selection = selection
-    self.navigation = navigation
     self.select = select
     content = UpdateRowView(
       app: app, selection: selection,
@@ -309,41 +260,8 @@ private struct UpdatesScrollRow: View {
           .contentShape(Rectangle())
           .onTapGesture(perform: selectApp)
           .contextMenu { UpdatesRowMenu(app: app, viewModel: viewModel) }
-          .offset(x: selection.swipeOffset)
-        // Keep revealed controls above the translated content's hit region.
-        // SwiftUI's hit testing for offsets differs between system versions.
-        if selection.swipeOffset != 0 {
-          let leading = selection.swipeOffset > 0
-          HStack(spacing: 0) {
-            actions(edge: leading ? .leading : .trailing)
-          }
-          .frame(
-            width: abs(selection.swipeOffset), height: VisualMetrics.appRowHeight,
-            alignment: leading ? .leading : .trailing
-          )
-          .clipped()
-          .contentShape(Rectangle())
-          .frame(maxWidth: .infinity, alignment: leading ? .leading : .trailing)
-        }
       }
       .clipped()
-      // Track the stationary row, not the content translated by the gesture.
-      .simultaneousGesture(
-        DragGesture(minimumDistance: 12, coordinateSpace: .global)
-          .onChanged { value in
-            guard abs(value.translation.width) > abs(value.translation.height) else { return }
-            navigation.swipe(
-              app: app, delta: value.translation.width - dragX, finished: false,
-              viewModel: viewModel)
-            dragX = value.translation.width
-          }
-          .onEnded { _ in
-            if dragX != 0 {
-              navigation.swipe(app: app, delta: 0, finished: true, viewModel: viewModel)
-            }
-            dragX = 0
-          }
-      )
     }
     .frame(height: VisualMetrics.appRowHeight)
     .accessibilityElement(children: .contain)
@@ -353,26 +271,7 @@ private struct UpdatesScrollRow: View {
     .accessibilityIdentifier("updates.app.\(app.identifier)")
   }
 
-  @ViewBuilder
-  private func actions(edge: SidebarInteractionPolicy.SwipeEdge) -> some View {
-    let policy = SidebarInteractionPolicy(updating: viewModel.updating)
-    ForEach(policy.swipeActions(for: app, edge: edge), id: \.self) { action in
-      SidebarSwipeAction(action: action, app: app) {
-        navigation.closeSwipe()
-        switch action {
-        case .open: viewModel.open(app)
-        case .revealInFinder: viewModel.revealInFinder(app)
-        case .update: viewModel.update(app)
-        }
-      }
-    }
-  }
-
   private func selectApp() {
-    if selection.swipeOffset != 0 {
-      navigation.closeSwipe()
-      return
-    }
     focus.wrappedValue = .list
     select()
   }
@@ -384,44 +283,6 @@ private struct UpdatesScrollRow: View {
     formatter.doesRelativeDateFormatting = true
     return formatter
   }()
-}
-
-private struct SidebarSwipeAction: View {
-  static let width: CGFloat = 72
-  let action: SidebarInteractionPolicy.Action
-  let app: App
-  let perform: () -> Void
-
-  var body: some View {
-    Button(action: perform) {
-      VStack(spacing: 4) {
-        Image(systemName: symbol).font(.system(size: 17))
-        Text(title).font(.system(size: 10)).lineLimit(1)
-      }
-      .frame(width: Self.width, height: VisualMetrics.appRowHeight)
-      .background(action == .update ? Color.cyan : Color.gray)
-      .foregroundStyle(.white)
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel(title)
-  }
-
-  private var title: String {
-    switch action {
-    case .open: NSLocalizedString("OpenAction", comment: "Open app")
-    case .revealInFinder: NSLocalizedString("RevealAction", comment: "Reveal app in Finder")
-    case .update: SidebarUpdateActionTitle.text(for: app)
-    }
-  }
-
-  private var symbol: String {
-    switch action {
-    case .open: "arrow.up.forward.app"
-    case .revealInFinder: "finder"
-    case .update: "square.and.arrow.down"
-    }
-  }
 }
 
 private struct UpdatesRowMenu: View {

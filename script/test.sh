@@ -35,19 +35,29 @@ mkdir -p "$BUILD_DIR" "$MODULE_CACHE"
 "$ROOT_DIR/script/check_structure.sh"
 
 export TEST_RUNNER_LATEST_UI_TESTS=0
+UI_SUITES=(
+  ComponentAppearanceTest MainWindowAppearanceTest
+  SidebarInteractionTest SidebarAppearanceTest ToolbarInteractionTest
+  InstallHelperInteractionTest ReleaseNotesWebViewTest UpdateActionInteractionTest
+)
 if [[ "$MODE" != background ]]; then
   export TEST_RUNNER_LATEST_UI_TESTS=1
   echo "UI tests open production windows and may take keyboard focus."
 fi
+export LATEST_UI_TESTS="$TEST_RUNNER_LATEST_UI_TESTS"
 if [[ "$MODE" == ui && "$HAS_ONLY_FILTER" == false ]]; then
-  for suite in MigrationInteractionContractTest MigrationVisualRegressionTest ProductionVisualParityTest ReleaseNotesHeaderLayoutTest; do
+  for suite in "${UI_SUITES[@]}"; do
     FILTERS+=("-only-testing:Latest Tests/$suite")
+  done
+elif [[ "$MODE" == background ]]; then
+  for suite in "${UI_SUITES[@]}"; do
+    FILTERS+=("-skip-testing:Latest Tests/$suite")
   done
 fi
 
 # Benchmarks have dedicated Release runners. Never pick them up from a stale flag file.
 FILTERS+=(
-  "-skip-testing:Latest Tests/MigrationPerformanceTest"
+  "-skip-testing:Latest Tests/AppPerformanceTest"
   "-skip-testing:Latest Tests/ComplexityBenchmarkTest/testComplexityBenchmarks"
 )
 echo "Running $MODE tests (coverage=$COVERAGE)"

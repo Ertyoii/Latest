@@ -12,14 +12,13 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// SwiftUI row state shared by selection and swipe presentation.
+/// SwiftUI row state shared by selection presentation.
 @MainActor
 @Observable
 final class UpdateRowSelection {
   enum Style {
     case unselected, inactive, active
   }
-  var swipeOffset: CGFloat = 0
   var style = Style.unselected
   var isSelected: Bool { style != .unselected }
   var usesActiveSelectionColors: Bool { style == .active }

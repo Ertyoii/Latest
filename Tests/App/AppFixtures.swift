@@ -213,3 +213,30 @@ func runApplicationTest(_ operation: @escaping @MainActor () async throws -> Voi
   NSApp.run()
   if let failure { throw failure }
 }
+
+@MainActor
+func makeTestApp(
+  name: String,
+  version: String,
+  remoteVersion: String? = nil,
+  date: Date? = Date(timeIntervalSince1970: 1_750_000_000),
+  updateAction: Latest.App.Update.Action = .builtIn { _ in }
+) -> Latest.App {
+  let bundle = Latest.App.Bundle(
+    version: Version(versionNumber: version, buildNumber: nil),
+    name: name,
+    bundleIdentifier: "com.example.\(name.replacingOccurrences(of: " ", with: "-"))",
+    fileURL: URL(fileURLWithPath: "/Applications/\(name).app"),
+    source: .appStore
+  )
+  let update = Latest.App.Update(
+    app: bundle,
+    remoteVersion: Version(versionNumber: remoteVersion ?? version, buildNumber: nil),
+    minimumOSVersion: nil,
+    source: .appStore,
+    date: date,
+    releaseNotes: .html(string: "<p>Release notes</p>"),
+    updateAction: updateAction
+  )
+  return Latest.App(bundle: bundle, update: .success(update), isIgnored: false)
+}
