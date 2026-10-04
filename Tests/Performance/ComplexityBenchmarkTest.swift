@@ -284,7 +284,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
       for bundle in overlapBundles {
         _ = generations.withCurrent(latest) { store.set(appBundle: bundle) }
       }
-      let rejected = generations.withCurrent(staleGeneration) { store.set(appBundles: []) }
+      let rejected: Void? = generations.withCurrent(staleGeneration) { store.set(appBundles: []) }
       XCTAssertNil(rejected)
       XCTAssertEqual(store.apps.count, overlapBundles.count)
       return store.apps.count

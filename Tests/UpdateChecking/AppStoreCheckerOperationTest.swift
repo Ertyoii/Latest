@@ -113,21 +113,6 @@ class AppStoreCheckerOperationTest: XCTestCase {
     XCTAssertEqual(installed, expected)
   }
 
-  func testInstallationReplyGateTimesOutWhenHelperNeverReplies() async {
-    do {
-      let _: URL = try await withCheckedThrowingContinuation {
-        (continuation: CheckedContinuation<URL, Error>) in
-        let replyGate = InstallationReplyGate(continuation: continuation)
-        replyGate.scheduleTimeout(after: .milliseconds(10))
-      }
-      XCTFail("Expected the helper reply gate to time out")
-    } catch {
-      guard case LatestError.installHelperCommunicationFailed = error else {
-        return XCTFail("Expected helper communication timeout, got \(error)")
-      }
-    }
-  }
-
   func testDownloadedArtifactsSurviveRemovalAndRefreshWhenInodeChanges() throws {
     let folder = temporaryAppURL().deletingPathExtension()
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

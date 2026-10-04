@@ -92,6 +92,23 @@ class VersionTest: XCTestCase {
     XCTAssertFalse(update(local: second, remote: first).updateAvailable)
   }
 
+  func testNumericVersionPrefixPreservesDisplayAndFindsEqMacUpdate() {
+    let installed = Version(versionNumber: "1.8.15", buildNumber: "1.8.15")
+    let remote = Version(versionNumber: "v1.9.2", buildNumber: "1.9.2")
+    XCTAssertEqual(installed.comparisonForUpdate(to: remote), .older)
+    XCTAssertEqual(remote.versionNumber, "v1.9.2", "Keep the vendor's displayed version")
+    XCTAssertEqual(remote.comparisonForUpdate(to: installed), .newer)
+    for prefix in ["v", "V"] {
+      let prefixed = Version(versionNumber: prefix + "1.8.15", buildNumber: nil)
+      XCTAssertEqual(installed.comparisonForUpdate(to: prefixed), .samePrecedence)
+      XCTAssertEqual(prefixed.comparisonForUpdate(to: installed), .samePrecedence)
+      XCTAssertNotEqual(prefixed, installed, "Precedence normalization must not change identity")
+      XCTAssertEqual(
+        Version(versionNumber: prefix + "1.9.2beta", buildNumber: nil)
+          .comparisonForUpdate(to: remote), .older)
+    }
+  }
+
   /// Update precedence is directional and separate from Version identity.
   func testUpdatePrecedence() {
     let cases:
@@ -123,6 +140,12 @@ class VersionTest: XCTestCase {
         ("3.1.5", nil, "2.1.6", "216", .newer),
         ("٣.١.٥", "٢١٥", "٢.٢.٦", nil, .newer),
         ("३.१.५", "२१७", "२.१.६", nil, .newer),
+        ("1.2", nil, "1.2.0.1", nil, .older),
+        ("1.2.0.1", nil, "1.2", nil, .newer),
+        ("1.2", nil, "1.2.0.0", nil, .samePrecedence),
+        ("1.2", nil, "1.2a", nil, .newer),
+        ("1.2a", nil, "1.2", nil, .older),
+        ("1.2", nil, "1.2.0beta", nil, .newer),
       ]
     for fixture in cases {
       let local = Version(versionNumber: fixture.local, buildNumber: fixture.localBuild)

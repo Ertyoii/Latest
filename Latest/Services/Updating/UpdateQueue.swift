@@ -33,6 +33,11 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     operation.cancel()
   }
 
+  @MainActor
+  func retryTermination(for identifier: App.Bundle.Identifier) {
+    operation(for: identifier)?.retryTermination()
+  }
+
   /// Whether the queue contains an update operation for the given app.
   func contains(_ identifier: App.Bundle.Identifier) -> Bool {
     return self.operation(for: identifier) != nil

@@ -18,7 +18,7 @@ private let appLibraryLogger = Logger(
 class AppLibrary: @unchecked Sendable {
 
   /// The handler to be called when apps change locally.
-  typealias UpdateHandler = ([App.Bundle]) -> Void
+  typealias UpdateHandler = @Sendable ([App.Bundle]) -> Void
   let updateHandler: UpdateHandler
 
   /// The handler to be called when a full reload completed.
@@ -32,9 +32,21 @@ class AppLibrary: @unchecked Sendable {
   }
 
   private var directories = [URL: AppDirectory]()
+  private var directoryGeneration = 0
+  private var isPreparingDirectories = false
 
   /// Initializes the library with the given handler for updates.
-  init(handler: @escaping UpdateHandler) {
+  typealias DirectoryStoreFactory =
+    @Sendable (@escaping AppDirectoryUpdateHandler) -> any AppDirectoryStoring
+  private let directoryStoreFactory: DirectoryStoreFactory
+
+  init(
+    directoryStoreFactory: @escaping DirectoryStoreFactory = {
+      AppDirectoryStore(updateHandler: $0)
+    },
+    handler: @escaping UpdateHandler
+  ) {
+    self.directoryStoreFactory = directoryStoreFactory
     self.updateHandler = handler
   }
 
@@ -64,9 +76,11 @@ class AppLibrary: @unchecked Sendable {
   }
 
   private func setupDirectoryObservers() {
-    // Use a dispatch group for the initial setup to get contents for all directories before gathering apps
+    // Publish a changed directory set after new observers finish their first scan.
+    // Removal-only changes also need a publication: they have no file event.
     let isInitialSetup = self.directories.isEmpty
-    let dispatchGroup = isInitialSetup ? DispatchGroup() : nil
+    let dispatchGroup = DispatchGroup()
+    let previousURLs = Set(directories.keys)
     appLibraryLogger.info(
       "Preparing app directory observers. initial=\(isInitialSetup, privacy: .public)")
 
@@ -86,32 +100,34 @@ class AppLibrary: @unchecked Sendable {
         self?.scheduleUpdate()
       }
 
-      if isInitialSetup {
-        dispatchGroup?.enter()
-        directory = AppDirectory(
-          url: url,
-          notifyOnInitialCollection: false,
-          initialCollectionCompletion: {
-            dispatchGroup?.leave()
-          },
-          updateHandler: updateHandler
-        )
-      } else {
-        directory = AppDirectory(url: url, updateHandler: updateHandler)
-      }
+      dispatchGroup.enter()
+      directory = AppDirectory(
+        url: url,
+        notifyOnInitialCollection: false,
+        initialCollectionCompletion: { dispatchGroup.leave() },
+        updateHandler: updateHandler
+      )
 
       return (url, directory)
     }
     directories = Dictionary(uniqueKeysWithValues: observedDirectories)
     appLibraryLogger.info("Observing \(self.directories.count, privacy: .public) app directories")
 
-    dispatchGroup?.notify(queue: stateQueue) {
+    guard isInitialSetup || previousURLs != Set(directories.keys) else { return }
+    directoryGeneration += 1
+    let generation = directoryGeneration
+    isPreparingDirectories = true
+    scheduledUpdateWorkItem?.cancel()
+    dispatchGroup.notify(queue: stateQueue) {
+      guard self.directoryGeneration == generation else { return }
+      self.isPreparingDirectories = false
       // Call update immediately. Using the scheduler delays the update.
       self.performUpdate()
     }
   }
 
   private func performUpdate() {
+    guard !isPreparingDirectories else { return }
     let bundles = currentBundles()
     appLibraryLogger.info("Publishing \(bundles.count, privacy: .public) discovered apps")
     updateHandler(bundles)
@@ -162,7 +178,7 @@ class AppLibrary: @unchecked Sendable {
 
   /// The store handling application directories.
   private lazy var directoryStore = {
-    AppDirectoryStore { [weak self] in self?.startQuery() }
+    directoryStoreFactory { [weak self] in self?.startQuery() }
   }()
 
 }

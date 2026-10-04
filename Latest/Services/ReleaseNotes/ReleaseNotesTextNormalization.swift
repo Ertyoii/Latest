@@ -76,12 +76,16 @@ extension ReleaseNotesMarkup {
     informationText = replacingMatches(in: informationText, matching: Regexes.isoDate, with: " ")
 
     let lowercasedInformationText = informationText.lowercased()
-    let words = lowercasedInformationText.matches(of: /[a-z][a-z0-9+-]{1,}/).map {
+    let words = lowercasedInformationText.matches(of: /\p{L}[\p{L}\p{M}\p{N}+-]{1,}/).map {
       String(lowercasedInformationText[$0.range])
     }
     let meaningfulWords = words.filter { !Self.genericReleaseNoteWords.contains($0) }
 
-    return meaningfulWords.count >= 2 || meaningfulWords.joined().count >= 14
+    let meaningfulText = meaningfulWords.joined()
+    // CJK languages can express a complete change in a few characters without
+    // spaces. Keep the existing word/length checks for other scripts.
+    let cjkCount = meaningfulText.unicodeScalars.filter(Self.isCJKCharacter).count
+    return meaningfulWords.count >= 2 || meaningfulText.count >= 14 || cjkCount >= 6
   }
 
   static func normalizedReleaseLine(_ line: String) -> String {
@@ -101,27 +105,20 @@ extension ReleaseNotesMarkup {
     var containsControlCharacter = false
     var cjkCount = 0
     var latin1SupplementCount = 0
-    var nonASCIIPrintableCount = 0
 
     for scalar in text.unicodeScalars where !scalar.properties.isWhitespace {
       scalarCount += 1
 
-      let scalarValue = Int(scalar.value)
       if (scalar.value < 32 || scalar.value == 127) && scalar.value != 10 && scalar.value != 9
         && scalar.value != 13
       {
         containsControlCharacter = true
       }
-      if (0x4E00...0x9FFF).contains(scalarValue) || (0x3040...0x30FF).contains(scalarValue)
-        || (0xAC00...0xD7AF).contains(scalarValue)
-      {
+      if Self.isCJKCharacter(scalar) {
         cjkCount += 1
       }
-      if (0x00A0...0x00FF).contains(scalarValue) {
+      if (0x00A0...0x00FF).contains(scalar.value) {
         latin1SupplementCount += 1
-      }
-      if scalar.value > 127 {
-        nonASCIIPrintableCount += 1
       }
     }
 
@@ -138,10 +135,14 @@ extension ReleaseNotesMarkup {
 
     let asciiWordCount = text.matches(of: /[A-Za-z][A-Za-z0-9+-]{2,}/).count
     let latin1Ratio = Double(latin1SupplementCount) / Double(scalarCount)
-    let nonASCIIRatio = Double(nonASCIIPrintableCount) / Double(scalarCount)
+    // Non-ASCII text is normal for localized notes, including unspaced scripts.
+    // Retain the specific Latin-1 corruption signal rather than rejecting it.
+    return latin1Ratio > 0.22 && asciiWordCount < 8
+  }
 
-    return (latin1Ratio > 0.22 && asciiWordCount < 8)
-      || (nonASCIIRatio > 0.55 && asciiWordCount < 4)
+  private static func isCJKCharacter(_ scalar: Unicode.Scalar) -> Bool {
+    (0x4E00...0x9FFF).contains(scalar.value) || (0x3040...0x30FF).contains(scalar.value)
+      || (0xAC00...0xD7AF).contains(scalar.value)
   }
 
   private static func looksLikeWebPageChrome(_ text: String) -> Bool {

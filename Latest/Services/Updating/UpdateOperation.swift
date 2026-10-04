@@ -28,6 +28,10 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
 
   private var didPostCompletionNotification = false
 
+  private let committing = Mutex(false)
+
+  var isCommitting: Bool { committing.withLock { $0 } }
+
   private struct Progress: Sendable {
     var state: ProgressState = .pending
     var handler: (@Sendable (App.Bundle.Identifier) -> Void)?
@@ -68,9 +72,27 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
   }
 
   override func cancel() {
-    super.cancel()
+    let cancelled = committing.withLock { committing in
+      guard !committing else { return false }
+      super.cancel()
+      return true
+    }
+    guard cancelled else { return }
     self.progressState = .cancelling
   }
+
+  /// Installation and rollback must finish once they start. Serialize this
+  /// boundary with cancellation so a completed install still triggers a refresh.
+  func beginCommit() throws {
+    try committing.withLock { committing in
+      try Task.checkCancellation()
+      guard !isCancelled else { throw CancellationError() }
+      committing = true
+    }
+  }
+
+  /// Update mechanisms that wait for an app to quit can offer another quit request.
+  @MainActor func retryTermination() {}
 
   override func finish() {
     let didCompleteSuccessfully =

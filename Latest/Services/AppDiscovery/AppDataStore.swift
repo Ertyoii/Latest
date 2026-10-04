@@ -57,12 +57,7 @@ final class AppDataStore: AppProviding, Sendable {
           guard let current = state.appsByIdentifier[bundle.identifier]?.bundle else {
             return false
           }
-          return current.version.versionNumber == bundle.version.versionNumber
-            && current.version.buildNumber == bundle.version.buildNumber
-            && current.name == bundle.name
-            && current.bundleIdentifier == bundle.bundleIdentifier
-            && current.source == bundle.source
-            && current.modificationDate == bundle.modificationDate
+          return current.matchesMetadata(of: bundle)
         }
     }
   }
@@ -112,6 +107,21 @@ final class AppDataStore: AppProviding, Sendable {
     return app
   }
 
+  /// A targeted post-install refresh can change metadata within an ongoing
+  /// scan generation. Accept only results for the currently installed bundle.
+  func accept(_ update: Result<App.Update, Error>, for bundle: App.Bundle) -> App? {
+    let app = state.withLock { state -> App? in
+      guard let current = state.appsByIdentifier[bundle.identifier],
+        current.bundle.matchesMetadata(of: bundle)
+      else { return nil }
+      let app = App(bundle: bundle, update: update, isIgnored: current.isIgnored)
+      state.appsByIdentifier[app.identifier] = app
+      return app
+    }
+    if app != nil { scheduleFilterUpdate() }
+    return app
+  }
+
   func setIgnoredState(_ ignored: Bool, for app: App) {
     state.withLock { state in
       if ignored {
@@ -120,8 +130,12 @@ final class AppDataStore: AppProviding, Sendable {
         state.ignoredAppIdentifiers.remove(app.bundleIdentifier)
       }
       state.preferences.value.set(Array(state.ignoredAppIdentifiers), forKey: Self.ignoredAppsKey)
-      let currentApp = state.appsByIdentifier[app.identifier] ?? app
-      state.appsByIdentifier[app.identifier] = currentApp.with(ignoredState: ignored)
+      // Preferences belong to an app identifier, including every installed copy.
+      // A settled UI row can outlive discovery; never reinsert its removed path.
+      for (identifier, current) in state.appsByIdentifier
+      where current.bundleIdentifier == app.bundleIdentifier {
+        state.appsByIdentifier[identifier] = current.with(ignoredState: ignored)
+      }
     }
     scheduleFilterUpdate()
   }

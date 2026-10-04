@@ -99,7 +99,8 @@ enum InstallHelper {
     return try await withCheckedThrowingContinuation {
       (continuation: CheckedContinuation<URL, Error>) in
       let replyGate = InstallationReplyGate(continuation: continuation)
-      replyGate.scheduleTimeout()
+      // A deadline here would release the queue while /usr/sbin/installer is
+      // still replacing the app. Wait for its result or an XPC connection error.
       connection.interruptionHandler = {
         replyGate.resume(with: .failure(LatestError.installHelperCommunicationFailed))
       }
@@ -174,51 +175,18 @@ enum InstallHelper {
 }
 
 final class InstallationReplyGate: Sendable {
-  private struct State {
-    var continuation: CheckedContinuation<URL, Error>?
-    var timeoutTask: Task<Void, Never>?
-  }
-
-  private let state: Mutex<State>
+  private let state: Mutex<CheckedContinuation<URL, Error>?>
 
   init(continuation: CheckedContinuation<URL, Error>) {
-    state = Mutex(State(continuation: continuation))
-  }
-
-  func scheduleTimeout(after duration: Duration = .seconds(120)) {
-    let task = Task.detached(priority: .utility) { [self] in
-      do {
-        try await Task.sleep(for: duration)
-      } catch {
-        return
-      }
-      guard !Task.isCancelled else { return }
-      resume(with: .failure(LatestError.installHelperCommunicationFailed))
-    }
-
-    let alreadyFinished = state.withLock { state in
-      guard state.continuation != nil else { return true }
-      state.timeoutTask = task
-      return false
-    }
-    if alreadyFinished {
-      task.cancel()
-    }
+    state = Mutex(continuation)
   }
 
   func resume(with result: Result<URL, Error>) {
-    let completion = state.withLock {
-      state -> (CheckedContinuation<URL, Error>, Task<Void, Never>?)? in
-      guard let continuation = state.continuation else { return nil }
-      state.continuation = nil
-      let timeoutTask = state.timeoutTask
-      state.timeoutTask = nil
-      return (continuation, timeoutTask)
+    let continuation = state.withLock { state in
+      defer { state = nil }
+      return state
     }
-    guard let (continuation, timeoutTask) = completion else { return }
-
-    timeoutTask?.cancel()
-    continuation.resume(with: result)
+    continuation?.resume(with: result)
   }
 }
 

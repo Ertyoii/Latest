@@ -1,6 +1,7 @@
 // Fork contributions © 2026 ertyoii. Licensed under GPL-3.0; see LICENSE.md.
 
 import AppKit
+import Sparkle
 import SwiftUI
 import Synchronization
 import XCTest
@@ -8,6 +9,72 @@ import XCTest
 @testable import Latest
 
 final class UpdateActionInteractionTest: XCTestCase {
+  @MainActor
+  func testQuitRetryControlsReuseActiveSparkleUpdate() async throws {
+    try requireUITests()
+    let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent("build/diff-review-2026-10-04/retry-controls")
+    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+    for dark in [false, true] {
+      let app = makeTestApp(name: "Sparkle target", version: "1", remoteVersion: "2")
+      let queue = UpdateQueue()
+      queue.isSuspended = true
+      let operation = SparkleUpdateOperation(
+        bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+      queue.addOperation(operation)
+      defer {
+        operation.finish()
+        queue.isSuspended = false
+      }
+      var retries = 0
+      operation.showDownloadDidStartExtractingUpdate()
+      operation.showExtractionReceivedProgress(0.5)
+      let fixture = try await SidebarInputFixture.make(
+        apps: [app], selected: app, dark: dark,
+        updating: AppUpdateService(queue: queue), testCase: self)
+      defer { fixture.window.close() }
+      for identifier in ["updates.progress", "update.progress"] {
+        let button = try XCTUnwrap(
+          fixture.accessibilityElements().first {
+            $0.accessibilityIdentifier() == identifier
+              && $0.accessibilityFrame().intersects(fixture.window.frame)
+          })
+        XCTAssertEqual(
+          button.accessibilityEnabled(), false, "Protected installation cannot be cancelled")
+        let frame = fixture.window.convertFromScreen(button.accessibilityFrame())
+        try clickTestWindow(fixture.window, at: NSPoint(x: frame.midX, y: frame.midY))
+        XCTAssertFalse(operation.isCancelled)
+        XCTAssertTrue(queue.contains(app.identifier))
+      }
+      let protectedBitmap = try await captureWindowBitmap(fixture.window)
+      try XCTUnwrap(protectedBitmap.representation(using: .png, properties: [:])).write(
+        to: output.appendingPathComponent("\(dark ? "dark" : "light")-protected.png"))
+      operation.showReady { XCTAssertEqual($0, .install) }
+      operation.showInstallingUpdate(
+        withApplicationTerminated: false, retryTerminatingApplication: { retries += 1 })
+      try await Task.sleep(for: .milliseconds(150))
+      for (index, identifier) in ["updates.retry-termination", "update.retry-termination"]
+        .enumerated()
+      {
+        let button = try XCTUnwrap(
+          fixture.accessibilityElements().first {
+            $0.accessibilityIdentifier() == identifier
+              && $0.accessibilityFrame().intersects(fixture.window.frame)
+          })
+        let frame = fixture.window.convertFromScreen(button.accessibilityFrame())
+        try clickTestWindow(fixture.window, at: NSPoint(x: frame.midX, y: frame.midY))
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(retries, index + 1, "\(identifier) must retry the active installation")
+        XCTAssertTrue(queue.contains(app.identifier))
+        XCTAssertFalse(operation.isCancelled)
+      }
+      let bitmap = try await captureWindowBitmap(fixture.window)
+      try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
+        to: output.appendingPathComponent("\(dark ? "dark" : "light").png"))
+    }
+  }
+
   @MainActor
   func testDetailActionUsesRefreshedAppAtSameURL() async throws {
     try requireUITests()

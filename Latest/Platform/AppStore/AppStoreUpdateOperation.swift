@@ -71,25 +71,25 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
       // its completion callback, and their package/receipt must be preserved.
       self.observerIdentifier = CKDownloadQueue.shared().add(self)
       let purchase = SSPurchase(itemIdentifier: self.itemIdentifier)
-      CKPurchaseController.shared().perform(purchase, withOptions: 0) {
-        [weak self] _, completed, error, response in
+      do {
+        let (_, completed, response) = try await CKPurchaseController.shared().perform(
+          purchase, withOptions: 0)
         appStoreUpdateLogger.notice(
-          "Purchase completed=\(completed), downloads=\(response?.downloads.count ?? 0), error=\((error as NSError?)?.domain ?? "none", privacy: .public):\((error as NSError?)?.code ?? 0)"
+          "Purchase completed=\(completed), downloads=\(response.downloads.count)"
         )
-        let failure: Error? =
-          error ?? (response?.downloads.isEmpty != false ? LatestError.updateInfoUnavailable : nil)
-        if let failure {
-          Task { @MainActor in
-            guard let self, !self.isFinished, !self.isInstalling else { return }
-            self.finish(with: failure)
-          }
+        if response.downloads.isEmpty, !self.isFinished, !self.isInstalling {
+          self.finish(with: LatestError.updateInfoUnavailable)
         }
+      } catch {
+        guard !self.isFinished, !self.isInstalling else { return }
+        self.finish(with: error)
       }
     }
   }
 
   override func cancel() {
     super.cancel()
+    guard isCancelled else { return }
     Task { @MainActor in
       if let download = CKDownloadQueue.shared().download(forItemIdentifier: self.itemIdentifier)
         as? SSDownload
@@ -157,13 +157,13 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
         ))
       return
     }
-    isInstalling = true
-    defer { isInstalling = false }
-    progressState = .installing
-    appStoreUpdateLogger.notice(
-      "Installing preserved package: bytes=\((try? package.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)"
-    )
     do {
+      try beginCommit()
+      isInstalling = true
+      progressState = .installing
+      appStoreUpdateLogger.notice(
+        "Installing preserved package: bytes=\((try? package.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)"
+      )
       let installedURL = try await InstallHelper.installPackage(
         at: package, appURL: installURL, receiptData: receipt)
       // Refresh Spotlight and LaunchServices after restoring the App Store receipt.

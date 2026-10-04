@@ -28,7 +28,7 @@ struct Version: Hashable, Sendable {
     self.versionNumber = versionNumber
     self.buildNumber = buildNumber
 
-    let versionNumberComponents = versionNumber?.components()
+    let versionNumberComponents = versionNumber?.components(ignoringVersionPrefix: true)
     let buildNumberComponents = buildNumber?.components()
     self.versionNumberComponents = versionNumberComponents
     self.buildNumberComponents = buildNumberComponents
@@ -165,6 +165,13 @@ struct Version: Hashable, Sendable {
           return .newer  // Think "1.2.3" vs "1.2.."
         }
       }
+      if atomsCount1 != atomsCount2 {
+        let leftIsLonger = atomsCount1 > atomsCount2
+        let extra = (leftIsLonger ? component1 : component2).dropFirst(
+          min(atomsCount1, atomsCount2))
+        let comparison = compareExtraAtoms(extra, leftIsLonger: leftIsLonger)
+        if comparison != .samePrecedence { return comparison }
+      }
     }
 
     // The versions are equal up to the point where they both still have parts
@@ -172,30 +179,26 @@ struct Version: Hashable, Sendable {
     if count1 != count2 {
       let l = count1 > count2
       let longerComponents = (l ? c1 : c2)[(l ? count2 : count1)...]
-      guard let atoms = firstComponentAtoms(in: longerComponents) else {
-        return .samePrecedence  // Think "1.2" vs "1.2."
+      for case .component(let atoms) in longerComponents {
+        let comparison = compareExtraAtoms(atoms, leftIsLonger: l)
+        if comparison != .samePrecedence { return comparison }
       }
-
-      if case .number(let number) = atoms.first {
-        if number == 0 {
-          return .samePrecedence  // Think "1.2" vs "1.2.0"
-        }
-
-        return l ? .newer : .older  // Think "1.2" vs "1.2.2"
-      }
-
-      return l ? .older : .newer  // Think "1.2" vs "1.2A"
     }
 
     return .samePrecedence  // Think "1.2" vs "1.2"
   }
 
-  private static func firstComponentAtoms(in segments: ArraySlice<Segment>) -> [Segment.Atom]? {
-    for case .component(let atoms) in segments {
-      return atoms
+  private static func compareExtraAtoms(
+    _ atoms: some Sequence<Segment.Atom>, leftIsLonger: Bool
+  ) -> UpdateComparison {
+    for atom in atoms {
+      switch atom {
+      case .number(0): continue
+      case .number: return leftIsLonger ? .newer : .older
+      case .string: return leftIsLonger ? .older : .newer
+      }
     }
-
-    return nil
+    return .samePrecedence
   }
 
   private static func hasParsedContent(in segments: [Segment]?) -> Bool {
@@ -231,8 +234,13 @@ extension String {
    Returns the components of an version number.
    Components are grouped by Character type, so "12.3" returns [("12", .number), (".", .separator), ("3", .number)]
    */
-  fileprivate func components() -> [Version.Segment] {
+  fileprivate func components(ignoringVersionPrefix: Bool = false) -> [Version.Segment] {
     let scanner = Scanner(string: self)
+    // Appcasts often display "v1.2" while bundle metadata contains "1.2".
+    // Ignore that numeric prefix for precedence, retaining the stored display.
+    if ignoringVersionPrefix, first == "v" || first == "V", dropFirst().first?.isNumber == true {
+      scanner.currentIndex = index(after: startIndex)
+    }
 
     var components = [Version.Segment]()
     var currentAtoms = [Version.Segment.Atom]()

@@ -93,6 +93,25 @@ final class AppUpdatingBoundaryTest: XCTestCase {
     XCTAssertEqual(notifications.withLock { $0 }, 501)
   }
 
+  func testCommittedInstallIgnoresLateCancellationAndPublishesSuccess() throws {
+    for commit in [false, true] {
+      let app = makeApp(action: .builtIn { _ in })
+      let operation = UpdateOperation(
+        bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+      let notices = Mutex(0)
+      let observer = NotificationCenter.default.addObserver(
+        forName: .latestUpdateOperationDidFinish, object: operation, queue: nil
+      ) { _ in notices.withLock { $0 += 1 } }
+      defer { NotificationCenter.default.removeObserver(observer) }
+      if commit { try operation.beginCommit() }
+      operation.cancel()
+      if !commit { XCTAssertThrowsError(try operation.beginCommit()) }
+      operation.finish()
+      XCTAssertEqual(operation.isCancelled, !commit)
+      XCTAssertEqual(notices.withLock { $0 }, commit ? 1 : 0)
+    }
+  }
+
   private func makeApp(action: App.Update.Action) -> App {
     let bundle = App.Bundle(
       version: Version(versionNumber: "1.0", buildNumber: nil),

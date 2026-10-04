@@ -296,6 +296,25 @@ final class ReleaseNotesMarkupTest: XCTestCase {
       ReleaseNotesMarkup.isUsefulReleaseNotesText("Minor bug fixes and security enhancements."))
   }
 
+  func testLocalizedReleaseNotesAreUsefulAndRenderWithoutEnglishWords() throws {
+    for notes in [
+      "แก้ไขปัญหาการเริ่มต้นแอปพลิเคชันและปรับปรุงความเสถียรของการซิงโครไนซ์",
+      "修复了崩溃问题，改善了同步稳定性。", "修复崩溃问题",
+      "クラッシュを修正し、同期の安定性を改善しました。",
+      "충돌 문제를 수정하고 동기화 안정성을 개선했습니다.",
+      "Исправлены сбои при запуске приложения и улучшена стабильность синхронизации.",
+      "Оптимизирована производительность синхронизации.",
+      "أصلحنا أعطال بدء التشغيل وحسّنا استقرار المزامنة.",
+      "C++ parser",
+    ] {
+      XCTAssertTrue(ReleaseNotesMarkup.isUsefulReleaseNotesText(notes), notes)
+      let rendered = try ReleaseNotesMarkup.attributedString(
+        from: notes, baseURL: nil, relevantVersion: "2.0"
+      ).get()
+      XCTAssertTrue(rendered.string.contains(notes), notes)
+    }
+  }
+
   func testMacArticleWinsOverSameVersionOnOtherPlatforms() throws {
     let html = """
       <article class="visionos app"><h2>OmniPlan 4.11</h2><p>Fixed a Vision Pro crash.</p></article>

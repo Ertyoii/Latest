@@ -152,9 +152,7 @@ func activateTestWindow(_ window: NSWindow) async throws {
   NSApp.setActivationPolicy(.regular)
   let deadline = ContinuousClock.now + .seconds(5)
   repeat {
-    NSRunningApplication.current.activate(options: [
-      .activateAllWindows, .activateIgnoringOtherApps,
-    ])
+    NSRunningApplication.current.activate(options: .activateAllWindows)
     window.makeKeyAndOrderFront(nil)
     if NSApp.isActive && window.isKeyWindow {
       try await Task.sleep(for: .milliseconds(20))

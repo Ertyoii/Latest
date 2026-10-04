@@ -132,6 +132,45 @@ final class AppDataStoreTest: XCTestCase {
     XCTAssertTrue(current.isIgnored)
   }
 
+  func testIgnoreAppliesToEveryInstalledCopyWithoutRestoringRemovedApps() throws {
+    let suiteName = "AppDataStoreTest.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = AppDataStore(userDefaults: defaults)
+    let bundles = ["First", "Second"].map { name in
+      App.Bundle(
+        version: Version(versionNumber: "1", buildNumber: nil), name: name,
+        bundleIdentifier: "test.shared.identifier",
+        fileURL: URL(fileURLWithPath: "/tmp/\(name).app"), source: .sparkle)
+    }
+    store.set(appBundles: Set(bundles))
+    for bundle in bundles {
+      _ = store.set(
+        .success(
+          App.Update(
+            app: bundle, remoteVersion: Version(versionNumber: "2", buildNumber: nil),
+            minimumOSVersion: nil, source: .sparkle, date: nil, releaseNotes: nil,
+            updateAction: .builtIn { _ in })), for: bundle)
+    }
+    let stale = try XCTUnwrap(store.apps.first { $0.identifier == bundles[0].identifier })
+    store.setIgnoredState(true, for: stale)
+    XCTAssertTrue(store.apps.allSatisfy(\.isIgnored))
+    XCTAssertTrue(store.updatableApps.isEmpty)
+    let sibling = try XCTUnwrap(store.apps.first { $0.identifier == bundles[1].identifier })
+    store.setIgnoredState(true, for: sibling)
+    store.setIgnoredState(false, for: stale)
+    XCTAssertTrue(store.apps.allSatisfy { !$0.isIgnored })
+    XCTAssertEqual(store.updatableApps.count, 2)
+
+    store.beginUpdateCheck(generation: 1)
+    store.set(appBundles: [bundles[1]])
+    // The visible settled row may outlive its entry in the current discovery set.
+    store.setIgnoredState(true, for: stale)
+    XCTAssertEqual(store.apps.map(\.identifier), [bundles[1].identifier])
+    XCTAssertTrue(store.apps.allSatisfy(\.isIgnored))
+    XCTAssertEqual(defaults.stringArray(forKey: "IgnoredAppsKey"), ["test.shared.identifier"])
+  }
+
   private func makeBundle(versionNumber: String, at url: URL) -> App.Bundle {
     App.Bundle(
       version: Version(versionNumber: versionNumber, buildNumber: nil),

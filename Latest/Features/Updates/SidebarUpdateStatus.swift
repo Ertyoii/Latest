@@ -35,6 +35,20 @@ struct SidebarUpdateStatus: View {
   var body: some View {
     Group {
       switch presentation {
+      case .retryTermination:
+        Button {
+          updating.retryTermination(app)
+        } label: {
+          Image(systemName: "arrow.clockwise")
+            .foregroundStyle(
+              Color(
+                nsColor: selection.usesActiveSelectionColors
+                  ? .alternateSelectedControlTextColor : .controlAccentColor))
+        }
+        .buttonStyle(.plain)
+        .help("Save your work, then retry quitting \(app.name) to finish the update.")
+        .accessibilityLabel("Retry quitting \(app.name)")
+        .accessibilityIdentifier("updates.retry-termination")
       case .waiting(let status):
         TimelineView(.animation(paused: reduceMotion)) { context in
           SidebarIndicatorGlyph(
@@ -49,16 +63,20 @@ struct SidebarUpdateStatus: View {
         }
         .help(status)
         .accessibilityLabel(status)
-      case .progress(let fraction, let status):
+      case .progress(let fraction, let status, let cancellable):
         Button {
           updating.cancel(app)
         } label: {
           Color.clear
         }
-        .buttonStyle(SidebarProgressButtonStyle(fraction: fraction, selection: selection))
+        .buttonStyle(
+          SidebarProgressButtonStyle(
+            fraction: fraction, selection: selection, cancellable: cancellable)
+        )
+        .disabled(!cancellable)
         .help(status)
         .accessibilityLabel(status)
-        .accessibilityHint("Cancel update")
+        .accessibilityHint(cancellable ? "Cancel update" : "")
         .accessibilityIdentifier("updates.progress")
       case .update, .open, .failed:
         Image(nsImage: app.source.supportState.statusImage)
@@ -85,6 +103,7 @@ struct SidebarUpdateStatus: View {
 private struct SidebarProgressButtonStyle: ButtonStyle {
   let fraction: Double
   let selection: UpdateRowSelection
+  let cancellable: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   func makeBody(configuration: Configuration) -> some View {
@@ -93,7 +112,8 @@ private struct SidebarProgressButtonStyle: ButtonStyle {
       ? .alternateSelectedControlTextColor : .controlAccentColor
     SidebarIndicatorGlyph(
       fraction: fraction, angle: -90,
-      tint: Color(nsColor: configuration.isPressed ? color.withSystemEffect(.pressed) : color)
+      tint: Color(nsColor: configuration.isPressed ? color.withSystemEffect(.pressed) : color),
+      cancellable: cancellable
     )
     .frame(width: 24, height: 24)
     .contentShape(Rectangle())
@@ -106,6 +126,7 @@ private struct SidebarIndicatorGlyph: View, Animatable {
   var fraction: Double?
   let angle: Double
   let tint: Color
+  var cancellable = true
   @Environment(\.displayScale) private var displayScale
   @Environment(\.self) private var environment
 
@@ -134,12 +155,14 @@ private struct SidebarIndicatorGlyph: View, Animatable {
             .cgPath)
           cg.strokePath()
           cg.setFillColor(resolvedTint)
-          for offset in [-2.0, 2.0] {
-            cg.addPath(
-              SidebarIndicatorPaths.pauseMark(
-                at: CGPoint(x: center.x + offset, y: center.y)
-              ).cgPath)
-            cg.fillPath()
+          if cancellable {
+            for offset in [-2.0, 2.0] {
+              cg.addPath(
+                SidebarIndicatorPaths.pauseMark(
+                  at: CGPoint(x: center.x + offset, y: center.y)
+                ).cgPath)
+              cg.fillPath()
+            }
           }
           guard fraction > 0 else { return }
         }

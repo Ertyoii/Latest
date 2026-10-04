@@ -38,7 +38,7 @@ class AppDirectory: @unchecked Sendable {
 
   private var collectedBundles = [App.Bundle]()
 
-  typealias UpdateHandler = () -> Void
+  typealias UpdateHandler = @Sendable () -> Void
   typealias RefreshCompletion = @Sendable () -> Void
 
   /// The handler to be called once the directory contents change.

@@ -7,11 +7,41 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-08-29.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
+import Synchronization
 import XCTest
 
 @testable import Latest
 
 final class BundleCollectorTest: XCTestCase {
+  func testRemovingAnObservedDirectoryPublishesTheRemainingApps() async throws {
+    let first = try makeTemporaryDirectory()
+    let second = try makeTemporaryDirectory()
+    for (name, directory) in [("First", first), ("Second", second)] {
+      _ = try makeAppBundle(
+        named: name, in: directory,
+        info: [
+          "CFBundleName": name, "CFBundleIdentifier": "test.directory." + name,
+          "CFBundleShortVersionString": "1.0",
+        ])
+    }
+    let store = LibraryDirectoryStore(urls: [first, second])
+    let initial = expectation(description: "Both directories published")
+    let removed = expectation(description: "Removed directory no longer published")
+    initial.assertForOverFulfill = false
+    removed.assertForOverFulfill = false
+    let library = AppLibrary(directoryStoreFactory: { _ in store }) { apps in
+      let names = Set(apps.map(\.name))
+      if names == ["First", "Second"] { initial.fulfill() }
+      if names == ["First"] { removed.fulfill() }
+    }
+    library.startQuery()
+    await fulfillment(of: [initial], timeout: 3)
+    store.remove(second)
+    library.startQuery()
+    await fulfillment(of: [removed], timeout: 3)
+    XCTAssertEqual(library.bundles.map(\.name), ["First"])
+  }
+
   func testDeltaUsesMainApplicationVersionAndRefreshesInPlace() throws {
     let directory = try makeTemporaryDirectory()
     let appURL = try makeAppBundle(
@@ -290,6 +320,16 @@ final class BundleCollectorTest: XCTestCase {
       ))
   }
 
+}
+
+private final class LibraryDirectoryStore: AppDirectoryStoring, Sendable {
+  private let urls: Mutex<[URL]>
+  init(urls: [URL]) { self.urls = Mutex(urls) }
+  var URLs: [URL] { urls.withLock { $0 } }
+  func add(_ url: URL) { urls.withLock { $0.append(url) } }
+  func remove(_ url: URL) { urls.withLock { $0.removeAll { $0 == url } } }
+  func canRemove(_ url: URL) -> Bool { true }
+  func isReachable(_ url: URL) -> Bool { true }
 }
 
 extension BundleCollectorTest {

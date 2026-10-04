@@ -15,13 +15,16 @@ enum UpdateProgressState: Sendable {
   case initializing
 
   /// The new version is currently downloading. Loaded size defines the already downloaded bytes. Total size defines the final size of the download.
-  case downloading(loadedSize: Int64, totalSize: Int64)
+  case downloading(loadedSize: Int64, totalSize: Int64, cancellable: Bool = true)
 
   /// The update is being extracted. The extraction progress is given.
-  case extracting(progress: Double)
+  case extracting(progress: Double, cancellable: Bool = true)
 
   /// The update is currently installing.
   case installing
+
+  /// Sparkle is ready to install but the target app has not finished quitting.
+  case waitingForQuit
 
   /// An error occurred during updating.
   case error(Error)
@@ -40,6 +43,7 @@ protocol AppUpdating: AnyObject, Sendable {
   func isUpdating(_ app: App) -> Bool
   func update(_ app: App, isBulkUpdate: Bool)
   func cancel(_ app: App)
+  @MainActor func retryTermination(_ app: App)
   func state(for identifier: App.Bundle.Identifier) -> UpdateProgressState
   @MainActor func states(for identifier: App.Bundle.Identifier) -> AsyncStream<UpdateProgressState>
   @MainActor func stateChanges(for identifier: App.Bundle.Identifier) -> UpdateStateFeed
@@ -63,6 +67,9 @@ final class AppUpdateService: AppUpdating {
     app.updateAction?.perform(with: app.bundle, isBulkUpdate: isBulkUpdate)
   }
   func cancel(_ app: App) { queue.cancelUpdate(for: app.identifier) }
+  @MainActor func retryTermination(_ app: App) {
+    queue.retryTermination(for: app.identifier)
+  }
   func state(for identifier: App.Bundle.Identifier) -> UpdateProgressState {
     queue.state(for: identifier)
   }

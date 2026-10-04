@@ -16,6 +16,53 @@ import XCTest
 
 @MainActor
 final class UpdateCheckDiscoveryTest: XCTestCase {
+  func testPostInstallRefreshRejectsOlderCheckInTheSameGeneration() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let appURL = root.appendingPathComponent("Installed.app")
+    let plist = appURL.appendingPathComponent("Contents/Info.plist")
+    try FileManager.default.createDirectory(
+      at: plist.deletingLastPathComponent(), withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    func writeVersion(_ version: String) throws {
+      let data = try PropertyListSerialization.data(
+        fromPropertyList: [
+          "CFBundleName": "Installed", "CFBundleIdentifier": "test.discovery.installed",
+          "CFBundleShortVersionString": version, "CFBundlePackageType": "APPL",
+          "SUFeedURL": "https://example.invalid/appcast.xml",
+        ], format: .xml, options: 0)
+      try data.write(to: plist, options: .atomic)
+    }
+    try writeVersion("1")
+    let original = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
+    let oldStarted = expectation(description: "Old installed version check started")
+    let newStarted = expectation(description: "New installed version check started")
+    let refreshed = expectation(description: "New installed version accepted")
+    let checks = SuspendedDiscoveryChecks { bundle in
+      (bundle.version.versionNumber == "1" ? oldStarted : newStarted).fulfill()
+    }
+    let coordinator = UpdateCheckCoordinator(
+      check: { bundle, _ in try await checks.check(bundle) }, repositoryProvider: { nil })
+    let finished = expectation(description: "Both check batches finished")
+    finished.expectedFulfillmentCount = 2
+    let progress = DiscoveryCheckProgress(finished: finished) { app in
+      if app.version.versionNumber == "2" { refreshed.fulfill() }
+    }
+    coordinator.progressDelegate = progress
+    coordinator.updateDiscoveredBundles([original])
+    await fulfillment(of: [oldStarted], timeout: 2)
+    try writeVersion("2")
+    NotificationCenter.default.post(
+      name: .latestUpdateOperationDidFinish, object: nil,
+      userInfo: [UpdateOperation.appIdentifierUserInfoKey: appURL])
+    await fulfillment(of: [newStarted], timeout: 2)
+    await checks.complete("Installed", installedVersion: "2", remoteVersion: "3")
+    await fulfillment(of: [refreshed], timeout: 2)
+    await checks.complete("Installed", installedVersion: "1", remoteVersion: "3")
+    await fulfillment(of: [finished], timeout: 2)
+    XCTAssertEqual(coordinator.appProvider.updatableApps.first?.version.versionNumber, "2")
+    XCTAssertEqual(progress.checked.count, 1, "Old metadata must not overwrite the refresh")
+  }
+
   func testScanPublishesSettledRowsAndKeepsPreviousListDuringRefresh() async throws {
     let initialStarted = expectation(description: "Initial checks started")
     initialStarted.expectedFulfillmentCount = 2
@@ -209,8 +256,15 @@ private actor SuspendedDiscoveryChecks {
     }
   }
 
-  func complete(_ name: String, remoteVersion: String = "3", date: Date? = nil) {
-    guard let index = pending.firstIndex(where: { $0.0.name == name }) else { return }
+  func complete(
+    _ name: String, installedVersion: String? = nil, remoteVersion: String = "3", date: Date? = nil
+  ) {
+    guard
+      let index = pending.firstIndex(where: {
+        $0.0.name == name
+          && (installedVersion == nil || $0.0.version.versionNumber == installedVersion)
+      })
+    else { return }
     let (bundle, continuation) = pending.remove(at: index)
     continuation.resume(
       returning: App.Update(
@@ -231,8 +285,12 @@ private final class DiscoveryCheckProgress: UpdateCheckProgressReporting {
   let finished: XCTestExpectation
   var checked = [App]()
   var batchSizes = [Int]()
+  private let checkedHandler: ((App) -> Void)?
 
-  init(finished: XCTestExpectation) { self.finished = finished }
+  init(finished: XCTestExpectation, checked: ((App) -> Void)? = nil) {
+    self.finished = finished
+    self.checkedHandler = checked
+  }
   func updateCheckerDidStartScanningForApps(_ updateChecker: UpdateCheckCoordinator) {}
   func updateChecker(
     _ updateChecker: UpdateCheckCoordinator, didStartCheckingApps count: Int, generation: Int
@@ -241,6 +299,7 @@ private final class DiscoveryCheckProgress: UpdateCheckProgressReporting {
   }
   func updateChecker(_ updateChecker: UpdateCheckCoordinator, didCheckApp app: App) {
     checked.append(app)
+    checkedHandler?(app)
   }
   func updateCheckerDidFinishCheckingForUpdates(
     _ updateChecker: UpdateCheckCoordinator, generation: Int

@@ -14,6 +14,54 @@ import XCTest
 
 final class ReleaseNotesPipelineTest: XCTestCase {
 
+  func testCancelledCacheReaderReturnsBeforeSharedFetchCompletes() async throws {
+    for useGitHubCache in [false, true] {
+      let htmlCache = ReleaseNotesHTMLCache()
+      let gitHubCache = ReleaseNotesGitHubCache()
+      let url = URL(string: "https://example.invalid/shared")!
+      let started = expectation(description: "Shared loader started")
+      let cancelled = expectation(description: "Cancelled reader released")
+      let gate = AsyncStream<Void>.makeStream()
+      let loader: @Sendable () async throws -> String = {
+        started.fulfill()
+        for await _ in gate.stream { break }
+        return "Shared release notes"
+      }
+      let reader = Task {
+        do {
+          if useGitHubCache {
+            _ = try await gitHubCache.data(for: url) { Data(try await loader().utf8) }
+          } else {
+            _ = try await htmlCache.html(for: url, loader: loader)
+          }
+          XCTFail("Cancelled reader must throw")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        cancelled.fulfill()
+      }
+      await fulfillment(of: [started], timeout: 2)
+      reader.cancel()
+      await fulfillment(of: [cancelled], timeout: 2)
+      // Keep the shared fetch suspended until cancellation has been observed.
+      // A second reader must still receive the result of that same fetch.
+      gate.continuation.yield(())
+      gate.continuation.finish()
+      if useGitHubCache {
+        let data = try await gitHubCache.data(for: url) {
+          XCTFail("Cancellation must not discard a shared fetch")
+          return Data()
+        }
+        XCTAssertEqual(String(decoding: data, as: UTF8.self), "Shared release notes")
+      } else {
+        let html = try await htmlCache.html(for: url) {
+          XCTFail("Cancellation must not discard a shared fetch")
+          return ""
+        }
+        XCTAssertEqual(html, "Shared release notes")
+      }
+      await reader.value
+    }
+  }
+
   func testHTMLCacheDoesNotCacheCancellation() async throws {
     let cancellations: [any Error] = [CancellationError(), URLError(.cancelled)]
     for cancellation in cancellations {

@@ -21,6 +21,8 @@ struct ReleaseNotesWebView: View {
 
   var body: some View {
     WebView(renderer.page)
+      // Keep the native detail background visible before WebKit's first paint.
+      .webViewContentBackground(.hidden)
       .focused(windowFocus ?? $focus, equals: .releaseNotes)
       .webViewBackForwardNavigationGestures(.disabled)
       .webViewMagnificationGestures(.disabled)

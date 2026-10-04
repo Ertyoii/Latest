@@ -16,6 +16,7 @@ final class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
   // points hop there before touching the updater or its download state.
   @MainActor private var updater: SPUUpdater?
   @MainActor private var cancellationCallback: (() -> Void)?
+  @MainActor private var terminationRetry: (() -> Void)?
   @MainActor private var progressTask: Task<Void, Never>?
   @MainActor private var expectedContentLength: UInt64 = 0
   @MainActor private var receivedLength: UInt64 = 0
@@ -52,7 +53,7 @@ final class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
 
   override func cancel() {
     super.cancel()
-
+    guard isCancelled else { return }
     self.finish()
   }
 
@@ -62,9 +63,16 @@ final class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
       self.cancelProgressNotification()
       let cancellation = self.cancellationCallback
       self.cancellationCallback = nil
+      self.terminationRetry = nil
       if self.isCancelled { cancellation?() }
       self.updater = nil
     }
+  }
+
+  @MainActor
+  override func retryTermination() {
+    guard !isCancelled, !isFinished else { return }
+    terminationRetry?()
   }
 
 }
@@ -153,7 +161,8 @@ extension SparkleUpdateOperation: SPUUserDriver {
       guard !self.isCancelled, !self.isFinished else { return }
       self.progressState = .downloading(
         loadedSize: Int64(clamping: self.receivedLength),
-        totalSize: Int64(clamping: self.expectedContentLength))
+        totalSize: Int64(clamping: self.expectedContentLength),
+        cancellable: !self.isCommitting)
     }
   }
 
@@ -166,25 +175,46 @@ extension SparkleUpdateOperation: SPUUserDriver {
   // MARK: - Installing Update
 
   func showDownloadDidStartExtractingUpdate() {
+    guard !isFinished else { return }
+    // Sparkle launches its installer immediately after this callback. A closed
+    // target can be replaced before showReady or showInstallingUpdate arrives.
+    do { try beginCommit() } catch { return }
     cancelProgressNotification()
-    self.progressState = .extracting(progress: 0)
+    self.progressState = .extracting(progress: 0, cancellable: false)
   }
 
   func showExtractionReceivedProgress(_ progress: Double) {
+    guard !isCancelled, !isFinished else { return }
     cancelProgressNotification()
-    self.progressState = .extracting(progress: progress)
+    self.progressState = .extracting(progress: progress, cancellable: false)
   }
 
   func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
-    reply(self.isCancelled ? .dismiss : .install)
+    guard !isFinished else {
+      reply(.skip)
+      return
+    }
+    do {
+      try beginCommit()
+      cancelProgressNotification()
+      progressState = .installing
+      reply(.install)
+    } catch {
+      // Dismiss leaves the update scheduled for the next quit; skip cancels it.
+      reply(.skip)
+    }
   }
 
   func showInstallingUpdate(
     withApplicationTerminated applicationTerminated: Bool,
     retryTerminatingApplication: @escaping () -> Void
   ) {
+    guard !isFinished else { return }
+    // Closed targets skip showReady, so this route needs the same protection.
+    do { try beginCommit() } catch { return }
     cancelProgressNotification()
-    self.progressState = .installing
+    terminationRetry = applicationTerminated ? nil : retryTerminatingApplication
+    progressState = applicationTerminated ? .installing : .waitingForQuit
   }
 
   // MARK: - Ignored Methods

@@ -44,6 +44,8 @@ Discovery publishes complete scans so rows appear in their final order. Refresh 
 
 Features call `AppUpdating`; platform adapters own the update mechanism. Sparkle is pinned through Swift Package Manager. Native Mac App Store apps update within Latest; macOS 26.1+ uses a privileged helper. Wrapped iOS apps open the App Store. Helper registration errors are displayed, and pending updates can resume after System Settings approval.
 
+If a Sparkle app declines to quit, the update stays active and its Retry control sends another quit request. Save your work before retrying. Installation remains protected from cancellation once Sparkle takes over.
+
 Signed standalone bundle replacement supports Docker Desktop, Telegram Desktop, Zed, Chrome, Bruno, Discord, 1Password, and Delta. Homebrew downloads require the expected bundle identifier and cask. Each install fetches fresh metadata, verifies available checksums, signing identity, architecture, and minimum OS, and keeps the original until replacement succeeds. Running apps require confirmation to quit and reopen; package installers and companion services use separate paths.
 
 Obsidian's installed version comes from its ASAR payload; Delta's comes from executable metadata. Obsidian public payload updates verify the vendor checksum and RSA signature. Early-access preferences are respected: authenticated updates open Obsidian, and incompatible launchers open the official installer page. Ghostty uses its official Sparkle feed.

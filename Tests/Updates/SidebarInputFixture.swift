@@ -227,6 +227,7 @@ struct SidebarAccessibilityElement {
   func accessibilityChildren() -> [Any]? { value("accessibilityChildren") as? [Any] }
   func accessibilityIdentifier() -> String? { value("accessibilityIdentifier") as? String }
   func accessibilityLabel() -> String? { value("accessibilityLabel") as? String }
+  func accessibilityEnabled() -> Bool? { value("isAccessibilityEnabled") as? Bool }
   func accessibilityFrame() -> CGRect {
     (value("accessibilityFrame") as? NSValue)?.rectValue ?? .zero
   }

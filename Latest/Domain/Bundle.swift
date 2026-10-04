@@ -55,6 +55,16 @@ extension App {
       self.modificationDate = modificationDate ?? Self.modificationDate(forBundleAt: fileURL)
     }
 
+    /// Bundle identity is its path; check results additionally belong to the
+    /// exact installed metadata that was checked.
+    func matchesMetadata(of other: App.Bundle) -> Bool {
+      identifier == other.identifier
+        && version.versionNumber == other.version.versionNumber
+        && version.buildNumber == other.version.buildNumber
+        && name == other.name && bundleIdentifier == other.bundleIdentifier
+        && source == other.source && modificationDate == other.modificationDate
+    }
+
     private static func modificationDate(forBundleAt fileURL: URL) -> Date {
       let candidateURLs = [
         fileURL,

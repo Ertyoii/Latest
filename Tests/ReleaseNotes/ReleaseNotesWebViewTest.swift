@@ -1,6 +1,7 @@
 // Fork contributions © 2026 ertyoii. Licensed under GPL-3.0; see LICENSE.md.
 
 import AppKit
+import ScreenCaptureKit
 import SwiftUI
 import WebKit
 import XCTest
@@ -8,6 +9,71 @@ import XCTest
 @testable import Latest
 
 final class ReleaseNotesWebViewTest: XCTestCase {
+  @MainActor
+  func testReleaseNotesBackgroundDoesNotFlashWhileLoading() async throws {
+    try requireUITests()
+    let app = makeTestApp(name: "First paint", version: "1")
+    for dark in [true, false] {
+      let host = NSHostingView(
+        rootView: ReleaseNotesDetailSurface(app: nil, contentState: .message(.noSelection)))
+      let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
+        styleMask: [.titled], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
+      window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+      window.contentView = host
+      defer { window.close() }
+      window.orderFront(nil)
+      host.layoutSubtreeIfNeeded()
+      let shareable = try await SCShareableContent.currentProcess
+      let capturedWindow = try XCTUnwrap(
+        shareable.windows.first { $0.windowID == window.windowNumber })
+      let configuration = SCStreamConfiguration()
+      configuration.width = 480
+      configuration.height = Int(window.frame.height)
+      configuration.minimumFrameInterval = CMTime(value: 1, timescale: 120)
+      configuration.pixelFormat = kCVPixelFormatType_32BGRA
+      configuration.showsCursor = false
+      let frames = ReleaseNotesBackgroundFrames()
+      let stream = SCStream(
+        filter: SCContentFilter(desktopIndependentWindow: capturedWindow),
+        configuration: configuration, delegate: nil)
+      try stream.addStreamOutput(frames, type: .screen, sampleHandlerQueue: .main)
+      try await stream.startCapture()
+      do {
+        for _ in 0..<100 where frames.brightness.isEmpty {
+          try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(frames.brightness.isEmpty, "Capture must start before loading the page")
+        // Record the cold first load and subsequent selections without waiting
+        // for paint between the SwiftUI state change and each captured frame.
+        for index in 0..<3 {
+          let text = "Release notes selection \(index)"
+          host.rootView = ReleaseNotesDetailSurface(
+            app: app, contentState: .text(ReleaseNotesContent(string: text)))
+          host.layoutSubtreeIfNeeded()
+          let web = try XCTUnwrap(host.descendant(of: WKWebView.self))
+          try await waitForWebContent(web, containing: text)
+          try await Task.sleep(for: .milliseconds(100))
+        }
+        try await stream.stopCapture()
+      } catch {
+        try? await stream.stopCapture()
+        throw error
+      }
+      XCTAssertGreaterThan(frames.brightness.count, 3, "Capture must include the page transitions")
+      if dark {
+        XCTAssertLessThan(
+          frames.brightness.max() ?? 1, 0.3,
+          "The dark release-notes background must never flash white, including its first paint")
+      } else {
+        XCTAssertGreaterThan(
+          frames.brightness.min() ?? 0, 0.85,
+          "The light release-notes background must remain light while pages load")
+      }
+    }
+  }
+
   @MainActor
   func testReleaseNotesTextPreservesRichTextSelectionCopyAndAccessibility() async throws {
     try requireUITests()
@@ -146,5 +212,31 @@ final class ReleaseNotesWebViewTest: XCTestCase {
       try await Task.sleep(for: .milliseconds(50))
     }
     XCTFail("WebKit did not render expected content: \(text)")
+  }
+}
+
+/// Inspect an empty area below the short notes in actual WindowServer frames.
+@MainActor
+private final class ReleaseNotesBackgroundFrames: NSObject, SCStreamOutput {
+  private(set) var brightness: [Double] = []
+
+  nonisolated func stream(
+    _ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+    of type: SCStreamOutputType
+  ) {
+    guard type == .screen, sampleBuffer.isValid,
+      let buffer = sampleBuffer.imageBuffer,
+      CVPixelBufferLockBaseAddress(buffer, .readOnly) == kCVReturnSuccess
+    else { return }
+    defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+    guard let bytes = CVPixelBufferGetBaseAddress(buffer) else { return }
+    let x = CVPixelBufferGetWidth(buffer) / 2
+    let y = CVPixelBufferGetHeight(buffer) * 3 / 4
+    let pixel = bytes.advanced(by: y * CVPixelBufferGetBytesPerRow(buffer) + x * 4)
+      .assumingMemoryBound(to: UInt8.self)
+    guard pixel[3] == 255 else { return }
+    let value = Double(Int(pixel[0]) + Int(pixel[1]) + Int(pixel[2])) / (3 * 255)
+    // The stream explicitly delivers its samples on the main queue.
+    MainActor.assumeIsolated { brightness.append(value) }
   }
 }

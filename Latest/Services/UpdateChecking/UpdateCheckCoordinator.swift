@@ -273,11 +273,12 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
   private func didCheck(_ bundle: App.Bundle, _ update: Result<App.Update, Error>, generation: Int)
   {
     guard
-      let app = updateCheckGeneration.withCurrent(
+      let accepted = updateCheckGeneration.withCurrent(
         generation,
         perform: {
-          self.dataStore.set(update, for: bundle)
-        })
+          self.dataStore.accept(update, for: bundle)
+        }),
+      let app = accepted
     else { return }
 
     Task { @MainActor in

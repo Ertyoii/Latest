@@ -17,7 +17,8 @@ enum UpdateActionPresentation: Equatable {
   case update
   case open
   case waiting(String)
-  case progress(fraction: Double, status: String)
+  case retryTermination
+  case progress(fraction: Double, status: String, cancellable: Bool = true)
   case failed(String)
 
   static func make(for app: App, progressState: UpdateProgressState) -> Self {
@@ -36,7 +37,7 @@ enum UpdateActionPresentation: Equatable {
           "InitializingUpdateStatus",
           comment: "Update progress state of initializing an update"
         ))
-    case .downloading(let loadedSize, let totalSize):
+    case .downloading(let loadedSize, let totalSize, let cancellable):
       let denominator = max(totalSize, 1)
       let fraction = min(max(Double(loadedSize) / Double(denominator), 0), 1) * 0.75
       let format = NSLocalizedString(
@@ -48,14 +49,15 @@ enum UpdateActionPresentation: Equatable {
         Self.byteFormatter.string(fromByteCount: loadedSize),
         Self.byteFormatter.string(fromByteCount: totalSize)
       )
-      return .progress(fraction: fraction, status: status)
-    case .extracting(let progress):
+      return .progress(fraction: fraction, status: status, cancellable: cancellable)
+    case .extracting(let progress, let cancellable):
       return .progress(
         fraction: min(max(0.75 + (progress * 0.25), 0), 1),
         status: NSLocalizedString(
           "ExtractingUpdateStatus",
           comment: "Update progress state of extracting the downloaded update"
-        )
+        ),
+        cancellable: cancellable
       )
     case .installing:
       return .waiting(
@@ -63,6 +65,8 @@ enum UpdateActionPresentation: Equatable {
           "InstallingUpdateStatus",
           comment: "Update progress state of installing an update"
         ))
+    case .waitingForQuit:
+      return .retryTermination
     case .error(let error):
       return .failed(error.localizedDescription)
     case .cancelling:
@@ -129,8 +133,10 @@ final class UpdateActionViewModel: ObservableObject {
       updating.update(app)
     case .open:
       workspace.openApplication(at: app.fileURL)
-    case .progress:
-      updating.cancel(app)
+    case .progress(_, _, let cancellable):
+      if cancellable { updating.cancel(app) }
+    case .retryTermination:
+      updating.retryTermination(app)
     case .failed(let description):
       presentedError = PresentedError(description: description)
     case .waiting:
@@ -274,20 +280,30 @@ private struct UpdateActionControl: View {
         accessibilityLabel: "Open \(appName)",
         performAction: performAction
       )
+    case .retryTermination:
+      UpdateActionCapsule(
+        content: .title(NSLocalizedString("RetryAction", comment: "Retry quitting the app")),
+        accessibilityLabel: "Retry quitting \(appName)",
+        performAction: performAction
+      )
+      .help("Save your work, then retry quitting \(appName) to finish the update.")
+      .accessibilityIdentifier("update.retry-termination")
     case .waiting(let status):
       UpdateActionIndeterminateIndicator()
         .help(status)
         .accessibilityLabel(status)
-    case .progress(let fraction, let status):
+    case .progress(let fraction, let status, let cancellable):
       Button {
         performAction()
       } label: {
-        UpdateActionProgressIndicator(fraction: fraction)
+        UpdateActionProgressIndicator(fraction: fraction, cancellable: cancellable)
       }
       .buttonStyle(.plain)
+      .disabled(!cancellable)
       .help(status)
       .accessibilityLabel(status)
-      .accessibilityHint("Cancel update")
+      .accessibilityHint(cancellable ? "Cancel update" : "")
+      .accessibilityIdentifier("update.progress")
     case .failed:
       UpdateActionCapsule(
         content: .image(UpdateActionVisualStyle.errorImage),
@@ -499,6 +515,7 @@ private struct UpdateActionIndeterminateIndicator: View {
 
 private struct UpdateActionProgressIndicator: View {
   let fraction: Double
+  let cancellable: Bool
 
   var body: some View {
     ZStack {
@@ -518,14 +535,16 @@ private struct UpdateActionProgressIndicator: View {
         )
         .rotationEffect(.degrees(-90))
 
-      HStack(spacing: UpdateActionVisualStyle.pauseBarSpacing) {
-        ForEach(0..<2, id: \.self) { _ in
-          RoundedRectangle(cornerRadius: 1)
-            .fill(Color(nsColor: .controlAccentColor))
-            .frame(
-              width: UpdateActionVisualStyle.pauseBarSize.width,
-              height: UpdateActionVisualStyle.pauseBarSize.height
-            )
+      if cancellable {
+        HStack(spacing: UpdateActionVisualStyle.pauseBarSpacing) {
+          ForEach(0..<2, id: \.self) { _ in
+            RoundedRectangle(cornerRadius: 1)
+              .fill(Color(nsColor: .controlAccentColor))
+              .frame(
+                width: UpdateActionVisualStyle.pauseBarSize.width,
+                height: UpdateActionVisualStyle.pauseBarSize.height
+              )
+          }
         }
       }
     }

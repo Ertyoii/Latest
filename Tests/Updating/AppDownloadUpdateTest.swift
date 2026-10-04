@@ -202,6 +202,65 @@ final class AppDownloadUpdateTest: XCTestCase {
     }
   }
 
+  func testDownloadLimitCancelsKnownAndUnknownLengthTransfersWhileReceiving() {
+    let session = URLSession(configuration: .ephemeral)
+    defer { session.invalidateAndCancel() }
+    for (received, expected, exceeds) in [(64, 128, true), (129, -1, true), (64, -1, false)] {
+      let progress = Mutex<[Int64]>([])
+      let delegate = BoundedDownloadDelegate(maximumSize: 100) { loaded, _ in
+        progress.withLock { $0.append(loaded) }
+      }
+      let task = session.downloadTask(with: URL(string: "https://example.invalid/update.zip")!)
+      delegate.urlSession(
+        session, downloadTask: task, didWriteData: Int64(received),
+        totalBytesWritten: Int64(received), totalBytesExpectedToWrite: Int64(expected))
+      XCTAssertEqual(delegate.exceededLimit, exceeds)
+      if exceeds {
+        XCTAssertTrue(task.state == .canceling || task.state == .completed)
+        XCTAssertTrue(progress.withLock { $0.isEmpty })
+      } else {
+        XCTAssertEqual(task.state, .suspended)
+        XCTAssertEqual(progress.withLock { $0 }, [Int64(received)])
+      }
+    }
+  }
+
+  @MainActor
+  func testCancellationDuringQuitWaitsForTerminationAndReopensWithoutInstalling() async {
+    let requested = expectation(description: "Quit requested")
+    let reopened = expectation(description: "App reopened after delayed termination")
+    let terminated = Mutex(false)
+    let task = Task {
+      do {
+        try await ApplicationQuitLifecycle.run(
+          terminate: { requested.fulfill() },
+          isTerminated: { terminated.withLock { $0 } },
+          reopen: { reopened.fulfill() },
+          install: { XCTFail("Cancelled update must not install") })
+        XCTFail("Expected cancellation")
+      } catch { XCTAssertTrue(error is CancellationError) }
+    }
+    await fulfillment(of: [requested], timeout: 2)
+    task.cancel()
+    terminated.withLock { $0 = true }
+    await task.value
+    await fulfillment(of: [reopened], timeout: 2)
+
+    // Cancellation accepted while confirmation is open must not issue quit.
+    let cancelled = Task {
+      do {
+        try await ApplicationQuitLifecycle.run(
+          terminate: { XCTFail("Already cancelled update must not quit") },
+          isTerminated: { false },
+          reopen: { XCTFail("App was never quit") },
+          install: { XCTFail("Already cancelled update must not install") })
+        XCTFail("Expected cancellation")
+      } catch { XCTAssertTrue(error is CancellationError) }
+    }
+    cancelled.cancel()
+    await cancelled.value
+  }
+
   func testCancellationNeverHidesRecoveryErrors() async throws {
     let ready = expectation(description: "Operation started")
     let done = expectation(description: "Operation finished")

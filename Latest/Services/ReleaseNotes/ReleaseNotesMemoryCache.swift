@@ -25,6 +25,7 @@ actor ReleaseNotesGitHubCache {
 
   func data(for url: URL, loader: @escaping @Sendable () async throws -> Data) async throws -> Data
   {
+    try Task.checkCancellation()
     let now = Date()
     if var entry = entries[url], entry.expiresAt > now {
       entry.lastAccessedAt = now
@@ -35,18 +36,22 @@ actor ReleaseNotesGitHubCache {
       storedBytes -= entry.data.count
     }
     if let task = inFlightTasks[url] {
-      return try await task.value
+      return try await task.valueUnlessCancelled()
     }
 
-    let task = Task { try await loader() }
+    let task = Task {
+      defer { inFlightTasks[url] = nil }
+      let data = try await loader()
+      let completedAt = Date()
+      entries[url] = Entry(
+        data: data, expiresAt: completedAt.addingTimeInterval(lifetime),
+        lastAccessedAt: completedAt)
+      storedBytes += data.count
+      evictIfNeeded()
+      return data
+    }
     inFlightTasks[url] = task
-    defer { inFlightTasks[url] = nil }
-    let data = try await task.value
-    entries[url] = Entry(
-      data: data, expiresAt: now.addingTimeInterval(lifetime), lastAccessedAt: now)
-    storedBytes += data.count
-    evictIfNeeded()
-    return data
+    return try await task.valueUnlessCancelled()
   }
 
   private func evictIfNeeded() {
@@ -81,6 +86,7 @@ actor ReleaseNotesHTMLCache {
   func html(for url: URL, loader: @escaping @Sendable () async throws -> String) async throws
     -> String
   {
+    try Task.checkCancellation()
     let now = Date()
     if var entry = entries[url], entry.expiresAt > now {
       entry.lastAccessedAt = now
@@ -90,29 +96,28 @@ actor ReleaseNotesHTMLCache {
     removeEntry(for: url)
 
     if let task = inFlightTasks[url] {
-      return try await task.value
+      return try await task.valueUnlessCancelled()
     }
 
     let task = Task {
-      try await loader()
+      defer { inFlightTasks[url] = nil }
+      do {
+        let html = try await loader()
+        store(.success(html), for: url, lifetime: successfulResponseLifetime)
+        return html
+      } catch  where error is CancellationError || (error as? URLError)?.code == .cancelled {
+        // Cancellation says nothing about the resource; a later request must be able to retry.
+        throw error
+      } catch FetchHTMLError.unusableText {
+        store(.failure(.unusableText), for: url, lifetime: failedResponseLifetime)
+        throw FetchHTMLError.unusableText
+      } catch {
+        store(.failure(.fetchFailed), for: url, lifetime: failedResponseLifetime)
+        throw error
+      }
     }
     inFlightTasks[url] = task
-    defer { inFlightTasks[url] = nil }
-
-    do {
-      let html = try await task.value
-      store(.success(html), for: url, lifetime: successfulResponseLifetime)
-      return html
-    } catch  where error is CancellationError || (error as? URLError)?.code == .cancelled {
-      // Cancellation says nothing about the resource; a later request must be able to retry.
-      throw error
-    } catch FetchHTMLError.unusableText {
-      store(.failure(.unusableText), for: url, lifetime: failedResponseLifetime)
-      throw FetchHTMLError.unusableText
-    } catch {
-      store(.failure(.fetchFailed), for: url, lifetime: failedResponseLifetime)
-      throw error
-    }
+    return try await task.valueUnlessCancelled()
   }
 
   private func store(_ value: Result<String, FetchHTMLError>, for url: URL, lifetime: TimeInterval)
@@ -158,4 +163,27 @@ actor ReleaseNotesHTMLCache {
     storedHTMLBytes -= entry.cost
   }
 
+}
+
+extension Task where Failure == Error {
+  /// A cache owns its shared fetch; cancelling one reader must release that
+  /// reader promptly without cancelling the fetch for other readers.
+  fileprivate func valueUnlessCancelled() async throws -> Success {
+    try Task<Never, Never>.checkCancellation()
+    let stream = AsyncThrowingStream<Success, Error> { continuation in
+      let waiter = Task<Void, Never> {
+        do {
+          continuation.yield(try await self.value)
+          continuation.finish()
+        } catch {
+          continuation.finish(throwing: error)
+        }
+      }
+      continuation.onTermination = { _ in waiter.cancel() }
+    }
+    var iterator = stream.makeAsyncIterator()
+    guard let value = try await iterator.next() else { throw _Concurrency.CancellationError() }
+    try Task<Never, Never>.checkCancellation()
+    return value
+  }
 }
