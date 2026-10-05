@@ -140,15 +140,19 @@ final class UpdateRepository: Sendable {
             return
           }
 
-          self.state.withLock { _ = $0.loadedURLTypes.insert(urlType) }
-          updateRepositoryLogger.info(
-            "Loaded repository source \(urlType.rawValue, privacy: .public)")
-
-          switch urlType {
-          case .repository:
-            self.parse(data)
-          case .unsupportedApps:
-            self.loadUnsupportedApps(from: data)
+          let loaded =
+            switch urlType {
+            case .repository: self.parse(data)
+            case .unsupportedApps: self.loadUnsupportedApps(from: data)
+            }
+          if loaded {
+            self.state.withLock { _ = $0.loadedURLTypes.insert(urlType) }
+            updateRepositoryLogger.info(
+              "Loaded repository source \(urlType.rawValue, privacy: .public)")
+          } else {
+            UpdateRepositoryCache(
+              cacheURL: urlType.cacheURL, userDefaultsKey: urlType.userDefaultsKey
+            ).invalidate()
           }
         }
       }
@@ -156,7 +160,7 @@ final class UpdateRepository: Sendable {
   }
 
   /// Parses the given repository data and finishes loading.
-  private func parse(_ repositoryData: Data) {
+  private func parse(_ repositoryData: Data) -> Bool {
     let signpostID = updateRepositorySignposter.makeSignpostID()
     let interval = updateRepositorySignposter.beginInterval(
       "Decode Repository Catalog", id: signpostID)
@@ -193,23 +197,26 @@ final class UpdateRepository: Sendable {
       updateRepositoryLogger.info(
         "Loaded \(sourceEntryCount, privacy: .public) casks and indexed \(appEntries.count, privacy: .public) app entries in \(duration, privacy: .public) ms compact=\(usedCompactIndex, privacy: .public)"
       )
+      return true
     } catch {
       state.withLock { $0.entryMatcher.update(entries: []) }
       updateRepositoryLogger.error(
         "Failed to decode repository catalog: \(error.localizedDescription, privacy: .public)")
+      return false
     }
   }
 
-  private func loadUnsupportedApps(from data: Data) {
+  private func loadUnsupportedApps(from data: Data) -> Bool {
     guard
       let propertyList = try? PropertyListSerialization.propertyList(from: data, format: nil)
         as? [String]
     else {
       state.withLock { $0.entryMatcher.update(unsupportedBundleIdentifiers: []) }
-      return
+      return false
     }
 
     state.withLock { $0.entryMatcher.update(unsupportedBundleIdentifiers: Set(propertyList)) }
+    return true
   }
 
   // MARK: - Repository URL
@@ -298,8 +305,8 @@ final class UpdateRepository: Sendable {
 
 private final class UpdateRepositoryReuseCache: Sendable {
   private struct State: Sendable {
-    var reusableRepository: UpdateRepository?
-    var repositoryCreatedAt: TimeInterval = 0
+    var repository: UpdateRepository?
+    var isLoading = false
   }
 
   private static let reuseDuration: TimeInterval = 60 * 60
@@ -307,37 +314,30 @@ private final class UpdateRepositoryReuseCache: Sendable {
   private let state = Mutex(State())
 
   func repository() -> UpdateRepository {
-    if let repository = cachedRepository() {
-      return repository
+    let (repository, startsLoading) = state.withLock { state in
+      if let repository = state.repository,
+        state.isLoading
+          || Date.timeIntervalSinceReferenceDate - repository.createdAt < Self.reuseDuration
+      {
+        return (repository, false)
+      }
+      let repository = UpdateRepository { [weak self] repository, isReusable in
+        self?.state.withLock { state in
+          guard state.repository === repository else { return }
+          state.isLoading = false
+          if !isReusable { state.repository = nil }
+        }
+      }
+      state.repository = repository
+      state.isLoading = true
+      return (repository, true)
     }
-
-    let repository = UpdateRepository { [weak self] repository, isReusable in
-      self?.store(repository, isReusable: isReusable)
+    // Loading can call back synchronously; start it after releasing the mutex.
+    if startsLoading {
+      repository.load()
+      repository.fetchCompletedGroup.leave()
     }
-    repository.load()
-    repository.fetchCompletedGroup.leave()
-
     return repository
-  }
-
-  private func cachedRepository() -> UpdateRepository? {
-    state.withLock { state in
-      guard let reusableRepository = state.reusableRepository else { return nil }
-
-      let age = state.repositoryCreatedAt.distance(to: Date.timeIntervalSinceReferenceDate)
-      return age < Self.reuseDuration ? reusableRepository : nil
-    }
-  }
-
-  private func store(_ repository: UpdateRepository, isReusable: Bool) {
-    guard isReusable else { return }
-
-    state.withLock { state in
-      guard repository.createdAt >= state.repositoryCreatedAt else { return }
-
-      state.reusableRepository = repository
-      state.repositoryCreatedAt = repository.createdAt
-    }
   }
 
 }

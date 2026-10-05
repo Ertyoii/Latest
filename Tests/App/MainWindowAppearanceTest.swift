@@ -57,6 +57,17 @@ final class MainWindowAppearanceTest: XCTestCase {
           NSPoint(
             x: screen.visibleFrame.minX + 80,
             y: screen.visibleFrame.maxY - window.frame.height - 80))
+        // Native bar materials sample windows behind them. Keep that input
+        // fixed across processes, regardless of the user's foreground content.
+        let backdrop = NSWindow(
+          contentRect: window.frame.insetBy(dx: -20, dy: -20),
+          styleMask: [.borderless], backing: .buffered, defer: false)
+        backdrop.isReleasedWhenClosed = false
+        backdrop.backgroundColor = dark ? .black : .white
+        backdrop.isOpaque = true
+        backdrop.ignoresMouseEvents = true
+        backdrop.order(.below, relativeTo: window.windowNumber)
+        defer { backdrop.close() }
         NSApp.deactivate()
         for _ in 0..<100 where window.isKeyWindow {
           try await Task.sleep(for: .milliseconds(10))

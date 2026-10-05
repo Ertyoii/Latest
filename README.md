@@ -13,11 +13,16 @@ brew install ripgrep
 ./script/build_and_run.sh
 ./script/test.sh
 ./script/format.sh --check
+./script/lint.sh
 ```
 
 `build_and_run.sh --help` lists launch, debugger, and logging options. Add `--signed` after a mode for an Apple Development build; the App Store installation helper requires the app and helper to share a valid signing identity.
 
 `test.sh` runs script regressions, architecture checks, offline behavior, and offscreen layout tests in a background host. Use `-only-testing:'Latest Tests/Class/method'` to focus XCTest. Coverage is opt-in with `--coverage`; run `./script/format.sh` to apply the pinned formatting rules with your Xcode toolchain.
+
+`lint.sh` downloads and verifies the pinned SwiftLint 0.65.1 portable binary on first use, then runs the focused correctness rules in `.swiftlint.yml` with warnings treated as failures. Formatting stays with Apple `swift-format`; naming and length preferences are not lint gates. Literal release-note regexes have a documented, scoped `force_try` exception.
+
+`./script/lint.sh --analyze` makes a fresh isolated unsigned build-for-testing and reports unused-declaration candidates as advisory warnings. It compiles opt-in audit callers without running tests or opening apps. Confirmed runtime, binding, and cross-module false positives have documented declaration-level exceptions; new findings require review before deletion. `unused_import` is disabled because SourceKit reports circular references in the conditional audit on Swift 6.4; analyzer errors still fail the command. CI runs formatting, strict lint, declaration analysis, and the existing test gates, preserving analysis/build logs under `build/`.
 
 `./script/test.sh --ui` runs window, input, accessibility, and screenshot checks and may take focus. `--all` includes both lanes. Benchmarks and live catalog audits have separate commands. For another host OS, see [testing on macOS 26](docs/macos26-testing.md).
 
@@ -75,7 +80,7 @@ Optional Release benchmarks measure data processing, startup, selection, release
 
 The UI lane checks keyboard navigation, focus, selection, scrolling, accessibility, and appearance. Performance measurements supplement these behavior checks.
 
-Visual tests capture the production window with offline data at a fixed position and inactive state. Images in `build/production-visuals/main-window-scene` compare pixel-for-pixel with same-host originals in `build/production-visual-reference/main-window-scene`; the test skips explicitly when originals are absent. Preserve those originals and their provenance. The macOS 26 [component references](Tests/VisualBaselines/macos-26/README.md) are checked in separately.
+Visual tests capture the production window with offline data at a fixed position and inactive state, with an opaque backdrop behind native materials. Images in `build/production-visuals/main-window-scene` compare pixel-for-pixel with same-host originals in `build/production-visual-reference/main-window-scene`; the test skips explicitly when originals are absent. Preserve those originals and their provenance. The macOS 26 [component references](Tests/VisualBaselines/macos-26/README.md) are checked in separately.
 
 Build products, logs, and captures can be regenerated. Keep visual references and any configured macOS 26 VM when cleaning `build/`.
 

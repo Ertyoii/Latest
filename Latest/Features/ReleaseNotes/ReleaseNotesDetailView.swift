@@ -106,7 +106,7 @@ struct ReleaseNotesHeaderView: View {
   let app: App
   let showsSupportStatus: Bool
   let updating: any AppUpdating
-  // App equality compares URLs; refreshed metadata/actions need object identity.
+  // App equality compares identifiers and versions; refreshed metadata/actions need object identity.
   private let appIdentity: ObjectIdentifier
   @State private var icon: NSImage?
 

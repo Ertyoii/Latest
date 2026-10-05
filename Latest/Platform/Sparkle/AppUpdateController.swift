@@ -7,11 +7,10 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-08-29.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
-import Combine
 import Foundation
 
 @MainActor
-final class AppUpdateController: ObservableObject {
+struct AppUpdateController {
   private let workspace: any ApplicationWorkspace
 
   init(workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared) {

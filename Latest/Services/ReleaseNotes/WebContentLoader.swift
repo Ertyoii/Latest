@@ -10,7 +10,11 @@ import WebKit
 
 /// Object that loads websites for given URLs and returns their content as HTML.
 @MainActor
-class WebContentLoader: NSObject {
+final class WebContentLoader: NSObject {
+  deinit {
+    pendingContentUpdateTask?.cancel()
+    loadTimeoutTask?.cancel()
+  }
 
   /// Loads contents for the given URL.
   ///
@@ -20,8 +24,7 @@ class WebContentLoader: NSObject {
     acceptsContent: (@Sendable (String) async -> Bool)? = nil,
     contentUpdateHandler: @escaping @MainActor (Result<String, Error>) -> Void
   ) {
-    pendingContentUpdateTask?.cancel()
-    loadTimeoutTask?.cancel()
+    cancel()
     let loadID = UUID()
     currentLoadID = loadID
     currentUpdateHandler = contentUpdateHandler
@@ -35,18 +38,15 @@ class WebContentLoader: NSObject {
   /// Cancels any active load and suppresses delayed content updates.
   func cancel() {
     pendingContentUpdateTask?.cancel()
+    pendingContentUpdateTask = nil
     loadTimeoutTask?.cancel()
+    loadTimeoutTask = nil
     currentLoadID = UUID()
     currentNavigation = nil
     currentUpdateHandler = nil
     acceptsContent = nil
     guard let webView else { return }
     webView.stopLoading()
-    Task<Void, Never> { @MainActor in
-      _ = try? await webView.evaluateJavaScript(
-        "window.__latestMutationObserver?.disconnect(); clearTimeout(window.__latestMutationTimer);"
-      )
-    }
     webView.navigationDelegate = nil
     webView.configuration.userContentController.removeScriptMessageHandler(forName: "updateHandler")
     self.webView = nil
@@ -88,7 +88,7 @@ class WebContentLoader: NSObject {
 
     let script = WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
     config.userContentController.addUserScript(script)
-    config.userContentController.add(self, name: "updateHandler")
+    config.userContentController.add(MessageHandler(loader: self), name: "updateHandler")
 
     // Setup web view
     let webView = WKWebView(frame: .zero, configuration: config)
@@ -121,21 +121,18 @@ class WebContentLoader: NSObject {
   fileprivate func scheduleContentUpdate() {
     let loadID = currentLoadID
     pendingContentUpdateTask?.cancel()
-    pendingContentUpdateTask = Task { @MainActor in
+    pendingContentUpdateTask = Task { @MainActor [weak self] in
       try? await Task.sleep(nanoseconds: 150_000_000)
-      guard !Task.isCancelled, loadID == self.currentLoadID else { return }
+      guard !Task.isCancelled, let self, loadID == self.currentLoadID else { return }
       await self.notifyContentUpdate(for: loadID)
     }
   }
 
   private func scheduleLoadTimeout(for loadID: UUID) {
-    loadTimeoutTask = Task { @MainActor in
+    loadTimeoutTask = Task { @MainActor [weak self] in
       try? await Task.sleep(nanoseconds: 8_000_000_000)
-      guard !Task.isCancelled, loadID == self.currentLoadID else { return }
-
-      let handler = self.currentUpdateHandler
-      self.cancel()
-      handler?(.failure(WebContentLoaderError.timedOut))
+      guard !Task.isCancelled, let self else { return }
+      self.finish(.failure(WebContentLoaderError.timedOut), for: loadID)
     }
   }
 
@@ -149,29 +146,26 @@ class WebContentLoader: NSObject {
     do {
       let result = try await webView.evaluateJavaScript(
         "document.documentElement.outerHTML.toString()")
-      guard loadID == currentLoadID,
-        let handler = currentUpdateHandler,
+      guard !Task.isCancelled, loadID == currentLoadID,
+        currentUpdateHandler != nil,
         let html = result as? String,
         !html.isEmpty
       else { return }
 
       if let acceptsContent, !(await acceptsContent(html)) { return }
-      guard loadID == currentLoadID else { return }
-      loadTimeoutTask?.cancel()
-      currentUpdateHandler = nil
-      _ = try? await webView.evaluateJavaScript(
-        "window.__latestMutationObserver?.disconnect(); clearTimeout(window.__latestMutationTimer);"
-      )
-      guard loadID == currentLoadID else { return }
-      handler(.success(html))
+      guard !Task.isCancelled else { return }
+      finish(.success(html), for: loadID)
     } catch {
-      guard loadID == currentLoadID,
-        let handler = currentUpdateHandler
-      else { return }
-      loadTimeoutTask?.cancel()
-      currentUpdateHandler = nil
-      handler(.failure(error))
+      guard !Task.isCancelled else { return }
+      finish(.failure(error), for: loadID)
     }
+  }
+
+  private func finish(_ result: Result<String, Error>, for loadID: UUID) {
+    guard loadID == currentLoadID, let handler = currentUpdateHandler else { return }
+    // Clear ownership before invoking a callback that may start another load.
+    cancel()
+    handler(result)
   }
 
 }
@@ -179,36 +173,39 @@ class WebContentLoader: NSObject {
 extension WebContentLoader: WKNavigationDelegate {
 
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-    guard navigation == currentNavigation else { return }
+    guard webView === self.webView, navigation == currentNavigation else { return }
     scheduleContentUpdate()
   }
 
   func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-    guard navigation == currentNavigation else { return }
-    loadTimeoutTask?.cancel()
-    currentUpdateHandler?(.failure(error))
+    guard webView === self.webView, navigation == currentNavigation else { return }
+    finish(.failure(error), for: currentLoadID)
   }
 
   func webView(
     _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
     withError error: Error
   ) {
-    guard navigation == currentNavigation else { return }
-    loadTimeoutTask?.cancel()
-    currentUpdateHandler?(.failure(error))
+    guard webView === self.webView, navigation == currentNavigation else { return }
+    finish(.failure(error), for: currentLoadID)
   }
 
 }
 
-extension WebContentLoader: WKScriptMessageHandler {
-
-  func userContentController(
-    _ userContentController: WKUserContentController, didReceive message: WKScriptMessage
-  ) {
-    guard message.name == "updateHandler" else { return }
-    scheduleContentUpdate()
+extension WebContentLoader {
+  /// WebKit retains script handlers; forwarding weakly avoids owning the loader.
+  private final class MessageHandler: NSObject, WKScriptMessageHandler {
+    weak var loader: WebContentLoader?
+    init(loader: WebContentLoader) { self.loader = loader }
+    func userContentController(
+      _ userContentController: WKUserContentController, didReceive message: WKScriptMessage
+    ) {
+      guard let loader, message.webView === loader.webView, message.name == "updateHandler" else {
+        return
+      }
+      loader.scheduleContentUpdate()
+    }
   }
-
 }
 
 private enum WebContentLoaderError: Error {

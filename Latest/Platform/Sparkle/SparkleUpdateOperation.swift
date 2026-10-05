@@ -219,6 +219,8 @@ extension SparkleUpdateOperation: SPUUserDriver {
 
   // MARK: - Ignored Methods
 
+  // Sparkle calls this SPUUserDriver requirement through its protocol.
+  // swiftlint:disable:next unused_declaration
   func showCanCheck(forUpdates canCheckForUpdates: Bool) {}
   func dismissUserInitiatedUpdateCheck() {}
   func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {}

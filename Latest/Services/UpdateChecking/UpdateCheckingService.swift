@@ -67,29 +67,38 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
   }
 
   func updateAll() {
-    let apps = coordinator.appProvider.updatableApps
+    var apps = [App]()
+    var opensAppStore = false
+    for app in coordinator.appProvider.updatableApps where !updating.isUpdating(app) {
+      if app.bundle.source == .appStore {
+        if appStoreUpdateService.alwaysUsesManualUpdates {
+          opensAppStore = true
+          continue
+        }
+        if case .external = app.updateAction {
+          opensAppStore = true
+          continue
+        }
+      }
+      if case .builtIn = app.updateAction { apps.append(app) }
+    }
 
     if apps.contains(where: { $0.bundle.source == .appStore }) {
       do {
         try appStoreUpdateService.prepareForUpdates()
       } catch {
         guard let updatesPage = ExternalURL.updatesPage else { return }
-        if !appStoreUpdateService.alwaysUsesManualUpdates {
-          UpdateInstallHelperAlert.present(with: error, fallbackURL: updatesPage) { [weak self] in
-            self?.updateAll()
-          }
-          return
-        } else {
-          workspace.open(updatesPage)
+        UpdateInstallHelperAlert.present(with: error, fallbackURL: updatesPage) { [weak self] in
+          self?.updateAll()
         }
+        return
       }
     }
 
-    apps.forEach { app in
-      if !updating.isUpdating(app) {
-        updating.update(app, isBulkUpdate: true)
-      }
+    if opensAppStore, let updatesPage = ExternalURL.updatesPage {
+      workspace.open(updatesPage)
     }
+    apps.forEach { updating.update($0, isBulkUpdate: true) }
   }
 
   func updateCheckerDidStartScanningForApps(_ updateChecker: UpdateCheckCoordinator) {

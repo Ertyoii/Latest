@@ -14,7 +14,7 @@ struct LatestApplication: SwiftUI.App {
   private var appearanceRawValue = ApplicationAppearance.system.rawValue
 
   @StateObject private var environment: AppEnvironment
-  @StateObject private var appUpdateController = AppUpdateController()
+  private let appUpdateController = AppUpdateController()
 
   init() {
     _environment = StateObject(wrappedValue: .live())

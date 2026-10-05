@@ -16,7 +16,7 @@ import Observation
 @MainActor
 @Observable
 private final class UpdatesSelection {
-  // App equality compares identifiers. A refreshed object with that same
+  // App equality compares identifiers and versions. A refreshed object with that same
   // identifier must still invalidate its notes and metadata.
   private struct Value {
     let app: App?

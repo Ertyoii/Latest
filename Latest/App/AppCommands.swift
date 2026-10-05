@@ -113,7 +113,7 @@ struct LatestCommands: Commands {
   let appCommands: AppCommands
   @ObservedObject var updatesViewModel: UpdatesListViewModel
   @ObservedObject var updateCheckingService: UpdateCheckingService
-  @ObservedObject var appUpdateController: AppUpdateController
+  let appUpdateController: AppUpdateController
 
   var body: some Commands {
     CommandGroup(replacing: .appInfo) {

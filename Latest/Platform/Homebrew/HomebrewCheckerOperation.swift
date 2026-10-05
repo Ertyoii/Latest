@@ -15,10 +15,6 @@ final class HomebrewCheckerOperation: Sendable {
   private let bundle: App.Bundle
   private let repository: UpdateRepository?
 
-  static func canPerformUpdateCheck(forAppAt url: URL) -> Bool {
-    true
-  }
-
   init(with bundle: App.Bundle, repository: UpdateRepository?) {
     self.bundle = bundle
     self.repository = repository

@@ -62,34 +62,35 @@ private actor AppStoreLookupCache {
   func entry(
     for key: AppStoreLookupCacheKey, loader: @escaping @Sendable () async throws -> AppStoreEntry
   ) async throws -> AppStoreEntry {
+    try Task.checkCancellation()
     if let value = cachedValue(for: key, at: Date()) {
       return try value.result.get()
     }
 
     if let lookup = inFlightTasks[key] {
-      return try await lookup.task.value
+      return try await lookup.task.valueUnlessCancelled()
     }
 
-    let task = Task {
-      try await loader()
-    }
     let taskID = UUID()
     let taskGeneration = generation
-    inFlightTasks[key] = InFlightLookup(id: taskID, task: task)
-    defer { removeInFlightLookup(for: key, matching: taskID) }
-
-    do {
-      let entry = try await task.value
-      if taskGeneration == generation {
-        store(.entry(entry), for: key, lifetime: successfulLookupLifetime)
+    let task = Task {
+      defer { removeInFlightLookup(for: key, matching: taskID) }
+      do {
+        let entry = try await loader()
+        try Task.checkCancellation()
+        if taskGeneration == generation {
+          store(.entry(entry), for: key, lifetime: successfulLookupLifetime)
+        }
+        return entry
+      } catch let error as LatestError {
+        if taskGeneration == generation, case .updateInfoUnavailable = error {
+          store(.unavailable, for: key, lifetime: unavailableLookupLifetime)
+        }
+        throw error
       }
-      return entry
-    } catch let error as LatestError {
-      if taskGeneration == generation, case .updateInfoUnavailable = error {
-        store(.unavailable, for: key, lifetime: unavailableLookupLifetime)
-      }
-      throw error
     }
+    inFlightTasks[key] = InFlightLookup(id: taskID, task: task)
+    return try await task.valueUnlessCancelled()
   }
 
   private func removeInFlightLookup(for key: AppStoreLookupCacheKey, matching taskID: UUID) {
@@ -156,16 +157,15 @@ private final class AppStoreLookupClient: Sendable {
     await cache.removeAll()
   }
 
-  func lookup(bundleIdentifier: String, entityTypes: [String]) async throws -> AppStoreEntry {
-    try await lookup(bundleIdentifiers: [bundleIdentifier], entityTypes: entityTypes)
-  }
-
   func lookup(bundleIdentifiers: [String], entityTypes: [String]) async throws -> AppStoreEntry {
     var lastError: Error = LatestError.updateInfoUnavailable
     for bundleIdentifier in bundleIdentifiers {
       for entityType in entityTypes {
+        try Task.checkCancellation()
         do {
           return try await lookup(bundleIdentifier: bundleIdentifier, entityType: entityType)
+        } catch  where error is CancellationError || (error as? URLError)?.code == .cancelled {
+          throw error
         } catch {
           lastError = error
         }
@@ -350,18 +350,16 @@ extension AppStoreUpdateCheckerOperation {
   private func update(from entry: AppStoreEntry) -> App.Update {
     let version = Version(versionNumber: entry.versionNumber, buildNumber: nil)
     let action: App.Update.Action =
-      if Self.isIOSAppBundle(at: app.fileURL)
-        || AppStoreUpdateSettings.alwaysPerformManualUpdates.active
-      {
+      if Self.isIOSAppBundle(at: app.fileURL) {
         // iOS Apps: Open App Store page where the user can update manually. The update operation does not work for them.
         .external(
           label: NSLocalizedString(
             "AppStoreSource", comment: "The source name of apps loaded from the App Store."),
-          block: { app in
+          block: { _ in
             Self.openAppStorePage(for: entry)
           })
       } else {
-        // Perform the update in-app
+        // Native capability is stable; updateApp reads the preference when invoked.
         .builtIn(block: { app in
           Self.updateApp(app, entry: entry)
         })
@@ -374,6 +372,10 @@ extension AppStoreUpdateCheckerOperation {
   }
 
   private static func updateApp(_ app: App.Bundle, entry: AppStoreEntry) {
+    if AppStoreUpdateSettings.alwaysPerformManualUpdates.active {
+      openAppStorePage(for: entry)
+      return
+    }
     do {
       try AppStoreUpdater.prepareForUpdates()
       AppStoreUpdater.enqueueUpdate(for: app, appStoreIdentifier: entry.appStoreIdentifier)
@@ -387,7 +389,7 @@ extension AppStoreUpdateCheckerOperation {
   }
 
   private static func openAppStorePage(for entry: AppStoreEntry) {
-    NSWorkspace.shared.open(entry.pageURL)
+    Task { @MainActor in NSWorkspace.shared.open(entry.pageURL) }
   }
 
   /// Fetches update info using the App Store lookup entities in priority order.

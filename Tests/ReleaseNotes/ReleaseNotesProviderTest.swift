@@ -14,6 +14,65 @@ import XCTest
 
 final class ReleaseNotesProviderTest: XCTestCase {
   @MainActor
+  func testCancelledWebExtractionCannotPublishOlderAcceptedContent() async throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).html")
+    defer { try? FileManager.default.removeItem(at: file) }
+    try """
+    <html><body><p id="notes">Original notes.</p><script>
+    setTimeout(function() { document.getElementById('notes').textContent = 'Replacement notes.'; }, 800);
+    </script></body></html>
+    """.write(to: file, atomically: true, encoding: .utf8)
+    let gate = WebContentAcceptanceGate()
+    let completed = expectation(description: "Latest HTML completed")
+    var contents = [String]()
+    let loader = WebContentLoader()
+    defer { loader.cancel() }
+    loader.load(from: file, acceptsContent: { await gate.accept($0) }) { result in
+      switch result {
+      case .success(let html): contents.append(html)
+      case .failure(let error): XCTFail("Local page failed: \(error)")
+      }
+      completed.fulfill()
+    }
+    await fulfillment(of: [gate.originalRead, gate.replacementRead], timeout: 4)
+    await gate.resumeOriginal()
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertTrue(
+      contents.isEmpty, "An extraction cancelled by a newer mutation must not finish the load")
+    await gate.resumeReplacement()
+    await fulfillment(of: [completed], timeout: 2)
+    XCTAssertEqual(contents.count, 1)
+    XCTAssertTrue(contents.first?.contains(">Replacement notes.</p>") == true)
+  }
+
+  @MainActor
+  func testWebLoaderReleasesItsOwnerDuringAnActiveLoad() {
+    var loader: WebContentLoader? = WebContentLoader()
+    weak let weakLoader = loader
+    loader?.load(from: URL(fileURLWithPath: "/missing-\(UUID()).html")) { _ in }
+    loader = nil
+    XCTAssertNil(weakLoader)
+  }
+
+  @MainActor
+  func testWebLoaderFailureFinishesOnceAndReleasesResources() async throws {
+    var loader: WebContentLoader? = WebContentLoader()
+    weak let weakLoader = loader
+    let completed = expectation(description: "Missing page failed")
+    var completions = 0
+    loader?.load(from: URL(fileURLWithPath: "/missing-\(UUID()).html")) { result in
+      if case .success = result { XCTFail("A missing file must fail") }
+      completions += 1
+      completed.fulfill()
+    }
+    await fulfillment(of: [completed], timeout: 3)
+    try await Task.sleep(for: .milliseconds(200))
+    XCTAssertEqual(completions, 1)
+    loader = nil
+    XCTAssertNil(weakLoader)
+  }
+
+  @MainActor
   func testFailedUpdateCheckStillLoadsCachedVendorNotes() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -313,5 +372,35 @@ private final class DeferredNotesProvider: ReleaseNotesProviding {
   var completions = [ReleaseNotesProvider.Completion]()
   func releaseNotes(for app: App, with completion: @escaping ReleaseNotesProvider.Completion) {
     completions.append(completion)
+  }
+}
+
+private actor WebContentAcceptanceGate {
+  nonisolated let originalRead = XCTestExpectation(
+    description: "Original snapshot waiting for acceptance")
+  nonisolated let replacementRead = XCTestExpectation(
+    description: "Replacement snapshot waiting for acceptance")
+  private var original: CheckedContinuation<Bool, Never>?
+  private var replacement: CheckedContinuation<Bool, Never>?
+
+  func accept(_ html: String) async -> Bool {
+    await withCheckedContinuation { continuation in
+      if html.contains(">Original notes.</p>") {
+        original = continuation
+        originalRead.fulfill()
+      } else {
+        replacement = continuation
+        replacementRead.fulfill()
+      }
+    }
+  }
+
+  func resumeOriginal() {
+    original?.resume(returning: true)
+    original = nil
+  }
+  func resumeReplacement() {
+    replacement?.resume(returning: true)
+    replacement = nil
   }
 }

@@ -74,6 +74,14 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
       do {
         let (_, completed, response) = try await CKPurchaseController.shared().perform(
           purchase, withOptions: 0)
+        // Cancellation can finish the operation before Apple creates its download.
+        guard !self.isCancelled else {
+          for download in response.downloads {
+            download.cancel(withStoreClient: ISStoreClient(storeClientType: 0))
+          }
+          self.finishOnMain()
+          return
+        }
         appStoreUpdateLogger.notice(
           "Purchase completed=\(completed), downloads=\(response.downloads.count)"
         )
@@ -91,13 +99,19 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
     super.cancel()
     guard isCancelled else { return }
     Task { @MainActor in
-      if let download = CKDownloadQueue.shared().download(forItemIdentifier: self.itemIdentifier)
-        as? SSDownload
-      {
-        download.cancel(withStoreClient: ISStoreClient(storeClientType: 0))
-      }
+      CKPurchaseController.shared().cancelPurchase(
+        withProductID: NSNumber(value: self.itemIdentifier))
+      self.cancelPendingDownload()
       // installer cannot safely be interrupted halfway through replacing an app.
       if !self.isInstalling { self.finish() }
+    }
+  }
+
+  @MainActor private func cancelPendingDownload() {
+    if let download = CKDownloadQueue.shared().download(forItemIdentifier: itemIdentifier)
+      as? SSDownload
+    {
+      download.cancel(withStoreClient: ISStoreClient(storeClientType: 0))
     }
   }
 

@@ -127,24 +127,20 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
 
   private struct CheckerDefinition: Sendable {
     let source: App.Source
-    let canPerform: @Sendable (URL) -> Bool
     let check: @Sendable (App.Bundle, UpdateRepository?) async throws -> App.Update
   }
 
   private static let availableCheckers: [CheckerDefinition] = [
     CheckerDefinition(
       source: .appStore,
-      canPerform: AppStoreUpdateCheckerOperation.canPerformUpdateCheck,
       check: { bundle, _ in try await AppStoreUpdateCheckerOperation(with: bundle).check() }
     ),
     CheckerDefinition(
       source: .sparkle,
-      canPerform: SparkleUpdateCheckerOperation.canPerformUpdateCheck,
       check: { bundle, _ in try await SparkleUpdateCheckerOperation(with: bundle).check() }
     ),
     CheckerDefinition(
       source: .none,
-      canPerform: HomebrewCheckerOperation.canPerformUpdateCheck,
       check: { bundle, repository in
         try await HomebrewCheckerOperation(with: bundle, repository: repository).check()
       }
@@ -360,11 +356,6 @@ final class UpdateCheckGenerationTracker: Sendable {
 // MARK: - Update Checking Operations
 
 extension UpdateCheckCoordinator {
-
-  /// Returns the update source for the app at the given url.
-  static func source(forAppAt url: URL) -> App.Source? {
-    availableCheckers.first { $0.canPerform(url) }?.source
-  }
 
   static func check(_ bundle: App.Bundle, repository: UpdateRepository?) async throws -> App.Update
   {

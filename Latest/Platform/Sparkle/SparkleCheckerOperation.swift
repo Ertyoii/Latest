@@ -38,10 +38,6 @@ private actor SparkleCheckResultGate {
 final class SparkleUpdateCheckerOperation: NSObject, @unchecked Sendable {
   static let checkTimeout: TimeInterval = 10
 
-  static func canPerformUpdateCheck(forAppAt url: URL) -> Bool {
-    feedURL(from: url) != nil
-  }
-
   private static func feedURL(from appURL: URL) -> URL? {
     guard let bundle = Bundle(path: appURL.path) else { return nil }
     return SparkleFeed.feedURL(from: bundle)
@@ -223,6 +219,8 @@ extension SparkleUpdateCheckerOperation: SPUUserDriver {
     withApplicationTerminated applicationTerminated: Bool,
     retryTerminatingApplication: @escaping () -> Void
   ) {}
+  // Sparkle calls this SPUUserDriver requirement through its protocol.
+  // swiftlint:disable:next unused_declaration
   func showCanCheck(forUpdates canCheckForUpdates: Bool) {}
   func dismissUserInitiatedUpdateCheck() {}
   func showSendingTerminationSignal() {}

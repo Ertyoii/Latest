@@ -35,6 +35,8 @@ extension App {
 
 extension App.Source {
   /// Possible states for whether a source is supported by the app.
+  // Referenced by supportState and presentation; the analyzer misses contextual cases.
+  // swiftlint:disable:next unused_declaration
   enum SupportState: Sendable {
     /// The source is fully supported, including in-app updates.
     case full

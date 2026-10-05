@@ -4,6 +4,24 @@ import XCTest
 @testable import Latest
 
 final class AppDownloadUpdateTest: XCTestCase {
+  func testInvalidDiskImagePreservesAttachmentError() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let extracted = directory.appendingPathComponent("payload")
+    try FileManager.default.createDirectory(at: extracted, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let archive = directory.appendingPathComponent("invalid.dmg")
+    try Data("This is not a disk image".utf8).write(to: archive)
+    do {
+      try await AppDownloadUpdateOperation.stageApp(
+        from: archive, appPath: "Fixture.app", extracted: extracted,
+        to: directory.appendingPathComponent("candidate.app"))
+      XCTFail("Invalid images must fail before copying")
+    } catch AppDownloadError.toolFailed(let message) {
+      XCTAssertTrue(message.contains("attach failed"), message)
+      XCTAssertFalse(message.contains("detach failed"), message)
+    }
+  }
+
   func testZIPExtractionCannotWriteThroughAnArchiveSymlink() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let outside = directory.appendingPathComponent("outside")

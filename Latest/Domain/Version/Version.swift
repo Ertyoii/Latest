@@ -298,15 +298,6 @@ extension Version {
       case number(value: Int)  // 0..9
       case string(value: String)  // Everything else
 
-      func isSameType(_ other: Atom) -> Bool {
-        switch (self, other) {
-        case (.number(_), .number(_)),
-          (.string(_), .string(_)):
-          return true
-        default:
-          return false
-        }
-      }
     }
 
     case separator(character: String)  // Newlines, punctuation..
@@ -325,16 +316,6 @@ extension Version {
           return value
         }
       }.joined()
-    }
-
-    func isSameType(_ other: Segment) -> Bool {
-      switch (self, other) {
-      case (.separator, .separator),
-        (.component(_), .component(_)):
-        return true
-      default:
-        return false
-      }
     }
 
   }

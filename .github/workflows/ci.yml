@@ -40,6 +40,12 @@ jobs:
           path: build/DerivedData/SourcePackages
           key: packages-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('Latest.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
 
+      - name: Cache pinned SwiftLint
+        uses: actions/cache@v6
+        with:
+          path: build/tools
+          key: swiftlint-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('script/lint.sh') }}
+
       - name: Resolve pinned dependencies
         run: |
           xcodebuild -resolvePackageDependencies \
@@ -47,6 +53,14 @@ jobs:
             -derivedDataPath build/DerivedData \
             -onlyUsePackageVersionsFromResolvedFile
           git diff --exit-code -- Latest.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+      - name: Check formatting and correctness lint
+        run: |
+          ./script/format.sh --check
+          ./script/lint.sh
+
+      - name: Analyze declarations (advisory findings)
+        run: ./script/lint.sh --analyze
 
       - name: Run structure, behavior, and visual gates
         env:
@@ -63,6 +77,7 @@ jobs:
           name: macOS-test-results
           path: |
             build/ci-tests.log
+            build/lint*.log
             build/*.xcresult
             build/production-visuals/**/*.png
             build/visual-diagnostics/*.png

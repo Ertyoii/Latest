@@ -63,6 +63,7 @@
 		509512221FF36301003D2D7F /* Bundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5095121F1FF36301003D2D7F /* Bundle.swift */; };
 		509512281FF3631D003D2D7F /* UpdateCheckCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 509512251FF3631D003D2D7F /* UpdateCheckCoordinator.swift */; };
 		509735502798D17E00FFE809 /* MainActorAsyncStreamRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5097354F2798D17E00FFE809 /* MainActorAsyncStreamRegistry.swift */; };
+		B951B0013000000000000001 /* Task+Cancellation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B951B0023000000000000001 /* Task+Cancellation.swift */; };
 		509B30EE28DBB17D00DDAA2E /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 509B30ED28DBB17D00DDAA2E /* Sparkle */; };
 		509C4ABC2AD1FFCC00E9C2E1 /* FailableDecodable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 509C4ABB2AD1FFCC00E9C2E1 /* FailableDecodable.swift */; };
 		50A86BBD27EA6BF4007A5F80 /* SparkleLicense.txt in Resources */ = {isa = PBXBuildFile; fileRef = 50A86BBC27EA6BF4007A5F80 /* SparkleLicense.txt */; };
@@ -309,6 +310,7 @@
 		5095121F1FF36301003D2D7F /* Bundle.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = "Bundle.swift"; sourceTree = "<group>"; };
 		509512251FF3631D003D2D7F /* UpdateCheckCoordinator.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = "UpdateCheckCoordinator.swift"; sourceTree = "<group>"; };
 		5097354F2798D17E00FFE809 /* MainActorAsyncStreamRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MainActorAsyncStreamRegistry.swift"; sourceTree = "<group>"; };
+		B951B0023000000000000001 /* Task+Cancellation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Task+Cancellation.swift"; sourceTree = "<group>"; };
 		5097CD6D28A82A5D00D66B4C /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/Localizable.strings; sourceTree = "<group>"; };
 		5097CD6E28A82A5F00D66B4C /* ca */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ca; path = ca.lproj/Localizable.strings; sourceTree = "<group>"; };
 		5097CD7128A82A6800D66B4C /* ca */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ca; path = ca.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -877,6 +879,7 @@
 				509C4ABB2AD1FFCC00E9C2E1 /* FailableDecodable.swift */,
 				506A8F6622EC14CC00C755AF /* LatestError.swift */,
 				5097354F2798D17E00FFE809 /* MainActorAsyncStreamRegistry.swift */,
+				B951B0023000000000000001 /* Task+Cancellation.swift */,
 				5039DE8A22CA39ED0088B39B /* StatefulOperation.swift */,
 			);
 			path = Support;
@@ -1233,6 +1236,7 @@
 			files = (
 				E45390A9AC334B3F99000104 /* ReleaseNotesLegacyBridge.swift in Sources */,
 				509735502798D17E00FFE809 /* MainActorAsyncStreamRegistry.swift in Sources */,
+				B951B0013000000000000001 /* Task+Cancellation.swift in Sources */,
 				51A001022FC3000000000001 /* AppEnvironment.swift in Sources */,
 				51A001032FC3000000000001 /* AppCommands.swift in Sources */,
 				51A001042FC3000000000001 /* UpdateCheckingService.swift in Sources */,
@@ -1657,7 +1661,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.85;
+				MARKETING_VERSION = 0.86;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1700,7 +1704,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.85;
+				MARKETING_VERSION = 0.86;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

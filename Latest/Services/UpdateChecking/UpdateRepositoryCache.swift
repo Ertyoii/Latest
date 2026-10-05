@@ -80,6 +80,16 @@ final class UpdateRepositoryCache: Sendable {
     }
   }
 
+  /// A payload that cannot be decoded must be fetched again, including its validators.
+  func invalidate() {
+    userDefaults.withLock { userDefaults in
+      if let cacheURL { try? FileManager.default.removeItem(at: cacheURL) }
+      for key in [userDefaultsKey, eTagKey, lastModifiedKey] {
+        userDefaults.value.removeObject(forKey: key)
+      }
+    }
+  }
+
   private var eTagKey: String {
     userDefaultsKey + ".etag"
   }

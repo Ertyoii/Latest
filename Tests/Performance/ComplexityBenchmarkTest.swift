@@ -51,6 +51,14 @@ final class ComplexityBenchmarkTest: XCTestCase {
 
     cache.markFresh()
     XCTAssertEqual(cache.cachedData(), payload)
+
+    cache.invalidate()
+    XCTAssertNil(cache.cachedData(allowExpired: true), "Rejected data must not remain a fallback")
+    XCTAssertNil(cache.validators.eTag, "A retry must not revalidate a rejected payload")
+    XCTAssertNil(cache.validators.lastModified)
+    let replacement = Data("[{}]".utf8)
+    cache.store(replacement, response: response)
+    XCTAssertEqual(cache.cachedData(), replacement)
   }
 
   func testCompactRepositoryIndexRoundTripAndInvalidation() throws {

@@ -262,6 +262,8 @@ private struct LocationsFixture: View {
     fileURLWithPath: "/Volumes/Archived Applications", isDirectory: true)
   private static let urls = [applicationsURL, utilitiesURL, archiveURL]
 
+  // The synthesized $selection binding is consumed by SettingsLocationsPane.
+  // swiftlint:disable:next unused_declaration
   @State private var selection: URL? = applicationsURL
 
   var body: some View {

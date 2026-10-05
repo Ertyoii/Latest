@@ -26,10 +26,7 @@ class IconCache {
   private let cache: NSCache<NSString, NSImage>
   private var missingApplicationIcon: NSImage?
 
-  /// Loads an icon immediately for a row that is being materialized. The
-  /// AppKit renderer always had the icon before its cell was displayed; using
-  /// the same contract prevents a first-frame blank in the native table's
-  /// visible rows.
+  /// Loads an icon before a row is displayed, avoiding a blank first frame.
   func iconImmediately(for app: App) -> NSImage {
     loadIcon(for: app)
   }
@@ -46,6 +43,9 @@ class IconCache {
   }
 
   private func loadIcon(for app: App) -> NSImage {
+    let cacheKey = cacheKey(for: app)
+    if let icon = cache.object(forKey: cacheKey) { return icon }
+
     // Discovery results normally point to real bundles. Fixtures, stale
     // volumes, and benchmark rows can point at missing paths; asking
     // NSWorkspace to rediscover the same generic icon for every such path
@@ -56,12 +56,6 @@ class IconCache {
       }
       let icon = NSWorkspace.shared.icon(forFile: app.fileURL.path)
       missingApplicationIcon = icon
-      return icon
-    }
-
-    let cacheKey = cacheKey(for: app)
-
-    if let icon = self.cache.object(forKey: cacheKey) {
       return icon
     }
 

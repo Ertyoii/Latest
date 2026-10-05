@@ -15,6 +15,9 @@ struct StructuredArticle: Decodable {
 }
 
 enum ReleaseNotesMarkup {
+  // These developer-authored literals are exercised by markup tests. An invalid
+  // pattern is a programming error; it must not silently disable extraction.
+  // swiftlint:disable force_try
   enum Regexes {
     static let omittedElements = try! NSRegularExpression(
       pattern: #"(?is)<(script|style|noscript|svg)\b.*?</\1>"#)
@@ -43,6 +46,7 @@ enum ReleaseNotesMarkup {
       pattern: #"(?is)<a\b[^>]*\bhref\s*=\s*[\"']([^\"']+)[\"']"#)
     static let numericEntity = try! NSRegularExpression(pattern: #"&#(x?[0-9A-Fa-f]+);"#)
   }
+  // swiftlint:enable force_try
 
   static func replacingMatches(
     in string: String,
