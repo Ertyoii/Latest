@@ -40,7 +40,7 @@ enum AppStoreUpdater {
 private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   private let itemIdentifier: UInt64
   private let installURL: URL
-  @MainActor private var observerIdentifier: CKDownloadQueueObserver?
+  @MainActor private var observerIdentifier: String?
   @MainActor private var artifacts = AppStoreDownloadArtifacts()
   @MainActor private var isInstalling = false
 
@@ -74,18 +74,20 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
       do {
         let (_, completed, response) = try await CKPurchaseController.shared().perform(
           purchase, withOptions: 0)
+        let downloads = response?.downloads ?? []
         // Cancellation can finish the operation before Apple creates its download.
         guard !self.isCancelled else {
-          for download in response.downloads {
-            download.cancel(withStoreClient: ISStoreClient(storeClientType: 0))
+          for download in downloads {
+            CKDownloadQueue.shared().cancelDownload(
+              download, promptToConfirm: false, askToDelete: false)
           }
           self.finishOnMain()
           return
         }
         appStoreUpdateLogger.notice(
-          "Purchase completed=\(completed), downloads=\(response.downloads.count)"
+          "Purchase completed=\(completed), downloads=\(downloads.count)"
         )
-        if response.downloads.isEmpty, !self.isFinished, !self.isInstalling {
+        if downloads.isEmpty, !self.isFinished, !self.isInstalling {
           self.finish(with: LatestError.updateInfoUnavailable)
         }
       } catch {
@@ -108,10 +110,9 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
   }
 
   @MainActor private func cancelPendingDownload() {
-    if let download = CKDownloadQueue.shared().download(forItemIdentifier: itemIdentifier)
-      as? SSDownload
-    {
-      download.cancel(withStoreClient: ISStoreClient(storeClientType: 0))
+    let queue = CKDownloadQueue.shared()
+    if let download = queue.download(forItemIdentifier: itemIdentifier) {
+      queue.cancelDownload(download, promptToConfirm: false, askToDelete: false)
     }
   }
 
@@ -122,7 +123,7 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
   @MainActor private func finishOnMain() {
     guard !isFinished else { return }
     if let observerIdentifier {
-      CKDownloadQueue.shared().remove(observerIdentifier)
+      CKDownloadQueue.shared().removeObserver(observerIdentifier)
       self.observerIdentifier = nil
     }
     artifacts.removeAll()
@@ -222,28 +223,30 @@ private struct AppStoreDownloadSnapshot: Sendable {
   let cancelled: Bool
   let error: Error?
   let receiptData: Data?
-  let phase: Int64
+  let phase: Int64?
   let loaded: Int64
   let total: Int64
 
   init?(_ download: SSDownload, itemIdentifier: UInt64) {
-    guard download.metadata.itemIdentifier == itemIdentifier, let status = download.status else {
+    guard let metadata = download.metadata, metadata.itemIdentifier == itemIdentifier,
+      let status = download.status
+    else {
       return nil
     }
     failed = status.isFailed
     cancelled = status.isCancelled
     error = status.error
-    receiptData = download.metadata.receiptData
-    phase = status.activePhase.phaseType
-    loaded = status.activePhase.progressValue
-    total = status.activePhase.totalProgressValue
+    receiptData = metadata.receiptData
+    let activePhase = status.activePhase
+    phase = activePhase?.phaseType
+    loaded = activePhase?.progressValue ?? 0
+    total = activePhase?.totalProgressValue ?? 0
   }
 }
 
 extension AppStoreUpdateOperation: CKDownloadQueueObserver {
-  func downloadQueue(_ queue: CKDownloadQueue!, statusChangedFor download: SSDownload!) {
-    guard let download,
-      let snapshot = AppStoreDownloadSnapshot(download, itemIdentifier: itemIdentifier)
+  func downloadQueue(_ queue: CKDownloadQueue, statusChangedFor download: SSDownload) {
+    guard let snapshot = AppStoreDownloadSnapshot(download, itemIdentifier: itemIdentifier)
     else { return }
     Task { @MainActor in
       guard !self.isFinished, !self.isInstalling, !self.isCancelled else { return }
@@ -259,13 +262,12 @@ extension AppStoreUpdateOperation: CKDownloadQueueObserver {
     }
   }
 
-  func downloadQueue(_ queue: CKDownloadQueue!, changedWithRemoval download: SSDownload!) {
-    guard let download,
-      let snapshot = AppStoreDownloadSnapshot(download, itemIdentifier: itemIdentifier)
+  func downloadQueue(_ queue: CKDownloadQueue, changedWithRemoval download: SSDownload) {
+    guard let snapshot = AppStoreDownloadSnapshot(download, itemIdentifier: itemIdentifier)
     else { return }
     Task { @MainActor in await self.removed(snapshot) }
   }
-  func downloadQueue(_ queue: CKDownloadQueue!, changedWithAddition download: SSDownload!) {
+  func downloadQueue(_ queue: CKDownloadQueue, changedWithAddition download: SSDownload) {
     downloadQueue(queue, statusChangedFor: download)
   }
 }
@@ -358,8 +360,7 @@ extension SSPurchase {
         "productType=C&price=0&salableAdamId=\(itemIdentifier)&pg=default&appExtVrsId=0&pricingParameters=STDRDL"
     )
 
-    let downloadMetadata = SSDownloadMetadata()
-    downloadMetadata.kind = "software"
+    let downloadMetadata = SSDownloadMetadata(kind: "software")
     downloadMetadata.itemIdentifier = itemIdentifier
 
     self.downloadMetadata = downloadMetadata

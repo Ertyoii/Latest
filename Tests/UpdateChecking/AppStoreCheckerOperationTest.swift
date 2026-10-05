@@ -8,12 +8,52 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-05-12.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
+import CommerceKit
+import StoreFoundation
 import Synchronization
 import XCTest
 
 @testable import Latest
 
 class AppStoreCheckerOperationTest: XCTestCase {
+  @MainActor
+  func testDownloadObserverRegistrationReturnsRemovableStringToken() {
+    let observer = PassiveAppStoreDownloadObserver()
+    let queue = CKDownloadQueue.shared()
+    let token: String = queue.add(observer)
+    defer { queue.removeObserver(token) }
+    XCTAssertFalse(token.isEmpty)
+  }
+
+  @MainActor
+  func testMissingPurchaseResponseSurvivesSwiftAsyncImport() async throws {
+    let purchase = SSPurchase(buyParameters: "")
+    let (_, completed, response) = try await EmptyAppStorePurchaseController().perform(
+      purchase, withOptions: 0)
+    XCTAssertFalse(completed)
+    XCTAssertNil(response, "A missing callback response must not be force-unwrapped by Swift")
+  }
+
+  func testDownloadFieldsCanBeAbsentBeforeProgressStarts() {
+    let download = SSDownload()
+    download.metadata = nil
+    download.status = nil
+    XCTAssertNil(download.metadata)
+    XCTAssertNil(download.status)
+
+    let status = SSDownloadStatus()
+    status.error = nil
+    XCTAssertNil(status.error)
+    XCTAssertNil(status.activePhase)
+
+    let response = SSPurchaseResponse()
+    response.downloads = nil
+    XCTAssertNil(response.downloads)
+
+    let metadata = SSDownloadMetadata(kind: "software")
+    XCTAssertEqual(metadata.kind, "software")
+  }
+
   @MainActor
   func testNativeActionKeepsItsCapabilityWhenCheckedUnderManualPreference() async throws {
     let defaults = UserDefaults.standard
@@ -329,6 +369,23 @@ class AppStoreCheckerOperationTest: XCTestCase {
     try Data().write(to: url)
   }
 
+}
+
+/// Observe the real queue without initiating or changing a download.
+private final class PassiveAppStoreDownloadObserver: NSObject, CKDownloadQueueObserver {
+  func downloadQueue(_ queue: CKDownloadQueue, changedWithAddition download: SSDownload) {}
+  func downloadQueue(_ queue: CKDownloadQueue, changedWithRemoval download: SSDownload) {}
+  func downloadQueue(_ queue: CKDownloadQueue, statusChangedFor download: SSDownload) {}
+}
+
+/// Exercise the Clang callback-to-async bridge without contacting the App Store.
+private final class EmptyAppStorePurchaseController: CKPurchaseController {
+  override func perform(
+    _ purchase: SSPurchase, withOptions options: UInt64,
+    completionHandler: SSPurchaseCompletion?
+  ) {
+    completionHandler?(purchase, false, nil, nil)
+  }
 }
 
 /// Models two independent stale layers: a URL-keyed CDN and URLSession's HTTP cache.

@@ -90,8 +90,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (id)initWithCoder:(id)arg1;
 - (void)encodeWithCoder:(id)arg1;
 
-- (nullable instancetype)initWithDictionary:(id)arg1;
-- (nullable instancetype)initWithKind:(id)arg1;
+- (instancetype)initWithDictionary:(nullable NSDictionary *)dictionary;
+- (instancetype)initWithKind:(nullable NSString *)kind;
 - (instancetype)init;
 
 @end

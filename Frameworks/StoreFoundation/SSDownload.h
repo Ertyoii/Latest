@@ -40,9 +40,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property BOOL installAfterLogout; // @synthesize installAfterLogout=_installAfterLogout;
 @property unsigned long long downloadType; // @synthesize downloadType=_downloadType;
 @property(retain, nullable, nonatomic) SSDownloadStatus *status; // @synthesize status=_status;
-@property(copy, nonatomic) SSDownloadMetadata *metadata; // @synthesize metadata=_metadata;
-@property(copy, nonatomic) NSArray<SSDownloadAsset *> *assets; // @synthesize assets=_assets;
-@property(copy) SSDownloadAsset *primaryAsset;
+@property(copy, nonatomic, nullable) SSDownloadMetadata *metadata; // @synthesize metadata=_metadata;
+@property(copy, nonatomic, nullable) NSArray<SSDownloadAsset *> *assets; // @synthesize assets=_assets;
+@property(readonly, nullable) SSDownloadAsset *primaryAsset;
 
 //- (void).cxx_destruct;
 
