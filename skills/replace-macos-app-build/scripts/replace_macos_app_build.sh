@@ -14,6 +14,8 @@ RESTART_DOCK=0
 OPEN_APP=0
 DRY_RUN=0
 ARTIFACT_NAMES=()
+INVENTORY_OPTIONS=()
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 usage() {
   cat <<'USAGE'
@@ -28,13 +30,16 @@ Options:
   --app-name NAME         Built app product name without .app.
   --install-name NAME     Installed app name in /Applications. Defaults to --app-name.
   --bundle-id ID          Expected bundle id. If omitted, read from built Info.plist.
-  --artifact-name NAME    Extra stale .app product name to clean. Repeatable.
+  --artifact-name NAME    Extra app name to discover (never authorizes deletion). Repeatable.
+  --cleanup-bundle-id ID  Explicitly allow cleanup of a preview/test app identity. Repeatable.
+  --cleanup-root PATH     Also clean inside a Git worktree's build/ output. Repeatable.
+  --preserve-app PATH     Explicitly retain a baseline or app used by another task. Repeatable.
   --code-signing VALUE    CODE_SIGNING_ALLOWED value. Default: NO.
   --clean-artifacts       Compatibility flag; duplicate cleanup is now the default.
   --keep-build            Explicitly retain the fresh build for debugging.
   --restart-dock          Restart Dock after registration.
   --open                  Open the installed app after replacement.
-  --dry-run               Print destructive/copy commands without executing them.
+  --dry-run               Inventory filesystem, LaunchServices and Spotlight; print a nonmutating plan.
 USAGE
 }
 
@@ -48,6 +53,7 @@ while [[ $# -gt 0 ]]; do
     --install-name) INSTALL_NAME="$2"; shift 2 ;;
     --bundle-id) BUNDLE_ID="$2"; shift 2 ;;
     --artifact-name) ARTIFACT_NAMES+=("$2"); shift 2 ;;
+    --cleanup-bundle-id|--cleanup-root|--preserve-app) INVENTORY_OPTIONS+=("$1" "$2"); shift 2 ;;
     --code-signing) CODE_SIGNING_ALLOWED_VALUE="$2"; shift 2 ;;
     --clean-artifacts) shift ;;
     --keep-build) KEEP_BUILD=1; shift ;;
@@ -81,7 +87,7 @@ for name in "$CONFIGURATION" "$APP_NAME" "$INSTALL_NAME" "${ARTIFACT_NAMES[@]}";
   fi
 done
 # Limit both the source and cleanup to build-output trees, never source folders.
-DERIVED_DATA="$(python3 - "$PROJECT_ROOT" "$DERIVED_DATA" <<'PYTHON'
+DERIVED_DATA="$(/usr/bin/python3 - "$PROJECT_ROOT" "$DERIVED_DATA" <<'PYTHON'
 from pathlib import Path
 import sys
 root, supplied = sys.argv[1:]
@@ -99,11 +105,23 @@ if [[ -L "$INSTALLED_APP" ]]; then
   echo "Refusing to replace a symlink at $INSTALLED_APP" >&2
   exit 1
 fi
+inventory() {
+  local arguments=(inventory --project-root "$PROJECT_ROOT" --installed-app "$INSTALLED_APP" --built-app "$BUILT_APP" --bundle-id "$BUNDLE_ID")
+  local name
+  for name in "${ARTIFACT_NAMES[@]}"; do arguments+=(--artifact-name "$name"); done
+  [[ "$KEEP_BUILD" -eq 0 ]] || arguments+=(--keep-build)
+  # Bash 3.2 with nounset rejects expansion of an empty array.
+  if [[ ${#INVENTORY_OPTIONS[@]} -gt 0 ]]; then arguments+=("${INVENTORY_OPTIONS[@]}"); fi
+  /usr/bin/python3 "$SCRIPT_DIR/app_inventory.py" "${arguments[@]}" "$@"
+}
 if [[ "$DRY_RUN" -eq 1 ]]; then
+  if [[ -z "$BUNDLE_ID" && -f "$INSTALLED_APP/Contents/Info.plist" ]]; then
+    BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INSTALLED_APP/Contents/Info.plist")"
+  fi
   echo "Plan: build $PROJECT / $SCHEME ($CONFIGURATION) at $BUILT_APP"
   echo "Plan: verify identity, stop the matching app, copy to $INSTALLED_APP, and verify all copied content"
-  echo "Plan: unregister and remove matching-identity app products from repository/build and Xcode DerivedData"
-  echo "Plan: keep fresh build=$KEEP_BUILD; register and index $INSTALLED_APP; open=$OPEN_APP"
+  inventory
+  echo "Plan: cleanup requires exact allowed identifiers and output roots; keep fresh build=$KEEP_BUILD; open=$OPEN_APP"
   exit 0
 fi
 
@@ -150,6 +168,9 @@ echo "Install target: $INSTALLED_APP"
 echo "Bundle id: $BUNDLE_ID"
 echo "Version: $MARKETING_VERSION ($BUILD_VERSION)"
 
+# Fail discovery before touching the installed copy; a failed query is not an empty inventory.
+inventory
+
 echo "Stopping the matching running app..."
 osascript -e "if application id \"$BUNDLE_ID\" is running then tell application id \"$BUNDLE_ID\" to quit"
 for attempt in {1..20}; do
@@ -173,26 +194,8 @@ if [[ -n "$differences" ]]; then
   exit 1
 fi
 
-echo "Cleaning duplicate app products, including the fresh build..."
-while IFS= read -r -d '' candidate; do
-  [[ "$candidate" == "$INSTALLED_APP" ]] && continue
-  [[ "$KEEP_BUILD" -eq 1 && "$candidate" == "$BUILT_APP" ]] && continue
-  [[ -L "$candidate" ]] && continue
-  candidate_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$candidate/Contents/Info.plist" 2>/dev/null || true)"
-  if [[ "$candidate_id" != "$BUNDLE_ID" ]]; then
-    echo "Preserving different bundle identity: $candidate"
-    continue
-  fi
-  "$LSREGISTER" -u "$candidate"
-  rm -rf -- "$candidate"
-  echo "Removed $candidate"
-done < <(
-  for artifact_name in "${ARTIFACT_NAMES[@]}"; do
-    for root in "$PROJECT_ROOT/build" "$HOME/Library/Developer/Xcode/DerivedData"; do
-      [[ ! -d "$root" ]] || find "$root" -type d -name "$artifact_name.app" -prune -print0
-    done
-  done
-)
+echo "Cleaning authorized duplicate app products, including the fresh build..."
+inventory --remove
 
 echo "Registering the installed app and refreshing Spotlight..."
 "$LSREGISTER" -f -R -trusted "$INSTALLED_APP"
@@ -208,7 +211,21 @@ if [[ "$OPEN_APP" -eq 1 ]]; then
   open -a "$INSTALLED_APP"
 fi
 
-if [[ "$DRY_RUN" -eq 0 ]]; then
-  echo "Verifying LaunchServices..."
-  osascript -e "POSIX path of (path to app id \"$BUNDLE_ID\")"
-fi
+echo "Verifying installed identity, LaunchServices and running path..."
+VERIFY_ARGUMENTS=(verify-launch --installed-app "$INSTALLED_APP" --bundle-id "$BUNDLE_ID" --version "$MARKETING_VERSION" --build "$BUILD_VERSION")
+[[ "$OPEN_APP" -eq 0 ]] || VERIFY_ARGUMENTS+=(--require-running)
+verified=0
+for attempt in {1..5}; do
+  if /usr/bin/python3 "$SCRIPT_DIR/app_inventory.py" "${VERIFY_ARGUMENTS[@]}"; then verified=1; break; fi
+  sleep 1
+done
+[[ "$verified" -eq 1 ]] || exit 1
+
+echo "Verifying remaining app products and Spotlight results..."
+verified=0
+for attempt in {1..3}; do
+  if inventory --verify; then verified=1; break; fi
+  sleep 1
+done
+[[ "$verified" -eq 1 ]] || exit 1
+echo "Replacement verified: $INSTALLED_APP — $MARKETING_VERSION ($BUILD_VERSION)"
