@@ -23,6 +23,7 @@ trap 'rm -f "$FLAG_FILE"' EXIT
 xcodebuild \
   -project "$ROOT_DIR/$PROJECT" \
   -scheme "$SCHEME" \
+  -testPlan LatestComplexityBenchmarks \
   -configuration "$CONFIGURATION" \
   -destination 'platform=macOS' \
   -derivedDataPath "$DERIVED_DATA" \

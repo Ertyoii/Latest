@@ -9,8 +9,6 @@
 
 import XCTest
 
-@testable import Latest
-
 final class VersionParserTest: XCTestCase {
   func testBuildNumberParsing() {
     XCTAssertEqual(VersionParser.parse(buildNumber: "1234"), "1234")

@@ -8,8 +8,6 @@
 
 import XCTest
 
-@testable import Latest
-
 class OSVersionTest: XCTestCase {
 
   func testGenericOSVersion() throws {
@@ -20,7 +18,7 @@ class OSVersionTest: XCTestCase {
   }
 
   func testOnlyMajorOSVersion() throws {
-    let version = try OperatingSystemVersion(string: "11.0")
+    let version = try OperatingSystemVersion(string: "11")
     XCTAssertEqual(version.majorVersion, 11)
     XCTAssertEqual(version.minorVersion, 0)
     XCTAssertEqual(version.patchVersion, 0)

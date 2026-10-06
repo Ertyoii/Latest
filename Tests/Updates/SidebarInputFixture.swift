@@ -47,8 +47,8 @@ struct SidebarInputFixture {
   }
 
   func captureRow(for app: Latest.App) async throws -> NSBitmapImageRep {
+    let bitmap = try await settledWindowBitmap(window)
     let frame = try contentFrame(for: app)
-    let bitmap = try await captureWindowBitmap(window)
     let crop = CGRect(
       x: frame.minX * 2, y: (window.frame.height - frame.maxY) * 2,
       width: frame.width * 2, height: frame.height * 2)

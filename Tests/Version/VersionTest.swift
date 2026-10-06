@@ -8,8 +8,6 @@
 
 import XCTest
 
-@testable import Latest
-
 class VersionTest: XCTestCase {
 
   func testInitialization() {
@@ -163,14 +161,16 @@ class VersionTest: XCTestCase {
       name: "Versioned",
       bundleIdentifier: "com.example.versioned",
       fileURL: appURL,
-      source: .sparkle
+      source: .sparkle,
+      modificationDate: .distantPast
     )
     let newBundle = App.Bundle(
       version: Version(versionNumber: "1.1", buildNumber: nil),
       name: "Versioned",
       bundleIdentifier: "com.example.versioned",
       fileURL: appURL,
-      source: .sparkle
+      source: .sparkle,
+      modificationDate: .distantPast
     )
 
     XCTAssertEqual(oldBundle, newBundle)

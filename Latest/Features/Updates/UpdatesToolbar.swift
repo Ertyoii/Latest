@@ -50,20 +50,6 @@ struct RefreshToolbarButton: View {
   }
 }
 
-enum ToolbarProgressPresentation: Equatable {
-  case hidden
-  case determinate(Double)
-
-  init(isRunning: Bool, fraction: Double?) {
-    guard isRunning else {
-      self = .hidden
-      return
-    }
-    // Discovery has no app count yet; keep the same empty track until checking starts.
-    self = .determinate(ToolbarProgressMetrics.normalized(fraction ?? 0))
-  }
-}
-
 struct ToolbarUpdateProgressView: View {
   let presentation: ToolbarProgressPresentation
 
@@ -86,15 +72,5 @@ extension View {
     frame(width: ToolbarProgressMetrics.width)
       .padding(.leading, ToolbarProgressMetrics.leadingPadding)
       .padding(.trailing, ToolbarProgressMetrics.trailingPadding)
-  }
-}
-
-enum ToolbarProgressMetrics {
-  static let width: CGFloat = 64
-  static let leadingPadding: CGFloat = 10
-  static let trailingPadding: CGFloat = 10
-
-  static func normalized(_ fraction: Double) -> Double {
-    min(max(fraction, 0), 1)
   }
 }

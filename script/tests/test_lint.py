@@ -30,7 +30,8 @@ exit "${LINT_TEST_EXIT:-0}"
         commands = self.root / "bin"
         commands.mkdir()
         self.write_command(commands / "xcodebuild", '''
-printf '%s\\n' "$@" > "$LINT_TEST_BUILD_ARGUMENTS"
+printf '__CALL__\\n' >> "$LINT_TEST_BUILD_ARGUMENTS"
+printf '%s\\n' "$@" >> "$LINT_TEST_BUILD_ARGUMENTS"
 exit "${LINT_TEST_BUILD_EXIT:-0}"
 ''')
         self.write_command(commands / "curl", '''
@@ -77,13 +78,17 @@ exit 1
     def test_analysis_compiles_audit_callers_without_running_tests(self):
         result = self.run_script("--analyze", LINT_TEST_OUTPUT="warning: runtime callback")
         self.assertEqual(result.returncode, 0, result.stderr)
-        arguments = self.build_arguments.read_text().splitlines()
-        self.assertIn("clean", arguments)
-        self.assertIn("build-for-testing", arguments)
-        self.assertNotIn("test", arguments)
-        self.assertIn(str(self.root / "build/LintDerivedData"), arguments)
-        self.assertIn("CODE_SIGNING_ALLOWED=NO", arguments)
-        self.assertIn("OTHER_SWIFT_FLAGS=$(inherited) -DLATEST_RELEASE_NOTES_AUDIT", arguments)
+        calls = [call.splitlines() for call in self.build_arguments.read_text().split("__CALL__\n")[1:]]
+        self.assertEqual([call[call.index("-scheme") + 1] for call in calls],
+                         ["Latest", "Latest Unit Tests"])
+        for index, arguments in enumerate(calls):
+            self.assertIn("clean", arguments)
+            self.assertIn("build-for-testing", arguments)
+            self.assertNotIn("test", arguments)
+            self.assertIn("CODE_SIGNING_ALLOWED=NO", arguments)
+            self.assertIn("OTHER_SWIFT_FLAGS=$(inherited) -DLATEST_RELEASE_NOTES_AUDIT", arguments)
+            product_root = "LintDerivedData" if index == 0 else "LintUnitDerivedData"
+            self.assertIn(str(self.root / "build" / product_root), arguments)
         analyzer_arguments = self.calls.read_text().splitlines()
         self.assertEqual(analyzer_arguments[0], "analyze")
         self.assertNotIn("--strict", analyzer_arguments)

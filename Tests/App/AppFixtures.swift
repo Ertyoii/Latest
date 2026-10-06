@@ -17,23 +17,6 @@ func requireUITests() throws {
 }
 
 @MainActor
-func isolatedAppListSettings(for testCase: XCTestCase) throws -> AppListSettings {
-  let suiteName = "LatestTests.AppListSettings.\(UUID().uuidString)"
-  let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-  testCase.addTeardownBlock {
-    defaults.removePersistentDomain(forName: suiteName)
-  }
-
-  let settings = AppListSettings(userDefaults: defaults)
-  settings.sortOrder = .name
-  settings.showInstalledUpdates = true
-  settings.showIgnoredUpdates = true
-  settings.includeUnsupportedApps = true
-  settings.includeAppsWithLimitedSupport = true
-  return settings
-}
-
-@MainActor
 extension AppEnvironment {
   /// A test-only offline state used by deterministic geometry and interaction
   /// contracts. The runnable app and `--uat` always use `live()`.
@@ -101,15 +84,16 @@ enum LocalUATFixture {
 /// Each fixture owns an isolated model and never starts live discovery.
 @MainActor
 func makeLatestTestWindow(
-  environment: AppEnvironment, dark: Bool = false, testCase: XCTestCase
+  environment: AppEnvironment, dark: Bool = false, activate: Bool = true, testCase: XCTestCase
 ) async throws -> NSWindow {
   try await makeLatestTestWindow(
-    content: LatestRootView(environment: environment), dark: dark, testCase: testCase)
+    content: LatestRootView(environment: environment), dark: dark, activate: activate,
+    testCase: testCase)
 }
 
 @MainActor
 func makeLatestTestWindow<Content: View>(
-  content: Content, dark: Bool = false, testCase: XCTestCase
+  content: Content, dark: Bool = false, activate: Bool = true, testCase: XCTestCase
 ) async throws -> NSWindow {
   try requireUITests()
   let originalAppearanceName = NSApp.appearance?.name.rawValue
@@ -136,8 +120,11 @@ func makeLatestTestWindow<Content: View>(
       !existingWindows.contains(ObjectIdentifier($0)) && $0.isVisible
     }) {
       window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-      NSApp.activate(ignoringOtherApps: true)
-      window.makeKeyAndOrderFront(nil)
+      if activate {
+        try await activateTestWindow(window)
+      } else {
+        window.orderFront(nil)
+      }
       window.makeFirstResponder(nil)
       return window
     }
@@ -149,10 +136,23 @@ func makeLatestTestWindow<Content: View>(
 
 @MainActor
 func activateTestWindow(_ window: NSWindow) async throws {
+  try requireUITests()
   NSApp.setActivationPolicy(.regular)
+  window.makeKeyAndOrderFront(nil)
+  // XCTest launches the host in the background. Request the explicit UI
+  // launch through LaunchServices; self-activation alone may be declined.
+  if !NSApp.isActive {
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = true
+    configuration.addsToRecentItems = false
+    configuration.createsNewApplicationInstance = false
+    let application = try await NSWorkspace.shared.openApplication(
+      at: Bundle.main.bundleURL, configuration: configuration)
+    XCTAssertEqual(application.processIdentifier, ProcessInfo.processInfo.processIdentifier)
+  }
   let deadline = ContinuousClock.now + .seconds(5)
   repeat {
-    NSRunningApplication.current.activate(options: .activateAllWindows)
+    NSApp.activate()
     window.makeKeyAndOrderFront(nil)
     if NSApp.isActive && window.isKeyWindow {
       try await Task.sleep(for: .milliseconds(20))
@@ -161,9 +161,27 @@ func activateTestWindow(_ window: NSWindow) async throws {
     try await Task.sleep(for: .milliseconds(20))
   } while ContinuousClock.now < deadline
   XCTFail(
-    "UI test window could not acquire focus: title=\(window.title), class=\(type(of: window)), visible=\(window.isVisible), canBecomeKey=\(window.canBecomeKey), onActiveSpace=\(window.isOnActiveSpace), active=\(NSApp.isActive), policy=\(NSApp.activationPolicy().rawValue). Run --ui when the desktop is available."
+    "UI test window could not acquire focus: title=\(window.title), class=\(type(of: window)), visible=\(window.isVisible), canBecomeKey=\(window.canBecomeKey), onActiveSpace=\(window.isOnActiveSpace), active=\(NSApp.isActive), policy=\(NSApp.activationPolicy().rawValue), running=\(NSApp.isRunning), launched=\(NSRunningApplication.current.isFinishedLaunching), frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "unknown"). Run --ui when the desktop is available."
   )
   throw CocoaError(.userCancelled)
+}
+
+@MainActor
+func deactivateTestApplication() async throws {
+  try requireUITests()
+  if NSApp.isActive {
+    let background = try XCTUnwrap(
+      NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first)
+    // Deactivating a key window alone can leave its application active. Hand
+    // activation to another running app so native materials enter inactive state.
+    NSApp.yieldActivation(to: background)
+    XCTAssertTrue(background.activate(from: .current, options: []))
+  }
+  let deadline = ContinuousClock.now + .seconds(5)
+  while NSApp.isActive && ContinuousClock.now < deadline {
+    try await Task.sleep(for: .milliseconds(10))
+  }
+  XCTAssertFalse(NSApp.isActive)
 }
 
 /// Supply the release before a native view enters its synchronous tracking loop.
@@ -210,31 +228,4 @@ func runApplicationTest(_ operation: @escaping @MainActor () async throws -> Voi
   }
   NSApp.run()
   if let failure { throw failure }
-}
-
-@MainActor
-func makeTestApp(
-  name: String,
-  version: String,
-  remoteVersion: String? = nil,
-  date: Date? = Date(timeIntervalSince1970: 1_750_000_000),
-  updateAction: Latest.App.Update.Action = .builtIn { _ in }
-) -> Latest.App {
-  let bundle = Latest.App.Bundle(
-    version: Version(versionNumber: version, buildNumber: nil),
-    name: name,
-    bundleIdentifier: "com.example.\(name.replacingOccurrences(of: " ", with: "-"))",
-    fileURL: URL(fileURLWithPath: "/Applications/\(name).app"),
-    source: .appStore
-  )
-  let update = Latest.App.Update(
-    app: bundle,
-    remoteVersion: Version(versionNumber: remoteVersion ?? version, buildNumber: nil),
-    minimumOSVersion: nil,
-    source: .appStore,
-    date: date,
-    releaseNotes: .html(string: "<p>Release notes</p>"),
-    updateAction: updateAction
-  )
-  return Latest.App(bundle: bundle, update: .success(update), isIgnored: false)
 }

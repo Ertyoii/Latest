@@ -28,7 +28,7 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES"
-      shouldAutocreateTestPlan = "YES">
+      shouldAutocreateTestPlan = "NO">
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
@@ -38,18 +38,12 @@
             ReferencedContainer = "container:Latest.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
-      <Testables>
-         <TestableReference
-            skipped = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "50C81D681FBADC5900324C2E"
-               BuildableName = "Latest Tests.xctest"
-               BlueprintName = "Latest Tests"
-               ReferencedContainer = "container:Latest.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-      </Testables>
+      <TestPlans>
+         <TestPlanReference reference="container:Tests/LatestIntegration.xctestplan" default="YES"/>
+         <TestPlanReference reference="container:Tests/LatestUI.xctestplan"/>
+         <TestPlanReference reference="container:Tests/LatestAppBenchmarks.xctestplan"/>
+         <TestPlanReference reference="container:Tests/LatestComplexityBenchmarks.xctestplan"/>
+      </TestPlans>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"

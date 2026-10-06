@@ -1,10 +1,6 @@
 // Fork contributions © 2026 ertyoii. Licensed under GPL-3.0; see LICENSE.md.
 
-import AppKit
-import SwiftUI
 import XCTest
-
-@testable import Latest
 
 final class UpdateActionPresentationTest: XCTestCase {
   @MainActor
@@ -61,6 +57,27 @@ final class UpdateActionPresentationTest: XCTestCase {
       UpdateActionPresentation.make(for: updatable, progressState: .error(error)),
       .failed("The update failed")
     )
+  }
+
+  @MainActor
+  func testProgressClampsInvalidSizesAndForwardsCancellationPolicy() {
+    let app = makeTestApp(name: "Example", version: "1", remoteVersion: "2")
+    let cases: [(state: UpdateProgressState, fraction: Double, cancellable: Bool)] = [
+      (.downloading(loadedSize: -1, totalSize: 100), 0, true),
+      (.downloading(loadedSize: 0, totalSize: 0), 0, true),
+      (.downloading(loadedSize: 1, totalSize: 0), 0.75, true),
+      (.downloading(loadedSize: 200, totalSize: 100, cancellable: false), 0.75, false),
+      (.extracting(progress: -4), 0, true),
+      (.extracting(progress: 2, cancellable: false), 1, false),
+    ]
+    for fixture in cases {
+      guard
+        case .progress(let fraction, _, let cancellable) =
+          UpdateActionPresentation.make(for: app, progressState: fixture.state)
+      else { return XCTFail("Expected determinate progress") }
+      XCTAssertEqual(fraction, fixture.fraction)
+      XCTAssertEqual(cancellable, fixture.cancellable)
+    }
   }
 
   private func assertWaiting(

@@ -8,8 +8,9 @@ import XCTest
 
 final class ApplicationLifecycleTest: XCTestCase {
   @MainActor
-  func testUnitTestsUseIsolatedApplicationLifecycle() {
-    XCTAssertTrue(ApplicationRuntime.isRunningUnitTests)
+  func testHostedTestsUseBackgroundApplicationLifecycle() {
+    XCTAssertEqual(Bundle.main.bundleURL.pathExtension, "app")
+    XCTAssertNotNil(NSApp)
     if ProcessInfo.processInfo.environment["LATEST_UI_TESTS"] != "1" {
       XCTAssertEqual(NSApp.activationPolicy(), .prohibited)
       XCTAssertFalse(NSApp.isActive, "Background tests must not activate over another app")

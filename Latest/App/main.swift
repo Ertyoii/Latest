@@ -11,12 +11,10 @@
 import Foundation
 import SwiftUI
 
-enum ApplicationRuntime {
-  static var isRunningUnitTests: Bool {
-    let environment = ProcessInfo.processInfo.environment
-    return environment["XCTestConfigurationFilePath"] != nil
-      || environment["XCTestBundlePath"] != nil || NSClassFromString("XCTestCase") != nil
-  }
+private var isRunningUnitTests: Bool {
+  let environment = ProcessInfo.processInfo.environment
+  return environment["XCTestConfigurationFilePath"] != nil
+    || environment["XCTestBundlePath"] != nil || NSClassFromString("XCTestCase") != nil
 }
 
 /// The unit-test bundle is linked into the application executable. Launching the
@@ -32,7 +30,7 @@ private struct LatestUnitTestHostApplication: SwiftUI.App {
   }
 }
 
-if ApplicationRuntime.isRunningUnitTests {
+if isRunningUnitTests {
   if ProcessInfo.processInfo.environment["LATEST_UI_TESTS"] != "1" {
     // The background lane has no visible scenes and must not activate over the
     // user's foreground app. UI/benchmark runners explicitly opt in.

@@ -75,6 +75,16 @@ final class AppDependencyBoundaryTest: XCTestCase {
     return (service, store, workspace, updating)
   }
 
+  func testUpdatesListViewModelDoesNotRebuildSnapshotForDuplicateSearchAction() throws {
+    let viewModel = UpdatesListViewModel(settings: try isolatedAppListSettings(for: self))
+
+    XCTAssertEqual(viewModel.snapshotRevision, 0)
+    viewModel.setSearchQuery("latest")
+    XCTAssertEqual(viewModel.snapshotRevision, 1)
+    viewModel.setSearchQuery("latest")
+    XCTAssertEqual(viewModel.snapshotRevision, 1)
+  }
+
   func testSnapshotUsesInjectedSettingsInsteadOfGlobalPreferences() throws {
     let (settings, defaults, suiteName) = try makeSettings()
     defer { defaults.removePersistentDomain(forName: suiteName) }

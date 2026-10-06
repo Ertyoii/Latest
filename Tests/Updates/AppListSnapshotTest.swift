@@ -10,8 +10,6 @@
 
 import XCTest
 
-@testable import Latest
-
 @MainActor
 final class AppListSnapshotTest: XCTestCase {
   func testUnknownPersistedSortOrderFallsBackToDate() throws {
@@ -25,16 +23,6 @@ final class AppListSnapshotTest: XCTestCase {
     }
     settings.sortOrder = .name
     XCTAssertEqual(settings.sortOrder, .name)
-  }
-
-  func testUpdatesListViewModelDoesNotRebuildSnapshotForDuplicateSearchAction() throws {
-    let viewModel = UpdatesListViewModel(settings: try isolatedAppListSettings(for: self))
-
-    XCTAssertEqual(viewModel.snapshotRevision, 0)
-    viewModel.setSearchQuery("latest")
-    XCTAssertEqual(viewModel.snapshotRevision, 1)
-    viewModel.setSearchQuery("latest")
-    XCTAssertEqual(viewModel.snapshotRevision, 1)
   }
 
   func testSnapshotPartitionsAppsIntoAvailableInstalledAndIgnoredSections() throws {

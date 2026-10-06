@@ -8,8 +8,6 @@
 
 import XCTest
 
-@testable import Latest
-
 class VersionSanitizationTest: XCTestCase {
 
   func testUpdateRetainsOriginalVersionWhenSanitizedPrecedenceIsUnchanged() {

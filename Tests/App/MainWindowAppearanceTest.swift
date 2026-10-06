@@ -9,14 +9,19 @@ import XCTest
 
 final class MainWindowAppearanceTest: XCTestCase {
   @MainActor
-  func testProductionWindowStates() async throws {
+  func testProductionWindowStates() throws {
     try requireUITests()
+    try runApplicationTest { try await self.checkProductionWindowStates() }
+  }
+
+  @MainActor
+  private func checkProductionWindowStates() async throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent()
     let output = root.appendingPathComponent(
       "build/production-visuals/main-window-scene", isDirectory: true)
     let reference = root.appendingPathComponent(
-      "build/production-visual-reference/main-window-scene", isDirectory: true)
+      "build/production-visual-reference/main-window-scene-inactive", isDirectory: true)
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
     try XCTSkipUnless(
       FileManager.default.fileExists(atPath: reference.path),
@@ -48,8 +53,9 @@ final class MainWindowAppearanceTest: XCTestCase {
           operation?.finish()
         }
         let environment = AppEnvironment(settings: settings, updatesListViewModel: model)
+        try await deactivateTestApplication()
         let window = try await makeLatestTestWindow(
-          environment: environment, dark: dark, testCase: self)
+          environment: environment, dark: dark, activate: false, testCase: self)
         // Native materials sample the window's backdrop. Keep position and
         // key-window state explicit so earlier input tests cannot change the reference.
         let screen = try XCTUnwrap(window.screen)
@@ -57,10 +63,10 @@ final class MainWindowAppearanceTest: XCTestCase {
           NSPoint(
             x: screen.visibleFrame.minX + 80,
             y: screen.visibleFrame.maxY - window.frame.height - 80))
-        // Native bar materials sample windows behind them. Keep that input
-        // fixed across processes, regardless of the user's foreground content.
+        // Native bar materials sample beyond the target window. Cover the
+        // screen so their input cannot include the user's foreground content.
         let backdrop = NSWindow(
-          contentRect: window.frame.insetBy(dx: -20, dy: -20),
+          contentRect: screen.frame,
           styleMask: [.borderless], backing: .buffered, defer: false)
         backdrop.isReleasedWhenClosed = false
         backdrop.backgroundColor = dark ? .black : .white
@@ -68,10 +74,7 @@ final class MainWindowAppearanceTest: XCTestCase {
         backdrop.ignoresMouseEvents = true
         backdrop.order(.below, relativeTo: window.windowNumber)
         defer { backdrop.close() }
-        NSApp.deactivate()
-        for _ in 0..<100 where window.isKeyWindow {
-          try await Task.sleep(for: .milliseconds(10))
-        }
+        try await deactivateTestApplication()
         XCTAssertFalse(window.isKeyWindow)
         let view = try XCTUnwrap(window.contentView)
         defer { window.close() }
