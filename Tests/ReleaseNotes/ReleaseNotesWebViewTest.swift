@@ -30,7 +30,16 @@ final class ReleaseNotesWebViewTest: XCTestCase {
     let window = try await makeLatestTestWindow(
       content: ReleaseNotesDetailSurface(app: app, contentState: .text(content)), testCase: self)
     defer { window.close() }
-    let web = try XCTUnwrap(window.contentView?.descendant(of: WKWebView.self))
+    let host = try XCTUnwrap(window.contentView)
+    var renderer: WKWebView?
+    let deadline = ContinuousClock.now + .seconds(5)
+    repeat {
+      host.layoutSubtreeIfNeeded()
+      renderer = host.descendant(of: WKWebView.self)
+      if renderer != nil { break }
+      try await Task.sleep(for: .milliseconds(20))
+    } while ContinuousClock.now < deadline
+    let web = try XCTUnwrap(renderer, "The production release-note renderer must mount")
     try await waitForWebPaint(web)
     let text =
       try await web.evaluateJavaScript("document.querySelector('main').innerText") as? String
