@@ -16,8 +16,8 @@ enum UpdateProgressState: Sendable {
   /// The new version is currently downloading. Loaded size defines the already downloaded bytes. Total size defines the final size of the download.
   case downloading(loadedSize: Int64, totalSize: Int64, cancellable: Bool = true)
 
-  /// The update is being extracted. The extraction progress is given.
-  case extracting(progress: Double, cancellable: Bool = true)
+  /// The update is being extracted. Nil progress means the installer cannot measure it.
+  case extracting(progress: Double?, cancellable: Bool = true)
 
   /// The update is currently installing.
   case installing

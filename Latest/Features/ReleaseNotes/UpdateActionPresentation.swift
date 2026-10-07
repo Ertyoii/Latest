@@ -8,7 +8,7 @@ enum UpdateActionPresentation: Equatable {
   case open
   case waiting(String)
   case retryTermination
-  case progress(fraction: Double, status: String, cancellable: Bool = true)
+  case progress(fraction: Double?, status: String, cancellable: Bool = true)
   case failed(String)
 
   static func make(for app: App, progressState: UpdateProgressState) -> Self {
@@ -28,8 +28,16 @@ enum UpdateActionPresentation: Equatable {
           comment: "Update progress state of initializing an update"
         ))
     case .downloading(let loadedSize, let totalSize, let cancellable):
-      let denominator = max(totalSize, 1)
-      let fraction = min(max(Double(loadedSize) / Double(denominator), 0), 1) * 0.75
+      guard totalSize > 0 else {
+        let status = String.localizedStringWithFormat(
+          NSLocalizedString(
+            "DownloadingUnknownSizeUpdateStatus",
+            value: "Downloading %@…",
+            comment: "Download progress when the server does not provide the final size"),
+          Self.byteFormatter.string(fromByteCount: max(loadedSize, 0)))
+        return .progress(fraction: nil, status: status, cancellable: cancellable)
+      }
+      let fraction = min(max(Double(loadedSize) / Double(totalSize), 0), 1) * 0.75
       let format = NSLocalizedString(
         "DownloadingUpdateStatus",
         comment: "Update progress state of downloading an update"
@@ -42,7 +50,7 @@ enum UpdateActionPresentation: Equatable {
       return .progress(fraction: fraction, status: status, cancellable: cancellable)
     case .extracting(let progress, let cancellable):
       return .progress(
-        fraction: min(max(0.75 + (progress * 0.25), 0), 1),
+        fraction: progress.map { min(max(0.75 + ($0 * 0.25), 0), 1) },
         status: NSLocalizedString(
           "ExtractingUpdateStatus",
           comment: "Update progress state of extracting the downloaded update"

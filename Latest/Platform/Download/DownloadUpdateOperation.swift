@@ -53,22 +53,20 @@ class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
     let delegate = BoundedDownloadDelegate(maximumSize: maximumSize) { [weak self] loaded, total in
       self?.progressState = .downloading(loadedSize: loaded, totalSize: total)
     }
-    let temporary: URL
+    let archive = directory.appendingPathComponent("download." + url.pathExtension.lowercased())
     let response: URLResponse
     do {
-      (temporary, response) = try await URLSession.shared.download(from: url, delegate: delegate)
+      response = try await delegate.download(from: url, to: archive)
     } catch {
+      try? FileManager.default.removeItem(at: archive)
       if delegate.exceededLimit { throw AppDownloadError.invalidDownload }
       throw error
     }
-    defer { try? FileManager.default.removeItem(at: temporary) }
     guard !delegate.exceededLimit,
       (response as? HTTPURLResponse)?.statusCode == 200, response.url?.scheme == "https",
-      (try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= maximumSize
+      (try archive.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= maximumSize
     else { throw AppDownloadError.invalidDownload }
     try Task.checkCancellation()
-    let archive = directory.appendingPathComponent("download." + url.pathExtension.lowercased())
-    try FileManager.default.moveItem(at: temporary, to: archive)
     return archive
   }
 
@@ -161,9 +159,42 @@ final class BoundedDownloadDelegate: NSObject, URLSessionDownloadDelegate, Senda
   private let oversized = Mutex(false)
   var exceededLimit: Bool { oversized.withLock { $0 } }
 
+  private struct Transfer {
+    var task: URLSessionDownloadTask?
+    var continuation: CheckedContinuation<URLResponse, Error>?
+    var destination: URL?
+    var cancelled = false
+  }
+  private let transfer = Mutex(Transfer())
+
   init(maximumSize: Int, progress: @escaping @Sendable (Int64, Int64) -> Void) {
     self.maximumSize = Int64(maximumSize)
     self.progress = progress
+  }
+
+  /// Async download convenience APIs use a completion handler and omit the
+  /// download delegate's progress callbacks. Own a delegate-driven task instead.
+  func download(from url: URL, to destination: URL) async throws -> URLResponse {
+    let session = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: nil)
+    defer { session.invalidateAndCancel() }
+    return try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        let task = session.downloadTask(with: url)
+        let cancelled = transfer.withLock { transfer in
+          transfer.task = task
+          transfer.continuation = continuation
+          transfer.destination = destination
+          return transfer.cancelled
+        }
+        if cancelled { task.cancel() } else { task.resume() }
+      }
+    } onCancel: {
+      let task = self.transfer.withLock { transfer in
+        transfer.cancelled = true
+        return transfer.task
+      }
+      task?.cancel()
+    }
   }
 
   func urlSession(
@@ -175,11 +206,35 @@ final class BoundedDownloadDelegate: NSObject, URLSessionDownloadDelegate, Senda
       downloadTask.cancel()
       return
     }
-    progress(totalBytesWritten, max(totalBytesExpectedToWrite, totalBytesWritten))
+    progress(totalBytesWritten, totalBytesExpectedToWrite)
   }
 
   func urlSession(
     _ session: URLSession, downloadTask: URLSessionDownloadTask,
     didFinishDownloadingTo location: URL
-  ) {}
+  ) {
+    do {
+      guard let destination = transfer.withLock({ $0.destination }),
+        let response = downloadTask.response
+      else { throw AppDownloadError.invalidDownload }
+      // Foundation deletes the temporary file when this callback returns.
+      try FileManager.default.moveItem(at: location, to: destination)
+      complete(.success(response))
+    } catch { complete(.failure(error)) }
+  }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    if let error { complete(.failure(error)) }
+  }
+
+  private func complete(_ result: Result<URLResponse, Error>) {
+    let continuation = transfer.withLock { transfer in
+      let continuation = transfer.continuation
+      transfer.continuation = nil
+      transfer.task = nil
+      transfer.destination = nil
+      return continuation
+    }
+    continuation?.resume(with: result)
+  }
 }

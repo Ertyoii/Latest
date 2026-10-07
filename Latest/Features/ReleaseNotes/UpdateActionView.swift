@@ -224,6 +224,7 @@ private struct UpdateActionControl: View {
         performAction()
       } label: {
         UpdateActionProgressIndicator(fraction: fraction, cancellable: cancellable)
+          .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
       .disabled(!cancellable)
@@ -441,36 +442,43 @@ private struct UpdateActionIndeterminateIndicator: View {
 }
 
 private struct UpdateActionProgressIndicator: View {
-  let fraction: Double
+  let fraction: Double?
   let cancellable: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    ZStack {
-      Circle()
-        .stroke(
-          Color(nsColor: .tertiaryLabelColor),
-          lineWidth: UpdateActionVisualStyle.progressLineWidth
-        )
-      Circle()
-        .trim(from: 0, to: fraction)
-        .stroke(
-          Color(nsColor: .controlAccentColor),
-          style: StrokeStyle(
-            lineWidth: UpdateActionVisualStyle.progressLineWidth,
-            lineCap: .round
+    TimelineView(.animation(paused: fraction != nil || reduceMotion)) { context in
+      ZStack {
+        Circle()
+          .stroke(
+            Color(nsColor: .tertiaryLabelColor),
+            lineWidth: UpdateActionVisualStyle.progressLineWidth
           )
-        )
-        .rotationEffect(.degrees(-90))
+        Circle()
+          .trim(from: 0, to: fraction ?? 0.25)
+          .stroke(
+            Color(nsColor: .controlAccentColor),
+            style: StrokeStyle(
+              lineWidth: UpdateActionVisualStyle.progressLineWidth,
+              lineCap: .round
+            )
+          )
+          .rotationEffect(
+            .degrees(
+              fraction == nil && !reduceMotion
+                ? context.date.timeIntervalSinceReferenceDate
+                  .truncatingRemainder(dividingBy: 1) * 360 : -90))
 
-      if cancellable {
-        HStack(spacing: UpdateActionVisualStyle.pauseBarSpacing) {
-          ForEach(0..<2, id: \.self) { _ in
-            RoundedRectangle(cornerRadius: 1)
-              .fill(Color(nsColor: .controlAccentColor))
-              .frame(
-                width: UpdateActionVisualStyle.pauseBarSize.width,
-                height: UpdateActionVisualStyle.pauseBarSize.height
-              )
+        if cancellable {
+          HStack(spacing: UpdateActionVisualStyle.pauseBarSpacing) {
+            ForEach(0..<2, id: \.self) { _ in
+              RoundedRectangle(cornerRadius: 1)
+                .fill(Color(nsColor: .controlAccentColor))
+                .frame(
+                  width: UpdateActionVisualStyle.pauseBarSize.width,
+                  height: UpdateActionVisualStyle.pauseBarSize.height
+                )
+            }
           }
         }
       }

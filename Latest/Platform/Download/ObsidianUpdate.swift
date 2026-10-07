@@ -138,7 +138,7 @@ final class ObsidianUpdateOperation: DownloadUpdateOperation, @unchecked Sendabl
     let archive = try await download(
       from: release.downloadUrl, into: work, maximumSize: 128 * 1_024 * 1_024)
     try ObsidianUpdate.verify(Data(contentsOf: archive, options: .mappedIfSafe), release: release)
-    progressState = .extracting(progress: 0)
+    progressState = .extracting(progress: nil)
     _ = try await InstallerCommand.run("/usr/bin/gzip", ["-d", archive.path])
     let payload = archive.deletingPathExtension()
     guard InstalledAppVersion.asarVersion(at: payload) == release.latestVersion else {
