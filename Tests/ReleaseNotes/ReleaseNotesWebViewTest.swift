@@ -26,6 +26,15 @@ final class ReleaseNotesWebViewTest: XCTestCase {
       fromHTML: html, baseURL: url, relevantVersion: "155.0.8059.40",
       allowFirstSectionFallback: false)
     let content = try XCTUnwrap(result).get()
+    XCTAssertEqual(
+      content.string.components(separatedBy: .newlines).filter { !$0.isEmpty },
+      [
+        "Stable Channel Update for Desktop",
+        "The Stable channel has been updated to 155.0.8059.39/.40 for Windows and Mac.",
+        "Security Fixes and Rewards",
+        "Critical CVE-2026-106382: Use after free in Chromecast. Reported by @_3P1C.",
+        "Critical CVE-2026-106197: Use after free in Browser. Reported by @lbherrera_.",
+      ])
     let app = makeTestApp(name: "Chrome", version: "154.0.8037.98", remoteVersion: "155.0.8059.40")
     let window = try await makeLatestTestWindow(
       content: ReleaseNotesDetailSurface(app: app, contentState: .text(content)), testCase: self)
@@ -44,6 +53,7 @@ final class ReleaseNotesWebViewTest: XCTestCase {
     let text =
       try await web.evaluateJavaScript("document.querySelector('main').innerText") as? String
     XCTAssertEqual(text, content.string)
+    let bitmap = try await settledWindowBitmap(window)
     let tops =
       try await web.evaluateJavaScript(
         """
@@ -53,8 +63,10 @@ final class ReleaseNotesWebViewTest: XCTestCase {
             const offset = nodes.currentNode.textContent.indexOf(prefix);
             if (offset < 0) continue;
             const range = document.createRange();
-            range.setStart(nodes.currentNode, offset); range.setEnd(nodes.currentNode, offset + prefix.length);
-            return range.getBoundingClientRect().top;
+            // Sample visible ink inside the prefix. A range at a newline boundary
+            // can include a zero-width rectangle from the preceding line.
+            range.setStart(nodes.currentNode, offset + 1); range.setEnd(nodes.currentNode, offset + 2);
+            return Array.from(range.getClientRects()).find(rect => rect.width > 0)?.top ?? -1;
           }
           return -1;
         });
@@ -64,9 +76,9 @@ final class ReleaseNotesWebViewTest: XCTestCase {
     XCTAssertTrue(positions.allSatisfy { $0 >= 0 })
     for (first, next) in zip(positions, positions.dropFirst()) {
       XCTAssertGreaterThan(
-        next - first, 15, "Each heading and security entry must start on a new line")
+        next - first, 15,
+        "Each heading and security entry must start on a new line; positions=\(positions)")
     }
-    let bitmap = try await settledWindowBitmap(window)
     let attachment = XCTAttachment(
       image: NSImage(cgImage: try XCTUnwrap(bitmap.cgImage), size: bitmap.size))
     attachment.name = "chrome-release-notes-blocks"
