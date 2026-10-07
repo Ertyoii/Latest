@@ -31,6 +31,9 @@
 /* Update progress state of downloading an update. The first %@ stands for the already downloaded bytes, the second one for the total amount of bytes. One expected output would be 'Downloading 3 MB of 21 MB' */
 "DownloadingUpdateStatus" = "Downloading %@ of %@";
 
+/* Download progress when the server does not provide the final size. */
+"DownloadingUnknownSizeUpdateStatus" = "Downloading %@…";
+
 /* Description of button that opens an error dialogue. */
 "ErrorButtonAccessibilityTitle" = "Error while updating app";
 

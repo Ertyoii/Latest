@@ -10,6 +10,77 @@ import XCTest
 
 final class UpdateActionInteractionTest: XCTestCase {
   @MainActor
+  func testDownloadControlsAdvanceAndCancelUnknownLengthTransfers() async throws {
+    try requireUITests()
+    let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent("build/update-debug/progress-controls")
+    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+    for identifier in ["updates.progress", "update.progress"] {
+      let app = makeTestApp(name: "Download target", version: "1", remoteVersion: "2")
+      let queue = UpdateQueue()
+      queue.isSuspended = true
+      let operation = UpdateOperation(
+        bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+      queue.addOperation(operation)
+      defer {
+        operation.finish()
+        queue.isSuspended = false
+      }
+      operation.progressState = .downloading(loadedSize: 25, totalSize: 100)
+      let fixture = try await SidebarInputFixture.make(
+        apps: [app], selected: app, updating: AppUpdateService(queue: queue), testCase: self)
+      defer { fixture.window.close() }
+      func progressButton() throws -> SidebarAccessibilityElement {
+        try XCTUnwrap(
+          fixture.accessibilityElements().first {
+            $0.accessibilityIdentifier() == identifier
+              && $0.accessibilityFrame().intersects(fixture.window.frame)
+          })
+      }
+      let earlyLabel = try progressButton().accessibilityLabel()
+      let early = try await captureWindowBitmap(fixture.window)
+      operation.progressState = .downloading(loadedSize: 75, totalSize: 100)
+      try await Task.sleep(for: .milliseconds(300))
+      XCTAssertNotEqual(try progressButton().accessibilityLabel(), earlyLabel)
+      let later = try await captureWindowBitmap(fixture.window)
+      let frame = fixture.window.convertFromScreen(try progressButton().accessibilityFrame())
+      let crop = CGRect(
+        x: frame.minX * 2, y: (fixture.window.frame.height - frame.maxY) * 2,
+        width: frame.width * 2, height: frame.height * 2)
+      let before = try XCTUnwrap(early.cgImage?.cropping(to: crop))
+      let after = try XCTUnwrap(later.cgImage?.cropping(to: crop))
+      XCTAssertNotEqual(
+        NSBitmapImageRep(cgImage: before).representation(using: .png, properties: [:]),
+        NSBitmapImageRep(cgImage: after).representation(using: .png, properties: [:]),
+        "The progress ring must repaint when more bytes arrive")
+      for (name, bitmap) in [("early", early), ("later", later)] {
+        try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
+          to: output.appendingPathComponent("\(identifier)-\(name).png"))
+      }
+      operation.progressState = .downloading(loadedSize: 64, totalSize: -1)
+      try await Task.sleep(for: .milliseconds(150))
+      let button = try progressButton()
+      XCTAssertEqual(button.accessibilityEnabled(), true)
+      XCTAssertFalse(operation.isCancelled)
+      let unknownEarly = try await captureWindowBitmap(fixture.window)
+      try await Task.sleep(for: .milliseconds(150))
+      let unknownLater = try await captureWindowBitmap(fixture.window)
+      XCTAssertNotEqual(
+        NSBitmapImageRep(cgImage: try XCTUnwrap(unknownEarly.cgImage?.cropping(to: crop)))
+          .representation(using: .png, properties: [:]),
+        NSBitmapImageRep(cgImage: try XCTUnwrap(unknownLater.cgImage?.cropping(to: crop)))
+          .representation(using: .png, properties: [:]),
+        "The indicator must animate while the total size is unknown")
+      try await activateTestWindow(fixture.window)
+      let cancelFrame = fixture.window.convertFromScreen(try progressButton().accessibilityFrame())
+      try clickTestWindow(fixture.window, at: NSPoint(x: cancelFrame.midX, y: cancelFrame.midY))
+      try await Task.sleep(for: .milliseconds(50))
+      XCTAssertTrue(operation.isCancelled, "Unknown length downloads must remain cancellable")
+    }
+  }
+
+  @MainActor
   func testQuitRetryControlsReuseActiveSparkleUpdate() async throws {
     try requireUITests()
     let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent()

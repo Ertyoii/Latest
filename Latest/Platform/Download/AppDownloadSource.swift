@@ -12,11 +12,13 @@ enum AppDownloadSource: Sendable {
     "dev.zed.Zed": "zed",
     "com.google.Chrome": "google-chrome",
     "com.usebruno.app": "bruno",
-    "com.hnc.Discord": "discord",
     "com.1password.1password": "1password",
   ]
 
   static func homebrewSource(for bundle: App.Bundle, token: String?) -> AppDownloadSource? {
+    // Discord's native updater owns a separate host-version database and cached
+    // bundles. Replacing only /Applications can make it restore an older host.
+    // The Homebrew checker opens unsupported standalone apps in their own updater.
     guard let token, casks[bundle.bundleIdentifier] == token,
       FileManager.default.isWritableFile(atPath: bundle.fileURL.deletingLastPathComponent().path)
     else { return nil }

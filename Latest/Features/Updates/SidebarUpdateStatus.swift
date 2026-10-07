@@ -101,7 +101,7 @@ struct SidebarUpdateStatus: View {
 }
 
 private struct SidebarProgressButtonStyle: ButtonStyle {
-  let fraction: Double
+  let fraction: Double?
   let selection: UpdateRowSelection
   let cancellable: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -110,11 +110,16 @@ private struct SidebarProgressButtonStyle: ButtonStyle {
     let color: NSColor =
       selection.usesActiveSelectionColors
       ? .alternateSelectedControlTextColor : .controlAccentColor
-    SidebarIndicatorGlyph(
-      fraction: fraction, angle: -90,
-      tint: Color(nsColor: configuration.isPressed ? color.withSystemEffect(.pressed) : color),
-      cancellable: cancellable
-    )
+    TimelineView(.animation(paused: fraction != nil || reduceMotion)) { context in
+      SidebarIndicatorGlyph(
+        fraction: fraction,
+        angle: fraction == nil && !reduceMotion
+          ? context.date.timeIntervalSinceReferenceDate
+            .truncatingRemainder(dividingBy: 1) * 360 : -90,
+        tint: Color(nsColor: configuration.isPressed ? color.withSystemEffect(.pressed) : color),
+        cancellable: cancellable
+      )
+    }
     .frame(width: 24, height: 24)
     .contentShape(Rectangle())
     .animation(reduceMotion ? nil : .linear(duration: 0.2), value: fraction)

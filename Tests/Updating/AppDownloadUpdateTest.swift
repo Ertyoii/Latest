@@ -1,9 +1,99 @@
+import Network
 import Synchronization
 import XCTest
 
 @testable import Latest
 
 final class AppDownloadUpdateTest: XCTestCase {
+  func testStandaloneSourceLeavesDiscordToItsNativeUpdater() throws {
+    let directory = try temporaryDirectory()
+    for (identifier, token, supported) in [
+      ("com.hnc.Discord", "discord", false),
+      ("com.1password.1password", "1password", true),
+      ("com.docker.docker", "docker-desktop", true),
+      ("com.1password.1password", "discord", false),
+    ] {
+      let app = App.Bundle(
+        version: Version(versionNumber: "1", buildNumber: nil), name: token,
+        bundleIdentifier: identifier, fileURL: directory.appendingPathComponent(token + ".app"),
+        source: .homebrew)
+      XCTAssertEqual(AppDownloadSource.homebrewSource(for: app, token: token) != nil, supported)
+    }
+  }
+
+  func testRealDownloadReportsPartialProgressAndKeepsTheCompletedFile() async throws {
+    for knownSize in [true, false] {
+      let ready = expectation(description: "Loopback server ready")
+      let partial = expectation(description: "Progress arrives before the response completes")
+      let server = try StreamingDownloadServer(knownSize: knownSize, ready: ready)
+      defer { server.stop() }
+      await fulfillment(of: [ready], timeout: 3)
+      let url = try XCTUnwrap(server.url)
+      let samples = Mutex<[(Int64, Int64)]>([])
+      let delegate = BoundedDownloadDelegate(maximumSize: 1_024 * 1_024) { loaded, total in
+        let first = samples.withLock { samples in
+          let first = samples.isEmpty
+          samples.append((loaded, total))
+          return first
+        }
+        if first { partial.fulfill() }
+      }
+      let destination = try temporaryDirectory().appendingPathComponent("download.zip")
+      let task = Task { try await delegate.download(from: url, to: destination) }
+      defer { task.cancel() }
+      await fulfillment(of: [partial], timeout: 3)
+      let first = try XCTUnwrap(samples.withLock { $0.first })
+      XCTAssertGreaterThan(first.0, 0)
+      XCTAssertLessThan(first.0, Int64(server.payload.count * 2))
+      XCTAssertEqual(first.1, knownSize ? Int64(server.payload.count * 2) : -1)
+      server.complete()
+      let response = try await task.value
+      XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+      XCTAssertEqual(try Data(contentsOf: destination), server.payload + server.payload)
+      XCTAssertFalse(delegate.exceededLimit)
+    }
+  }
+
+  func testRealDownloadCancellationAndSizeLimitsFinishBeforeTheServerCompletes() async throws {
+    for scenario in ["cancel", "cancel-before-start", "known-limit", "unknown-limit"] {
+      let ready = expectation(description: "Loopback server ready")
+      let partial = scenario == "cancel" ? expectation(description: "Download started") : nil
+      let server = try StreamingDownloadServer(knownSize: scenario != "unknown-limit", ready: ready)
+      defer { server.stop() }
+      await fulfillment(of: [ready], timeout: 3)
+      let url = try XCTUnwrap(server.url)
+      let limited = scenario.hasSuffix("limit")
+      let firstProgress = Mutex(true)
+      let delegate = BoundedDownloadDelegate(maximumSize: limited ? 16 : 1_024 * 1_024) { _, _ in
+        let first = firstProgress.withLock { first in
+          defer { first = false }
+          return first
+        }
+        if first { partial?.fulfill() }
+      }
+      let destination = try temporaryDirectory().appendingPathComponent("download.zip")
+      let gate = AsyncStream<Void>.makeStream()
+      let task = Task {
+        for await _ in gate.stream { break }
+        return try await delegate.download(from: url, to: destination)
+      }
+      if scenario == "cancel-before-start" { task.cancel() }
+      gate.continuation.finish()
+      if let partial {
+        await fulfillment(of: [partial], timeout: 3)
+        task.cancel()
+      }
+      do {
+        _ = try await task.value
+        XCTFail("Cancelled or oversized transfer must fail")
+      } catch {
+        XCTAssertEqual((error as? URLError)?.code, .cancelled)
+      }
+      XCTAssertEqual(delegate.exceededLimit, limited)
+      XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+    }
+  }
+
   func testInvalidDiskImagePreservesAttachmentError() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let extracted = directory.appendingPathComponent("payload")
@@ -338,4 +428,50 @@ private final class FixtureDownloadOperation: DownloadUpdateOperation, @unchecke
   }
 
   override func performUpdate() async throws { try await action(self) }
+}
+
+/// A gated HTTP transfer tests Foundation's actual delegate delivery without
+/// network access or vendor downloads. The second half waits for the assertion.
+private final class StreamingDownloadServer: Sendable {
+  let payload = Data(repeating: 0x61, count: 128 * 1_024)
+  private let listener: NWListener
+  private let queue = DispatchQueue(label: "test.streaming-download")
+  private let connection = Mutex<NWConnection?>(nil)
+
+  var url: URL? {
+    listener.port.flatMap { URL(string: "http://127.0.0.1:\($0.rawValue)/update.zip") }
+  }
+
+  init(knownSize: Bool, ready: XCTestExpectation) throws {
+    let parameters = NWParameters.tcp
+    parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+    listener = try NWListener(using: parameters)
+    listener.stateUpdateHandler = { state in
+      if case .ready = state { ready.fulfill() }
+    }
+    listener.newConnectionHandler = { [self] incoming in
+      connection.withLock { $0 = incoming }
+      incoming.start(queue: queue)
+      incoming.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [self] _, _, _, error in
+        guard error == nil else { return }
+        var headers = "HTTP/1.1 200 OK\r\nConnection: close\r\n"
+        if knownSize { headers += "Content-Length: \(payload.count * 2)\r\n" }
+        incoming.send(
+          content: Data((headers + "\r\n").utf8) + payload,
+          completion: .contentProcessed { _ in })
+      }
+    }
+    listener.start(queue: queue)
+  }
+
+  func complete() {
+    guard let incoming = connection.withLock({ $0 }) else { return }
+    incoming.send(content: payload, completion: .contentProcessed { _ in incoming.cancel() })
+  }
+
+  func stop() {
+    listener.cancel()
+    listener.newConnectionHandler = nil
+    connection.withLock { $0 }?.cancel()
+  }
 }
