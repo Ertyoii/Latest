@@ -95,6 +95,21 @@ final class UpdateActionPresentationTest: XCTestCase {
     }
   }
 
+  @MainActor
+  func testUnmeasuredExtractionKeepsProgressIndeterminateAndCancellationPolicy() {
+    let app = makeTestApp(name: "Example", version: "1", remoteVersion: "2")
+    for cancellable in [true, false] {
+      guard
+        case .progress(let fraction, let status, let allowsCancellation) =
+          UpdateActionPresentation.make(
+            for: app, progressState: .extracting(progress: nil, cancellable: cancellable))
+      else { return XCTFail("Unmeasured extraction must present an animated progress control") }
+      XCTAssertNil(fraction)
+      XCTAssertFalse(status.isEmpty)
+      XCTAssertEqual(allowsCancellation, cancellable)
+    }
+  }
+
   private func assertWaiting(
     _ presentation: UpdateActionPresentation,
     file: StaticString = #filePath,

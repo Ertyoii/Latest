@@ -50,7 +50,7 @@ enum UpdateActionPresentation: Equatable {
       return .progress(fraction: fraction, status: status, cancellable: cancellable)
     case .extracting(let progress, let cancellable):
       return .progress(
-        fraction: min(max(0.75 + (progress * 0.25), 0), 1),
+        fraction: progress.map { min(max(0.75 + ($0 * 0.25), 0), 1) },
         status: NSLocalizedString(
           "ExtractingUpdateStatus",
           comment: "Update progress state of extracting the downloaded update"

@@ -10,8 +10,15 @@ import XCTest
 
 final class UpdateActionInteractionTest: XCTestCase {
   @MainActor
-  func testDownloadControlsAdvanceAndCancelUnknownLengthTransfers() async throws {
+  func testProgressControlsAdvanceAndCancelUnmeasuredTransfers() throws {
     try requireUITests()
+    try runApplicationTest {
+      try await self.checkProgressControlsAdvanceAndCancelUnmeasuredTransfers()
+    }
+  }
+
+  @MainActor
+  private func checkProgressControlsAdvanceAndCancelUnmeasuredTransfers() async throws {
     let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent()
       .appendingPathComponent("build/update-debug/progress-controls")
@@ -58,7 +65,9 @@ final class UpdateActionInteractionTest: XCTestCase {
         try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
           to: output.appendingPathComponent("\(identifier)-\(name).png"))
       }
-      operation.progressState = .downloading(loadedSize: 64, totalSize: -1)
+      operation.progressState =
+        identifier == "updates.progress"
+        ? .downloading(loadedSize: 64, totalSize: -1) : .extracting(progress: nil)
       try await Task.sleep(for: .milliseconds(150))
       let button = try progressButton()
       XCTAssertEqual(button.accessibilityEnabled(), true)
@@ -66,23 +75,30 @@ final class UpdateActionInteractionTest: XCTestCase {
       let unknownEarly = try await captureWindowBitmap(fixture.window)
       try await Task.sleep(for: .milliseconds(150))
       let unknownLater = try await captureWindowBitmap(fixture.window)
-      XCTAssertNotEqual(
-        NSBitmapImageRep(cgImage: try XCTUnwrap(unknownEarly.cgImage?.cropping(to: crop)))
-          .representation(using: .png, properties: [:]),
-        NSBitmapImageRep(cgImage: try XCTUnwrap(unknownLater.cgImage?.cropping(to: crop)))
-          .representation(using: .png, properties: [:]),
-        "The indicator must animate while the total size is unknown")
+      if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        XCTAssertNotEqual(
+          NSBitmapImageRep(cgImage: try XCTUnwrap(unknownEarly.cgImage?.cropping(to: crop)))
+            .representation(using: .png, properties: [:]),
+          NSBitmapImageRep(cgImage: try XCTUnwrap(unknownLater.cgImage?.cropping(to: crop)))
+            .representation(using: .png, properties: [:]),
+          "The indicator must animate while progress is unmeasured")
+      }
       try await activateTestWindow(fixture.window)
       let cancelFrame = fixture.window.convertFromScreen(try progressButton().accessibilityFrame())
       try clickTestWindow(fixture.window, at: NSPoint(x: cancelFrame.midX, y: cancelFrame.midY))
       try await Task.sleep(for: .milliseconds(50))
-      XCTAssertTrue(operation.isCancelled, "Unknown length downloads must remain cancellable")
+      XCTAssertTrue(operation.isCancelled, "Unmeasured preparation must remain cancellable")
     }
   }
 
   @MainActor
-  func testQuitRetryControlsReuseActiveSparkleUpdate() async throws {
+  func testQuitRetryControlsReuseActiveSparkleUpdate() throws {
     try requireUITests()
+    try runApplicationTest { try await self.checkQuitRetryControlsReuseActiveSparkleUpdate() }
+  }
+
+  @MainActor
+  private func checkQuitRetryControlsReuseActiveSparkleUpdate() async throws {
     let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent()
       .appendingPathComponent("build/diff-review-2026-10-04/retry-controls")

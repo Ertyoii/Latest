@@ -31,7 +31,7 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
     let candidate = stage.appendingPathComponent("candidate.app")
     let extracted = work.appendingPathComponent("payload")
     try manager.createDirectory(at: extracted, withIntermediateDirectories: true)
-    progressState = .extracting(progress: 0)
+    progressState = .extracting(progress: nil)
     try await Self.stageApp(
       from: archive, appPath: release.appPath, extracted: extracted, to: candidate)
     try Self.validate(candidate: candidate, replacing: app, expectedVersion: release.version)
