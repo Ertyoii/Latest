@@ -80,76 +80,60 @@ extension App {
   // MARK: - Bundle Properties
 
   // The version currently present on the users computer
-  var version: Version {
-    return self.bundle.version
-  }
+  var version: Version { bundle.version }
 
   /// The display name of the app
-  var name: String {
-    return self.bundle.name
-  }
+  var name: String { bundle.name }
 
   /// The bundle identifier of the app
-  var identifier: Bundle.Identifier {
-    return self.bundle.identifier
-  }
+  var identifier: Bundle.Identifier { bundle.identifier }
 
-  var bundleIdentifier: String {
-    return self.bundle.bundleIdentifier
-  }
+  var bundleIdentifier: String { bundle.bundleIdentifier }
 
   /// The url of the app on the users computer
-  var fileURL: URL {
-    return self.bundle.fileURL
-  }
+  var fileURL: URL { bundle.fileURL }
 
   /// The overall source the update is being fetched from.
   var source: Source {
-    return update?.source ?? bundle.source
+    update?.source ?? bundle.source
   }
 
   /// Whether the app can be updated within Latest.
   var supported: Bool {
-    return self.source != .none
+    self.source != .none
   }
 
   /// The date of the app when it was last updated.
   var updateDate: Date {
-    return self.update?.date ?? self.bundle.modificationDate
+    self.update?.date ?? self.bundle.modificationDate
   }
 
   // MARK: - Update Properties
 
   /// The newest version of the app available for download.
-  var remoteVersion: Version? {
-    return self.update?.remoteVersion
-  }
+  var remoteVersion: Version? { update?.remoteVersion }
 
   /// The release date of the update
-  var latestUpdateDate: Date? {
-    return self.update?.date
-  }
+  var latestUpdateDate: Date? { update?.date }
 
   /// The release notes of the update
-  var releaseNotes: Update.ReleaseNotes? {
-    return self.update?.releaseNotes
-  }
+  var releaseNotes: Update.ReleaseNotes? { update?.releaseNotes }
 
   /// Whether an update is available for the given app.
   var updateAvailable: Bool {
-    return self.update?.updateAvailable ?? false
+    self.update?.updateAvailable ?? false
   }
 
   /// Whether the update is performed using a built in updater.
   var usesBuiltInUpdater: Bool {
-    return self.update?.usesBuiltInUpdater ?? false
+    self.update?.usesBuiltInUpdater ?? false
   }
 
   /// The name of the external updater used to update this app.
   ///
   /// Returns `nil` if `usesBuiltInUpdater` is `true`.
   var externalUpdaterName: String? {
-    return self.update?.externalUpdaterName
+    self.update?.externalUpdaterName
   }
 
   /// The source-provided action, executed by the updating service.

@@ -53,7 +53,7 @@ struct AboutView: View {
     .padding(24)
     .frame(width: 320)
     .toolbar(removing: .title)
-    .containerBackground(.thickMaterial, for: .window)
+    .containerBackground(.ultraThinMaterial, for: .window)
   }
 
   private var version: String {
