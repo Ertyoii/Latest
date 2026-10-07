@@ -10,6 +10,62 @@ import XCTest
 
 final class ReleaseNotesWebViewTest: XCTestCase {
   @MainActor
+  func testChromeReleaseNotesRenderSecurityEntriesOnSeparateLines() async throws {
+    try requireUITests()
+    let html = """
+      <div class='post'><h2>Stable Channel Update for Desktop</h2>
+      <script type='text/template'>
+      <p>The Stable channel has been updated to 155.0.8059.39/.40 for Windows and Mac.</p>
+      <h1>Security Fixes and Rewards</h1>
+      <p>Critical CVE-2026-106382: Use after free in Chromecast. Reported by @_3P1C.</p>
+      <p>Critical CVE-2026-106197: Use after free in Browser. Reported by @lbherrera_.</p>
+      </script></div>
+      """
+    let url = try XCTUnwrap(URL(string: "https://chromereleases.googleblog.com/"))
+    let result = await ReleaseNotesMarkup.attributedStringFromChangelogByPreparingOffMain(
+      fromHTML: html, baseURL: url, relevantVersion: "155.0.8059.40",
+      allowFirstSectionFallback: false)
+    let content = try XCTUnwrap(result).get()
+    let app = makeTestApp(name: "Chrome", version: "154.0.8037.98", remoteVersion: "155.0.8059.40")
+    let window = try await makeLatestTestWindow(
+      content: ReleaseNotesDetailSurface(app: app, contentState: .text(content)), testCase: self)
+    defer { window.close() }
+    let web = try XCTUnwrap(window.contentView?.descendant(of: WKWebView.self))
+    try await waitForWebPaint(web)
+    let text =
+      try await web.evaluateJavaScript("document.querySelector('main').innerText") as? String
+    XCTAssertEqual(text, content.string)
+    let tops =
+      try await web.evaluateJavaScript(
+        """
+        ['Stable Channel', 'Security Fixes', 'Critical CVE-2026-106382', 'Critical CVE-2026-106197'].map(prefix => {
+          const nodes = document.createTreeWalker(document.querySelector('main'), NodeFilter.SHOW_TEXT);
+          while (nodes.nextNode()) {
+            const offset = nodes.currentNode.textContent.indexOf(prefix);
+            if (offset < 0) continue;
+            const range = document.createRange();
+            range.setStart(nodes.currentNode, offset); range.setEnd(nodes.currentNode, offset + prefix.length);
+            return range.getBoundingClientRect().top;
+          }
+          return -1;
+        });
+        """) as? [Double]
+    let positions = try XCTUnwrap(tops)
+    XCTAssertEqual(positions.count, 4)
+    XCTAssertTrue(positions.allSatisfy { $0 >= 0 })
+    for (first, next) in zip(positions, positions.dropFirst()) {
+      XCTAssertGreaterThan(
+        next - first, 15, "Each heading and security entry must start on a new line")
+    }
+    let bitmap = try await settledWindowBitmap(window)
+    let attachment = XCTAttachment(
+      image: NSImage(cgImage: try XCTUnwrap(bitmap.cgImage), size: bitmap.size))
+    attachment.name = "chrome-release-notes-blocks"
+    attachment.lifetime = .keepAlways
+    add(attachment)
+  }
+
+  @MainActor
   func testReleaseNotesBackgroundDoesNotFlashWhileLoading() async throws {
     try requireUITests()
     let app = makeTestApp(name: "First paint", version: "1")
