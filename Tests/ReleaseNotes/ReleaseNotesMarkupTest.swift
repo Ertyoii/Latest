@@ -731,12 +731,20 @@ final class ReleaseNotesMarkupTest: XCTestCase {
       <h2 class='title'>Stable Channel Update for Desktop</h2>
       <div class='post-content'>
       <script type='text/template'>
-      <p>The Stable channel has been updated to 149.0.7827.114/.115 for Windows and Mac and 149.0.7827.114 for Linux, which will roll out over the coming days/weeks.</p>
-      <p>Security Fixes and Rewards</p>
+      <p><span>The Stable channel has been updated to 149.0.7827.114/.115 for Windows and Mac and 149.0.7827.114 for Linux, which will roll out over the coming days/weeks.</span></p>
+      <h1><span>Security Fixes and Rewards</span></h1>
       <p>This update includes 28 security fixes.</p>
-      <p>Critical CVE-2026-12007: Use after free in Core.</p>
+      <p>[N/A][<a href="https://issues.chromium.org/issues/534994449">534994449</a>] Critical CVE-2026-12007: Use after free in Core. Reported by @_3P1C.</p>
+      <p>[TBD][560238696] Critical CVE-2026-12008: Use after free in Browser. Reported by @lbherrera_.</p>
       </script>
       </div>
+      </div>
+      <div class='post'>
+      <h2 class='title'>Stable Channel Update for Desktop</h2>
+      <script type='text/template'>
+      <p>The Stable channel has been updated to 148.0.7778.265 for Windows and Mac.</p>
+      <p>Older release with unrelated fixes.</p>
+      </script>
       </div>
       """
 
@@ -751,6 +759,23 @@ final class ReleaseNotesMarkupTest: XCTestCase {
     XCTAssertTrue(text.contains("Stable Channel Update for Desktop"))
     XCTAssertTrue(text.contains("28 security fixes"))
     XCTAssertFalse(text.contains("Android releases contain"))
+    let content = try ReleaseNotesMarkup.attributedString(
+      from: text, baseURL: URL(string: "https://chromereleases.googleblog.com/")!
+    ).get()
+    let lines = content.string.components(separatedBy: .newlines)
+    XCTAssertEqual(lines.first, "Stable Channel Update for Desktop")
+    XCTAssertTrue(lines.contains("Security Fixes and Rewards"))
+    XCTAssertTrue(lines.contains("This update includes 28 security fixes."))
+    XCTAssertTrue(lines.contains { $0.hasPrefix("[N/A]") && $0.hasSuffix("@_3P1C.") })
+    XCTAssertTrue(lines.contains { $0.hasPrefix("[TBD]") && $0.hasSuffix("@lbherrera_.") })
+    XCTAssertTrue(
+      content.runs.contains {
+        $0.text.contains("Security Fixes and Rewards") && $0.style?.bold == true
+      })
+    XCTAssertEqual(
+      content.runs.first { $0.text == "534994449" }?.link,
+      URL(string: "https://issues.chromium.org/issues/534994449"))
+    XCTAssertFalse(content.string.contains("Older release"))
   }
 
   func testReleaseNotesMarkupExtractsZedReleaseWithoutNavigationChrome() throws {

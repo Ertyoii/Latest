@@ -14,7 +14,7 @@ enum ChromeReleaseNotesExtractor {
 
     let candidates = ReleaseNotesMarkup.versionCandidates(from: version)
     if let releaseText = Self.chromeDesktopReleaseTextFromBloggerTemplate(
-      html, version: version, candidates: candidates)
+      html, version: version, candidates: candidates, pageURL: pageURL)
     {
       return releaseText
     }
@@ -25,7 +25,7 @@ enum ChromeReleaseNotesExtractor {
   }
 
   private static func chromeDesktopReleaseTextFromBloggerTemplate(
-    _ html: String, version: String?, candidates: [String]
+    _ html: String, version: String?, candidates: [String], pageURL: URL
   ) -> String? {
     var searchStart = html.startIndex
     while let titleRange = html.range(
@@ -49,7 +49,10 @@ enum ChromeReleaseNotesExtractor {
         if Self.chromeReleaseTextMatches(releaseText, version: version, candidates: candidates),
           ReleaseNotesMarkup.isUsefulReleaseNotesText(releaseText, relevantVersion: nil)
         {
-          return releaseText
+          if let markdown = ReleaseNotesDocument.markdown(fromHTML: bodyMarkup, baseURL: pageURL) {
+            return "## Stable Channel Update for Desktop\n\n" + markdown
+          }
+          return releaseText.components(separatedBy: .newlines).joined(separator: "\n\n")
         }
       }
 
@@ -123,7 +126,7 @@ enum ChromeReleaseNotesExtractor {
       }
     }
 
-    let releaseText = lines[startIndex..<endIndex].joined(separator: "\n")
+    let releaseText = lines[startIndex..<endIndex].joined(separator: "\n\n")
     guard ReleaseNotesMarkup.isUsefulReleaseNotesText(releaseText, relevantVersion: nil) else {
       return nil
     }
