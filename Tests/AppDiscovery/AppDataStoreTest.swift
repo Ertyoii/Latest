@@ -20,7 +20,7 @@ final class AppDataStoreTest: XCTestCase {
     var iterator = store.updates().makeAsyncIterator()
 
     let initialApps = await iterator.next()
-    XCTAssertEqual(initialApps?.count, 0)
+    XCTAssertEqual(initialApps?.apps.count, 0)
 
     let appURL = URL(
       fileURLWithPath: "/Applications/Stream-\(UUID().uuidString).app", isDirectory: true)
@@ -29,7 +29,53 @@ final class AppDataStoreTest: XCTestCase {
 
     let updatedApps = await iterator.next()
 
-    XCTAssertEqual(updatedApps?.map(\.identifier), [bundle.identifier])
+    XCTAssertEqual(updatedApps?.apps.map(\.identifier), [bundle.identifier])
+  }
+
+  @MainActor
+  func testPendingSubscribersSeeCurrentResultsIgnoreStateAndReplacementGeneration() async throws {
+    let suite = "PendingDiscovery.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = AppDataStore(userDefaults: defaults)
+    let first = makeBundle(versionNumber: "1", at: URL(fileURLWithPath: "/tmp/First.app"))
+    let second = makeBundle(versionNumber: "1", at: URL(fileURLWithPath: "/tmp/Second.app"))
+    store.beginUpdateCheck(generation: 1)
+    store.set(appBundles: [first, second])
+    let result = try XCTUnwrap(
+      store.accept(
+        .success(
+          makeUpdate(for: first, remoteVersion: Version(versionNumber: "2", buildNumber: nil))),
+        for: first))
+    store.setIgnoredState(true, for: result)
+    var iterator = store.updates().makeAsyncIterator()
+    let current = await iterator.next()
+    XCTAssertEqual(current?.checkingGeneration, 1)
+    XCTAssertEqual(current?.apps.count, 2)
+    XCTAssertTrue(
+      current?.apps.first(where: { $0.identifier == first.identifier })?.isIgnored == true)
+    XCTAssertEqual(
+      current?.apps.first(where: { $0.identifier == first.identifier })?.remoteVersion?
+        .versionNumber, "2")
+    XCTAssertNil(current?.apps.first(where: { $0.identifier == second.identifier })?.remoteVersion)
+    store.beginUpdateCheck(generation: 2)
+    store.set(appBundles: [second])
+    store.finishUpdateCheck(generation: 1)
+    var replacementIterator = store.updates().makeAsyncIterator()
+    let replacement = await replacementIterator.next()
+    XCTAssertEqual(
+      replacement?.checkingGeneration, 2, "Obsolete completion cannot settle a replacement scan")
+    XCTAssertEqual(replacement?.apps.map(\.identifier), [second.identifier])
+    XCTAssertNil(store.accept(.failure(URLError(.timedOut)), for: first))
+    store.setIgnoredState(false, for: result)
+    XCTAssertEqual(
+      store.apps.map(\.identifier), [second.identifier],
+      "An old visible row cannot restore a removed app")
+    store.finishUpdateCheck(generation: 2)
+    var finalIterator = store.updates().makeAsyncIterator()
+    let final = await finalIterator.next()
+    XCTAssertNil(final?.checkingGeneration)
+    XCTAssertEqual(final?.apps.map(\.identifier), [second.identifier])
   }
 
   func testSingleBundleRefreshPreservesUpdateState() {

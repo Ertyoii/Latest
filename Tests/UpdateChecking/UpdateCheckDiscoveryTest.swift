@@ -63,11 +63,61 @@ final class UpdateCheckDiscoveryTest: XCTestCase {
     XCTAssertEqual(progress.checked.count, 1, "Old metadata must not overwrite the refresh")
   }
 
-  func testScanPublishesSettledRowsAndKeepsPreviousListDuringRefresh() async throws {
+  func testDiscoveryPublishesRowsAndResultsBeforeSlowProviderFinishes() async throws {
+    let started = expectation(description: "Both providers started")
+    started.expectedFulfillmentCount = 2
+    let checks = SuspendedDiscoveryChecks { _ in started.fulfill() }
+    let coordinator = UpdateCheckCoordinator(
+      check: { bundle, _ in try await checks.check(bundle) }, repositoryProvider: { nil })
+    let settings = try isolatedAppListSettings(for: self)
+    let model = UpdatesListViewModel(settings: settings, appProvider: coordinator.appProvider)
+    let discovered = expectation(
+      description: "Discovered rows visible with both providers suspended")
+    let incremental = expectation(
+      description: "First result visible while another provider is suspended")
+    let finished = expectation(description: "Scan finished")
+    let progress = DiscoveryCheckProgress(finished: finished)
+    coordinator.progressDelegate = progress
+    var didDiscover = false
+    var didPublishResult = false
+    let observation = model.$snapshot.sink { snapshot in
+      if snapshot.apps.count == 2, !didDiscover {
+        didDiscover = true
+        discovered.fulfill()
+      }
+      if snapshot.apps.first(where: { $0.name == "A" })?.remoteVersion != nil,
+        !didPublishResult
+      {
+        didPublishResult = true
+        incremental.fulfill()
+      }
+    }
+    defer {
+      observation.cancel()
+      model.stopObserving()
+    }
+    model.startObserving()
+    coordinator.updateDiscoveredBundles([bundle("A"), bundle("B")])
+    await fulfillment(of: [started, discovered], timeout: 2)
+    XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["A", "B"])
+    XCTAssertEqual(model.selectedApp?.name, "A")
+    await checks.complete("A", date: Date(timeIntervalSince1970: 10))
+    await fulfillment(of: [incremental], timeout: 2)
+    XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["A", "B"])
+    XCTAssertEqual(model.selectedApp?.name, "A")
+    XCTAssertEqual(model.selectedApp?.remoteVersion?.versionNumber, "3")
+    XCTAssertEqual(progress.checked.count, 1)
+    await checks.fail("B")
+    await fulfillment(of: [finished], timeout: 2)
+  }
+
+  func testSettlementRefreshAndResubscriptionPreserveSelectionAndPublishCurrentMetadata()
+    async throws
+  {
     let initialStarted = expectation(description: "Initial checks started")
     initialStarted.expectedFulfillmentCount = 2
     let refreshStarted = expectation(description: "Refresh checks started")
-    refreshStarted.expectedFulfillmentCount = 2
+    refreshStarted.expectedFulfillmentCount = 3
     let startedCount = Mutex(0)
     let checks = SuspendedDiscoveryChecks { _ in
       let count = startedCount.withLock {
@@ -76,70 +126,76 @@ final class UpdateCheckDiscoveryTest: XCTestCase {
       }
       (count <= 2 ? initialStarted : refreshStarted).fulfill()
     }
+    defer { Task { await checks.completeAll() } }
     let coordinator = UpdateCheckCoordinator(
       check: { bundle, _ in try await checks.check(bundle) }, repositoryProvider: { nil })
     let settings = try isolatedAppListSettings(for: self)
+    settings.sortOrder = .updateDate
     let model = UpdatesListViewModel(settings: settings, appProvider: coordinator.appProvider)
-    var publishedRows = [[String]]()
-    var prematureRows = expectation(description: "No provisional rows during startup")
-    prematureRows.isInverted = true
-    var settledRows = expectation(description: "Settled startup order")
-    var isChecking = true
-    let observation = model.$snapshot.sink { snapshot in
-      let names = snapshot.sections.flatMap(\.apps).map(\.name)
-      guard !names.isEmpty else { return }
-      publishedRows.append(names)
-      if isChecking {
-        prematureRows.fulfill()
-      } else {
-        settledRows.fulfill()
-      }
-    }
-    defer {
-      observation.cancel()
-      model.stopObserving()
-    }
     model.startObserving()
-    let bundles = [bundle("A"), bundle("B")]
-    coordinator.updateDiscoveredBundles(bundles)
+    defer { model.stopObserving() }
+    coordinator.updateDiscoveredBundles([bundle("A"), bundle("B")])
     await fulfillment(of: [initialStarted], timeout: 2)
-    await checks.complete("A", remoteVersion: "1", date: Date(timeIntervalSince1970: 10))
-    // Give the store's coalesced publication time to expose any provisional rows.
-    await fulfillment(of: [prematureRows], timeout: 0.35)
-    XCTAssertTrue(model.snapshot.entries.isEmpty)
-    XCTAssertNil(model.selectedApp)
-
-    isChecking = false
+    try await waitForSnapshot(model) { $0.apps.count == 2 }
+    XCTAssertEqual(model.selectedApp?.name, "A")
     await checks.complete("B", remoteVersion: "1", date: Date(timeIntervalSince1970: 20))
-    await fulfillment(of: [settledRows], timeout: 2)
-    XCTAssertEqual(publishedRows, [["B", "A"]])
-    XCTAssertEqual(model.selectedApp?.name, "B")
-    let selected = try XCTUnwrap(model.snapshot.apps.first { $0.name == "A" })
-    model.select(selected)
-
-    prematureRows = expectation(description: "No partial rows during refresh")
-    prematureRows.isInverted = true
-    settledRows = expectation(description: "Settled refresh order")
-    isChecking = true
-    coordinator.updateDiscoveredBundles(bundles, forceRefresh: true)
-    await fulfillment(of: [refreshStarted], timeout: 2)
-    await checks.complete("A")
-    await fulfillment(of: [prematureRows], timeout: 0.35)
+    try await waitForSnapshot(model) {
+      $0.apps.first(where: { $0.name == "B" })?.remoteVersion != nil
+    }
+    XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["A", "B"])
+    await checks.complete("A", remoteVersion: "1", date: Date(timeIntervalSince1970: 10))
+    try await waitForSnapshot(model) { $0.checkingGeneration == nil }
     XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["B", "A"])
-    XCTAssertTrue(model.selectedApp === selected)
-    // A view subscribing in the middle of a scan must also see the last settled state.
-    var iterator = coordinator.appProvider.updates().makeAsyncIterator()
-    let currentApps = await iterator.next()
-    let current = try XCTUnwrap(currentApps)
-    XCTAssertEqual(current.first { $0.name == "A" }?.remoteVersion?.versionNumber, "1")
-
-    isChecking = false
-    await checks.fail("B")
-    await fulfillment(of: [settledRows], timeout: 2)
-    XCTAssertEqual(publishedRows, [["B", "A"], ["A", "B"]])
-    XCTAssertEqual(model.selectedApp?.identifier, selected.identifier)
+    XCTAssertEqual(
+      model.selectedApp?.name, "A", "Automatic initial selection must also survive settlement")
+    let identifier = try XCTUnwrap(model.selectedApp?.identifier)
+    coordinator.updateDiscoveredBundles(
+      [bundle("A"), bundle("B"), bundle("C")], forceRefresh: true)
+    await fulfillment(of: [refreshStarted], timeout: 2)
+    try await waitForSnapshot(model) { $0.apps.count == 3 && $0.checkingGeneration != nil }
+    XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["B", "A", "C"])
+    XCTAssertEqual(
+      model.selectedApp?.remoteVersion?.versionNumber, "1",
+      "Refresh retains last known result while awaiting replacement")
+    await checks.complete("A", date: Date(timeIntervalSince1970: 30))
+    try await waitForSnapshot(model) {
+      $0.apps.first(where: { $0.name == "A" })?.remoteVersion?.versionNumber == "3"
+    }
+    XCTAssertEqual(model.selectedApp?.identifier, identifier)
     XCTAssertEqual(model.selectedApp?.remoteVersion?.versionNumber, "3")
-    XCTAssertNotNil(model.snapshot.apps.first { $0.name == "B" }?.error)
+    model.setSearchQuery("A")
+    XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["A"])
+    model.setSearchQuery("")
+    XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["B", "A", "C"])
+    model.stopObserving()
+    model.startObserving()
+    var iterator = coordinator.appProvider.updates().makeAsyncIterator()
+    let current = await iterator.next()
+    XCTAssertNotNil(current?.checkingGeneration)
+    XCTAssertEqual(
+      current?.apps.first(where: { $0.name == "A" })?.remoteVersion?.versionNumber, "3")
+    XCTAssertNil(current?.apps.first(where: { $0.name == "C" })?.remoteVersion)
+    await checks.fail("B")
+    try await waitForSnapshot(model) { $0.apps.first(where: { $0.name == "B" })?.error != nil }
+    XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["B", "A", "C"])
+    await checks.complete("C", remoteVersion: "1", date: Date(timeIntervalSince1970: 40))
+    try await waitForSnapshot(model) { $0.checkingGeneration == nil }
+    XCTAssertEqual(model.snapshot.sections.map { $0.apps.map(\.name) }, [["A"], ["C", "B"]])
+    XCTAssertEqual(model.selectedApp?.identifier, identifier)
+    coordinator.updateDiscoveredBundles([])
+    try await waitForSnapshot(model) { $0.apps.isEmpty }
+    XCTAssertNil(model.selectedApp)
+  }
+
+  private func waitForSnapshot(
+    _ model: UpdatesListViewModel, _ condition: (AppListSnapshot) -> Bool
+  ) async throws {
+    for _ in 0..<200 {
+      if condition(model.snapshot) { return }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTFail("Expected current app-list publication did not arrive")
+    throw CocoaError(.coderInvalidValue)
   }
 
   func testUnchangedDiscoveryKeepsPendingChecks() async {
@@ -186,20 +242,19 @@ final class UpdateCheckDiscoveryTest: XCTestCase {
     let progress = DiscoveryCheckProgress(
       finished: expectation(description: "Replacement scan finished"))
     coordinator.progressDelegate = progress
-    let prematurePublication = expectation(description: "Cancelled scan cannot publish rows")
-    prematurePublication.isInverted = true
-    let settledPublication = expectation(description: "Replacement rows published")
-    let isChecking = Mutex(true)
+    let replacementPublication = expectation(description: "Replacement discovery visible")
     var publishedApps = [App]()
+    var didPublishReplacement = false
     let stream = coordinator.appProvider.updates()
     let observation = Task {
-      for await apps in stream {
-        guard !apps.isEmpty else { continue }
-        publishedApps = apps
-        if isChecking.withLock({ $0 }) {
-          prematurePublication.fulfill()
-        } else {
-          settledPublication.fulfill()
+      for await update in stream {
+        publishedApps = update.apps
+        if update.apps.count == 2,
+          update.apps.first(where: { $0.name == "A" })?.version.versionNumber == "2",
+          !didPublishReplacement
+        {
+          didPublishReplacement = true
+          replacementPublication.fulfill()
         }
       }
     }
@@ -214,17 +269,22 @@ final class UpdateCheckDiscoveryTest: XCTestCase {
     await checks.complete("A")
     await checks.complete("B")
     await checks.complete("Removed")
-    await fulfillment(of: [prematurePublication], timeout: 0.35)
-    isChecking.withLock { $0 = false }
+    await fulfillment(of: [replacementPublication], timeout: 2)
+    XCTAssertEqual(Set(publishedApps.map(\.identifier)), Set(replacement.map(\.identifier)))
+    XCTAssertTrue(publishedApps.allSatisfy { $0.remoteVersion == nil })
+    XCTAssertTrue(progress.checked.isEmpty)
     await checks.completeAll()
-    await fulfillment(of: [progress.finished, settledPublication], timeout: 2)
+    await fulfillment(of: [progress.finished], timeout: 2)
 
     let apps = coordinator.appProvider.updatableApps
     XCTAssertEqual(Set(apps.map(\.identifier)), Set(replacement.map(\.identifier)))
     XCTAssertEqual(apps.first { $0.name == "A" }?.version.versionNumber, "2")
     XCTAssertEqual(progress.batchSizes, [3, 2])
     XCTAssertEqual(progress.checked.count, 2)
-    XCTAssertEqual(Set(publishedApps.map(\.identifier)), Set(replacement.map(\.identifier)))
+    var iterator = coordinator.appProvider.updates().makeAsyncIterator()
+    let final = await iterator.next()
+    XCTAssertEqual(Set(final?.apps.map(\.identifier) ?? []), Set(replacement.map(\.identifier)))
+    XCTAssertNil(final?.checkingGeneration)
   }
 
   private func bundle(_ name: String, version: String = "1") -> App.Bundle {

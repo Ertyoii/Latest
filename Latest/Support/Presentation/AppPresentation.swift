@@ -10,6 +10,13 @@
 import AppKit
 
 extension App {
+  var localizedSupportStatus: String {
+    isSourcePending
+      ? NSLocalizedString(
+        "PendingSupportStatus", value: "Checking for updates",
+        comment: "Support is unknown until the update lookup finishes")
+      : source.supportState.label
+  }
 
   /// Localized version information suitable for display in the interface.
   struct DisplayableVersionInformation {

@@ -18,19 +18,44 @@ final class ApplicationLifecycleTest: XCTestCase {
   }
 
   @MainActor
-  func testStartupActivatesReleaseNotesCatalogBeforeInitialUpdateCheck() async {
-    var events = [String]()
-    await AppStartupSequence.run(
-      refreshCatalog: {
-        events.append("catalog")
-        await Task.yield()
-        events.append("catalog-ready")
-      },
-      checkForUpdates: {
-        events.append("check")
-      }
-    )
+  func testStartupChecksImmediatelyWhileCatalogRefreshIsSuspended() async {
+    let check = expectation(description: "Discovery starts")
+    let catalogStarted = expectation(description: "Catalog suspended")
+    var continuation: CheckedContinuation<Void, Never>?
+    var checks = 0
+    let task = Task {
+      await AppStartupSequence.run(
+        refreshCatalog: {
+          await withCheckedContinuation {
+            continuation = $0
+            catalogStarted.fulfill()
+          }
+        },
+        checkForUpdates: {
+          checks += 1
+          check.fulfill()
+        })
+    }
+    await fulfillment(of: [check, catalogStarted], timeout: 2)
+    task.cancel()
+    continuation?.resume()
+    await task.value
+    XCTAssertEqual(checks, 1, "Finishing a cancelled catalog refresh must not restart discovery")
+    await AppStartupSequence.run(refreshCatalog: {}, checkForUpdates: { checks += 1 })
+    XCTAssertEqual(checks, 2, "A later launch can start discovery again")
+  }
 
-    XCTAssertEqual(events, ["catalog", "catalog-ready", "check"])
+  @MainActor
+  func testCancelledStartupDoesNotBeginDiscoveryOrCatalogRequests() async {
+    var checks = 0
+    var refreshes = 0
+    let task = Task {
+      await AppStartupSequence.run(
+        refreshCatalog: { refreshes += 1 }, checkForUpdates: { checks += 1 })
+    }
+    task.cancel()
+    await task.value
+    XCTAssertEqual(checks, 0)
+    XCTAssertEqual(refreshes, 0)
   }
 }

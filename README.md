@@ -49,7 +49,7 @@ The [development guide](docs/Development.md) gives a reading order, design ratio
 
 SwiftUI owns the scenes, search, rows, settings, and detail controls. macOS 26 and 27 share `UpdatesScrollList`, including row geometry, selection, keyboard navigation, and context menus. A small AppKit bridge configures overlay scroll indicators and disables edge bounce. Release notes use WebKit for text selection and scrolling; native services and window hooks remain at platform boundaries.
 
-Discovery publishes complete scans so rows appear in their final order. Refresh keeps the previous list and selection visible. Keyboard selection updates the detail header immediately and waits for selection to settle before hashing and loading notes; mouse selection loads notes immediately.
+Discovery publishes apps promptly while update providers run. During a scan, visible apps share the neutral Installed Apps section and retain their previous/discovery order as versions and dates resolve. Apps with unresolved update sources show Checking rather than an unsupported indicator. Completed scans apply the usual sections and displayed-date sorting once. Search and explicit preferences remain usable, refresh retains known results until replaced, and selection stays attached to the installed path. Remote release-note catalog refresh runs alongside discovery using the bundled catalog initially. Keyboard selection updates the detail header immediately and waits for selection to settle before hashing and loading notes; mouse selection loads notes immediately.
 
 ## Updating applications
 

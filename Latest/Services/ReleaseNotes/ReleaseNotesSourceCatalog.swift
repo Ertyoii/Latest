@@ -75,6 +75,7 @@ enum ReleaseNotesSourceCatalog {
         bundledCatalogData: bundledData,
         cache: .live()
       ).load()
+      guard !Task.isCancelled else { return revision }
       let revision = state.withLock { state in
         state.index = Index(document: loaded.document)
         state.revision &+= 1

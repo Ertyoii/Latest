@@ -27,9 +27,6 @@ struct UpdatesScrollList: View {
                 selection: navigation.selection(for: app),
                 select: { select(app, keyboard: false) }
               )
-              // App equality ignores update metadata. A fresh immutable app
-              // must replace the row even when its installed version is unchanged.
-              .id(ObjectIdentifier(app))
             }
           } header: {
             UpdateSectionHeaderView(section: group.section)
@@ -248,6 +245,8 @@ private struct UpdatesScrollRow: View {
     GeometryReader { geometry in
       ZStack {
         content
+          // Refresh metadata subscriptions without replacing the path-identified row.
+          .id(ObjectIdentifier(app))
           .frame(width: geometry.size.width, height: VisualMetrics.appRowHeight)
           .offset(x: 16)
           .background {

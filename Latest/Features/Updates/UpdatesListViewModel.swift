@@ -49,8 +49,25 @@ final class UpdatesListViewModel: ObservableObject {
   var isKeyboardSelection: Bool { selection.isKeyboardSelection }
   @Published private(set) var searchQuery = ""
 
+  private struct ListPreferences: Equatable {
+    let sortOrder: AppListSettings.SortOptions
+    let showInstalled: Bool
+    let showIgnored: Bool
+    let includeUnsupported: Bool
+    let includeLimited: Bool
+
+    @MainActor
+    init(_ settings: any AppListSettingsProviding) {
+      sortOrder = settings.sortOrder
+      showInstalled = settings.showInstalledUpdates
+      showIgnored = settings.showIgnoredUpdates
+      includeUnsupported = settings.includeUnsupportedApps
+      includeLimited = settings.includeAppsWithLimitedSupport
+    }
+  }
+
+  private var observedPreferences: ListPreferences
   private var observationTasks = [Task<Void, Never>]()
-  private var selectionWasUserInitiated = false
   private let settings: any AppListSettingsProviding
   private let appProvider: any AppProviding
   private let workspace: any ApplicationWorkspace
@@ -64,6 +81,7 @@ final class UpdatesListViewModel: ObservableObject {
     updating: any AppUpdating = AppUpdateService.shared
   ) {
     self.settings = settings
+    self.observedPreferences = ListPreferences(settings)
     self.appProvider = appProvider
     self.workspace = workspace
     self.updating = updating
@@ -86,17 +104,21 @@ final class UpdatesListViewModel: ObservableObject {
       Task { [weak self] in
         for await _ in settings.updates() {
           guard !Task.isCancelled, let self else { break }
+          let preferences = ListPreferences(settings)
+          guard preferences != self.observedPreferences else { continue }
+          self.observedPreferences = preferences
           self.refreshSnapshot()
         }
       },
       Task { [weak self] in
-        for await apps in appProvider.updates() {
+        for await update in appProvider.updates() {
           guard !Task.isCancelled, let self else { break }
           self.replaceSnapshot(
             with: AppListSnapshot(
-              withApps: apps,
+              withApps: update.apps,
               filterQuery: self.normalizedSearchQuery,
-              settings: self.settings
+              settings: self.settings,
+              checkingGeneration: update.checkingGeneration, previous: self.snapshot
             ))
           self.maintainSelectionAfterSnapshotChange()
           self.updateDockBadge()
@@ -123,7 +145,6 @@ final class UpdatesListViewModel: ObservableObject {
 
   func select(_ app: App?, isKeyboardSelection: Bool = false) {
     guard app?.identifier != selectedApp?.identifier else { return }
-    selectionWasUserInitiated = true
     if let app, app !== selectedApp {
       MigrationTelemetry.shared.selectionStarted(appName: app.name)
     }
@@ -174,8 +195,7 @@ final class UpdatesListViewModel: ObservableObject {
   }
 
   private func maintainSelectionAfterSnapshotChange() {
-    if selectionWasUserInitiated,
-      let selectedApp,
+    if let selectedApp,
       snapshot.firstIndex(of: selectedApp) != nil
     {
       let refreshedApp = snapshot.app(withIdentifier: selectedApp.identifier)
@@ -183,9 +203,6 @@ final class UpdatesListViewModel: ObservableObject {
       return
     }
 
-    if selectionWasUserInitiated {
-      selectionWasUserInitiated = false
-    }
     selectedApp = snapshot.sections.first?.apps.first
   }
 
