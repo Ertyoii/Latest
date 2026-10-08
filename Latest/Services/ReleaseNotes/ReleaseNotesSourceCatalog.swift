@@ -12,6 +12,8 @@ import OSLog
 import Synchronization
 
 enum ReleaseNotesSourceCatalog {
+  static let didRefreshNotification = Notification.Name("ReleaseNotesSourceCatalogDidRefresh")
+
   private struct Index: Sendable {
     let definitions: [ReleaseNotesSourceDefinition]
     let definitionsByKey: [String: ReleaseNotesSourceDefinition]
@@ -63,23 +65,26 @@ enum ReleaseNotesSourceCatalog {
   }
 
   @discardableResult
-  static func refresh() async -> UInt64 {
+  static func refresh(client: SignedReleaseNotesCatalogClient? = nil) async -> UInt64 {
     guard !bundledData.isEmpty else {
       logger.error("Bundled release-notes catalog is unavailable")
       return revision
     }
 
     do {
-      let loaded = try await SignedReleaseNotesCatalogClient(
-        configuration: .live(),
-        bundledCatalogData: bundledData,
-        cache: .live()
-      ).load()
+      let client =
+        client
+        ?? SignedReleaseNotesCatalogClient(
+          configuration: .live(), bundledCatalogData: bundledData, cache: .live())
+      let loaded = try await client.load()
       guard !Task.isCancelled else { return revision }
       let revision = state.withLock { state in
         state.index = Index(document: loaded.document)
         state.revision &+= 1
         return state.revision
+      }
+      await MainActor.run {
+        NotificationCenter.default.post(name: didRefreshNotification, object: nil)
       }
       logger.info(
         "Activated release-notes catalog origin=\(String(describing: loaded.origin), privacy: .public) definitions=\(loaded.document.definitions.count, privacy: .public) revision=\(revision, privacy: .public)"

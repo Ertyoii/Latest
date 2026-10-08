@@ -222,6 +222,9 @@ private struct UpdatesScrollRow: View {
   let focus: FocusState<SidebarFocus?>.Binding
   let selection: UpdateRowSelection
   let select: () -> Void
+  // App equality excludes remote metadata. A stored revision makes SwiftUI
+  // reevaluate this path-identified row when an immutable App is replaced.
+  private let appIdentity: ObjectIdentifier
   private let content: UpdateRowView
   private var isSelected: Bool { selection.isSelected }
 
@@ -231,6 +234,7 @@ private struct UpdatesScrollRow: View {
     select: @escaping () -> Void
   ) {
     self.app = app
+    self.appIdentity = ObjectIdentifier(app)
     self.viewModel = viewModel
     self.focus = focus
     self.selection = selection
@@ -246,7 +250,7 @@ private struct UpdatesScrollRow: View {
       ZStack {
         content
           // Refresh metadata subscriptions without replacing the path-identified row.
-          .id(ObjectIdentifier(app))
+          .id(appIdentity)
           .frame(width: geometry.size.width, height: VisualMetrics.appRowHeight)
           .offset(x: 16)
           .background {
