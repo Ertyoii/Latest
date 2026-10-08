@@ -19,14 +19,13 @@ struct UpdatesScrollList: View {
           Section {
             Color.clear.frame(height: VisualMetrics.sectionHeaderSpacing)
               .accessibilityHidden(true)
-            ForEach(group.apps.map(SidebarAppValue.init)) { value in
-              let app = value.app
+            ForEach(group.apps, id: \.identifier) { app in
               UpdatesScrollRow(
                 app: app, viewModel: viewModel,
                 showsSupportStatus: showsSupportStatusOverride ?? true,
                 focus: focus,
                 selection: navigation.selection(for: app),
-                select: { select(app, keyboard: false) }
+                select: { select($0, keyboard: false) }
               )
             }
           } header: {
@@ -118,22 +117,6 @@ struct UpdatesScrollList: View {
     navigation.synchronize(app.identifier)
     viewModel.select(app, isKeyboardSelection: keyboard)
   }
-}
-
-// ForEach compares its data before invoking the row builder. App equality
-// omits remote metadata, so carry the immutable object's revision in the data
-// while retaining the installed path as the row identity.
-private struct SidebarAppValue: Identifiable, Equatable {
-  let app: App
-  private let revision: ObjectIdentifier
-  var id: App.Bundle.Identifier { app.identifier }
-
-  init(_ app: App) {
-    self.app = app
-    revision = ObjectIdentifier(app)
-  }
-
-  static func == (lhs: Self, rhs: Self) -> Bool { lhs.revision == rhs.revision }
 }
 
 // Selection and ScrollPosition invalidate only this viewport. The lazy
@@ -234,40 +217,43 @@ private final class SidebarScrollState {
 }
 
 private struct UpdatesScrollRow: View {
-  let app: App
-  let viewModel: UpdatesListViewModel
+  // App equality omits remote metadata. Observe the snapshot directly so a
+  // path-identified row reads current metadata even when ForEach reuses it.
+  @ObservedObject var viewModel: UpdatesListViewModel
   let focus: FocusState<SidebarFocus?>.Binding
   let selection: UpdateRowSelection
-  let select: () -> Void
-  // App equality excludes remote metadata. A stored revision makes SwiftUI
-  // reevaluate this path-identified row when an immutable App is replaced.
-  private let appIdentity: ObjectIdentifier
-  private let content: UpdateRowView
+  let select: (App) -> Void
+  private let initialApp: App
+  private let showsSupportStatus: Bool
+  private var app: App {
+    viewModel.snapshot.app(withIdentifier: initialApp.identifier) ?? initialApp
+  }
   private var isSelected: Bool { selection.isSelected }
 
   init(
     app: App, viewModel: UpdatesListViewModel, showsSupportStatus: Bool,
     focus: FocusState<SidebarFocus?>.Binding, selection: UpdateRowSelection,
-    select: @escaping () -> Void
+    select: @escaping (App) -> Void
   ) {
-    self.app = app
-    self.appIdentity = ObjectIdentifier(app)
-    self.viewModel = viewModel
+    self.initialApp = app
+    self.showsSupportStatus = showsSupportStatus
+    self._viewModel = ObservedObject(wrappedValue: viewModel)
     self.focus = focus
     self.selection = selection
     self.select = select
-    content = UpdateRowView(
-      app: app, selection: selection,
-      date: Self.dateFormatter.string(from: app.updateDate),
-      showsSupportStatus: showsSupportStatus, updating: viewModel.updating)
   }
 
   var body: some View {
+    let app = self.app
+    let content = UpdateRowView(
+      app: app, selection: selection,
+      date: Self.dateFormatter.string(from: app.updateDate),
+      showsSupportStatus: showsSupportStatus, updating: viewModel.updating)
     GeometryReader { geometry in
       ZStack {
         content
           // Refresh metadata subscriptions without replacing the path-identified row.
-          .id(appIdentity)
+          .id(ObjectIdentifier(app))
           .frame(width: geometry.size.width, height: VisualMetrics.appRowHeight)
           .offset(x: 16)
           .background {
@@ -297,7 +283,7 @@ private struct UpdatesScrollRow: View {
 
   private func selectApp() {
     focus.wrappedValue = .list
-    select()
+    select(app)
   }
 
   private static let dateFormatter: DateFormatter = {
