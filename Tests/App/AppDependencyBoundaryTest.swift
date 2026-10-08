@@ -236,9 +236,9 @@ private final class StubAppProvider: AppProviding {
   }
 
   @MainActor
-  func updates() -> AsyncStream<[App]> {
+  func updates() -> AsyncStream<AppListUpdate> {
     AsyncStream { continuation in
-      continuation.yield(apps)
+      continuation.yield(AppListUpdate(apps: apps, checkingGeneration: nil))
       continuation.finish()
     }
   }

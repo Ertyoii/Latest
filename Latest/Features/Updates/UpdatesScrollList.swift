@@ -25,11 +25,8 @@ struct UpdatesScrollList: View {
                 showsSupportStatus: showsSupportStatusOverride ?? true,
                 focus: focus,
                 selection: navigation.selection(for: app),
-                select: { select(app, keyboard: false) }
+                select: { select($0, keyboard: false) }
               )
-              // App equality ignores update metadata. A fresh immutable app
-              // must replace the row even when its installed version is unchanged.
-              .id(ObjectIdentifier(app))
             }
           } header: {
             UpdateSectionHeaderView(section: group.section)
@@ -220,34 +217,43 @@ private final class SidebarScrollState {
 }
 
 private struct UpdatesScrollRow: View {
-  let app: App
-  let viewModel: UpdatesListViewModel
+  // App equality omits remote metadata. Observe the snapshot directly so a
+  // path-identified row reads current metadata even when ForEach reuses it.
+  @ObservedObject var viewModel: UpdatesListViewModel
   let focus: FocusState<SidebarFocus?>.Binding
   let selection: UpdateRowSelection
-  let select: () -> Void
-  private let content: UpdateRowView
+  let select: (App) -> Void
+  private let initialApp: App
+  private let showsSupportStatus: Bool
+  private var app: App {
+    viewModel.snapshot.app(withIdentifier: initialApp.identifier) ?? initialApp
+  }
   private var isSelected: Bool { selection.isSelected }
 
   init(
     app: App, viewModel: UpdatesListViewModel, showsSupportStatus: Bool,
     focus: FocusState<SidebarFocus?>.Binding, selection: UpdateRowSelection,
-    select: @escaping () -> Void
+    select: @escaping (App) -> Void
   ) {
-    self.app = app
-    self.viewModel = viewModel
+    self.initialApp = app
+    self.showsSupportStatus = showsSupportStatus
+    self._viewModel = ObservedObject(wrappedValue: viewModel)
     self.focus = focus
     self.selection = selection
     self.select = select
-    content = UpdateRowView(
-      app: app, selection: selection,
-      date: Self.dateFormatter.string(from: app.updateDate),
-      showsSupportStatus: showsSupportStatus, updating: viewModel.updating)
   }
 
   var body: some View {
+    let app = self.app
+    let content = UpdateRowView(
+      app: app, selection: selection,
+      date: Self.dateFormatter.string(from: app.updateDate),
+      showsSupportStatus: showsSupportStatus, updating: viewModel.updating)
     GeometryReader { geometry in
       ZStack {
         content
+          // Refresh metadata subscriptions without replacing the path-identified row.
+          .id(ObjectIdentifier(app))
           .frame(width: geometry.size.width, height: VisualMetrics.appRowHeight)
           .offset(x: 16)
           .background {
@@ -277,7 +283,7 @@ private struct UpdatesScrollRow: View {
 
   private func selectApp() {
     focus.wrappedValue = .list
-    select()
+    select(app)
   }
 
   private static let dateFormatter: DateFormatter = {

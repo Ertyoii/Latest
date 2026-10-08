@@ -28,19 +28,25 @@ struct AppListSnapshot {
   /// The apps from which the content is created
   let apps: [App]
 
+  let checkingGeneration: Int?
+
   private let settings: any AppListSettingsProviding
 
   /// Initializes the snapshot with the given list of apps and filter query.
   init(
     withApps apps: [App],
     filterQuery: String?,
-    settings: any AppListSettingsProviding = AppListSettings.shared
+    settings: any AppListSettingsProviding = AppListSettings.shared,
+    checkingGeneration: Int? = nil,
+    previous: AppListSnapshot? = nil
   ) {
     self.init(
       apps: apps,
       filterQuery: filterQuery,
       settings: settings,
-      preparedSections: Self.prepareSections(from: apps, settings: settings),
+      checkingGeneration: checkingGeneration,
+      preparedSections: Self.prepareSections(
+        from: apps, settings: settings, checkingGeneration: checkingGeneration, previous: previous),
       appsByIdentifier: Dictionary(
         apps.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
     )
@@ -50,12 +56,14 @@ struct AppListSnapshot {
     apps: [App],
     filterQuery: String?,
     settings: any AppListSettingsProviding,
+    checkingGeneration: Int?,
     preparedSections: PreparedSections,
     appsByIdentifier: [App.Bundle.Identifier: App]
   ) {
     self.filterQuery = filterQuery
     self.apps = apps
     self.settings = settings
+    self.checkingGeneration = checkingGeneration
     self.preparedSections = preparedSections
     let sections = Self.generateSections(from: preparedSections, filterQuery: filterQuery)
     self.sections = sections
@@ -67,7 +75,9 @@ struct AppListSnapshot {
 
   /// Returns a new snapshot containing an updated filter query.
   func updated(with filterQuery: String?) -> AppListSnapshot {
-    return AppListSnapshot(withApps: self.apps, filterQuery: filterQuery, settings: settings)
+    return AppListSnapshot(
+      withApps: self.apps, filterQuery: filterQuery, settings: settings,
+      checkingGeneration: checkingGeneration)
   }
 
   /// Refilters the existing snapshot without recategorizing or resorting unchanged apps.
@@ -76,6 +86,7 @@ struct AppListSnapshot {
       apps: apps,
       filterQuery: filterQuery,
       settings: settings,
+      checkingGeneration: checkingGeneration,
       preparedSections: preparedSections,
       appsByIdentifier: appsByIdentifier
     )
@@ -96,7 +107,9 @@ struct AppListSnapshot {
   /// Sorts and filters all available apps based on the given filter criteria.
   private static func prepareSections(
     from apps: [App],
-    settings: any AppListSettingsProviding
+    settings: any AppListSettingsProviding,
+    checkingGeneration: Int?,
+    previous: AppListSnapshot?
   ) -> PreparedSections {
     let showInstalledUpdates = settings.showInstalledUpdates
     let showIgnoredUpdates = settings.showIgnoredUpdates
@@ -120,7 +133,9 @@ struct AppListSnapshot {
       }
 
       // Filter unsupported apps
-      if !includeUnsupportedApps && !app.supported {
+      if !includeUnsupportedApps && !app.supported
+        && !(checkingGeneration != nil && app.isSourcePending)
+      {
         continue
       }
 
@@ -138,21 +153,34 @@ struct AppListSnapshot {
       }
     }
 
-    // Sort visible sections based on setting. Installed apps use the displayed date, newest first.
+    if checkingGeneration != nil {
+      // While status and remote dates resolve, every visible row lives under
+      // the neutral Installed Apps heading. Updates remain actionable in place.
+      var checkingApps = availableUpdates + installedUpdates + ignoredUpdates
+      Self.sort(&checkingApps, by: sortOrder)
+      if let previous {
+        let previousOrder =
+          previous.preparedSections.availableUpdates
+          + previous.preparedSections.installedUpdates + previous.preparedSections.ignoredUpdates
+        let order = Dictionary(
+          previousOrder.enumerated().map { ($0.element.identifier, $0.offset) },
+          uniquingKeysWith: { first, _ in first })
+        let newOrder = Dictionary(
+          checkingApps.enumerated().map { ($0.element.identifier, $0.offset) },
+          uniquingKeysWith: { first, _ in first })
+        checkingApps.sort {
+          (order[$0.identifier] ?? (previousOrder.count + newOrder[$0.identifier, default: 0]))
+            < (order[$1.identifier] ?? (previousOrder.count + newOrder[$1.identifier, default: 0]))
+        }
+      }
+      return PreparedSections(
+        availableUpdates: [], installedUpdates: checkingApps, ignoredUpdates: [])
+    }
+
+    // Settled installed apps retain the existing displayed-date order.
     Self.sort(&availableUpdates, by: sortOrder)
     Self.sort(&ignoredUpdates, by: sortOrder)
-    installedUpdates =
-      installedUpdates
-      .map { (app: $0, date: $0.updateDate, name: $0.name.lowercased()) }
-      .sorted { lhs, rhs in
-        if lhs.date == rhs.date {
-          return lhs.name < rhs.name
-        }
-
-        return lhs.date > rhs.date
-      }
-      .map(\.app)
-
+    Self.sort(&installedUpdates, by: .updateDate)
     return PreparedSections(
       availableUpdates: availableUpdates,
       installedUpdates: installedUpdates,
@@ -195,18 +223,13 @@ struct AppListSnapshot {
   }
 
   private static func sort(_ apps: inout [App], by sortOrder: AppListSettings.SortOptions) {
-    switch sortOrder {
-    case .updateDate:
-      apps.sort { app1, app2 in
-        app1.updateDate > app2.updateDate
-      }
-    case .name:
-      apps =
-        apps
-        .map { (app: $0, name: $0.name.lowercased()) }
-        .sorted { $0.name < $1.name }
-        .map(\.app)
-    }
+    apps = apps.map {
+      (app: $0, date: $0.updateDate, name: $0.name.lowercased(), path: $0.identifier.absoluteString)
+    }.sorted { lhs, rhs in
+      if sortOrder == .updateDate, lhs.date != rhs.date { return lhs.date > rhs.date }
+      if lhs.name != rhs.name { return lhs.name < rhs.name }
+      return lhs.path < rhs.path
+    }.map(\.app)
   }
 
   // MARK: - Accessors

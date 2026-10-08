@@ -20,12 +20,25 @@ struct SupportStatusButton: View {
       showsInfo.toggle()
     } label: {
       HStack(spacing: 2) {
-        Image(nsImage: app.source.supportState.statusImage)
-          .resizable()
-          .scaledToFit()
-          .frame(width: 16, height: 16)
-        if showsLabel {
-          Text(app.source.supportState.compactLabel)
+        if app.isSourcePending {
+          Image(systemName: "ellipsis")
+            .foregroundStyle(.secondary)
+            .frame(width: 16, height: 16)
+          if showsLabel {
+            Text(
+              NSLocalizedString(
+                "PendingSupportLabel", value: "Checking", comment: "Pending support lookup")
+            )
+            .foregroundStyle(.secondary)
+          }
+        } else {
+          Image(nsImage: app.source.supportState.statusImage)
+            .resizable()
+            .scaledToFit()
+            .frame(width: 16, height: 16)
+          if showsLabel {
+            Text(app.source.supportState.compactLabel)
+          }
         }
       }
       .padding(.leading, 2)
@@ -36,7 +49,8 @@ struct SupportStatusButton: View {
       .offset(x: VisualMetrics.supportStatusHorizontalCorrection)
     }
     .buttonStyle(.plain)
-    .accessibilityLabel(app.source.supportState.label)
+    .disabled(app.isSourcePending)
+    .accessibilityLabel(app.localizedSupportStatus)
     .accessibilityHint("Show support information")
     .popover(isPresented: $showsInfo, arrowEdge: .bottom) {
       SupportStatusInfoView(app: app)

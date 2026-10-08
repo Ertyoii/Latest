@@ -38,6 +38,15 @@ struct ReleaseNotesDetailView: View {
         updatesViewModel.selectedApp,
         waitForSelectionToSettle: updatesViewModel.isKeyboardSelection)
     }
+    .onReceive(
+      NotificationCenter.default.publisher(for: ReleaseNotesSourceCatalog.didRefreshNotification)
+    ) { _ in
+      // The selected app can remain unchanged after discovery settles. A late
+      // catalog activation must still retry its notes with the new cache key.
+      detailViewModel.display(
+        updatesViewModel.selectedApp,
+        waitForSelectionToSettle: updatesViewModel.isKeyboardSelection)
+    }
     .transaction { transaction in
       transaction.animation = nil
       transaction.disablesAnimations = true

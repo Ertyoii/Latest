@@ -48,7 +48,7 @@ struct UpdateRowView: View {
     self.versions = versions
     accessibilityLabel = [
       app.name, versions?.combined(includeNew: app.updateAvailable), date,
-      app.source.supportState.label,
+      app.localizedSupportStatus,
       app.updateAvailable
         ? NSLocalizedString("UpdateAction", comment: "Action to update a given app.") : nil,
     ].compactMap { $0 }.joined(separator: ", ")

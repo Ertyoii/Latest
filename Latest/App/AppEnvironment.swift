@@ -99,16 +99,16 @@ final class AppEnvironment: ObservableObject {
   }
 }
 
-/// Keeps the startup dependency explicit: repository matching must see the
-/// activated catalog before the first update check constructs lazy metadata.
+/// Discovery uses the bundled catalog immediately. Remote catalog refresh must
+/// not gate app visibility; release-note lookups already track catalog revisions.
 @MainActor
 enum AppStartupSequence {
   static func run(
     refreshCatalog: () async -> Void,
     checkForUpdates: () -> Void
   ) async {
-    await refreshCatalog()
     guard !Task.isCancelled else { return }
     checkForUpdates()
+    await refreshCatalog()
   }
 }

@@ -10,6 +10,82 @@ import XCTest
 @MainActor
 final class SidebarInteractionTest: XCTestCase {
   @MainActor
+  func testDiscoveredRowsStayInPlaceAndRefreshRenderedMetadataDuringPendingScan() async throws {
+    try requireUITests()
+    let suite = "StartupRows.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let settings = AppListSettings(userDefaults: defaults)
+    settings.sortOrder = .name
+    let store = AppDataStore(userDefaults: defaults)
+    let firstBundle = App.Bundle(
+      version: Version(versionNumber: "1", buildNumber: nil), name: "Pending Alpha",
+      bundleIdentifier: "test.pending.alpha",
+      fileURL: URL(fileURLWithPath: "/tmp/Pending-Alpha.app"), source: .none,
+      modificationDate: .distantPast)
+    let first = App(bundle: firstBundle, update: nil, isIgnored: false)
+    let second = makeTestApp(name: "Pending Beta", version: "1", remoteVersion: "3")
+    store.beginUpdateCheck(generation: 1)
+    store.set(appBundles: [first.bundle, second.bundle])
+    let model = UpdatesListViewModel(settings: settings, appProvider: store)
+    model.startObserving()
+    defer { model.stopObserving() }
+    let environment = AppEnvironment(settings: settings, updatesListViewModel: model)
+    let window = try await makeLatestTestWindow(environment: environment, testCase: self)
+    defer { window.close() }
+    let fixture = try SidebarInputFixture(window: window, model: model)
+    try await fixture.activate()
+    try await Task.sleep(for: .milliseconds(200))
+    XCTAssertEqual(
+      model.snapshot.sections.flatMap(\.apps).map(\.identifier),
+      [first.identifier, second.identifier])
+    try fixture.click(row: try XCTUnwrap(model.snapshot.firstIndex(of: second)))
+    try await Task.sleep(for: .milliseconds(100))
+    let firstFrame = try fixture.contentFrame(for: first)
+    let secondFrame = try fixture.contentFrame(for: second)
+    let before = try await fixture.captureRow(for: first)
+    let pendingRow = try XCTUnwrap(
+      fixture.accessibilityElements().first {
+        $0.accessibilityIdentifier() == "updates.app.\(first.identifier)"
+      })
+    XCTAssertTrue(
+      pendingRow.accessibilityLabel()?.contains("Checking for updates") == true,
+      "Unknown source must not be described as unsupported")
+    let update = App.Update(
+      app: first.bundle, remoteVersion: Version(versionNumber: "2", buildNumber: nil),
+      minimumOSVersion: nil, source: .appStore, date: .now, releaseNotes: nil,
+      updateAction: .builtIn { _ in })
+    _ = store.accept(.success(update), for: first.bundle)
+    try await Task.sleep(for: .milliseconds(250))
+    let after = try await fixture.captureRow(for: first)
+    XCTAssertEqual(try fixture.contentFrame(for: first), firstFrame)
+    XCTAssertEqual(try fixture.contentFrame(for: second), secondFrame)
+    XCTAssertEqual(model.selectedApp?.identifier, second.identifier)
+    XCTAssertNotNil(model.snapshot.checkingGeneration, "Other provider is still pending")
+    let row = try XCTUnwrap(
+      fixture.accessibilityElements().first {
+        $0.accessibilityIdentifier() == "updates.app.\(first.identifier)"
+      })
+    XCTAssertTrue(
+      row.accessibilityLabel()?.contains("2") == true, "New version must reach the shipping row")
+    // The version line must paint, not merely appear in accessibility metadata.
+    var changedPixels = 0
+    for y in 57..<85 {
+      for x in 116..<420 {
+        if before.colorAt(x: x, y: y) != after.colorAt(x: x, y: y) { changedPixels += 1 }
+      }
+    }
+    XCTAssertGreaterThan(
+      changedPixels, 20, "The previously absent remote-version line must be rendered")
+    model.setSearchQuery("Beta")
+    XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.identifier), [second.identifier])
+    model.setSearchQuery("")
+    XCTAssertEqual(
+      model.snapshot.sections.flatMap(\.apps).map(\.identifier),
+      [first.identifier, second.identifier])
+  }
+
+  @MainActor
   func testSidebarSearchAcceptsTypingClearAndEscapeRestoresListFocus() throws {
     try requireUITests()
     try runApplicationTest {

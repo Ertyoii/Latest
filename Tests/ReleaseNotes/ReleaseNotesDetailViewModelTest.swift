@@ -8,6 +8,57 @@ import XCTest
 
 final class ReleaseNotesDetailViewModelTest: XCTestCase {
   @MainActor
+  func testLateCatalogRefreshRetriesSelectedDetailsWithoutAnotherListPublication() async throws {
+    let provider = ReleaseNotesProviderProbe()
+    let detail = ReleaseNotesDetailViewModel(releaseNotesProvider: provider)
+    let app = makeTestApp(name: "Late catalog", version: "1", remoteVersion: "2")
+    let settings = try isolatedAppListSettings(for: self)
+    let list = UpdatesListViewModel(
+      snapshot: AppListSnapshot(withApps: [app], filterQuery: nil, settings: settings),
+      settings: settings)
+    list.select(app)
+    detail.display(app)
+    provider.completeRequest(at: 0, with: .failure(LatestError.releaseNotesUnavailable))
+    let host = NSHostingView(
+      rootView: ReleaseNotesDetailView(
+        updatesViewModel: list, detailViewModel: detail))
+    host.frame = NSRect(x: 0, y: 0, width: 480, height: 320)
+    host.layoutSubtreeIfNeeded()
+    let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+    host.cacheDisplay(in: host.bounds, to: bitmap)
+    // Finish initial view/layout work before catalog activation. No app-list or
+    // selection events will occur after this point.
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(provider.requests.count, 1)
+    let snapshotRevision = list.snapshotRevision
+    let catalogURL = try XCTUnwrap(
+      Bundle.main.url(forResource: "ReleaseNotesSources", withExtension: "json"))
+    let client = SignedReleaseNotesCatalogClient(
+      configuration: .disabled, bundledCatalogData: try Data(contentsOf: catalogURL))
+    let oldRevision = ReleaseNotesSourceCatalog.revision
+    let newRevision = await ReleaseNotesSourceCatalog.refresh(client: client)
+    XCTAssertGreaterThan(newRevision, oldRevision)
+    let deadline = ContinuousClock.now + .seconds(2)
+    while provider.requests.count < 2 && ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(
+      provider.requests.count, 2,
+      "Late catalog activation must retry the selected app without another list event")
+    guard provider.requests.count == 2 else { return }
+    XCTAssertTrue(list.selectedApp === app)
+    XCTAssertTrue(provider.requests[1].app === app)
+    XCTAssertEqual(list.snapshotRevision, snapshotRevision)
+    provider.completeRequest(
+      at: 1, with: .success(ReleaseNotesContent(string: "Updated catalog notes")))
+    guard case .text(let content) = detail.contentState else {
+      return XCTFail("Expected refreshed release notes")
+    }
+    XCTAssertEqual(content.string, "Updated catalog notes")
+    _ = host  // Retain the subscribed production view for the entire refresh.
+  }
+
+  @MainActor
   func testRapidSelectionRequestsNotesOnlyForTheSettledApp() async throws {
     let provider = ReleaseNotesProviderProbe()
     let viewModel = ReleaseNotesDetailViewModel(releaseNotesProvider: provider)

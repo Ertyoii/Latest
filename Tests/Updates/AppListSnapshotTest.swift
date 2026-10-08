@@ -148,6 +148,87 @@ final class AppListSnapshotTest: XCTestCase {
       ["Alpha", "Amazon Kindle", "WhatsApp", "BetterDisplay"])
   }
 
+  func testCheckingRowsKeepOrderAsDatesAndUpdateSectionsResolve() throws {
+    let settings = try isolatedAppListSettings(for: self)
+    settings.sortOrder = .updateDate
+    let alpha = makeTestApp(
+      name: "Alpha", version: "1", remoteVersion: "2", date: Date(timeIntervalSince1970: 10))
+    let beta = makeTestApp(
+      name: "Beta", version: "1", remoteVersion: "2", date: Date(timeIntervalSince1970: 20))
+    let pending = [alpha, beta].map { App(bundle: $0.bundle, update: nil, isIgnored: false) }
+    let discovered = AppListSnapshot(
+      withApps: pending.reversed(), filterQuery: nil, settings: settings, checkingGeneration: 1)
+    let partial = AppListSnapshot(
+      withApps: [alpha, pending[1]], filterQuery: nil, settings: settings, checkingGeneration: 1,
+      previous: discovered)
+    let complete = AppListSnapshot(
+      withApps: [beta, alpha], filterQuery: nil, settings: settings, checkingGeneration: 1,
+      previous: partial)
+    XCTAssertEqual(complete.sections.count, 1)
+    XCTAssertEqual(
+      complete.sections[0].section.title, NSLocalizedString("InstalledAppsSection", comment: ""))
+    XCTAssertEqual(complete.sections[0].apps.map(\.name), ["Alpha", "Beta"])
+    XCTAssertEqual(complete.firstIndex(of: beta), discovered.firstIndex(of: pending[1]))
+    XCTAssertEqual(complete.refiltered(with: "b").sections[0].apps.map(\.name), ["Beta"])
+    XCTAssertEqual(complete.refiltered(with: nil).sections[0].apps.map(\.name), ["Alpha", "Beta"])
+    // Explicit preference changes may reorder the current results, without waiting for settlement.
+    let explicitlySorted = complete.updated(with: nil)
+    XCTAssertEqual(explicitlySorted.sections[0].apps.map(\.name), ["Beta", "Alpha"])
+    settings.sortOrder = .name
+    XCTAssertEqual(
+      explicitlySorted.updated(with: nil).sections[0].apps.map(\.name), ["Alpha", "Beta"])
+    settings.sortOrder = .updateDate
+    let settled = AppListSnapshot(withApps: [alpha, beta], filterQuery: nil, settings: settings)
+    XCTAssertEqual(settled.sections[0].apps.map(\.name), ["Beta", "Alpha"])
+    XCTAssertEqual(
+      settled.sections[0].section.title, NSLocalizedString("AvailableUpdatesSection", comment: ""))
+  }
+
+  func testCheckingFiltersDoNotTreatUnknownSourceAsUnsupportedOrAnAvailableUpdate() throws {
+    let settings = try isolatedAppListSettings(for: self)
+    settings.includeUnsupportedApps = false
+    settings.showIgnoredUpdates = false
+    let bundle = App.Bundle(
+      version: Version(versionNumber: "1", buildNumber: nil), name: "Unknown",
+      bundleIdentifier: "test.unknown", fileURL: URL(fileURLWithPath: "/tmp/Unknown.app"),
+      source: .none, modificationDate: .distantPast)
+    let pending = App(bundle: bundle, update: nil, isIgnored: false)
+    let failed = App(
+      bundle: bundle, update: .failure(URLError(.timedOut)), isIgnored: false)
+    let available = makeTestApp(name: "Available", version: "1", remoteVersion: "2")
+    let limited = makeApp(name: "Limited", versionNumber: "1", remoteVersionNumber: "2")
+    func snapshot(_ apps: [App]) -> AppListSnapshot {
+      AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings, checkingGeneration: 1)
+    }
+    XCTAssertEqual(snapshot([pending]).entries.count, 2)
+    XCTAssertTrue(snapshot([failed]).entries.isEmpty)
+    XCTAssertTrue(snapshot([available.with(ignoredState: true)]).entries.isEmpty)
+    settings.showInstalledUpdates = false
+    XCTAssertTrue(
+      snapshot([pending]).entries.isEmpty,
+      "Updates-only never claims an unknown result is an update")
+    settings.includeAppsWithLimitedSupport = false
+    XCTAssertEqual(
+      snapshot([pending, failed, available, limited]).sections.flatMap(\.apps).map(\.name),
+      ["Available"])
+  }
+
+  func testEqualDatesAndNamesUsePathAsDeterministicTieBreaker() throws {
+    let settings = try isolatedAppListSettings(for: self)
+    settings.sortOrder = .updateDate
+    let first = makeApp(
+      name: "Same", versionNumber: "1", remoteVersionNumber: "2",
+      appURL: URL(fileURLWithPath: "/tmp/A.app"))
+    let second = makeApp(
+      name: "Same", versionNumber: "1", remoteVersionNumber: "2",
+      appURL: URL(fileURLWithPath: "/tmp/B.app"))
+    for apps in [[first, second], [second, first]] {
+      XCTAssertEqual(
+        AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings).sections[0].apps.map(
+          \.identifier), [first.identifier, second.identifier])
+    }
+  }
+
   private func section(at index: Int, in snapshot: AppListSnapshot) -> AppListSnapshot.Section? {
     guard case .section(let section) = snapshot.entries[index] else { return nil }
     return section

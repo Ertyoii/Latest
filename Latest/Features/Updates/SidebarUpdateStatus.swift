@@ -79,13 +79,19 @@ struct SidebarUpdateStatus: View {
         .accessibilityHint(cancellable ? "Cancel update" : "")
         .accessibilityIdentifier("updates.progress")
       case .update, .open, .failed:
-        Image(nsImage: app.source.supportState.statusImage)
-          .frame(width: 16, height: 16)
-          .offset(y: -13)
-          .opacity(showsSupportStatus ? 1 : 0)
-          .help(app.source.supportState.label)
-          .accessibilityLabel(app.source.supportState.label)
-          .accessibilityHidden(!showsSupportStatus)
+        Group {
+          if app.isSourcePending {
+            Image(systemName: "ellipsis").foregroundStyle(.secondary)
+          } else {
+            Image(nsImage: app.source.supportState.statusImage)
+          }
+        }
+        .frame(width: 16, height: 16)
+        .offset(y: -13)
+        .opacity(showsSupportStatus ? 1 : 0)
+        .help(app.localizedSupportStatus)
+        .accessibilityLabel(app.localizedSupportStatus)
+        .accessibilityHidden(!showsSupportStatus)
       }
     }
     .frame(width: 24, height: 24)
