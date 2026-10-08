@@ -19,7 +19,8 @@ struct UpdatesScrollList: View {
           Section {
             Color.clear.frame(height: VisualMetrics.sectionHeaderSpacing)
               .accessibilityHidden(true)
-            ForEach(group.apps, id: \.identifier) { app in
+            ForEach(group.apps.map(SidebarAppValue.init)) { value in
+              let app = value.app
               UpdatesScrollRow(
                 app: app, viewModel: viewModel,
                 showsSupportStatus: showsSupportStatusOverride ?? true,
@@ -117,6 +118,22 @@ struct UpdatesScrollList: View {
     navigation.synchronize(app.identifier)
     viewModel.select(app, isKeyboardSelection: keyboard)
   }
+}
+
+// ForEach compares its data before invoking the row builder. App equality
+// omits remote metadata, so carry the immutable object's revision in the data
+// while retaining the installed path as the row identity.
+private struct SidebarAppValue: Identifiable, Equatable {
+  let app: App
+  private let revision: ObjectIdentifier
+  var id: App.Bundle.Identifier { app.identifier }
+
+  init(_ app: App) {
+    self.app = app
+    revision = ObjectIdentifier(app)
+  }
+
+  static func == (lhs: Self, rhs: Self) -> Bool { lhs.revision == rhs.revision }
 }
 
 // Selection and ScrollPosition invalidate only this viewport. The lazy
