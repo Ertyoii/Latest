@@ -33,7 +33,7 @@ struct ReleaseNotesDetailView: View {
       showsSupportStatus: showsSupportStatus,
       updating: updatesViewModel.updating
     )
-    .task(id: selectionKey) {
+    .task(id: updatesViewModel.selectedApp.map(ObjectIdentifier.init)) {
       detailViewModel.display(
         updatesViewModel.selectedApp,
         waitForSelectionToSettle: updatesViewModel.isKeyboardSelection)
@@ -53,16 +53,6 @@ struct ReleaseNotesDetailView: View {
     }
   }
 
-  private struct SelectionKey: Hashable {
-    let app: ObjectIdentifier?
-    let catalogRevision: UInt64
-  }
-
-  private var selectionKey: SelectionKey {
-    SelectionKey(
-      app: updatesViewModel.selectedApp.map(ObjectIdentifier.init),
-      catalogRevision: ReleaseNotesSourceCatalog.revision)
-  }
 }
 
 struct ReleaseNotesDetailSurface: View {
@@ -70,6 +60,8 @@ struct ReleaseNotesDetailSurface: View {
   let contentState: ReleaseNotesDetailContentState
   var showsSupportStatus = true
   var updating: any AppUpdating = AppUpdateService.shared
+  // SwiftUI compares stored view inputs using App equality. Object identity
+  // keeps equal-version source/action refreshes from skipping this surface.
   private let appIdentity: ObjectIdentifier?
 
   init(
@@ -80,7 +72,6 @@ struct ReleaseNotesDetailSurface: View {
     self.contentState = contentState
     self.showsSupportStatus = showsSupportStatus
     self.updating = updating
-    // Refreshed metadata can compare equal without having the same support status.
     appIdentity = app.map(ObjectIdentifier.init)
   }
 

@@ -129,7 +129,29 @@ enum InstalledAppVersion {
         return number
       }
     }
-    return nil
+    // Current builds store version + 40-byte source commit before this startup
+    // diagnostic, rather than beside the telemetry key. Validate both fields;
+    // arbitrary dependency versions elsewhere in the executable are not evidence.
+    let diagnostic = Data("could not build HTTP client".utf8)
+    position = data.startIndex
+    var version: String?
+    while position < data.endIndex,
+      let range = data.range(of: diagnostic, in: position..<data.endIndex)
+    {
+      position = range.upperBound
+      let metadata = data[..<range.lowerBound].suffix(72)
+      let commit = metadata.suffix(40)
+      guard commit.count == 40,
+        commit.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) })
+      else { continue }
+      let bytes = metadata.dropLast(40).reversed().prefix {
+        (48...57).contains($0) || $0 == 46
+      }.reversed()
+      guard let number = String(bytes: bytes, encoding: .utf8), isVersion(number) else { continue }
+      if let version, version != number { return nil }
+      version = number
+    }
+    return version
   }
 
   private static func isVersion(_ string: String) -> Bool {

@@ -5,10 +5,7 @@ import Synchronization
 /// Shared download, cancellation and commit lifecycle for vendor installers.
 class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
   let app: App.Bundle
-  private struct Work {
-    var task: Task<Void, Never>?
-  }
-  private let work = Mutex(Work())
+  private let work = Mutex<Task<Void, Never>?>(nil)
 
   init(app: App.Bundle) {
     self.app = app
@@ -18,7 +15,7 @@ class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
   final override func execute() {
     super.execute()
     work.withLock { work in
-      work.task = Task.detached { [self] in
+      work = Task.detached { [self] in
         do {
           try Task.checkCancellation()
           try await performUpdate()
@@ -31,7 +28,7 @@ class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
           finish(with: error)
         }
       }
-      if isCancelled { work.task?.cancel() }
+      if isCancelled { work?.cancel() }
     }
   }
 
@@ -39,7 +36,7 @@ class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
     super.cancel()
     guard isCancelled else { return }
     work.withLock { work in
-      work.task?.cancel()
+      work?.cancel()
     }
   }
 
@@ -156,14 +153,14 @@ enum ApplicationQuitLifecycle {
 final class BoundedDownloadDelegate: NSObject, URLSessionDownloadDelegate, Sendable {
   private let maximumSize: Int64
   private let progress: @Sendable (Int64, Int64) -> Void
-  private let oversized = Mutex(false)
-  var exceededLimit: Bool { oversized.withLock { $0 } }
+  var exceededLimit: Bool { transfer.withLock { $0.exceededLimit } }
 
   private struct Transfer {
     var task: URLSessionDownloadTask?
     var continuation: CheckedContinuation<URLResponse, Error>?
     var destination: URL?
     var cancelled = false
+    var exceededLimit = false
   }
   private let transfer = Mutex(Transfer())
 
@@ -202,7 +199,7 @@ final class BoundedDownloadDelegate: NSObject, URLSessionDownloadDelegate, Senda
     didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
   ) {
     if totalBytesWritten > maximumSize || totalBytesExpectedToWrite > maximumSize {
-      oversized.withLock { $0 = true }
+      transfer.withLock { $0.exceededLimit = true }
       downloadTask.cancel()
       return
     }

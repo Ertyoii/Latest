@@ -144,7 +144,9 @@ struct AppListSnapshot {
         continue
       }
 
-      if app.isIgnored {
+      if checkingGeneration != nil {
+        installedUpdates.append(app)
+      } else if app.isIgnored {
         ignoredUpdates.append(app)
       } else if app.updateAvailable {
         availableUpdates.append(app)
@@ -156,25 +158,14 @@ struct AppListSnapshot {
     if checkingGeneration != nil {
       // While status and remote dates resolve, every visible row lives under
       // the neutral Installed Apps heading. Updates remain actionable in place.
-      var checkingApps = availableUpdates + installedUpdates + ignoredUpdates
-      Self.sort(&checkingApps, by: sortOrder)
-      if let previous {
-        let previousOrder =
-          previous.preparedSections.availableUpdates
-          + previous.preparedSections.installedUpdates + previous.preparedSections.ignoredUpdates
-        let order = Dictionary(
-          previousOrder.enumerated().map { ($0.element.identifier, $0.offset) },
-          uniquingKeysWith: { first, _ in first })
-        let newOrder = Dictionary(
-          checkingApps.enumerated().map { ($0.element.identifier, $0.offset) },
-          uniquingKeysWith: { first, _ in first })
-        checkingApps.sort {
-          (order[$0.identifier] ?? (previousOrder.count + newOrder[$0.identifier, default: 0]))
-            < (order[$1.identifier] ?? (previousOrder.count + newOrder[$1.identifier, default: 0]))
-        }
-      }
+      let previousOrder =
+        previous.map {
+          $0.preparedSections.availableUpdates
+            + $0.preparedSections.installedUpdates + $0.preparedSections.ignoredUpdates
+        } ?? []
+      Self.sort(&installedUpdates, by: sortOrder, previousOrder: previousOrder)
       return PreparedSections(
-        availableUpdates: [], installedUpdates: checkingApps, ignoredUpdates: [])
+        availableUpdates: [], installedUpdates: installedUpdates, ignoredUpdates: [])
     }
 
     // Settled installed apps retain the existing displayed-date order.
@@ -222,10 +213,22 @@ struct AppListSnapshot {
     return apps.filter { $0.name.localizedCaseInsensitiveContains(query) }
   }
 
-  private static func sort(_ apps: inout [App], by sortOrder: AppListSettings.SortOptions) {
+  private static func sort(
+    _ apps: inout [App], by sortOrder: AppListSettings.SortOptions, previousOrder: [App] = []
+  ) {
+    let order = Dictionary(
+      previousOrder.enumerated().map { ($0.element.identifier, $0.offset) },
+      uniquingKeysWith: { first, _ in first })
     apps = apps.map {
-      (app: $0, date: $0.updateDate, name: $0.name.lowercased(), path: $0.identifier.absoluteString)
+      (
+        app: $0, order: order[$0.identifier], date: $0.updateDate, name: $0.name.lowercased(),
+        path: $0.identifier.absoluteString
+      )
     }.sorted { lhs, rhs in
+      // Retained rows keep their positions; newcomers use the current sort preference.
+      if lhs.order != nil || rhs.order != nil {
+        return (lhs.order ?? Int.max) < (rhs.order ?? Int.max)
+      }
       if sortOrder == .updateDate, lhs.date != rhs.date { return lhs.date > rhs.date }
       if lhs.name != rhs.name { return lhs.name < rhs.name }
       return lhs.path < rhs.path

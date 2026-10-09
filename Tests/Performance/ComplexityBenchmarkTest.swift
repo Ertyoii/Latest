@@ -106,6 +106,8 @@ final class ComplexityBenchmarkTest: XCTestCase {
     let snapshotApps = makeApps(count: 1_500)
     let searchSnapshot = AppListSnapshot(
       withApps: snapshotApps, filterQuery: nil, settings: settings)
+    let checkingSnapshot = AppListSnapshot(
+      withApps: snapshotApps, filterQuery: nil, settings: settings, checkingGeneration: 1)
     let searchQueries = (0..<40).map { "Benchmark App \($0)" }
     let lookupApps = Array(snapshotApps.prefix(400))
     let versionPairs = makeVersionPairs(count: 80_000)
@@ -167,6 +169,13 @@ final class ComplexityBenchmarkTest: XCTestCase {
         checksum &+= snapshot.firstIndex(of: app) ?? 0
       }
       return checksum
+    }
+
+    benchmark("app_list_checking_snapshot", iterations: 30) {
+      AppListSnapshot(
+        withApps: snapshotApps.reversed(), filterQuery: nil, settings: settings,
+        checkingGeneration: 1, previous: checkingSnapshot
+      ).entries.count
     }
 
     benchmark("app_list_search_refilter", iterations: 30) {

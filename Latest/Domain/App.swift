@@ -69,9 +69,7 @@ extension App {
   }
 
   /// A missing result means unknown, rather than an unsupported or current app.
-  var hasUpdateResult: Bool { updateResult != nil }
-
-  var isSourcePending: Bool { source == .none && !hasUpdateResult }
+  var isSourcePending: Bool { source == .none && updateResult == nil }
 
   var error: Error? {
     switch updateResult {

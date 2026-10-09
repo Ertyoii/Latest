@@ -12,7 +12,9 @@ enum ChromeReleaseNotesExtractor {
       return nil
     }
 
-    let candidates = ReleaseNotesMarkup.versionCandidates(from: version)
+    let candidates = ReleaseNotesMarkup.versionCandidates(from: version).filter {
+      $0.split(separator: ".", omittingEmptySubsequences: false).count >= 4
+    }
     if let releaseText = Self.chromeDesktopReleaseTextFromBloggerTemplate(
       html, version: version, candidates: candidates, pageURL: pageURL)
     {
@@ -154,10 +156,7 @@ enum ChromeReleaseNotesExtractor {
   private static func lineMatchesChromeVersion(
     _ line: String, version: String?, candidates: [String]
   ) -> Bool {
-    let preciseCandidates = candidates.filter { candidate in
-      candidate.split(separator: ".", omittingEmptySubsequences: false).count >= 4
-    }
-    if preciseCandidates.contains(where: { candidate in
+    if candidates.contains(where: { candidate in
       line.range(of: candidate, options: [.caseInsensitive, .diacriticInsensitive]) != nil
     }) {
       return true

@@ -171,6 +171,16 @@ final class AppListSnapshotTest: XCTestCase {
     XCTAssertEqual(complete.firstIndex(of: beta), discovered.firstIndex(of: pending[1]))
     XCTAssertEqual(complete.refiltered(with: "b").sections[0].apps.map(\.name), ["Beta"])
     XCTAssertEqual(complete.refiltered(with: nil).sections[0].apps.map(\.name), ["Alpha", "Beta"])
+    let gamma = makeTestApp(
+      name: "Gamma", version: "1", remoteVersion: "2", date: Date(timeIntervalSince1970: 30))
+    let delta = makeTestApp(
+      name: "Delta", version: "1", remoteVersion: "2", date: Date(timeIntervalSince1970: 40))
+    let rediscovered = AppListSnapshot(
+      withApps: [gamma, beta, delta], filterQuery: nil, settings: settings,
+      checkingGeneration: 1, previous: complete)
+    XCTAssertEqual(
+      rediscovered.sections[0].apps.map(\.name), ["Beta", "Delta", "Gamma"],
+      "Retained rows precede sorted newcomers, and removed apps leave no row")
     // Explicit preference changes may reorder the current results, without waiting for settlement.
     let explicitlySorted = complete.updated(with: nil)
     XCTAssertEqual(explicitlySorted.sections[0].apps.map(\.name), ["Beta", "Alpha"])

@@ -53,12 +53,35 @@ final class BundleCollectorTest: XCTestCase {
     let executable = appURL.appendingPathComponent("Contents/MacOS/delta-app")
     try FileManager.default.createDirectory(
       at: executable.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try Data("\0delta_version0.18.0zed_username\0".utf8).write(to: executable)
-    XCTAssertEqual(BundleCollector.collectBundle(at: appURL)?.version.versionNumber, "0.18.0")
-    try Data("\0delta_version0.18.2zed_username\0".utf8).write(to: executable)
-    XCTAssertEqual(BundleCollector.collectBundle(at: appURL)?.version.versionNumber, "0.18.2")
-    try Data("not version metadata".utf8).write(to: executable)
-    XCTAssertEqual(BundleCollector.collectBundle(at: appURL)?.version.versionNumber, "0.1.0")
+    // The bundled CLI can lag behind the application and must never supply its version.
+    try Data("delta 0.17.0".utf8).write(
+      to: executable.deletingLastPathComponent().appendingPathComponent("delta"))
+    let commit = "46d3f30ef08b184463af73f6247c295d95481f16"
+    let cases = [
+      ("\0delta_version0.18.0zed_username\0", "0.18.0"),
+      ("\0delta_version0.18.2zed_username\0", "0.18.2"),
+      // Current Rust builds concatenate the application version and source commit.
+      (
+        "\0png-0.18.1/src/encoder.rs\0delta_versiontenant_urlzed_username\0"
+          + "0.19.1" + commit + "could not build HTTP client\0", "0.19.1"
+      ),
+      ("\0delta_versiontenant_urlzed_username\00.19.1\0", "0.1.0"),
+      (
+        "\00.19.1" + commit + "could not build HTTP client\0"
+          + "0.19.0" + commit + "could not build HTTP client\0", "0.1.0"
+      ),
+      ("\00.19.1not-a-source-commitcould not build HTTP client\0", "0.1.0"),
+      ("not version metadata", "0.1.0"),
+    ]
+    for (index, testCase) in cases.enumerated() {
+      try Data(testCase.0.utf8).write(to: executable)
+      try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSince1970: TimeInterval(index + 1))],
+        ofItemAtPath: executable.path)
+      XCTAssertEqual(
+        BundleCollector.collectBundle(at: appURL)?.version.versionNumber, testCase.1,
+        "Installed metadata case \(index)")
+    }
   }
 
   func testObsidianUsesValidatedNewerPayloadAndDoesNotReuseInstallerBuildNumber() throws {

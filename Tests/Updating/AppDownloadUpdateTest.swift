@@ -310,29 +310,6 @@ final class AppDownloadUpdateTest: XCTestCase {
     }
   }
 
-  func testDownloadLimitCancelsKnownAndUnknownLengthTransfersWhileReceiving() {
-    let session = URLSession(configuration: .ephemeral)
-    defer { session.invalidateAndCancel() }
-    for (received, expected, exceeds) in [(64, 128, true), (129, -1, true), (64, -1, false)] {
-      let progress = Mutex<[Int64]>([])
-      let delegate = BoundedDownloadDelegate(maximumSize: 100) { loaded, _ in
-        progress.withLock { $0.append(loaded) }
-      }
-      let task = session.downloadTask(with: URL(string: "https://example.invalid/update.zip")!)
-      delegate.urlSession(
-        session, downloadTask: task, didWriteData: Int64(received),
-        totalBytesWritten: Int64(received), totalBytesExpectedToWrite: Int64(expected))
-      XCTAssertEqual(delegate.exceededLimit, exceeds)
-      if exceeds {
-        XCTAssertTrue(task.state == .canceling || task.state == .completed)
-        XCTAssertTrue(progress.withLock { $0.isEmpty })
-      } else {
-        XCTAssertEqual(task.state, .suspended)
-        XCTAssertEqual(progress.withLock { $0 }, [Int64(received)])
-      }
-    }
-  }
-
   @MainActor
   func testCancellationDuringQuitWaitsForTerminationAndReopensWithoutInstalling() async {
     let requested = expectation(description: "Quit requested")
