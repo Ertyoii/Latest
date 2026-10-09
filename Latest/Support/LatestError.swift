@@ -100,11 +100,8 @@ enum LatestError: LocalizedError {
       )
 
     case .installHelperCommunicationFailed:
-      return NSLocalizedString(
-        "AppStoreNotSignedInErrorRecoverySuggestion",
-        comment:
-          "Error description when the attempt to update an app from the App Store failed because the user is not signed in with their App Store account."
-      )
+      return
+        "Check the app’s installed version before retrying. The helper may have continued installing after the connection was lost."
 
     case .custom(_, _):
       return nil

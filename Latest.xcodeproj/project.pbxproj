@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A11009010000000000000001 /* com.max-langer.Latest.dev.UpdateInstaller.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = A11009010000000000000002 /* com.max-langer.Latest.dev.UpdateInstaller.plist */; };
 		04DB211D3099FDA076EC8F2F /* ReleaseNotesVersionSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A492B900BB42DB5CA9C73A45 /* ReleaseNotesVersionSelection.swift */; };
 		04F39C68659809071B935212 /* VersionParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50E4EB062B17DACB00A70A7D /* VersionParser.swift */; };
 		0521C977004E6C5E1CE255D2 /* InstallHelperTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF47380B4D5A5B6A192C0071 /* InstallHelperTest.swift */; };
@@ -85,7 +86,6 @@
 		51A001032FC3000000000001 /* AppCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000032FC3000000000001 /* AppCommands.swift */; };
 		51A001042FC3000000000001 /* UpdateCheckingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000042FC3000000000001 /* UpdateCheckingService.swift */; };
 		51A001062FC3000000000001 /* VisualMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000062FC3000000000001 /* VisualMetrics.swift */; };
-		51A001082FC3000000000001 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000082FC3000000000001 /* WindowAccessor.swift */; };
 		51A001092FC3000000000001 /* UpdatesListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000092FC3000000000001 /* UpdatesListViewModel.swift */; };
 		51A0010A2FC3000000000001 /* SearchFocusController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A0000A2FC3000000000001 /* SearchFocusController.swift */; };
 		51A0010F2FC3000000000001 /* UpdateSectionHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */; };
@@ -222,6 +222,7 @@
 			dstSubfolderSpec = 1;
 			files = (
 				505062292F0DBF0D00998F84 /* com.max-langer.latest.UpdateInstaller.plist in CopyFiles */,
+				A11009010000000000000001 /* com.max-langer.Latest.dev.UpdateInstaller.plist in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -237,6 +238,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A11009010000000000000002 /* com.max-langer.Latest.dev.UpdateInstaller.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "com.max-langer.Latest.dev.UpdateInstaller.plist"; sourceTree = "<group>"; };
 		002A891730B3DDB4A59CA5A1 /* ToolbarProgressPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarProgressPresentation.swift; sourceTree = "<group>"; };
 		0267A1D6626D912543A3A797 /* UpdateActionPresentationTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateActionPresentationTest.swift; sourceTree = "<group>"; };
 		07D1435C388987B25D471273 /* WindowCaptureSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCaptureSupport.swift; sourceTree = "<group>"; };
@@ -408,7 +410,6 @@
 		51A000032FC3000000000001 /* AppCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCommands.swift; sourceTree = "<group>"; };
 		51A000042FC3000000000001 /* UpdateCheckingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckingService.swift; sourceTree = "<group>"; };
 		51A000062FC3000000000001 /* VisualMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualMetrics.swift; sourceTree = "<group>"; };
-		51A000082FC3000000000001 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 		51A000092FC3000000000001 /* UpdatesListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatesListViewModel.swift; sourceTree = "<group>"; };
 		51A0000A2FC3000000000001 /* SearchFocusController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchFocusController.swift; sourceTree = "<group>"; };
 		51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateSectionHeaderView.swift; sourceTree = "<group>"; };
@@ -602,6 +603,7 @@
 			isa = PBXGroup;
 			children = (
 				5050621F2F0DBECC00998F84 /* com.max-langer.latest.UpdateInstaller.plist */,
+				A11009010000000000000002 /* com.max-langer.Latest.dev.UpdateInstaller.plist */,
 				505062202F0DBECC00998F84 /* main.swift */,
 				505062212F0DBECC00998F84 /* UpdateInstaller.swift */,
 			);
@@ -864,7 +866,6 @@
 				52E000012FE1000000000001 /* ApplicationWorkspace.swift */,
 				5058BA3921202BA7003F332B /* IconCache.swift */,
 				52F000032FE2000000000001 /* SidebarScrollConfiguration.swift */,
-				51A000082FC3000000000001 /* WindowAccessor.swift */,
 			);
 			path = AppKit;
 			sourceTree = "<group>";
@@ -1295,24 +1296,23 @@
 /* Begin PBXShellScriptBuildPhase section */
 		50EAB06122B51AA200685775 /* Update Build Number */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 12;
 			files = (
 			);
 			inputFileListPaths = (
 			);
 			inputPaths = (
-				"$(PROJECT_DIR)/.git/logs/HEAD",
-				"$(SRCROOT)/Latest/Resources/Info.plist",
+				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
 			);
 			name = "Update Build Number";
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(DERIVED_FILE_DIR)/LatestBuildNumberStamp.txt",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/bin/bash\nset -euo pipefail\n\ngit=$(sh /etc/profile; which git)\nnumber_of_commits=$(\"$git\" rev-list HEAD --count)\n\ntarget_plist=\"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\ndsym_plist=\"$DWARF_DSYM_FOLDER_PATH/$DWARF_DSYM_FILE_NAME/Contents/Info.plist\"\nstamp_file=\"$DERIVED_FILE_DIR/LatestBuildNumberStamp.txt\"\n\nfor plist in \"$target_plist\" \"$dsym_plist\"; do\nif [ -f \"$plist\" ]; then\ncurrent_version=$(/usr/libexec/PlistBuddy -c \"Print :CFBundleVersion\" \"$plist\" 2>/dev/null || true)\nif [ \"$current_version\" != \"$number_of_commits\" ]; then\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $number_of_commits\" \"$plist\"\nfi\nfi\ndone\n\nmkdir -p \"$(dirname \"$stamp_file\")\"\nprintf \"%s\\n\" \"$number_of_commits\" > \"$stamp_file\"\n";
+			shellScript = "#!/bin/bash\nset -euo pipefail\n\nnumber_of_commits=$(/usr/bin/git -C \"$SRCROOT\" rev-list HEAD --count)\n\ntarget_plist=\"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\ndsym_plist=\"$DWARF_DSYM_FOLDER_PATH/$DWARF_DSYM_FILE_NAME/Contents/Info.plist\"\n\nfor plist in \"$target_plist\" \"$dsym_plist\"; do\nif [ -f \"$plist\" ]; then\ncurrent_version=$(/usr/libexec/PlistBuddy -c \"Print :CFBundleVersion\" \"$plist\" 2>/dev/null || true)\nif [ \"$current_version\" != \"$number_of_commits\" ]; then\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $number_of_commits\" \"$plist\"\nfi\nfi\ndone\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -1332,7 +1332,6 @@
 				51A001032FC3000000000001 /* AppCommands.swift in Sources */,
 				51A001042FC3000000000001 /* UpdateCheckingService.swift in Sources */,
 				51A001062FC3000000000001 /* VisualMetrics.swift in Sources */,
-				51A001082FC3000000000001 /* WindowAccessor.swift in Sources */,
 				51C100012FC6000000000001 /* LatestApplication.swift in Sources */,
 				51A001092FC3000000000001 /* UpdatesListViewModel.swift in Sources */,
 				51A0010A2FC3000000000001 /* SearchFocusController.swift in Sources */,
@@ -1801,7 +1800,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.92;
+				MARKETING_VERSION = 0.93;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1844,7 +1843,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.92;
+				MARKETING_VERSION = 0.93;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

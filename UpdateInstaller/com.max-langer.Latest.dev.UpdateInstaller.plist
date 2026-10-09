@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Retained for unregistering the legacy service during migration. -->
 <plist version="1.0">
 <dict>
 	<key>SpawnConstraint</key>
@@ -13,7 +12,7 @@
 	<key>BundleProgram</key>
 	<string>Contents/Resources/LatestUpdateInstaller</string>
 	<key>Label</key>
-	<string>com.max-langer.latest.UpdateInstaller</string>
+	<string>com.max-langer.Latest.dev.UpdateInstaller</string>
 	<key>MachServices</key>
 	<dict>
 		<key>com.max-langer.latest.UpdateInstaller</key>

@@ -239,17 +239,6 @@ class AppStoreCheckerOperationTest: XCTestCase {
     XCTAssertFalse(AppStoreUpdateCheckerOperation.isIOSAppBundle(at: appURL))
   }
 
-  func testInstallationReplyGateResumesContinuationOnlyOnce() async throws {
-    let expected = URL(fileURLWithPath: "/Applications/Updated.app")
-    let installed = try await withCheckedThrowingContinuation {
-      (continuation: CheckedContinuation<URL, Error>) in
-      let replyGate = InstallationReplyGate(continuation: continuation)
-      replyGate.resume(with: .success(expected))
-      replyGate.resume(with: .failure(LatestError.installHelperCommunicationFailed))
-    }
-    XCTAssertEqual(installed, expected)
-  }
-
   func testDownloadedArtifactsSurviveRemovalAndRefreshWhenInodeChanges() throws {
     let folder = temporaryAppURL().deletingPathExtension()
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

@@ -53,7 +53,7 @@ Discovery publishes apps promptly while update providers run. During a scan, vis
 
 ## Updating applications
 
-Features call `AppUpdating`; platform adapters own the update mechanism. Sparkle is pinned through Swift Package Manager. Native Mac App Store apps update within Latest; macOS 26.1+ uses a privileged helper. Wrapped iOS apps open the App Store. Helper registration errors are displayed, and pending updates can resume after System Settings approval.
+Features call `AppUpdating`; platform adapters own the update mechanism. Sparkle is pinned through Swift Package Manager. Native Mac App Store apps update within Latest; macOS 26.1+ uses a privileged helper. Wrapped iOS apps open the App Store. Before downloading, Latest verifies signing, approval, and a live response from the bundled helper. Legacy helper registrations migrate to one stable fork-specific launchd label, rebuilding their parent-app association without resetting other background items. Migration and repair share the same active-installation protections. An unreachable or outdated daemon gets one registration refresh followed by bounded readiness checks. A persistent setup sheet offers repair, System Settings approval, cancellation, and an App Store fallback; pending updates resume only after readiness succeeds. Readiness is checked again when a queued update starts. Helper refresh is blocked while Latest is installing another app, and an installation is never automatically replayed after a lost connection.
 
 If a Sparkle app declines to quit, the update stays active and its Retry control sends another quit request. Save your work before retrying. Installation remains protected from cancellation once Sparkle takes over.
 

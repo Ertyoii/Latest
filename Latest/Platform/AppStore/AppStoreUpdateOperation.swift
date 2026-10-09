@@ -17,9 +17,15 @@ private let appStoreUpdateLogger = Logger(
 /// Public boundary for App Store updates backed by private Apple frameworks.
 enum AppStoreUpdater {
 
+  static func verifyAvailability() throws(InstallHelperError) {
+    if AppStoreUpdateOperation.requiresManualInstallation { try InstallHelper.verifyAvailability() }
+  }
+
   /// Verifies whether the app can prepare App Store updates.
-  static func prepareForUpdates() throws(InstallHelperError) {
-    try AppStoreUpdateOperation.prepareForUpdates()
+  static func prepareForUpdates() async throws {
+    if AppStoreUpdateOperation.requiresManualInstallation {
+      try await InstallHelper.prepareForUpdates()
+    }
   }
 
   /// Enqueues an App Store update operation.
@@ -53,10 +59,6 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
     super.init(bundleIdentifier: bundleIdentifier, appIdentifier: appIdentifier)
   }
 
-  static func prepareForUpdates() throws(InstallHelperError) {
-    if requiresManualInstallation { try InstallHelper.verifyAvailability() }
-  }
-
   static let requiresManualInstallation = ProcessInfo.processInfo.isOperatingSystemAtLeast(
     .init(majorVersion: 26, minorVersion: 1, patchVersion: 0))
 
@@ -67,6 +69,14 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
         self.finish()
         return
       }
+      // Recheck at execution time as well: approval or daemon health may have
+      // changed while the operation waited in the queue.
+      do { try await AppStoreUpdater.prepareForUpdates() } catch {
+        guard !self.isCancelled, !self.isFinished else { return }
+        self.preparationFailed(error)
+        return
+      }
+      guard !self.isCancelled, !self.isFinished else { return }
       // Register before starting the purchase: small downloads can finish before
       // its completion callback, and their package/receipt must be preserved.
       self.observerIdentifier = CKDownloadQueue.shared().add(self)
@@ -94,6 +104,23 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
         guard !self.isFinished, !self.isInstalling else { return }
         self.finish(with: error)
       }
+    }
+  }
+
+  @MainActor private func preparationFailed(_ error: Error) {
+    // No purchase has started. Remove the waiting operation without publishing
+    // an update failure or a successful-install notification, then offer recovery.
+    super.cancel()
+    finishOnMain()
+    let fallback = URL(string: "macappstore://apps.apple.com/updates")!
+    UpdateInstallHelperAlert.shared.prepare(
+      fallbackURL: fallback,
+      error: error as? InstallHelperError ?? .unavailable(error.localizedDescription)
+    ) { [bundleIdentifier, installURL, appIdentifier, itemIdentifier] in
+      UpdateQueue.shared.addOperation(
+        AppStoreUpdateOperation(
+          bundleIdentifier: bundleIdentifier, installURL: installURL,
+          appIdentifier: appIdentifier, appStoreIdentifier: itemIdentifier))
     }
   }
 

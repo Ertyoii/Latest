@@ -8,117 +8,156 @@ import XCTest
 
 final class InstallHelperInteractionTest: XCTestCase {
   @MainActor
-  func testHelperInstallButtonPresentsRegistrationFailure() async throws {
+  func testHelperSheetRepairApprovalCancelAndFallback() throws {
     try requireUITests()
-    let stored = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
-    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
-    defer { AppStoreUpdateSettings.alwaysPerformManualUpdates.active = stored }
-    let helper = HelperRegistrationFixture()
-    helper.failure = NSError(
-      domain: "registration", code: 1,
-      userInfo: [NSLocalizedDescriptionKey: "Signing does not match"])
-    let presenter = UpdateInstallHelperAlert(helper: helper)
-    let host = NSHostingView(
-      rootView: Color(nsColor: .windowBackgroundColor)
-        .background(WindowAccessor())
-        .modifier(UpdateInstallHelperPresentation(presenter: presenter)))
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
-      styleMask: [.titled], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.contentView = host
-    window.makeKeyAndOrderFront(nil)
-    defer { window.close() }
-    presenter.present(
-      .installHelperNotRegistered, fallbackURL: URL(string: "https://example.com")!, retry: {})
-    for _ in 0..<80 {
-      if window.attachedSheet != nil { break }
-      try await Task.sleep(for: .milliseconds(25))
-    }
-    let sheet = try XCTUnwrap(window.attachedSheet)
-    let install = try XCTUnwrap(
-      sheet.contentView?.allDescendants().compactMap { $0 as? NSButton }
-        .first { $0.title == presenter.primaryTitle })
-    install.performClick(nil)
-    var displayedMessages: [String] = []
-    for _ in 0..<80 {
-      displayedMessages =
-        window.attachedSheet?.contentView?.allDescendants()
-        .compactMap { ($0 as? NSTextField)?.stringValue } ?? []
-      if displayedMessages.contains(where: { $0.contains("Signing does not match") }) { break }
-      try await Task.sleep(for: .milliseconds(25))
-    }
-    XCTAssertEqual(helper.registrations, 1)
-    XCTAssertTrue(
-      displayedMessages.contains(where: { $0.contains("Signing does not match") }),
-      "Install Helper must show its failure in a new visible dialog")
-    presenter.cancel()
-  }
-
-  @MainActor
-  func testHelperDialogRemembersManualUpdatesAndDismissesWithCancelOrEscape() async throws {
-    try requireUITests()
-    let stored = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
-    defer { AppStoreUpdateSettings.alwaysPerformManualUpdates.active = stored }
-    for error in [InstallHelperError.installHelperNotRegistered, .installHelperRequiresApproval] {
-      AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
-      let presenter = UpdateInstallHelperAlert(helper: HelperRegistrationFixture())
-      let host = NSHostingView(
-        rootView: Color(nsColor: .windowBackgroundColor)
-          .background(WindowAccessor())
-          .modifier(UpdateInstallHelperPresentation(presenter: presenter)))
-      let window = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
-        styleMask: [.titled], backing: .buffered, defer: false)
-      window.isReleasedWhenClosed = false
-      window.contentView = host
-      defer { window.close() }
-      try await activateTestWindow(window)
-      presenter.present(error, fallbackURL: URL(string: "https://example.com")!, retry: {})
-      for _ in 0..<80 {
-        if window.attachedSheet != nil { break }
-        try await Task.sleep(for: .milliseconds(25))
-      }
-      let sheet = try XCTUnwrap(window.attachedSheet)
-      let buttons = sheet.contentView?.allDescendants().compactMap { $0 as? NSButton } ?? []
-      XCTAssertTrue(buttons.contains { $0.title == presenter.primaryTitle })
-      let suppression = try XCTUnwrap(
-        buttons.first {
-          $0.title == NSLocalizedString("UpdateInstallHelperAlert.SuppressionTitle", comment: "")
-        })
-      XCTAssertEqual(suppression.state, .off, "Initial suppression state for \(error)")
-      suppression.performClick(nil)
-      try await Task.sleep(for: .milliseconds(25))
-      XCTAssertEqual(suppression.state, .on, "Clicked suppression state for \(error)")
-      if error == .installHelperRequiresApproval {
+    try runApplicationTest {
+      let stored = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
+      defer { AppStoreUpdateSettings.alwaysPerformManualUpdates.active = stored }
+      for dark in [false, true] {
+        AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
+        let helper = HelperRegistrationFixture()
+        helper.failure = NSError(
+          domain: "registration", code: 1,
+          userInfo: [NSLocalizedDescriptionKey: "Signing does not match"])
+        let workspace = StubApplicationWorkspace()
+        let presenter = UpdateInstallHelperAlert(helper: helper, workspace: workspace)
+        let host = NSHostingView(
+          rootView: Color(nsColor: .windowBackgroundColor)
+            .modifier(UpdateInstallHelperPresentation(presenter: presenter)))
+        let window = NSWindow(
+          contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+          styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        defer { window.close() }
+        try await activateTestWindow(window)
+        var starts = 0
+        let url = URL(string: "macappstore://apps.apple.com/updates")!
+        presenter.prepare(fallbackURL: url, error: .installHelperNotRegistered) { starts += 1 }
+        try await waitForHelper { window.attachedSheet != nil }
+        let sheet = try XCTUnwrap(window.attachedSheet)
+        try await self.capture(sheet, name: "\(dark ? "dark" : "light")-setup")
+        try await self.press("Enable Helper", in: sheet)
+        try await waitForHelper { presenter.errorDetails != nil }
+        XCTAssertEqual(helper.registrations, 1)
+        XCTAssertEqual(starts, 0)
+        XCTAssertTrue(window.attachedSheet === sheet, "Repair must keep one stable sheet")
+        try await self.press("Details", in: sheet)
+        try await self.capture(sheet, name: "\(dark ? "dark" : "light")-failure")
+        XCTAssertTrue(
+          self.elements(sheet).contains {
+            if $0.accessibilityLabel()?.contains("Signing does not match") == true { return true }
+            guard $0.object.responds(to: NSSelectorFromString("accessibilityValue")) else {
+              return false
+            }
+            return ($0.object.value(forKey: "accessibilityValue") as? String)?.contains(
+              "Signing does not match") == true
+          })
+        try await self.press("Always open App Store", in: sheet)
         let escape = try XCTUnwrap(
           NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
             windowNumber: sheet.windowNumber, context: nil, characters: "\u{1b}",
             charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
         sheet.sendEvent(escape)
-      } else {
-        let cancel = try XCTUnwrap(
-          buttons.first {
-            $0.title == NSLocalizedString("UpdateInstallHelperAlert.Cancel", comment: "")
-          })
-        cancel.performClick(nil)
+        try await waitForHelper { window.attachedSheet == nil }
+        XCTAssertTrue(AppStoreUpdateSettings.alwaysPerformManualUpdates.active)
+        XCTAssertEqual(starts, 0)
+
+        AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
+        presenter.prepare(fallbackURL: url, error: .installHelperRequiresApproval) { starts += 1 }
+        try await waitForHelper { window.attachedSheet != nil }
+        let approvalSheet = try XCTUnwrap(window.attachedSheet)
+        try await self.capture(approvalSheet, name: "\(dark ? "dark" : "light")-approval")
+        try await self.press("Open App Store", in: approvalSheet)
+        try await waitForHelper { window.attachedSheet == nil }
+        XCTAssertEqual(workspace.openedURLs, [url])
+        helper.enabled = true
+        presenter.resumeIfAvailable()
+        XCTAssertEqual(starts, 0)
+
+        helper.suspendsCheck = true
+        presenter.prepare(fallbackURL: url) { starts += 1 }
+        try await waitForHelper { window.attachedSheet != nil && helper.pendingCheck != nil }
+        let checkingSheet = try XCTUnwrap(window.attachedSheet)
+        try await self.capture(
+          checkingSheet, name: "\(dark ? "dark" : "light")-checking", animated: true)
+        try await self.press("Cancel", in: checkingSheet)
+        try await waitForHelper { window.attachedSheet == nil }
+        let completedChecks = helper.completedChecks
+        helper.pendingCheck?.resume()
+        try await waitForHelper { helper.completedChecks > completedChecks }
+        XCTAssertEqual(starts, 0, "Cancelling the checking sheet must discard its late reply")
       }
-      for _ in 0..<80 {
-        if window.attachedSheet == nil { break }
-        try await Task.sleep(for: .milliseconds(25))
-      }
-      XCTAssertNil(window.attachedSheet)
-      XCTAssertFalse(presenter.isPresented)
-      // SwiftUI writes the suppression binding after the sheet dismisses.
-      // Wait for the saved preference before tearing down this presentation.
-      for _ in 0..<80 {
-        if AppStoreUpdateSettings.alwaysPerformManualUpdates.active { break }
-        try await Task.sleep(for: .milliseconds(25))
-      }
-      XCTAssertTrue(
-        AppStoreUpdateSettings.alwaysPerformManualUpdates.active,
-        "Saved suppression state for \(error), checkbox=\(suppression.state.rawValue)")
     }
+  }
+
+  @MainActor
+  private func elements(_ window: NSWindow) -> [SidebarAccessibilityElement] {
+    NSApp.accessibilitySetValue(true, forAttribute: .init(rawValue: "AXEnhancedUserInterface"))
+    var seen = Set<ObjectIdentifier>()
+    var result: [SidebarAccessibilityElement] = []
+    func visit(_ value: Any) {
+      guard let object = value as? NSObject, seen.insert(ObjectIdentifier(object)).inserted else {
+        return
+      }
+      let element = SidebarAccessibilityElement(object: object)
+      result.append(element)
+      for child in element.accessibilityChildren() ?? [] { visit(child) }
+      for child in (value as? NSView)?.subviews ?? [] { visit(child) }
+    }
+    visit(window)
+    return result
+  }
+
+  @MainActor
+  private func press(_ title: String, in window: NSWindow) async throws {
+    func matchingElements() -> [SidebarAccessibilityElement] {
+      elements(window).filter {
+        if $0.accessibilityLabel() == title { return true }
+        if let button = $0.object as? NSButton, button.title == title { return true }
+        guard $0.object.responds(to: NSSelectorFromString("accessibilityTitle")) else {
+          return false
+        }
+        return $0.object.value(forKey: "accessibilityTitle") as? String == title
+      }
+    }
+    try await waitForHelper { !matchingElements().isEmpty }
+    let matches = matchingElements()
+    let selector = NSSelectorFromString("accessibilityPerformPress")
+    if let button = matches.first(where: { $0.object.responds(to: selector) }) {
+      typealias Press = @convention(c) (NSObject, Selector) -> Bool
+      let press = unsafeBitCast(button.object.method(for: selector), to: Press.self)
+      XCTAssertTrue(press(button.object, selector))
+      return
+    }
+    let element = try XCTUnwrap(matches.first, "Missing control: \(title)")
+    let frame = element.accessibilityFrame()
+    XCTAssertFalse(frame.isEmpty)
+    let point = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
+    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+      let event = try XCTUnwrap(
+        NSEvent.mouseEvent(
+          with: type, location: point, modifierFlags: [],
+          timestamp: ProcessInfo.processInfo.systemUptime,
+          windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+          pressure: 1))
+      window.sendEvent(event)
+    }
+  }
+
+  @MainActor
+  private func capture(_ window: NSWindow, name: String, animated: Bool = false) async throws {
+    try await Task.sleep(for: .milliseconds(250))
+    // A running progress indicator cannot produce identical settled frames.
+    let bitmap =
+      try await animated ? captureWindowBitmap(window) : settledWindowBitmap(window)
+    let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(
+        "build/helper-repair")
+    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+    try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
+      to: output.appendingPathComponent("\(name).png"))
   }
 }

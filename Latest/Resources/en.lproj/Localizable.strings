@@ -179,4 +179,4 @@
 "UpdateInstallHelperAlert.Cancel" = "Cancel";
 
 /* Short description of an error when communicating with the apps install helper. */
-"InstallHelperCommunicationFailedError" = "Latest failed to update this app because a problem with the helper application.";
+"InstallHelperCommunicationFailedError" = "The connection to the update helper was interrupted.";

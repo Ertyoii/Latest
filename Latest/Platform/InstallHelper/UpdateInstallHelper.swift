@@ -18,7 +18,11 @@ enum InstallHelper {
 
   /// Verifies that the install helper is registered and approved.
   static func verifyAvailability() throws(InstallHelperError) {
-    switch helperService.status {
+    try verifyAvailability(of: registration.service)
+  }
+
+  private static func verifyAvailability(of service: SMAppService) throws(InstallHelperError) {
+    switch service.status {
     case .notFound, .notRegistered:
       throw InstallHelperError.installHelperNotRegistered
     case .requiresApproval:
@@ -30,10 +34,16 @@ enum InstallHelper {
     }
   }
 
+  static func prepareForUpdates() async throws {
+    try await readiness.prepare()
+  }
+
+  private static let readiness = InstallHelperReadiness(backend: LiveInstallHelperBackend())
+
   /// Registers the helper or opens System Settings if approval is required.
   static func installHelper() throws {
-    try verifySigning()
-    let service = helperService
+    _ = try verifySigning()
+    let service = registration.service
     switch service.status {
     case .notFound, .notRegistered:
       try service.register()
@@ -47,23 +57,32 @@ enum InstallHelper {
     }
   }
 
-  private static var helperService: SMAppService {
+  private static var currentService: SMAppService {
+    SMAppService.daemon(plistName: UpdateInstallerIdentity.daemon + ".plist")
+  }
+
+  private static var legacyService: SMAppService {
     SMAppService.daemon(plistName: UpdateInstallerIdentity.service + ".plist")
+  }
+
+  private static var registration: (service: SMAppService, needsMigration: Bool) {
+    let current = currentService
+    let legacy = legacyService
+    let needsMigration = legacy.status == .enabled || legacy.status == .requiresApproval
+    if needsMigration && (current.status == .notRegistered || current.status == .notFound) {
+      return (legacy, true)
+    }
+    return (current, needsMigration)
   }
 
   /// A root daemon must have a stable Apple-issued signing identity. Do not
   /// weaken its launch or peer requirements for unsigned development builds.
-  static func verifySigning() throws {
-    let helperURL = Bundle.main.bundleURL.appendingPathComponent(
-      "Contents/Resources/LatestUpdateInstaller")
-    for (url, text) in [
-      (Bundle.main.bundleURL, UpdateInstallerIdentity.appRequirement),
-      (helperURL, UpdateInstallerIdentity.helperRequirement),
-    ] {
+  private static func verifySigning() throws -> Data {
+    func verifiedCode(at url: URL, requirement: String) throws -> SecStaticCode {
       var code: SecStaticCode?
       var policy: SecRequirement?
       guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess,
-        SecRequirementCreateWithString(text as CFString, [], &policy) == errSecSuccess,
+        SecRequirementCreateWithString(requirement as CFString, [], &policy) == errSecSuccess,
         let code, let policy,
         SecStaticCodeCheckValidity(code, [], policy) == errSecSuccess
       else {
@@ -73,7 +92,14 @@ enum InstallHelper {
             "This copy of Latest or its helper does not have the required code signature. Use a signed build of Latest, then enable the helper again."
         )
       }
+      return code
     }
+    _ = try verifiedCode(
+      at: Bundle.main.bundleURL, requirement: UpdateInstallerIdentity.appRequirement)
+    let helper = try verifiedCode(
+      at: Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/LatestUpdateInstaller"),
+      requirement: UpdateInstallerIdentity.helperRequirement)
+    return try UpdateInstallerIdentity.signature(of: helper)
   }
 
   // MARK: - Package Installation
@@ -82,8 +108,14 @@ enum InstallHelper {
   static func installPackage(at url: URL, appURL: URL, receiptData: Data)
     async throws -> URL
   {
-    try Self.verifyAvailability()
-    try await HelperRegistration.shared.refreshIfNeeded()
+    return try await readiness.install {
+      try await performInstallation(at: url, appURL: appURL, receiptData: receiptData)
+    }
+  }
+
+  private static func performInstallation(at url: URL, appURL: URL, receiptData: Data)
+    async throws -> URL
+  {
     // Transfer an open descriptor: the root daemon cannot reopen files in the
     // user's protected temporary directory on current macOS releases.
     let package = try FileHandle(forReadingFrom: url)
@@ -98,7 +130,7 @@ enum InstallHelper {
 
     return try await withCheckedThrowingContinuation {
       (continuation: CheckedContinuation<URL, Error>) in
-      let replyGate = InstallationReplyGate(continuation: continuation)
+      let replyGate = HelperReplyGate(continuation: continuation)
       // A deadline here would release the queue while /usr/sbin/installer is
       // still replacing the app. Wait for its result or an XPC connection error.
       connection.interruptionHandler = {
@@ -132,56 +164,80 @@ enum InstallHelper {
     }
   }
 
-  /// SMAppService does not replace an already-running executable automatically.
-  /// Persist the exact helper signature and bundle path, so replacement builds
-  /// refresh once while multiple updates share the same registration.
-  private actor HelperRegistration {
-    static let shared = HelperRegistration()
-    private var refreshTask: Task<Void, Error>?
+  struct LiveInstallHelperBackend: InstallHelperReadinessBackend {
+    func verify() throws -> (signature: Data, needsMigration: Bool) {
+      let signature = try InstallHelper.verifySigning()
+      let registration = InstallHelper.registration
+      try InstallHelper.verifyAvailability(of: registration.service)
+      return (signature, registration.needsMigration)
+    }
 
-    func refreshIfNeeded() async throws {
-      if let refreshTask { return try await refreshTask.value }
-      let task = Task {
-        try InstallHelper.verifySigning()
-        let helperURL = Bundle.main.bundleURL.appendingPathComponent(
-          "Contents/Resources/LatestUpdateInstaller")
-        var code: SecStaticCode?
-        var information: CFDictionary?
-        guard SecStaticCodeCreateWithPath(helperURL as CFURL, [], &code) == errSecSuccess,
-          let code,
-          SecCodeCopySigningInformation(code, [], &information) == errSecSuccess,
-          let hash = (information as? [String: Any])?[kSecCodeInfoUnique as String] as? Data
-        else { throw LatestError.installHelperCommunicationFailed }
-        let identity = Bundle.main.bundleURL.path + ":" + hash.base64EncodedString()
-        let key = "RegisteredInstallHelperIdentity"
-        guard UserDefaults.standard.string(forKey: key) != identity else { return }
-        let service = InstallHelper.helperService
-        // The asynchronous completion waits until the old process has exited.
-        try await service.unregister()
-        // Background Task Management settles its enabled state separately.
-        // Keep the original delay, once per helper build rather than periodically.
-        try await Task.sleep(for: .milliseconds(500))
-        try service.register()
-        try InstallHelper.verifyAvailability()
-        UserDefaults.standard.set(identity, forKey: key)
+    func refresh() async throws {
+      try InstallHelper.verifyAvailability()
+      // An older app copy can re-register the legacy job after migration.
+      // Retire both registrations so only one job owns the shared XPC endpoint.
+      for service in [InstallHelper.legacyService, InstallHelper.currentService] {
+        if service.status == .enabled || service.status == .requiresApproval {
+          try await service.unregister()
+        }
       }
-      refreshTask = task
-      do { try await task.value } catch {
-        refreshTask = nil
-        throw error
+      // Background Task Management settles separately from process exit.
+      try await Task.sleep(for: .milliseconds(500))
+      // A new stable registration also rebuilds the missing BTM parent link
+      // left by some legacy records. Never rotate identities on every retry.
+      try InstallHelper.currentService.register()
+      try InstallHelper.verifyAvailability()
+    }
+
+    func probe() async throws -> InstallHelperHealth {
+      let connection = NSXPCConnection(
+        machServiceName: UpdateInstallerIdentity.service, options: .privileged)
+      connection.setCodeSigningRequirement(UpdateInstallerIdentity.helperRequirement)
+      connection.remoteObjectInterface = NSXPCInterface(with: UpdateInstallerProtocol.self)
+      defer { connection.invalidate() }
+      return try await withCheckedThrowingContinuation { continuation in
+        let gate = HelperReplyGate<InstallHelperHealth>(continuation: continuation)
+        // Only the harmless readiness RPC has a deadline. Installation never does.
+        let timeout = Task {
+          do { try await Task.sleep(for: .seconds(3)) } catch { return }
+          gate.resume(
+            with: .failure(InstallHelperError.unavailable("The update helper did not respond.")))
+        }
+        let fail: @Sendable (Error) -> Void = { error in
+          timeout.cancel()
+          gate.resume(with: .failure(error))
+        }
+        connection.interruptionHandler = { fail(LatestError.installHelperCommunicationFailed) }
+        connection.invalidationHandler = { fail(LatestError.installHelperCommunicationFailed) }
+        connection.activate()
+        guard
+          let proxy = connection.remoteObjectProxyWithErrorHandler(fail) as? UpdateInstallerProtocol
+        else {
+          fail(LatestError.installHelperCommunicationFailed)
+          return
+        }
+        proxy.checkAvailability { signature, isInstalling, error in
+          timeout.cancel()
+          gate.resume(
+            with: Result {
+              try InstallHelperHealth(
+                signature: signature, isInstalling: isInstalling, error: error)
+            })
+        }
       }
     }
   }
+
 }
 
-final class InstallationReplyGate: Sendable {
-  private let state: Mutex<CheckedContinuation<URL, Error>?>
+final class HelperReplyGate<Value: Sendable>: Sendable {
+  private let state: Mutex<CheckedContinuation<Value, Error>?>
 
-  init(continuation: CheckedContinuation<URL, Error>) {
+  init(continuation: CheckedContinuation<Value, Error>) {
     state = Mutex(continuation)
   }
 
-  func resume(with result: Result<URL, Error>) {
+  func resume(with result: Result<Value, Error>) {
     let continuation = state.withLock { state in
       defer { state = nil }
       return state
@@ -193,12 +249,15 @@ final class InstallationReplyGate: Sendable {
 // MARK: - InstallHelperError
 
 /// Errors related to install helper availability.
-enum InstallHelperError: LocalizedError {
+enum InstallHelperError: LocalizedError, Equatable {
   case installHelperNotRegistered
   case installHelperRequiresApproval
+  case unavailable(String)
 
   var errorDescription: String? {
     switch self {
+    case .unavailable(let detail):
+      return detail
     case .installHelperNotRegistered:
       return NSLocalizedString(
         "InstallHelperNotFoundErrorDescription",

@@ -49,10 +49,6 @@ struct LatestRootView: View {
     .navigationTitle("Latest")
     .toolbar(removing: .title)
     .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-    .background {
-      WindowAccessor()
-        .ignoresSafeArea(.container, edges: .top)
-    }
     .toolbar {
       ToolbarItem(placement: .navigation) {
         Text(NSLocalizedString("Updates", comment: "Main toolbar title"))

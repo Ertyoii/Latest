@@ -1,14 +1,38 @@
 // Copyright © 2026 Max Langer and ertyoii. Licensed under GPL-3.0; see LICENSE.md.
 
 import Foundation
+import Security
+import Synchronization
 
 /// Installs an App Store package without shell interpolation. The client is
 /// authenticated by the listener; PackageKit validates the signed package.
 final class UpdateInstaller: NSObject, UpdateInstallerProtocol {
+  private static let installations = Mutex(0)
+
+  func checkAvailability(reply: @escaping (Data?, Bool, Error?) -> Void) {
+    do {
+      var code: SecCode?
+      var staticCode: SecStaticCode?
+      guard geteuid() == 0,
+        FileManager.default.isExecutableFile(atPath: "/usr/sbin/installer"),
+        SecCodeCopySelf([], &code) == errSecSuccess, let code,
+        SecCodeCheckValidity(code, [], nil) == errSecSuccess,
+        SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode
+      else { throw failure("The update helper cannot run the system installer.") }
+      // Use the running code identity, not the file now at its path: an app
+      // replacement can leave the previous daemon alive.
+      reply(
+        try UpdateInstallerIdentity.signature(of: staticCode),
+        Self.installations.withLock { $0 > 0 }, nil)
+    } catch { reply(nil, Self.installations.withLock { $0 > 0 }, error) }
+  }
+
   func performInstallation(
     ofPackage source: FileHandle, appURL: URL, receiptData: Data,
     reply: @escaping (URL?, Error?) -> Void
   ) {
+    Self.installations.withLock { $0 += 1 }
+    defer { Self.installations.withLock { $0 -= 1 } }
     defer { try? source.close() }
     do {
       guard appURL.isFileURL, !receiptData.isEmpty,
