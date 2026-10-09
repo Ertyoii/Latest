@@ -4,16 +4,20 @@ import Combine
 import Foundation
 import SwiftUI
 
-/// SwiftUI owns dialog presentation and the pending update. Registration never
-/// silently consumes an error or loses the update that requested the helper.
+/// Owns preparation and the pending action, so dismissal or a late XPC reply
+/// cannot accidentally start a download. The sheet remains visible through repair.
 @MainActor
 final class UpdateInstallHelperAlert: ObservableObject {
   static let shared = UpdateInstallHelperAlert()
   @Published var isPresented = false
+  @Published private(set) var isChecking = false
   @Published private(set) var availabilityError = InstallHelperError.installHelperNotRegistered
   @Published private(set) var registrationError: Error?
   private var fallbackURL: URL?
-  private var pendingUpdate: (() -> Void)?
+  private var pendingUpdates: [() -> Void] = []
+  private var preparation: (@MainActor () async throws -> Void)?
+  private var checkTask: Task<Void, Never>?
+  private var requestID = UUID()
   private let helper: any InstallHelperServicing
   private let workspace: any ApplicationWorkspace
 
@@ -25,17 +29,36 @@ final class UpdateInstallHelperAlert: ObservableObject {
     self.workspace = workspace
   }
 
+  func prepare(
+    fallbackURL: URL, preparation: (@MainActor () async throws -> Void)? = nil,
+    update: @escaping () -> Void
+  ) {
+    guard pendingUpdates.isEmpty else {
+      pendingUpdates.append(update)
+      return
+    }
+    self.fallbackURL = fallbackURL
+    self.preparation = preparation
+    pendingUpdates = [update]
+    registrationError = nil
+    isPresented = true
+    check()
+  }
+
   static func present(
-    with error: InstallHelperError, fallbackURL: URL,
-    retry: @escaping @MainActor () -> Void = {}
+    with error: InstallHelperError, fallbackURL: URL, retry: @escaping @MainActor () -> Void = {}
   ) {
     shared.present(error, fallbackURL: fallbackURL, retry: retry)
   }
 
   func present(_ error: InstallHelperError, fallbackURL: URL, retry: @escaping () -> Void) {
-    self.availabilityError = error
+    guard pendingUpdates.isEmpty else {
+      pendingUpdates.append(retry)
+      return
+    }
+    availabilityError = error
     self.fallbackURL = fallbackURL
-    pendingUpdate = retry
+    pendingUpdates = [retry]
     registrationError = nil
     if AppStoreUpdateSettings.alwaysPerformManualUpdates.active {
       openAppStore()
@@ -45,60 +68,93 @@ final class UpdateInstallHelperAlert: ObservableObject {
   }
 
   var title: String {
-    registrationError == nil
-      ? NSLocalizedString("UpdateInstallHelperAlert.Title", comment: "Update helper title")
-      : "Unable to Enable Update Helper"
+    if isChecking { return "Checking Update Helper" }
+    switch availabilityError {
+    case .installHelperNotRegistered: return "Set Up App Store Updates"
+    case .installHelperRequiresApproval: return "Allow App Store Updates"
+    case .unavailable: return "Update Helper Unavailable"
+    }
   }
 
   var message: String {
-    if let registrationError {
-      return [
-        registrationError.localizedDescription,
-        (registrationError as? LocalizedError)?.failureReason,
-      ]
-      .compactMap { $0 }.joined(separator: "\n\n")
+    if isChecking { return "Checking that the helper is ready before downloading any updates." }
+    switch availabilityError {
+    case .installHelperNotRegistered:
+      return
+        "Latest needs an approved helper to install App Store updates. No updates will download until it is ready."
+    case .installHelperRequiresApproval:
+      return
+        "Allow Latest in System Settings → General → Login Items & Extensions. Return here to continue automatically once the helper is ready."
+    case .unavailable:
+      return
+        "Latest could not connect to its update helper. No downloads have started. Try checking again, or update using the App Store."
     }
-    return availabilityError.errorDescription ?? ""
   }
 
   var primaryTitle: String {
-    NSLocalizedString(
-      availabilityError == .installHelperNotRegistered
-        ? "UpdateInstallHelperAlert.Primary.InstallHelper"
-        : "UpdateInstallHelperAlert.Primary.OpenSettings", comment: "Enable update helper")
+    switch availabilityError {
+    case .installHelperNotRegistered: return "Enable Helper"
+    case .installHelperRequiresApproval: return "Open System Settings"
+    case .unavailable: return "Check Again"
+    }
   }
 
   func enableHelper() {
-    do {
-      try helper.register()
-      resumeIfAvailable()
-    } catch {
-      registrationError = error
-      Task { @MainActor in isPresented = true }
+    switch availabilityError {
+    case .unavailable: check()
+    default: check(register: true)
     }
   }
 
   func resumeIfAvailable() {
-    guard pendingUpdate != nil, registrationError == nil else { return }
-    do { try helper.verifyAvailability() } catch { return }
-    let update = pendingUpdate
-    pendingUpdate = nil
-    isPresented = false
-    update?()
+    guard availabilityError == .installHelperRequiresApproval else { return }
+    check()
+  }
+
+  private func check(register: Bool = false) {
+    guard !pendingUpdates.isEmpty, !isChecking else { return }
+    isChecking = true
+    registrationError = nil
+    let id = requestID
+    checkTask = Task {
+      do {
+        if register { try helper.register() }
+        if let preparation { try await preparation() } else { try await helper.prepareForUpdates() }
+        guard !Task.isCancelled, id == requestID else { return }
+        let updates = pendingUpdates
+        clear()
+        isPresented = false
+        updates.forEach { $0() }
+      } catch {
+        guard !Task.isCancelled, id == requestID else { return }
+        isChecking = false
+        checkTask = nil
+        availabilityError = error as? InstallHelperError ?? .unavailable(error.localizedDescription)
+        if case .unavailable = availabilityError { registrationError = error }
+      }
+    }
   }
 
   func openAppStore() {
-    pendingUpdate = nil
-    isPresented = false
-    if let fallbackURL { workspace.open(fallbackURL) }
+    let url = fallbackURL
+    cancel()
+    if let url { workspace.open(url) }
   }
 
   func cancel() {
-    pendingUpdate = nil
-    registrationError = nil
+    checkTask?.cancel()
+    clear()
     isPresented = false
   }
 
+  private func clear() {
+    requestID = UUID()
+    pendingUpdates = []
+    preparation = nil
+    checkTask = nil
+    isChecking = false
+    registrationError = nil
+  }
 }
 
 struct UpdateInstallHelperPresentation: ViewModifier {
@@ -109,39 +165,50 @@ struct UpdateInstallHelperPresentation: ViewModifier {
 
   func body(content: Content) -> some View {
     content
-      .alert(
-        presenter.title,
-        isPresented: Binding(
-          get: { presenter.isPresented },
-          set: { value in if presenter.isPresented != value { presenter.isPresented = value } })
+      .sheet(
+        isPresented: $presenter.isPresented,
+        onDismiss: { if !presenter.isPresented { presenter.cancel() } }
       ) {
-        if presenter.registrationError != nil {
-          Button("OK", role: .cancel) { Task { @MainActor in presenter.cancel() } }
-        } else {
-          Button(presenter.primaryTitle) { Task { @MainActor in presenter.enableHelper() } }
-            .keyboardShortcut(.defaultAction)
-          Button(
-            NSLocalizedString(
-              "UpdateInstallHelperAlert.Secondary.AppStore", comment: "App Store fallback")
-          ) {
-            Task { @MainActor in presenter.openAppStore() }
+        VStack(alignment: .leading, spacing: 20) {
+          HStack(spacing: 12) {
+            Image(systemName: "shippingbox")
+              .font(.system(size: 28)).foregroundStyle(.secondary)
+            Text(presenter.title).font(.title2.bold())
           }
-          Button(
-            NSLocalizedString("UpdateInstallHelperAlert.Cancel", comment: "Cancel"), role: .cancel
-          ) {
-            Task { @MainActor in presenter.cancel() }
+          Text(presenter.message).fixedSize(horizontal: false, vertical: true)
+          if presenter.isChecking {
+            HStack(spacing: 10) {
+              ProgressView().controlSize(.small)
+              Text("Checking and repairing helper…").foregroundStyle(.secondary)
+            }
+          }
+          if let error = presenter.registrationError {
+            DisclosureGroup("Details") {
+              Text(
+                [error.localizedDescription, (error as? LocalizedError)?.failureReason]
+                  .compactMap { $0 }.joined(separator: "\n\n")
+              )
+              .font(.caption).textSelection(.enabled)
+              .fixedSize(horizontal: false, vertical: true)
+              .frame(maxWidth: .infinity, alignment: .leading)
+            }
+          }
+          Toggle("Always open App Store", isOn: $alwaysOpenAppStore)
+          Divider()
+          HStack {
+            Button("Cancel", role: .cancel) { presenter.cancel() }
+              .keyboardShortcut(.cancelAction)
+            Spacer()
+            Button("Open App Store") { presenter.openAppStore() }
+            Button(presenter.primaryTitle) { presenter.enableHelper() }
+              .keyboardShortcut(.defaultAction)
+              .disabled(presenter.isChecking)
           }
         }
-      } message: {
-        Text(presenter.message)
+        .padding(24)
+        .frame(width: 460, alignment: .leading)
+        .interactiveDismissDisabled(presenter.isChecking)
       }
-      .dialogSeverity(.standard)
-      .dialogSuppressionToggle(
-        NSLocalizedString(
-          "UpdateInstallHelperAlert.SuppressionTitle", comment: "Always open App Store"),
-        isSuppressed: $alwaysOpenAppStore
-      )
-
       .onChange(of: scenePhase) { _, phase in
         if phase == .active { presenter.resumeIfAvailable() }
       }

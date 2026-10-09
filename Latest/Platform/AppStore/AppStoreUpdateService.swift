@@ -26,6 +26,6 @@ final class LiveAppStoreUpdateService: AppStoreUpdateServicing {
   }
 
   func prepareForUpdates() throws(InstallHelperError) {
-    try AppStoreUpdater.prepareForUpdates()
+    try AppStoreUpdater.verifyAvailability()
   }
 }

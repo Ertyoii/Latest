@@ -376,14 +376,12 @@ extension AppStoreUpdateCheckerOperation {
       openAppStorePage(for: entry)
       return
     }
-    do {
-      try AppStoreUpdater.prepareForUpdates()
-      AppStoreUpdater.enqueueUpdate(for: app, appStoreIdentifier: entry.appStoreIdentifier)
-    } catch {
-      Task { @MainActor in
-        UpdateInstallHelperAlert.present(with: error, fallbackURL: entry.pageURL) {
-          Self.updateApp(app, entry: entry)
-        }
+    Task { @MainActor in
+      UpdateInstallHelperAlert.shared.prepare(
+        fallbackURL: entry.pageURL,
+        preparation: { try await AppStoreUpdater.prepareForUpdates() }
+      ) {
+        AppStoreUpdater.enqueueUpdate(for: app, appStoreIdentifier: entry.appStoreIdentifier)
       }
     }
   }

@@ -249,7 +249,7 @@ private final class StubAppProvider: AppProviding {
 }
 
 @MainActor
-private final class StubApplicationWorkspace: ApplicationWorkspace {
+final class StubApplicationWorkspace: ApplicationWorkspace {
   private(set) var openedApplicationURLs = [URL]()
   private(set) var revealedURLs = [[URL]]()
   private(set) var openedURLs = [URL]()

@@ -7,9 +7,14 @@
 //
 
 import Foundation
+import Security
 
 /// Shared by the app and its authenticated installer daemon.
 @objc protocol UpdateInstallerProtocol {
+  /// A harmless round trip proves that the running, authenticated daemon is
+  /// the binary bundled with this app and supports the current protocol.
+  func checkAvailability(reply: @escaping (Data?, Bool, Error?) -> Void)
+
   // Invoked through the XPC proxy across the app/helper module boundary.
   // swiftlint:disable:next unused_declaration
   func performInstallation(
@@ -23,6 +28,14 @@ enum UpdateInstallerIdentity {
   // Used by app-side XPC/signature validation; this file also builds in the helper.
   // swiftlint:disable:next unused_declaration
   static let helperRequirement = requirement(for: service)
+
+  static func signature(of code: SecStaticCode) throws -> Data {
+    var information: CFDictionary?
+    guard SecCodeCopySigningInformation(code, [], &information) == errSecSuccess,
+      let hash = (information as? [String: Any])?[kSecCodeInfoUnique as String] as? Data
+    else { throw CocoaError(.executableNotLoadable) }
+    return hash
+  }
 
   private static func requirement(for identifier: String) -> String {
     "anchor apple generic and identifier \"\(identifier)\" and certificate leaf[subject.OU] = \"D87N659XLV\""

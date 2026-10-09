@@ -85,7 +85,6 @@
 		51A001032FC3000000000001 /* AppCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000032FC3000000000001 /* AppCommands.swift */; };
 		51A001042FC3000000000001 /* UpdateCheckingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000042FC3000000000001 /* UpdateCheckingService.swift */; };
 		51A001062FC3000000000001 /* VisualMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000062FC3000000000001 /* VisualMetrics.swift */; };
-		51A001082FC3000000000001 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000082FC3000000000001 /* WindowAccessor.swift */; };
 		51A001092FC3000000000001 /* UpdatesListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A000092FC3000000000001 /* UpdatesListViewModel.swift */; };
 		51A0010A2FC3000000000001 /* SearchFocusController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A0000A2FC3000000000001 /* SearchFocusController.swift */; };
 		51A0010F2FC3000000000001 /* UpdateSectionHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */; };
@@ -408,7 +407,6 @@
 		51A000032FC3000000000001 /* AppCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCommands.swift; sourceTree = "<group>"; };
 		51A000042FC3000000000001 /* UpdateCheckingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckingService.swift; sourceTree = "<group>"; };
 		51A000062FC3000000000001 /* VisualMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualMetrics.swift; sourceTree = "<group>"; };
-		51A000082FC3000000000001 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 		51A000092FC3000000000001 /* UpdatesListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatesListViewModel.swift; sourceTree = "<group>"; };
 		51A0000A2FC3000000000001 /* SearchFocusController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchFocusController.swift; sourceTree = "<group>"; };
 		51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateSectionHeaderView.swift; sourceTree = "<group>"; };
@@ -864,7 +862,6 @@
 				52E000012FE1000000000001 /* ApplicationWorkspace.swift */,
 				5058BA3921202BA7003F332B /* IconCache.swift */,
 				52F000032FE2000000000001 /* SidebarScrollConfiguration.swift */,
-				51A000082FC3000000000001 /* WindowAccessor.swift */,
 			);
 			path = AppKit;
 			sourceTree = "<group>";
@@ -1332,7 +1329,6 @@
 				51A001032FC3000000000001 /* AppCommands.swift in Sources */,
 				51A001042FC3000000000001 /* UpdateCheckingService.swift in Sources */,
 				51A001062FC3000000000001 /* VisualMetrics.swift in Sources */,
-				51A001082FC3000000000001 /* WindowAccessor.swift in Sources */,
 				51C100012FC6000000000001 /* LatestApplication.swift in Sources */,
 				51A001092FC3000000000001 /* UpdatesListViewModel.swift in Sources */,
 				51A0010A2FC3000000000001 /* SearchFocusController.swift in Sources */,
