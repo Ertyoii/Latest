@@ -127,6 +127,39 @@ final class InstallHelperTest: XCTestCase {
     XCTAssertEqual(events, ["verify", "probe", "refresh", "probe", "verify", "probe"])
   }
 
+  func testLegacyRegistrationMigratesOnlyWhenTheHelperIsNotBusy() async throws {
+    for busy in [false, true] {
+      let backend = ReadinessFixture(
+        probes: [.success(busy ? .busy : .idle), .success(.idle)], needsMigration: true)
+      do {
+        try await InstallHelperReadiness(backend: backend).prepare()
+        XCTAssertFalse(busy, "Migration must wait for the active installation")
+      } catch {
+        XCTAssertTrue(busy)
+        XCTAssertTrue(error.localizedDescription.contains("installation"))
+      }
+      let events = await backend.events
+      XCTAssertEqual(events, busy ? ["verify", "probe"] : ["verify", "probe", "refresh", "probe"])
+    }
+  }
+
+  func testBundledMigrationPreservesTheAuthenticatedEndpointAndLaunchConstraint() throws {
+    func plist(_ label: String) throws -> NSDictionary {
+      let url = Bundle.main.bundleURL.appendingPathComponent(
+        "Contents/Library/LaunchDaemons/\(label).plist")
+      return try XCTUnwrap(
+        PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil)
+          as? NSDictionary)
+    }
+    let legacy = try plist(UpdateInstallerIdentity.service)
+    let current = try plist(UpdateInstallerIdentity.daemon)
+    XCTAssertEqual(current["Label"] as? String, UpdateInstallerIdentity.daemon)
+    XCTAssertNotEqual(current["Label"] as? String, legacy["Label"] as? String)
+    for key in ["BundleProgram", "MachServices", "SpawnConstraint"] {
+      XCTAssertEqual(current[key] as? NSObject, legacy[key] as? NSObject, key)
+    }
+  }
+
   func testFailedPrerequisiteDoesNotContactOrRefreshDaemon() async {
     let backend = ReadinessFixture(probes: [])
     await backend.failVerification()
@@ -338,6 +371,7 @@ private actor ReadinessFixture: InstallHelperReadinessBackend {
   var events: [String] = []
   var probes: [Result<InstallHelperHealth, Error>]
   var verificationFails = false
+  private let needsMigration: Bool
   private var probeStarted: XCTestExpectation?
   private var probeContinuation: CheckedContinuation<Void, Never>?
   func suspendNextProbe(started: XCTestExpectation) { probeStarted = started }
@@ -346,12 +380,15 @@ private actor ReadinessFixture: InstallHelperReadinessBackend {
     probeContinuation = nil
   }
 
-  init(probes: [Result<InstallHelperHealth, Error>]) { self.probes = probes }
+  init(probes: [Result<InstallHelperHealth, Error>], needsMigration: Bool = false) {
+    self.probes = probes
+    self.needsMigration = needsMigration
+  }
   func failVerification() { verificationFails = true }
-  func verify() throws -> Data {
+  func verify() throws -> (signature: Data, needsMigration: Bool) {
     events.append("verify")
     if verificationFails { throw InstallHelperError.installHelperRequiresApproval }
-    return Data([1])
+    return (Data([1]), needsMigration)
   }
   func probe() async throws -> InstallHelperHealth {
     events.append("probe")

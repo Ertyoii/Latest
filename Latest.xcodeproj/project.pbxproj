@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A11009010000000000000001 /* com.max-langer.Latest.dev.UpdateInstaller.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = A11009010000000000000002 /* com.max-langer.Latest.dev.UpdateInstaller.plist */; };
 		04DB211D3099FDA076EC8F2F /* ReleaseNotesVersionSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A492B900BB42DB5CA9C73A45 /* ReleaseNotesVersionSelection.swift */; };
 		04F39C68659809071B935212 /* VersionParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50E4EB062B17DACB00A70A7D /* VersionParser.swift */; };
 		0521C977004E6C5E1CE255D2 /* InstallHelperTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF47380B4D5A5B6A192C0071 /* InstallHelperTest.swift */; };
@@ -221,6 +222,7 @@
 			dstSubfolderSpec = 1;
 			files = (
 				505062292F0DBF0D00998F84 /* com.max-langer.latest.UpdateInstaller.plist in CopyFiles */,
+				A11009010000000000000001 /* com.max-langer.Latest.dev.UpdateInstaller.plist in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -236,6 +238,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A11009010000000000000002 /* com.max-langer.Latest.dev.UpdateInstaller.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "com.max-langer.Latest.dev.UpdateInstaller.plist"; sourceTree = "<group>"; };
 		002A891730B3DDB4A59CA5A1 /* ToolbarProgressPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarProgressPresentation.swift; sourceTree = "<group>"; };
 		0267A1D6626D912543A3A797 /* UpdateActionPresentationTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateActionPresentationTest.swift; sourceTree = "<group>"; };
 		07D1435C388987B25D471273 /* WindowCaptureSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCaptureSupport.swift; sourceTree = "<group>"; };
@@ -600,6 +603,7 @@
 			isa = PBXGroup;
 			children = (
 				5050621F2F0DBECC00998F84 /* com.max-langer.latest.UpdateInstaller.plist */,
+				A11009010000000000000002 /* com.max-langer.Latest.dev.UpdateInstaller.plist */,
 				505062202F0DBECC00998F84 /* main.swift */,
 				505062212F0DBECC00998F84 /* UpdateInstaller.swift */,
 			);
@@ -1796,7 +1800,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.92;
+				MARKETING_VERSION = 0.93;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1839,7 +1843,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.92;
+				MARKETING_VERSION = 0.93;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

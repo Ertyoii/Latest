@@ -23,6 +23,9 @@ import Security
 }
 
 enum UpdateInstallerIdentity {
+  // Separate the fork's launchd registration from the legacy shared identity.
+  // Keep the authenticated XPC endpoint and signing identity compatible.
+  static let daemon = "com.max-langer.Latest.dev.UpdateInstaller"
   static let service = "com.max-langer.latest.UpdateInstaller"
   static let appRequirement = requirement(for: "com.max-langer.Latest.dev")
   // Used by app-side XPC/signature validation; this file also builds in the helper.

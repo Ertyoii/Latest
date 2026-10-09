@@ -18,7 +18,11 @@ enum InstallHelper {
 
   /// Verifies that the install helper is registered and approved.
   static func verifyAvailability() throws(InstallHelperError) {
-    switch helperService.status {
+    try verifyAvailability(of: registration.service)
+  }
+
+  private static func verifyAvailability(of service: SMAppService) throws(InstallHelperError) {
+    switch service.status {
     case .notFound, .notRegistered:
       throw InstallHelperError.installHelperNotRegistered
     case .requiresApproval:
@@ -39,7 +43,7 @@ enum InstallHelper {
   /// Registers the helper or opens System Settings if approval is required.
   static func installHelper() throws {
     _ = try verifySigning()
-    let service = helperService
+    let service = registration.service
     switch service.status {
     case .notFound, .notRegistered:
       try service.register()
@@ -53,8 +57,22 @@ enum InstallHelper {
     }
   }
 
-  private static var helperService: SMAppService {
+  private static var currentService: SMAppService {
+    SMAppService.daemon(plistName: UpdateInstallerIdentity.daemon + ".plist")
+  }
+
+  private static var legacyService: SMAppService {
     SMAppService.daemon(plistName: UpdateInstallerIdentity.service + ".plist")
+  }
+
+  private static var registration: (service: SMAppService, needsMigration: Bool) {
+    let current = currentService
+    let legacy = legacyService
+    let needsMigration = legacy.status == .enabled || legacy.status == .requiresApproval
+    if needsMigration && (current.status == .notRegistered || current.status == .notFound) {
+      return (legacy, true)
+    }
+    return (current, needsMigration)
   }
 
   /// A root daemon must have a stable Apple-issued signing identity. Do not
@@ -147,19 +165,27 @@ enum InstallHelper {
   }
 
   struct LiveInstallHelperBackend: InstallHelperReadinessBackend {
-    func verify() throws -> Data {
+    func verify() throws -> (signature: Data, needsMigration: Bool) {
       let signature = try InstallHelper.verifySigning()
-      try InstallHelper.verifyAvailability()
-      return signature
+      let registration = InstallHelper.registration
+      try InstallHelper.verifyAvailability(of: registration.service)
+      return (signature, registration.needsMigration)
     }
 
     func refresh() async throws {
       try InstallHelper.verifyAvailability()
-      let service = InstallHelper.helperService
-      try await service.unregister()
+      // An older app copy can re-register the legacy job after migration.
+      // Retire both registrations so only one job owns the shared XPC endpoint.
+      for service in [InstallHelper.legacyService, InstallHelper.currentService] {
+        if service.status == .enabled || service.status == .requiresApproval {
+          try await service.unregister()
+        }
+      }
       // Background Task Management settles separately from process exit.
       try await Task.sleep(for: .milliseconds(500))
-      try service.register()
+      // A new stable registration also rebuilds the missing BTM parent link
+      // left by some legacy records. Never rotate identities on every retry.
+      try InstallHelper.currentService.register()
       try InstallHelper.verifyAvailability()
     }
 
