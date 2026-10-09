@@ -70,6 +70,19 @@ struct ReleaseNotesDetailSurface: View {
   let contentState: ReleaseNotesDetailContentState
   var showsSupportStatus = true
   var updating: any AppUpdating = AppUpdateService.shared
+  private let appIdentity: ObjectIdentifier?
+
+  init(
+    app: App?, contentState: ReleaseNotesDetailContentState, showsSupportStatus: Bool = true,
+    updating: any AppUpdating = AppUpdateService.shared
+  ) {
+    self.app = app
+    self.contentState = contentState
+    self.showsSupportStatus = showsSupportStatus
+    self.updating = updating
+    // Refreshed metadata can compare equal without having the same support status.
+    appIdentity = app.map(ObjectIdentifier.init)
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -200,11 +213,13 @@ struct ReleaseNotesHeaderView: View {
           appName
             .fixedSize(horizontal: true, vertical: false)
           SupportStatusButton(app: app)
+            .id(appIdentity)
         }
 
         HStack(spacing: 5) {
           appName
           SupportStatusButton(app: app, showsLabel: false)
+            .id(appIdentity)
         }
       }
     } else {

@@ -9,6 +9,68 @@ import XCTest
 
 @MainActor
 final class SidebarInteractionTest: XCTestCase {
+  func testSelectedSupportStatusSettlesWithoutChangingAppOrInstalledVersion() async throws {
+    try requireUITests()
+    let settings = try isolatedAppListSettings(for: self)
+    let suite = "SupportStatus.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = AppDataStore(userDefaults: defaults)
+    let bundle = App.Bundle(
+      version: Version(versionNumber: "1", buildNumber: nil), name: "Pending support",
+      bundleIdentifier: "test.pending.support",
+      fileURL: URL(fileURLWithPath: "/tmp/Pending-Support.app"), source: .none)
+    let model = UpdatesListViewModel(settings: settings, appProvider: store)
+    model.startObserving()
+    defer { model.stopObserving() }
+    let environment = AppEnvironment(settings: settings, updatesListViewModel: model)
+    let window = try await makeLatestTestWindow(
+      environment: environment, activate: false, testCase: self)
+    defer { window.close() }
+    let fixture = try SidebarInputFixture(window: window, model: model)
+
+    let results: [Result<Latest.App.Update, Error>] = [
+      .success(
+        App.Update(
+          app: bundle, remoteVersion: bundle.version, minimumOSVersion: nil, source: .appStore,
+          date: nil, releaseNotes: .html(string: "<p>Current release notes</p>"),
+          updateAction: .builtIn { _ in })),
+      .failure(LatestError.updateInfoUnavailable),
+    ]
+    for result in results {
+      store.beginUpdateCheck(generation: 1)
+      let pending = store.set(nil, for: bundle)
+      try await Task.sleep(for: .milliseconds(300))
+      let header = try XCTUnwrap(
+        fixture.accessibilityElements().first {
+          $0.accessibilityIdentifier() == "release-notes.header"
+        })
+      func supportButton() throws -> SidebarAccessibilityElement {
+        try XCTUnwrap(
+          fixture.accessibilityElements().first {
+            $0.accessibilityFrame().intersects(header.accessibilityFrame())
+              && $0.accessibilityLabel() == model.selectedApp?.localizedSupportStatus
+          })
+      }
+      XCTAssertEqual(try supportButton().accessibilityEnabled(), false)
+      let resolved = try XCTUnwrap(store.accept(result, for: bundle))
+      store.finishUpdateCheck(generation: 1)
+      try await Task.sleep(for: .milliseconds(300))
+      XCTAssertEqual(pending, resolved, "Installed app identity and version stay unchanged")
+      XCTAssertTrue(model.selectedApp === resolved, "Selection must follow the resolved metadata")
+      XCTAssertNil(model.snapshot.checkingGeneration)
+      let bitmap = try await settledWindowBitmap(window)
+      let attachment = XCTAttachment(
+        image: NSImage(cgImage: try XCTUnwrap(bitmap.cgImage), size: bitmap.size))
+      attachment.name = "resolved-support-\(resolved.source.rawValue)"
+      attachment.lifetime = .keepAlways
+      add(attachment)
+      XCTAssertEqual(
+        try supportButton().accessibilityEnabled(), true,
+        "The selected header must replace Checking with the resolved support status")
+    }
+  }
+
   @MainActor
   func testDiscoveredRowsStayInPlaceAndRefreshRenderedMetadataDuringPendingScan() async throws {
     try requireUITests()
