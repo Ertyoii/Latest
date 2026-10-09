@@ -85,10 +85,11 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
 
     if apps.contains(where: { $0.bundle.source == .appStore }) {
       do {
-        try appStoreUpdateService.prepareForUpdates()
+        try appStoreUpdateService.verifyAvailability()
       } catch {
         guard let updatesPage = ExternalURL.updatesPage else { return }
-        UpdateInstallHelperAlert.present(with: error, fallbackURL: updatesPage) { [weak self] in
+        UpdateInstallHelperAlert.shared.prepare(fallbackURL: updatesPage, error: error) {
+          [weak self] in
           self?.updateAll()
         }
         return

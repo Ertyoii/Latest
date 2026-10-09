@@ -39,8 +39,24 @@ final class LiveInstallHelperService: InstallHelperServicing {
 /// Registration is only a prerequisite. Every new batch proves live XPC health;
 /// concurrent requests share only the check currently in flight.
 struct InstallHelperHealth: Sendable {
-  let signature: Data
+  let signature: Data?
   let isInstalling: Bool
+}
+
+extension InstallHelperHealth {
+  init(signature: Data?, isInstalling: Bool, error: Error?) throws {
+    if let error {
+      // An authenticated busy reply still forbids a restart when the helper
+      // cannot validate its running code after the app was replaced.
+      guard isInstalling else { throw error }
+      self.init(signature: nil, isInstalling: true)
+    } else {
+      guard signature != nil || isInstalling else {
+        throw LatestError.installHelperCommunicationFailed
+      }
+      self.init(signature: signature, isInstalling: isInstalling)
+    }
+  }
 }
 
 protocol InstallHelperReadinessBackend: Sendable {
@@ -51,7 +67,7 @@ protocol InstallHelperReadinessBackend: Sendable {
 
 actor InstallHelperReadiness {
   private let backend: any InstallHelperReadinessBackend
-  private var preparation: (id: UUID, generation: Int, task: Task<Bool, Error>)?
+  private var preparation: Task<Void, Error>?
   private var installations = 0
   private var uncertainInstallation = false
   private var failureGeneration = 0
@@ -59,55 +75,56 @@ actor InstallHelperReadiness {
   init(backend: any InstallHelperReadinessBackend) { self.backend = backend }
 
   func prepare() async throws {
-    let pending: (id: UUID, generation: Int, task: Task<Bool, Error>)
-    if let preparation {
-      pending = preparation
-    } else {
+    try Task.checkCancellation()
+    if preparation == nil {
       let mayRefresh = installations == 0
       let outcomeUnknown = uncertainInstallation
-      let task = Task { [backend] in
-        let expected = try await backend.verify()
-        let health = try? await backend.probe()
-        if let health, health.signature == expected {
-          if outcomeUnknown && health.isInstalling {
-            throw InstallHelperError.unavailable(
-              "The helper is still installing an update. Wait for it to finish before trying again."
-            )
-          }
-          return !health.isInstalling
-        }
-        // A lost reply does not prove installer stopped. Only a live, idle
-        // response can clear that uncertainty; never restart blindly.
-        guard mayRefresh, health?.isInstalling != true,
-          !outcomeUnknown || health?.isInstalling == false
-        else {
-          throw InstallHelperError.unavailable(
-            "An installation may still be running. Check its result before trying again; Latest will not restart the helper while its outcome is unknown."
-          )
-        }
-        try await backend.refresh()
-        // Registration can report enabled before launchd can service requests.
-        for attempt in 0..<3 {
-          do {
-            let health = try await backend.probe()
-            guard health.signature == expected else {
-              throw InstallHelperError.unavailable("The running update helper is out of date.")
-            }
-            return !health.isInstalling
-          } catch {
-            if attempt == 2 { throw error }
-            try await Task.sleep(for: .milliseconds(500))
-          }
-        }
-        return false
+      let generation = failureGeneration
+      preparation = Task {
+        defer { preparation = nil }
+        let idle = try await checkReadiness(mayRefresh: mayRefresh, outcomeUnknown: outcomeUnknown)
+        if idle, failureGeneration == generation { uncertainInstallation = false }
       }
-      pending = (UUID(), failureGeneration, task)
-      preparation = pending
     }
-    defer { if preparation?.id == pending.id { preparation = nil } }
-    let idle = try await pending.task.value
-    if idle, failureGeneration == pending.generation { uncertainInstallation = false }
+    try await preparation?.value
     try Task.checkCancellation()
+  }
+
+  private func checkReadiness(mayRefresh: Bool, outcomeUnknown: Bool) async throws -> Bool {
+    let expected = try await backend.verify()
+    let health = try? await backend.probe()
+    if let health, health.signature == expected {
+      if outcomeUnknown && health.isInstalling {
+        throw InstallHelperError.unavailable(
+          "The helper is still installing an update. Wait for it to finish before trying again."
+        )
+      }
+      return !health.isInstalling
+    }
+    // A lost reply does not prove installer stopped. Only a live, idle
+    // response can clear that uncertainty; never restart blindly.
+    guard mayRefresh, health?.isInstalling != true,
+      !outcomeUnknown || health?.isInstalling == false
+    else {
+      throw InstallHelperError.unavailable(
+        "An installation may still be running. Check its result before trying again; Latest will not restart the helper while its outcome is unknown."
+      )
+    }
+    try await backend.refresh()
+    // Registration can report enabled before launchd can service requests.
+    for attempt in 0..<3 {
+      do {
+        let health = try await backend.probe()
+        guard health.signature == expected else {
+          throw InstallHelperError.unavailable("The running update helper is out of date.")
+        }
+        return !health.isInstalling
+      } catch {
+        if attempt == 2 { throw error }
+        try await Task.sleep(for: .milliseconds(500))
+      }
+    }
+    return false
   }
 
   func install(_ action: @Sendable () async throws -> URL) async throws -> URL {

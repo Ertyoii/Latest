@@ -23,7 +23,9 @@ enum AppStoreUpdater {
 
   /// Verifies whether the app can prepare App Store updates.
   static func prepareForUpdates() async throws {
-    try await AppStoreUpdateOperation.prepareForUpdates()
+    if AppStoreUpdateOperation.requiresManualInstallation {
+      try await InstallHelper.prepareForUpdates()
+    }
   }
 
   /// Enqueues an App Store update operation.
@@ -57,10 +59,6 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
     super.init(bundleIdentifier: bundleIdentifier, appIdentifier: appIdentifier)
   }
 
-  static func prepareForUpdates() async throws {
-    if requiresManualInstallation { try await InstallHelper.prepareForUpdates() }
-  }
-
   static let requiresManualInstallation = ProcessInfo.processInfo.isOperatingSystemAtLeast(
     .init(majorVersion: 26, minorVersion: 1, patchVersion: 0))
 
@@ -73,7 +71,7 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
       }
       // Recheck at execution time as well: approval or daemon health may have
       // changed while the operation waited in the queue.
-      do { try await Self.prepareForUpdates() } catch {
+      do { try await AppStoreUpdater.prepareForUpdates() } catch {
         guard !self.isCancelled, !self.isFinished else { return }
         self.preparationFailed(error)
         return
@@ -115,9 +113,9 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
     super.cancel()
     finishOnMain()
     let fallback = URL(string: "macappstore://apps.apple.com/updates")!
-    UpdateInstallHelperAlert.shared.present(
-      error as? InstallHelperError ?? .unavailable(error.localizedDescription),
-      fallbackURL: fallback
+    UpdateInstallHelperAlert.shared.prepare(
+      fallbackURL: fallback,
+      error: error as? InstallHelperError ?? .unavailable(error.localizedDescription)
     ) { [bundleIdentifier, installURL, appIdentifier, itemIdentifier] in
       UpdateQueue.shared.addOperation(
         AppStoreUpdateOperation(

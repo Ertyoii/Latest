@@ -38,7 +38,7 @@ enum InstallHelper {
 
   /// Registers the helper or opens System Settings if approval is required.
   static func installHelper() throws {
-    try verifySigning()
+    _ = try verifySigning()
     let service = helperService
     switch service.status {
     case .notFound, .notRegistered:
@@ -59,17 +59,12 @@ enum InstallHelper {
 
   /// A root daemon must have a stable Apple-issued signing identity. Do not
   /// weaken its launch or peer requirements for unsigned development builds.
-  static func verifySigning() throws {
-    let helperURL = Bundle.main.bundleURL.appendingPathComponent(
-      "Contents/Resources/LatestUpdateInstaller")
-    for (url, text) in [
-      (Bundle.main.bundleURL, UpdateInstallerIdentity.appRequirement),
-      (helperURL, UpdateInstallerIdentity.helperRequirement),
-    ] {
+  private static func verifySigning() throws -> Data {
+    func verifiedCode(at url: URL, requirement: String) throws -> SecStaticCode {
       var code: SecStaticCode?
       var policy: SecRequirement?
       guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess,
-        SecRequirementCreateWithString(text as CFString, [], &policy) == errSecSuccess,
+        SecRequirementCreateWithString(requirement as CFString, [], &policy) == errSecSuccess,
         let code, let policy,
         SecStaticCodeCheckValidity(code, [], policy) == errSecSuccess
       else {
@@ -79,7 +74,14 @@ enum InstallHelper {
             "This copy of Latest or its helper does not have the required code signature. Use a signed build of Latest, then enable the helper again."
         )
       }
+      return code
     }
+    _ = try verifiedCode(
+      at: Bundle.main.bundleURL, requirement: UpdateInstallerIdentity.appRequirement)
+    let helper = try verifiedCode(
+      at: Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/LatestUpdateInstaller"),
+      requirement: UpdateInstallerIdentity.helperRequirement)
+    return try UpdateInstallerIdentity.signature(of: helper)
   }
 
   // MARK: - Package Installation
@@ -88,7 +90,6 @@ enum InstallHelper {
   static func installPackage(at url: URL, appURL: URL, receiptData: Data)
     async throws -> URL
   {
-    try Self.verifyAvailability()
     return try await readiness.install {
       try await performInstallation(at: url, appURL: appURL, receiptData: receiptData)
     }
@@ -111,7 +112,7 @@ enum InstallHelper {
 
     return try await withCheckedThrowingContinuation {
       (continuation: CheckedContinuation<URL, Error>) in
-      let replyGate = InstallationReplyGate(continuation: continuation)
+      let replyGate = HelperReplyGate(continuation: continuation)
       // A deadline here would release the queue while /usr/sbin/installer is
       // still replacing the app. Wait for its result or an XPC connection error.
       connection.interruptionHandler = {
@@ -147,14 +148,9 @@ enum InstallHelper {
 
   struct LiveInstallHelperBackend: InstallHelperReadinessBackend {
     func verify() throws -> Data {
-      try InstallHelper.verifySigning()
+      let signature = try InstallHelper.verifySigning()
       try InstallHelper.verifyAvailability()
-      let url = Bundle.main.bundleURL.appendingPathComponent(
-        "Contents/Resources/LatestUpdateInstaller")
-      var code: SecStaticCode?
-      guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code
-      else { throw CocoaError(.executableNotLoadable) }
-      return try UpdateInstallerIdentity.signature(of: code)
+      return signature
     }
 
     func refresh() async throws {
@@ -196,22 +192,17 @@ enum InstallHelper {
         }
         proxy.checkAvailability { signature, isInstalling, error in
           timeout.cancel()
-          if let error {
-            gate.resume(with: .failure(error))
-          } else if let signature {
-            gate.resume(
-              with: .success(InstallHelperHealth(signature: signature, isInstalling: isInstalling)))
-          } else {
-            gate.resume(with: .failure(LatestError.installHelperCommunicationFailed))
-          }
+          gate.resume(
+            with: Result {
+              try InstallHelperHealth(
+                signature: signature, isInstalling: isInstalling, error: error)
+            })
         }
       }
     }
   }
 
 }
-
-typealias InstallationReplyGate = HelperReplyGate<URL>
 
 final class HelperReplyGate<Value: Sendable>: Sendable {
   private let state: Mutex<CheckedContinuation<Value, Error>?>

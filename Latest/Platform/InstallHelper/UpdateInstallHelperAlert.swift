@@ -10,14 +10,26 @@ import SwiftUI
 final class UpdateInstallHelperAlert: ObservableObject {
   static let shared = UpdateInstallHelperAlert()
   @Published var isPresented = false
-  @Published private(set) var isChecking = false
-  @Published private(set) var availabilityError = InstallHelperError.installHelperNotRegistered
-  @Published private(set) var registrationError: Error?
+  private enum State {
+    case checking
+    case needsSetup
+    case needsApproval
+    case failed(Error)
+
+    init(error: Error) {
+      switch error as? InstallHelperError {
+      case .installHelperNotRegistered: self = .needsSetup
+      case .installHelperRequiresApproval: self = .needsApproval
+      default: self = .failed(error)
+      }
+    }
+  }
+
+  @Published private var state = State.needsSetup
   private var fallbackURL: URL?
   private var pendingUpdates: [() -> Void] = []
   private var preparation: (@MainActor () async throws -> Void)?
   private var checkTask: Task<Void, Never>?
-  private var requestID = UUID()
   private let helper: any InstallHelperServicing
   private let workspace: any ApplicationWorkspace
 
@@ -29,8 +41,11 @@ final class UpdateInstallHelperAlert: ObservableObject {
     self.workspace = workspace
   }
 
+  /// Queues a batch behind one live check, or shows an existing prerequisite
+  /// failure until the user chooses to retry.
   func prepare(
-    fallbackURL: URL, preparation: (@MainActor () async throws -> Void)? = nil,
+    fallbackURL: URL, error: InstallHelperError? = nil,
+    preparation: (@MainActor () async throws -> Void)? = nil,
     update: @escaping () -> Void
   ) {
     guard pendingUpdates.isEmpty else {
@@ -40,97 +55,91 @@ final class UpdateInstallHelperAlert: ObservableObject {
     self.fallbackURL = fallbackURL
     self.preparation = preparation
     pendingUpdates = [update]
-    registrationError = nil
+    if let error {
+      state = State(error: error)
+      if AppStoreUpdateSettings.alwaysPerformManualUpdates.active {
+        openAppStore()
+        return
+      }
+    }
     isPresented = true
-    check()
+    if error == nil { check() }
   }
 
-  static func present(
-    with error: InstallHelperError, fallbackURL: URL, retry: @escaping @MainActor () -> Void = {}
-  ) {
-    shared.present(error, fallbackURL: fallbackURL, retry: retry)
+  var isChecking: Bool {
+    if case .checking = state { return true }
+    return false
   }
 
-  func present(_ error: InstallHelperError, fallbackURL: URL, retry: @escaping () -> Void) {
-    guard pendingUpdates.isEmpty else {
-      pendingUpdates.append(retry)
-      return
-    }
-    availabilityError = error
-    self.fallbackURL = fallbackURL
-    pendingUpdates = [retry]
-    registrationError = nil
-    if AppStoreUpdateSettings.alwaysPerformManualUpdates.active {
-      openAppStore()
-    } else {
-      isPresented = true
-    }
+  var errorDetails: String? {
+    guard case .failed(let error) = state else { return nil }
+    return [error.localizedDescription, (error as? LocalizedError)?.failureReason]
+      .compactMap { $0 }.joined(separator: "\n\n")
   }
 
   var title: String {
-    if isChecking { return "Checking Update Helper" }
-    switch availabilityError {
-    case .installHelperNotRegistered: return "Set Up App Store Updates"
-    case .installHelperRequiresApproval: return "Allow App Store Updates"
-    case .unavailable: return "Update Helper Unavailable"
+    switch state {
+    case .checking: return "Checking Update Helper"
+    case .needsSetup: return "Set Up App Store Updates"
+    case .needsApproval: return "Allow App Store Updates"
+    case .failed: return "Update Helper Unavailable"
     }
   }
 
   var message: String {
-    if isChecking { return "Checking that the helper is ready before downloading any updates." }
-    switch availabilityError {
-    case .installHelperNotRegistered:
+    switch state {
+    case .checking:
+      return "Checking that the helper is ready before downloading any updates."
+    case .needsSetup:
       return
         "Latest needs an approved helper to install App Store updates. No updates will download until it is ready."
-    case .installHelperRequiresApproval:
+    case .needsApproval:
       return
         "Allow Latest in System Settings → General → Login Items & Extensions. Return here to continue automatically once the helper is ready."
-    case .unavailable:
+    case .failed:
       return
         "Latest could not connect to its update helper. No downloads have started. Try checking again, or update using the App Store."
     }
   }
 
   var primaryTitle: String {
-    switch availabilityError {
-    case .installHelperNotRegistered: return "Enable Helper"
-    case .installHelperRequiresApproval: return "Open System Settings"
-    case .unavailable: return "Check Again"
+    switch state {
+    case .checking: return "Checking…"
+    case .needsSetup: return "Enable Helper"
+    case .needsApproval: return "Open System Settings"
+    case .failed: return "Check Again"
     }
   }
 
   func enableHelper() {
-    switch availabilityError {
-    case .unavailable: check()
-    default: check(register: true)
+    switch state {
+    case .needsSetup, .needsApproval: check(register: true)
+    case .failed: check()
+    case .checking: break
     }
   }
 
   func resumeIfAvailable() {
-    guard availabilityError == .installHelperRequiresApproval else { return }
+    guard case .needsApproval = state else { return }
     check()
   }
 
   private func check(register: Bool = false) {
-    guard !pendingUpdates.isEmpty, !isChecking else { return }
-    isChecking = true
-    registrationError = nil
-    let id = requestID
+    guard !pendingUpdates.isEmpty, checkTask == nil else { return }
+    state = .checking
     checkTask = Task {
       do {
         if register { try helper.register() }
         if let preparation { try await preparation() } else { try await helper.prepareForUpdates() }
-        guard !Task.isCancelled, id == requestID else { return }
+        guard !Task.isCancelled else { return }
         let updates = pendingUpdates
         clear()
         isPresented = false
         updates.forEach { $0() }
       } catch {
-        guard !Task.isCancelled, id == requestID else { return }
-        isChecking = false
+        guard !Task.isCancelled else { return }
         checkTask = nil
-        availabilityError = error as? InstallHelperError ?? .unavailable(error.localizedDescription)
-        if case .unavailable = availabilityError { registrationError = error }
+        state = State(error: error)
       }
     }
   }
@@ -148,12 +157,11 @@ final class UpdateInstallHelperAlert: ObservableObject {
   }
 
   private func clear() {
-    requestID = UUID()
+    fallbackURL = nil
     pendingUpdates = []
     preparation = nil
     checkTask = nil
-    isChecking = false
-    registrationError = nil
+    state = .needsSetup
   }
 }
 
@@ -182,15 +190,12 @@ struct UpdateInstallHelperPresentation: ViewModifier {
               Text("Checking and repairing helper…").foregroundStyle(.secondary)
             }
           }
-          if let error = presenter.registrationError {
+          if let details = presenter.errorDetails {
             DisclosureGroup("Details") {
-              Text(
-                [error.localizedDescription, (error as? LocalizedError)?.failureReason]
-                  .compactMap { $0 }.joined(separator: "\n\n")
-              )
-              .font(.caption).textSelection(.enabled)
-              .fixedSize(horizontal: false, vertical: true)
-              .frame(maxWidth: .infinity, alignment: .leading)
+              Text(details)
+                .font(.caption).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
           }
           Toggle("Always open App Store", isOn: $alwaysOpenAppStore)

@@ -34,12 +34,12 @@ final class InstallHelperInteractionTest: XCTestCase {
         try await activateTestWindow(window)
         var starts = 0
         let url = URL(string: "macappstore://apps.apple.com/updates")!
-        presenter.present(.installHelperNotRegistered, fallbackURL: url) { starts += 1 }
+        presenter.prepare(fallbackURL: url, error: .installHelperNotRegistered) { starts += 1 }
         try await waitForHelper { window.attachedSheet != nil }
         let sheet = try XCTUnwrap(window.attachedSheet)
         try await self.capture(sheet, name: "\(dark ? "dark" : "light")-setup")
         try await self.press("Enable Helper", in: sheet)
-        try await waitForHelper { presenter.registrationError != nil }
+        try await waitForHelper { presenter.errorDetails != nil }
         XCTAssertEqual(helper.registrations, 1)
         XCTAssertEqual(starts, 0)
         XCTAssertTrue(window.attachedSheet === sheet, "Repair must keep one stable sheet")
@@ -66,7 +66,7 @@ final class InstallHelperInteractionTest: XCTestCase {
         XCTAssertEqual(starts, 0)
 
         AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
-        presenter.present(.installHelperRequiresApproval, fallbackURL: url) { starts += 1 }
+        presenter.prepare(fallbackURL: url, error: .installHelperRequiresApproval) { starts += 1 }
         try await waitForHelper { window.attachedSheet != nil }
         let approvalSheet = try XCTUnwrap(window.attachedSheet)
         try await self.capture(approvalSheet, name: "\(dark ? "dark" : "light")-approval")
@@ -76,6 +76,19 @@ final class InstallHelperInteractionTest: XCTestCase {
         helper.enabled = true
         presenter.resumeIfAvailable()
         XCTAssertEqual(starts, 0)
+
+        helper.suspendsCheck = true
+        presenter.prepare(fallbackURL: url) { starts += 1 }
+        try await waitForHelper { window.attachedSheet != nil && helper.pendingCheck != nil }
+        let checkingSheet = try XCTUnwrap(window.attachedSheet)
+        try await self.capture(
+          checkingSheet, name: "\(dark ? "dark" : "light")-checking", animated: true)
+        try await self.press("Cancel", in: checkingSheet)
+        try await waitForHelper { window.attachedSheet == nil }
+        let completedChecks = helper.completedChecks
+        helper.pendingCheck?.resume()
+        try await waitForHelper { helper.completedChecks > completedChecks }
+        XCTAssertEqual(starts, 0, "Cancelling the checking sheet must discard its late reply")
       }
     }
   }
@@ -135,9 +148,11 @@ final class InstallHelperInteractionTest: XCTestCase {
   }
 
   @MainActor
-  private func capture(_ window: NSWindow, name: String) async throws {
+  private func capture(_ window: NSWindow, name: String, animated: Bool = false) async throws {
     try await Task.sleep(for: .milliseconds(250))
-    let bitmap = try await settledWindowBitmap(window)
+    // A running progress indicator cannot produce identical settled frames.
+    let bitmap =
+      try await animated ? captureWindowBitmap(window) : settledWindowBitmap(window)
     let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(
         "build/helper-repair")

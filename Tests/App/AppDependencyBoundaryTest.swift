@@ -289,7 +289,7 @@ private final class StubCheckCoordinator: UpdateCheckCoordinating {
 private final class StubAppStoreService: AppStoreUpdateServicing {
   var alwaysUsesManualUpdates = false
   private(set) var preparations = 0
-  func prepareForUpdates() throws(InstallHelperError) { preparations += 1 }
+  func verifyAvailability() throws(InstallHelperError) { preparations += 1 }
 }
 
 private final class BulkUpdating: AppUpdating {
