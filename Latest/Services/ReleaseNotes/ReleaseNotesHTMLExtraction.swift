@@ -288,7 +288,6 @@ extension ReleaseNotesMarkup {
   }
 
   static func decodingHTMLEntities(in string: String) -> String {
-    var result = string
     let replacements = [
       "&nbsp;": " ",
       "&amp;": "&",
@@ -302,36 +301,37 @@ extension ReleaseNotesMarkup {
       "&hellip;": "…", "&bull;": "•", "&reg;": "®",
     ]
 
-    for (entity, replacement) in replacements {
-      result = result.replacingOccurrences(of: entity, with: replacement)
-    }
-
-    let matches = Regexes.numericEntity.matches(
-      in: result, range: NSRange(result.startIndex..<result.endIndex, in: result))
-    for match in matches.reversed() {
-      guard let matchRange = Range(match.range(at: 0), in: result),
-        let valueRange = Range(match.range(at: 1), in: result)
-      else {
-        continue
-      }
-
-      let rawValue = String(result[valueRange])
-      let scalarValue: UInt32?
-      if rawValue.lowercased().hasPrefix("x") {
-        scalarValue = UInt32(rawValue.dropFirst(), radix: 16)
+    guard string.contains("&") else { return string }
+    let input = string as NSString
+    var result = ""
+    result.reserveCapacity(string.utf8.count)
+    var cursor = 0
+    Regexes.htmlEntity.enumerateMatches(
+      in: string, range: NSRange(location: 0, length: input.length)
+    ) { match, _, _ in
+      guard let match else { return }
+      let entity = input.substring(with: match.range)
+      let replacement: String?
+      if let named = replacements[entity] {
+        replacement = named
+      } else if entity.hasPrefix("&#") {
+        let number = entity.dropFirst(2).dropLast()
+        let hexadecimal = number.first == "x" || number.first == "X"
+        let value = UInt32(hexadecimal ? number.dropFirst() : number, radix: hexadecimal ? 16 : 10)
+        replacement = value.flatMap(UnicodeScalar.init).map(String.init)
       } else {
-        scalarValue = UInt32(rawValue, radix: 10)
+        replacement = nil
       }
-
-      guard let scalarValue,
-        let scalar = UnicodeScalar(scalarValue)
-      else {
-        continue
-      }
-
-      result.replaceSubrange(matchRange, with: String(Character(scalar)))
+      guard let replacement else { return }
+      // Read only original UTF-16 ranges. Decoded output must never be decoded
+      // again, and mutating suffixes per entity makes dense inputs quadratic.
+      result += input.substring(
+        with: NSRange(location: cursor, length: match.range.location - cursor))
+      result += replacement
+      cursor = NSMaxRange(match.range)
     }
-
+    guard cursor > 0 else { return string }
+    result += input.substring(from: cursor)
     return result
   }
 }

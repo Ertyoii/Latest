@@ -100,6 +100,51 @@ final class UpdateQueueTest: XCTestCase {
     observation.cancel()
   }
 
+  func testNewFeedDoesNotReplayProgressPublishedBeforeSubscription() async {
+    let queue = UpdateQueue()
+    queue.isSuspended = true
+    let identifier = URL(fileURLWithPath: "/tmp/Progress-\(UUID()).app")
+    let operation = TestUpdateOperation(identifier: identifier)
+    queue.addOperation(operation)
+    operation.progressState = .downloading(loadedSize: 50, totalSize: 100)
+    let feed = queue.stateChanges(for: identifier)
+    guard case .downloading(50, 100, _) = feed.current else {
+      queue.isSuspended = false
+      operation.complete()
+      return XCTFail("Expected the current download state")
+    }
+    let historical = expectation(description: "No historical progress")
+    historical.isInverted = true
+    let observation = Task {
+      for await _ in feed.changes {
+        historical.fulfill()
+        break
+      }
+    }
+    await fulfillment(of: [historical], timeout: 0.05)
+    observation.cancel()
+    queue.isSuspended = false
+    operation.complete()
+  }
+
+  func testProgressBurstKeepsTerminalErrorForExistingFeed() async {
+    let queue = UpdateQueue()
+    let identifier = URL(fileURLWithPath: "/tmp/ProgressBurst-\(UUID()).app")
+    let started = expectation(description: "Operation started")
+    let operation = TestUpdateOperation(identifier: identifier, didStart: started)
+    queue.addOperation(operation)
+    await fulfillment(of: [started], timeout: 2)
+    var iterator = queue.stateChanges(for: identifier).changes.makeAsyncIterator()
+    for bytes in 0..<10_000 {
+      operation.progressState = .downloading(loadedSize: Int64(bytes), totalSize: 10_000)
+    }
+    operation.finish(with: URLError(.cannotWriteToFile))
+    guard case .error(let error) = await iterator.next() else {
+      return XCTFail("The bounded feed must already contain the terminal error")
+    }
+    XCTAssertEqual((error as? URLError)?.code, .cannotWriteToFile)
+  }
+
   func testBothPerAppFeedsReceiveSubsequentUpdates() async {
     let queue = UpdateQueue()
     let identifier = URL(fileURLWithPath: "/Applications/Feeds-\(UUID().uuidString).app")

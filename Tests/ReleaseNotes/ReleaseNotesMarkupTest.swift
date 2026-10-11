@@ -14,6 +14,73 @@ import XCTest
 @testable import Latest
 
 final class ReleaseNotesMarkupTest: XCTestCase {
+  func testEntitiesAreDecodedExactlyOnce() {
+    XCTAssertEqual(
+      ReleaseNotesMarkup.decodingHTMLEntities(
+        in:
+          "&amp;#39; &amp;lt; &lt; &amp; &unknown; &#128640; &#x1F680; &#X1F680; &#xD800; &#999999999999;"
+      ),
+      "&#39; &lt; < & &unknown; 🚀 🚀 🚀 &#xD800; &#999999999999;")
+  }
+
+  func testHTMLFormattingPreservesFencedAndInlineCodeLiterals() {
+    let markdown = """
+      # Release 2.0
+      Fixed rendering with <strong>emphasis</strong>.
+
+      ````html
+      <strong>literal</strong>
+      ```
+      <i>still literal</i>
+      ````
+
+      Inline `<b>literal</b>` and ``<code>`nested`</code>``.
+      """
+    let content = ReleaseNotesContent(ReleaseNotesDocument.prepare(markdown))
+    for literal in [
+      "<strong>literal</strong>", "<i>still literal</i>", "<b>literal</b>", "<code>`nested`</code>",
+    ] {
+      XCTAssertTrue(
+        content.runs.contains { $0.text.contains(literal) && $0.style?.monospaced == true }, literal
+      )
+    }
+    XCTAssertTrue(content.runs.contains { $0.text == "emphasis" && $0.style?.bold == true })
+  }
+
+  func testCodeShieldingRespectsMarkdownBlockBoundariesAndMixedFormatting() {
+    for markdown in [
+      "`before\n\nFixed <strong>important</strong> changes.\n\nafter`",
+      "```<b>literal</b>```\nFixed <strong>important</strong>.",
+      "<strong>important `<i>literal</i>`</strong>",
+      "Fixed <strong>important\ncontinued</strong> changes.",
+      "你好🙂 `🚀 <i>literal</i>` and <strong>important</strong>.",
+      "Inline `<i>literal</i>🚀` and <strong>important</strong>.",
+      "Inline `<i>literal</i>e\u{301}` and <strong>important</strong>.",
+    ] {
+      let content = ReleaseNotesContent(ReleaseNotesDocument.prepare(markdown))
+      XCTAssertTrue(
+        content.runs.contains { $0.text.contains("important") && $0.style?.bold == true }, markdown)
+      XCTAssertFalse(content.string.contains("�"), "Preserve complete Unicode scalars")
+      if markdown.contains("<i>literal</i>") {
+        XCTAssertTrue(
+          content.runs.contains {
+            $0.text.contains("<i>literal</i>") && $0.style?.monospaced == true
+          })
+      }
+    }
+  }
+
+  func testCodeAfterDownloadButtonPreservesHTMLAcrossLineEndings() {
+    let button = "<a href=\"download\"><img src=\"badge.png\"></a>"
+    for newline in ["\n", "\r\n", "\r"] {
+      let markdown = [button, "```html", button, "```"].joined(separator: newline)
+      let content = ReleaseNotesContent(ReleaseNotesDocument.prepare(markdown))
+      XCTAssertEqual(content.string.trimmingCharacters(in: .whitespacesAndNewlines), button)
+      XCTAssertTrue(
+        content.runs.contains { $0.text.contains(button) && $0.style?.monospaced == true })
+    }
+  }
+
   @MainActor
   func testZoomKeepsTheMacFixWhenTwoPatchVersionsShareAReleaseDate() async throws {
     let html = """

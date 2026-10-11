@@ -95,6 +95,41 @@ final class ReleaseNotesProviderTest: XCTestCase {
   }
 
   @MainActor
+  func testInvalidOrFallbackDiskCacheDoesNotBlockHealthyPrimaryNotes() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cache = ReleaseNotesPersistentCache(directoryURL: directory)
+    let bundle = App.Bundle(
+      version: Version(versionNumber: "1", buildNumber: nil), name: "Cache Recovery",
+      bundleIdentifier: "test.cache-recovery", fileURL: directory.appendingPathComponent("App.app"),
+      source: .sparkle)
+    let app = App(
+      bundle: bundle,
+      update: .success(
+        App.Update(
+          app: bundle, remoteVersion: Version(versionNumber: "2", buildNumber: nil),
+          minimumOSVersion: nil, source: .sparkle, date: nil,
+          releaseNotes: .html(string: "Fixed missing files in the project explorer."),
+          updateAction: .builtIn { _ in })), isIgnored: false)
+    for (text, quality) in [
+      (" \n\t", ReleaseNotesQuality.genuine), ("Temporary fallback", .degraded),
+      ("Package metadata", .genericMetadata),
+    ] {
+      await cache.store(
+        ReleaseNotesPersistentCache.payload(
+          from: ResolvedReleaseNotes(
+            content: ReleaseNotesContent(string: text), quality: quality,
+            provenance: .bundledFallback)),
+        forKey: ReleaseNotesCacheKey(app: app).stableIdentifier)
+      let provider = ReleaseNotesProvider(persistentCache: cache)
+      let result = try await releaseNotes(for: app, provider: provider)
+      XCTAssertTrue(result.string.contains("Fixed missing files"))
+      let repeated = try await releaseNotes(for: app, provider: provider)
+      XCTAssertEqual(repeated.string, result.string)
+    }
+  }
+
+  @MainActor
   func testGitHubSelectedReleaseKeepsBodyBeforeVersionedDownloadLink() async throws {
     let html = """
       <p>BetterDisplay 5 brings expanded display arrangement and advanced image controls.</p>
