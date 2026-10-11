@@ -92,24 +92,74 @@ enum ReleaseNotesDocument {
     }
   }
 
+  /// Let Foundation identify actual Markdown code blocks/spans, including
+  /// delimiter lengths and paragraph boundaries, before rewriting mixed HTML.
+  private static func protectCodeHTML(_ source: String, marker: String) -> String {
+    guard source.contains("<") else { return source }
+    // These wrappers are removed below. Neutralize their HTML-block behavior
+    // for code detection, retaining every source offset (including inside code).
+    let detectionSource = NSMutableString(string: source)
+    for match in ReleaseNotesMarkup.Regexes.markdownDisclosureTag.matches(
+      in: source, range: NSRange(location: 0, length: detectionSource.length))
+    {
+      detectionSource.replaceCharacters(
+        in: NSRange(location: match.range.location, length: 1), with: "x")
+    }
+    guard
+      let parsed = try? AttributedString(
+        markdown: detectionSource as String,
+        options: .init(interpretedSyntax: .full, appliesSourcePositionAttributes: true))
+    else { return source }
+    // Markdown positions use one-based UTF-8 columns. Index line starts once,
+    // avoiding repeated String/UTF-16 traversal for documents with many spans.
+    let input = Array(source.utf8)
+    let markerBytes = Array(marker.utf8)
+    var lineStarts = [0]
+    for index in input.indices
+    where input[index] == 10
+      || (input[index] == 13 && (index + 1 == input.count || input[index + 1] != 10))
+    { lineStarts.append(index + 1) }
+    var result = [UInt8]()
+    result.reserveCapacity(input.count)
+    var cursor = 0
+    for run in parsed.runs {
+      let code =
+        run.inlinePresentationIntent?.contains(.code) == true
+        || run.presentationIntent?.components.contains {
+          if case .codeBlock = $0.kind { return true }
+          return false
+        } == true
+      guard code, let position = run.markdownSourcePosition else { continue }
+      guard lineStarts.indices.contains(position.startLine - 1),
+        lineStarts.indices.contains(position.endLine - 1),
+        position.startColumn > 0, position.endColumn > 0
+      else { continue }
+      let start = lineStarts[position.startLine - 1] + position.startColumn - 1
+      let end = lineStarts[position.endLine - 1] + position.endColumn
+      guard start >= cursor, end >= start, end <= input.count else { continue }
+      result.append(contentsOf: input[cursor..<start])
+      for byte in input[start..<end] {
+        if byte == 60 { result.append(contentsOf: markerBytes) } else { result.append(byte) }
+      }
+      cursor = end
+    }
+    guard cursor > 0 else { return source }
+    result.append(contentsOf: input[cursor...])
+    return String(decoding: result, as: UTF8.self)
+  }
+
   static func prepare(_ markdown: String, baseURL: URL? = nil) -> AttributedString {
-    var fence: String?
+    var codeMarker = "LATEST-CODE-" + UUID().uuidString
+    while markdown.contains(codeMarker) { codeMarker += "-" }
+    let protected = protectCodeHTML(markdown, marker: codeMarker)
     var inComment = false
-    var source = markdown.components(separatedBy: .newlines).compactMap { line -> String? in
+    var source = protected.components(separatedBy: .newlines).compactMap { line -> String? in
       let trimmed = line.trimmingCharacters(in: .whitespaces)
-      if let currentFence = fence {
-        if trimmed.hasPrefix(currentFence) { fence = nil }
-        return line
-      }
-      if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
-        fence = String(trimmed.prefix(3))
-        return line
-      }
       if inComment || trimmed.hasPrefix("<!--") {
         inComment = !trimmed.contains("-->")
         return nil
       }
-      // GitHub release bodies can end with an HTML image-only download button.
+      // Code literals are shielded, so only real HTML wrappers are removed.
       if trimmed.range(
         of: #"(?i)^<a\b[^>]*>\s*<img\b[^>]*>\s*</a>$"#, options: .regularExpression) != nil
       {
@@ -126,6 +176,7 @@ enum ReleaseNotesDocument {
         of: "(?is)<" + tag + "\\b[^>]*>(.*?)</" + tag + ">", with: marker + "$1" + marker,
         options: .regularExpression)
     }
+    source = source.replacingOccurrences(of: codeMarker, with: "<")
     guard
       let parsed = try? AttributedString(
         markdown: source, options: .init(interpretedSyntax: .full), baseURL: baseURL)

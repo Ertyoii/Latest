@@ -216,19 +216,28 @@ struct AppListSnapshot {
   private static func sort(
     _ apps: inout [App], by sortOrder: AppListSettings.SortOptions, previousOrder: [App] = []
   ) {
-    let order = Dictionary(
-      previousOrder.enumerated().map { ($0.element.identifier, $0.offset) },
-      uniquingKeysWith: { first, _ in first })
+    if !previousOrder.isEmpty {
+      // Retained rows already have an order. Only newcomers need sort keys.
+      // Grouping also preserves duplicate inputs without collapsing their rows.
+      var remaining = Dictionary(grouping: apps, by: \.identifier)
+      var retained = [App]()
+      retained.reserveCapacity(apps.count)
+      for previous in previousOrder {
+        if let current = remaining.removeValue(forKey: previous.identifier) {
+          retained.append(contentsOf: current)
+        }
+      }
+      var newcomers = apps.filter { remaining[$0.identifier] != nil }
+      sort(&newcomers, by: sortOrder)
+      apps = retained + newcomers
+      return
+    }
     apps = apps.map {
       (
-        app: $0, order: order[$0.identifier], date: $0.updateDate, name: $0.name.lowercased(),
+        app: $0, date: $0.updateDate, name: $0.name.lowercased(),
         path: $0.identifier.absoluteString
       )
     }.sorted { lhs, rhs in
-      // Retained rows keep their positions; newcomers use the current sort preference.
-      if lhs.order != nil || rhs.order != nil {
-        return (lhs.order ?? Int.max) < (rhs.order ?? Int.max)
-      }
       if sortOrder == .updateDate, lhs.date != rhs.date { return lhs.date > rhs.date }
       if lhs.name != rhs.name { return lhs.name < rhs.name }
       return lhs.path < rhs.path

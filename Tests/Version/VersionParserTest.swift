@@ -33,6 +33,14 @@ final class VersionParserTest: XCTestCase {
     XCTAssertEqual(VersionParser.parse(versionNumber: "1.2-demo"), "1.2")
   }
 
+  func testNormalizationOnlyMatchesActualPrefixesAndSuffixes() {
+    for version in ["1.2-dev", "1.2-preview", "1.2-release-candidate", "1.2xosx14"] {
+      XCTAssertEqual(VersionParser.parse(versionNumber: version), version)
+    }
+    XCTAssertEqual(VersionParser.parse(buildNumber: "prefixIU-1234"), "prefixIU-1234")
+    XCTAssertEqual(VersionParser.parse(versionNumber: "Product Build 1234"), "Product Build 1234")
+  }
+
   func testCombinedVersionNumberParsing() {
     XCTAssertEqual(
       VersionParser.parse(combinedVersionNumber: "1234"),

@@ -78,7 +78,8 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   // MARK: - State Feeds
 
   /// Bounded structured-concurrency feeds used by SwiftUI rows.
-  @MainActor private var stateContinuations = [
+  private let stateFeedLock = NSLock()
+  private var stateContinuations = [
     App.Bundle.Identifier: [UUID: AsyncStream<UpdateOperation.ProgressState>.Continuation]
   ]()
 
@@ -87,9 +88,9 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     makeStateFeed(for: identifier, includesCurrentState: true).changes
   }
 
-  /// Atomically captures the current state and registers a stream containing
-  /// only subsequent changes. SwiftUI state owners use this to avoid publishing
-  /// the same initial value while their view is being constructed.
+  /// Registers a stream and captures current progress under the publication lock,
+  /// without replaying publications made before registration. SwiftUI state owners
+  /// use this to avoid publishing the initial value during view construction.
   @MainActor
   func stateChanges(
     for identifier: App.Bundle.Identifier
@@ -102,14 +103,15 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     -> UpdateStateFeed
   {
     let streamIdentifier = UUID()
-    let currentState = state(for: identifier)
     let (stream, continuation) = AsyncStream.makeStream(
       of: UpdateOperation.ProgressState.self,
       bufferingPolicy: .bufferingNewest(1)
     )
-    stateContinuations[identifier, default: [:]][streamIdentifier] = continuation
-    if includesCurrentState {
-      continuation.yield(currentState)
+    let currentState = stateFeedLock.withLock {
+      let current = state(for: identifier)
+      stateContinuations[identifier, default: [:]][streamIdentifier] = continuation
+      if includesCurrentState { continuation.yield(current) }
+      return current
     }
     continuation.onTermination = { [weak self] _ in
       Task { @MainActor [weak self] in
@@ -121,24 +123,25 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 
   /// Delivers progress to the app's bounded state feeds.
   private func publishState(for identifier: App.Bundle.Identifier) {
-    let state = self.state(for: identifier)
-
-    Task { @MainActor in
-      if let continuations = self.stateContinuations[identifier] {
-        for continuation in continuations.values {
-          continuation.yield(state)
-        }
-      }
+    // AsyncStream continuations are thread-safe. Yield directly so their bounded
+    // buffers coalesce progress before any MainActor work is scheduled. Sampling
+    // inside the lock serializes concurrent publishers and captures terminal errors
+    // before the operation is removed from the queue.
+    stateFeedLock.withLock {
+      guard let continuations = stateContinuations[identifier] else { return }
+      let state = self.state(for: identifier)
+      for continuation in continuations.values { continuation.yield(state) }
     }
   }
 
-  @MainActor
   private func removeStateContinuation(
     _ streamIdentifier: UUID, for identifier: App.Bundle.Identifier
   ) {
-    stateContinuations[identifier]?.removeValue(forKey: streamIdentifier)
-    if stateContinuations[identifier]?.isEmpty == true {
-      stateContinuations.removeValue(forKey: identifier)
+    stateFeedLock.withLock {
+      stateContinuations[identifier]?.removeValue(forKey: streamIdentifier)
+      if stateContinuations[identifier]?.isEmpty == true {
+        stateContinuations.removeValue(forKey: identifier)
+      }
     }
   }
 

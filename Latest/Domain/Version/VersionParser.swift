@@ -39,15 +39,15 @@ enum VersionParser {
     Pattern(pattern: "(.*)-stable.*", components: [.versionNumber: 1]),
 
     // OSX postfix (1.2.osx2)
-    Pattern(pattern: "(.*).osx.*", components: [.versionNumber: 1]),
+    Pattern(pattern: "(.*)\\.osx.*", components: [.versionNumber: 1]),
 
     // Build number postfix (1.2 (r1234))
     Pattern(pattern: "(.*) \\(r.*\\)", components: [.versionNumber: 1]),
 
     // word postfixes
-    Pattern(pattern: "(.*)-release", components: [.versionNumber: 1]),
-    Pattern(pattern: "(.*)-latest", components: [.versionNumber: 1]),
-    Pattern(pattern: "(.*)-demo", components: [.versionNumber: 1]),
+    Pattern(pattern: "(.*)-release$", components: [.versionNumber: 1]),
+    Pattern(pattern: "(.*)-latest$", components: [.versionNumber: 1]),
+    Pattern(pattern: "(.*)-demo$", components: [.versionNumber: 1]),
 
     // Catch all
     Pattern(pattern: ".*", components: [.versionNumber: 0]),
@@ -74,21 +74,25 @@ enum VersionParser {
   }
 
   static func parse(combinedVersionNumber: String) -> Version {
-    parse(combinedVersionNumber, using: combinedVersionPatterns)
+    let components = parse(combinedVersionNumber, using: combinedVersionPatterns)
+    return Version(versionNumber: components.versionNumber, buildNumber: components.buildNumber)
   }
 
-  private static func parse(_ versionString: String, using patterns: [Pattern]) -> Version {
+  private static func parse(_ versionString: String, using patterns: [Pattern]) -> (
+    versionNumber: String?, buildNumber: String?
+  ) {
     let range = NSRange(versionString.startIndex..<versionString.endIndex, in: versionString)
     for pattern in patterns {
       guard
-        let match = pattern.regex.firstMatch(in: versionString, range: range)
+        let match = pattern.regex.firstMatch(in: versionString, options: .anchored, range: range)
       else { continue }
 
-      return Version(
+      return (
         versionNumber: pattern.string(for: .versionNumber, in: versionString, match: match),
-        buildNumber: pattern.string(for: .buildNumber, in: versionString, match: match))
+        buildNumber: pattern.string(for: .buildNumber, in: versionString, match: match)
+      )
     }
-    return Version(versionNumber: nil, buildNumber: nil)
+    return (nil, nil)
   }
 
 }

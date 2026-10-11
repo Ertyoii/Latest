@@ -44,7 +44,10 @@ enum ReleaseNotesMarkup {
       pattern: #"(?is)<a\b[^>]*\bhref\s*=\s*[\"']([^\"']+)[\"'][^>]*>(.*?)</a>"#)
     static let anchorHref = try! NSRegularExpression(
       pattern: #"(?is)<a\b[^>]*\bhref\s*=\s*[\"']([^\"']+)[\"']"#)
-    static let numericEntity = try! NSRegularExpression(pattern: #"&#(x?[0-9A-Fa-f]+);"#)
+    static let htmlEntity = try! NSRegularExpression(
+      pattern: #"&(?:#[xX][0-9A-Fa-f]+|#[0-9]+|[A-Za-z][A-Za-z0-9]*);"#)
+    static let markdownDisclosureTag = try! NSRegularExpression(
+      pattern: #"(?i)</?(?:details|summary)\b"#)
   }
   // swiftlint:enable force_try
 
