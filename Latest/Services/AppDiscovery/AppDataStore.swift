@@ -27,6 +27,21 @@ final class AppDataStore: AppProviding, Sendable {
     var pendingCheckGeneration: Int?
     var ignoredAppIdentifiers: Set<String>
     let preferences: Preferences
+
+    func app(for bundle: App.Bundle) -> App {
+      if let previous = appsByIdentifier[bundle.identifier],
+        previous.bundleIdentifier == bundle.bundleIdentifier,
+        previous.bundle.source == bundle.source
+      {
+        return previous.bundle.matchesMetadata(of: bundle)
+          ? previous : previous.with(bundle: bundle)
+      }
+      // A path can be reused by another product or distribution channel.
+      // Its old update action and ignore preference do not identify the replacement.
+      return App(
+        bundle: bundle, update: nil,
+        isIgnored: ignoredAppIdentifiers.contains(bundle.bundleIdentifier))
+    }
   }
 
   private let state: Mutex<State>
@@ -72,13 +87,7 @@ final class AppDataStore: AppProviding, Sendable {
       var appsByIdentifier = [App.Bundle.Identifier: App]()
       appsByIdentifier.reserveCapacity(appBundles.count)
       for bundle in appBundles {
-        let previous = state.appsByIdentifier[bundle.identifier]
-        let app =
-          previous?.with(bundle: bundle)
-          ?? App(
-            bundle: bundle, update: nil,
-            isIgnored: state.ignoredAppIdentifiers.contains(bundle.bundleIdentifier))
-        appsByIdentifier[bundle.identifier] = app
+        appsByIdentifier[bundle.identifier] = state.app(for: bundle)
       }
       state.appsByIdentifier = appsByIdentifier
     }
@@ -87,11 +96,7 @@ final class AppDataStore: AppProviding, Sendable {
 
   func set(appBundle bundle: App.Bundle) -> App {
     let app = state.withLock { state in
-      let app =
-        state.appsByIdentifier[bundle.identifier]?.with(bundle: bundle)
-        ?? App(
-          bundle: bundle, update: nil,
-          isIgnored: state.ignoredAppIdentifiers.contains(bundle.bundleIdentifier))
+      let app = state.app(for: bundle)
       state.appsByIdentifier[app.identifier] = app
       return app
     }

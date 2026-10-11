@@ -78,6 +78,40 @@ final class AppDataStoreTest: XCTestCase {
     XCTAssertEqual(final?.apps.map(\.identifier), [second.identifier])
   }
 
+  func testReplacementAtSamePathDoesNotInheritAnotherProductOrSourcesUpdate() throws {
+    let suite = "AppIdentity.\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let url = URL(fileURLWithPath: "/tmp/Replaced.app")
+    for bulk in [false, true] {
+      for changesIdentifier in [false, true] {
+        let store = AppDataStore(userDefaults: defaults)
+        let original = App.Bundle(
+          version: Version(versionNumber: "1", buildNumber: nil), name: "Original",
+          bundleIdentifier: "test.original", fileURL: url, source: .sparkle)
+        let app = store.set(
+          .success(
+            makeUpdate(for: original, remoteVersion: Version(versionNumber: "9", buildNumber: nil))),
+          for: original)
+        store.setIgnoredState(true, for: app)
+        let replacement = App.Bundle(
+          version: original.version, name: "Replacement",
+          bundleIdentifier: changesIdentifier ? "test.replacement" : original.bundleIdentifier,
+          fileURL: url, source: changesIdentifier ? .sparkle : .appStore)
+        if bulk {
+          store.set(appBundles: [replacement])
+        } else {
+          _ = store.set(appBundle: replacement)
+        }
+        let current = try XCTUnwrap(store.apps.first)
+        XCTAssertNil(current.remoteVersion)
+        XCTAssertNil(current.updateAction)
+        XCTAssertEqual(current.source, replacement.source)
+        XCTAssertEqual(current.isIgnored, !changesIdentifier)
+      }
+    }
+  }
+
   func testSingleBundleRefreshPreservesUpdateState() {
     let store = AppDataStore()
     let appURL = URL(

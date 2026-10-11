@@ -197,6 +197,49 @@ final class ComplexityBenchmarkTest: XCTestCase {
       return checksum
     }
 
+    let metadataVersions = (0..<2_000).map { "1.2.\($0)" }
+    benchmark("version_metadata_parse", iterations: 30) {
+      var checksum = 0
+      for value in metadataVersions {
+        let version = Version(
+          versionNumber: VersionParser.parse(versionNumber: value),
+          buildNumber: VersionParser.parse(buildNumber: value))
+        checksum &+= version.versionNumber?.count ?? 0
+      }
+      return checksum
+    }
+
+    let entityText = String(
+      repeating: "Fixed &quot;Café&quot; &amp; &#x1F680; &#169; &lt;widget&gt;.\n", count: 1_000)
+    benchmark("release_notes_entity_decode", iterations: 30) {
+      ReleaseNotesMarkup.decodingHTMLEntities(in: entityText).utf8.count
+    }
+
+    await benchmarkAsync("update_progress_burst", iterations: 30) {
+      let queue = UpdateQueue()
+      let started = expectation(description: "Benchmark operation started")
+      let operation = BenchmarkUpdateOperation(started: started)
+      queue.addOperation(operation)
+      await fulfillment(of: [started], timeout: 2)
+      let stream = queue.stateChanges(for: operation.appIdentifier).changes
+      let terminal = expectation(description: "Benchmark terminal progress")
+      let observation = Task {
+        for await state in stream {
+          if case .error = state {
+            terminal.fulfill()
+            break
+          }
+        }
+      }
+      defer { observation.cancel() }
+      for bytes in 0..<1_000 {
+        operation.progressState = .downloading(loadedSize: Int64(bytes), totalSize: 1_000)
+      }
+      operation.finish(with: URLError(.cannotWriteToFile))
+      await fulfillment(of: [terminal], timeout: 2)
+      return 1_000
+    }
+
     benchmark("version_comparison_repeated_parse", iterations: 30) {
       var checksum = 0
       for pair in versionPairs {
@@ -213,6 +256,15 @@ final class ComplexityBenchmarkTest: XCTestCase {
         baseURL: URL(string: "https://example.com/changelog"),
         relevantVersion: "150.0"
       ).get().length
+    }
+
+    for count in [50, 500] {
+      let mixedMarkup = String(
+        repeating: "Fixed <strong>important</strong> behavior using `<i>literal</i>`.\n\n",
+        count: count)
+      benchmark("release_notes_mixed_code_\(count)", iterations: 30) {
+        ReleaseNotesDocument.prepare(mixedMarkup).characters.count
+      }
     }
 
     await benchmarkAsync("release_notes_persistent_cache_read", iterations: 30) {
@@ -607,4 +659,19 @@ final class ComplexityBenchmarkTest: XCTestCase {
     try data.write(to: contentsURL.appendingPathComponent("Info.plist", isDirectory: false))
   }
 
+}
+
+private final class BenchmarkUpdateOperation: UpdateOperation, @unchecked Sendable {
+  private let started: XCTestExpectation
+
+  init(started: XCTestExpectation) {
+    self.started = started
+    super.init(
+      bundleIdentifier: "test.benchmark", appIdentifier: URL(fileURLWithPath: "/tmp/Benchmark.app"))
+  }
+
+  override func execute() {
+    super.execute()
+    started.fulfill()
+  }
 }

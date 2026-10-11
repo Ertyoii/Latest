@@ -98,6 +98,7 @@ class ReleaseNotesProvider {
 
     let cacheKey = ReleaseNotesCacheKey(app: app)
     if let releaseNotes = self.cache.object(forKey: cacheKey)?.value,
+      releaseNotes.quality == .genuine,
       !Self.isEffectivelyEmpty(releaseNotes.content)
     {
       completion(.success(releaseNotes))
@@ -106,7 +107,9 @@ class ReleaseNotesProvider {
 
     let finish: ResolvedCompletion = { releaseNotes in
       let releaseNotes = Self.validated(releaseNotes)
-      if case .success(let resolved) = releaseNotes {
+      // Fallbacks must be retried when their source recovers. The fetch caches
+      // already bound retries; only genuine notes belong in the rendered cache.
+      if case .success(let resolved) = releaseNotes, resolved.quality == .genuine {
         self.cache.setObject(
           ResolvedReleaseNotesBox(resolved),
           forKey: cacheKey,
@@ -127,7 +130,8 @@ class ReleaseNotesProvider {
     currentReleaseNotesTask = Task { [weak self] in
       guard let self else { return }
       if let payload = await self.persistentCache.payload(forKey: cacheKey.stableIdentifier),
-        let resolved = ReleaseNotesPersistentCache.resolvedReleaseNotes(from: payload)
+        let resolved = ReleaseNotesPersistentCache.resolvedReleaseNotes(from: payload),
+        resolved.quality == .genuine, !Self.isEffectivelyEmpty(resolved.content)
       {
         guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
         self.cache.setObject(
