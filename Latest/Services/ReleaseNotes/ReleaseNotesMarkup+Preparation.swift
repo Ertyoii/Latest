@@ -15,7 +15,8 @@ extension ReleaseNotesMarkup {
       }
       if [
         "Features", "New", "Improvements", "Bug Fixes", "Bug fixes", "Fixes", "Changes",
-        "Highlights", "Resolved issues", "Security", "No longer broken", "Maintenance",
+        "Highlights", "Resolved issues", "Security", "Security Fixes and Rewards",
+        "No longer broken", "Maintenance",
       ].contains(label) {
         return "### " + label
       }

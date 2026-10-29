@@ -65,21 +65,28 @@ enum ReleaseNotesDocument {
       }
       return result + (listDepth == 0 ? "\n" : "")
     }
+    if tag.count == 2, tag.first == "h", let level = Int(tag.suffix(1)), (1...6).contains(level) {
+      // Heading spans can be visually separated version badges without source whitespace.
+      let heading = children.map { child in
+        let text = markdown(child, baseURL: baseURL, listDepth: listDepth)
+        return child.name?.lowercased() == "span" ? " " + text + " " : text
+      }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+      return "\n\n" + String(repeating: "#", count: level) + " "
+        + heading.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression) + "\n\n"
+    }
     let body = children.map { markdown($0, baseURL: baseURL, listDepth: listDepth) }.joined()
     let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
-    if tag.count == 2, tag.first == "h", let level = Int(tag.suffix(1)), (1...6).contains(level) {
-      return "\n\n" + String(repeating: "#", count: level) + " "
-        + trimmed.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression) + "\n\n"
-    }
     switch tag {
     case "br": return "  \n"
     case "p": return listDepth > 0 ? trimmed + "\n" : "\n\n" + trimmed + "\n\n"
     case "div", "section", "article", "main", "header", "tr", "dl": return "\n\n" + trimmed + "\n\n"
     case "td", "th", "dt", "dd": return trimmed + "\n"
-    case "strong", "b": return "**" + trimmed + "**"
-    case "em", "i": return "*" + trimmed + "*"
+    // Blogger wraps line breaks in otherwise empty formatting elements.
+    // Preserve those breaks instead of emitting empty Markdown delimiters.
+    case "strong", "b": return trimmed.isEmpty ? body : "**" + trimmed + "**"
+    case "em", "i": return trimmed.isEmpty ? body : "*" + trimmed + "*"
     case "code": return "`" + (element.stringValue ?? "") + "`"
-    case "span": return " " + body + " "
+    case "span": return body
     case "a":
       guard !trimmed.isEmpty, let href = element.attribute(forName: "href")?.stringValue,
         let url = URL(string: href, relativeTo: baseURL)?.absoluteURL,

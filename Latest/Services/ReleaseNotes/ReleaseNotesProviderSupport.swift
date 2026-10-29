@@ -160,8 +160,8 @@ final class ReleaseNotesCacheKey: NSObject {
 
   init(app: App) {
     stableIdentifier = [
-      // Reload Chrome notes prepared before preserving the Blogger body blocks.
-      app.bundleIdentifier == "com.google.Chrome" ? "chrome-blocks-v1" : "vendor-fallback-v3",
+      // Reload Chrome notes prepared before preserving wrapped Blogger line breaks.
+      app.bundleIdentifier == "com.google.Chrome" ? "chrome-blocks-v2" : "vendor-fallback-v3",
       app.identifier.absoluteString,
       app.version.debugDescription,
       app.remoteVersion?.debugDescription ?? "",
