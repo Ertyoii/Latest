@@ -15,27 +15,33 @@ final class ReleaseNotesWebViewTest: XCTestCase {
     let html = """
       <div class='post'><h2>Stable Channel Update for Desktop</h2>
       <script type='text/template'>
-      <p>The Stable channel has been updated to 155.0.8059.39/.40 for Windows and Mac.</p>
-      <h1>Security Fixes and Rewards</h1>
-      <p>Critical CVE-2026-106382: Use after free in Chromecast. Reported by @_3P1C.</p>
-      <p>Critical CVE-2026-106197: Use after free in Browser. Reported by @lbherrera_.</p>
+      <p>The Stable channel has been updated to 156.0.8078.73/.74 for Windows and Mac.</p>
+      <div><span style="font-weight: 700;">Security Fixes and Rewards</span></div>
+      <div><span>
+      <span>[N/A][</span><a href="https://issues.chromium.org/issues/571156746"><span style="text-decoration: underline;">571156746</span></a><span>] Critical CVE-2026-118306: Memory corruption in FileSystem. </span><span style="font-style: italic;">Reported by Xinyang Ge on 2026-10-07.</span><b style="font-weight: normal;"><br /></b><span>[TBD][</span><a href="https://issues.chromium.org/issues/572193211"><span style="text-decoration: underline;">572193211</span></a><span>] Critical CVE-2026-118331: Improper input validation in FileAPI. </span><span style="font-style: italic;">Reported by Xinyang Ge on 2026-10-11.</span><b style="font-weight: normal;"><br /></b>
+      </span></div>
       </script></div>
       """
     let url = try XCTUnwrap(URL(string: "https://chromereleases.googleblog.com/"))
     let result = await ReleaseNotesMarkup.attributedStringFromChangelogByPreparingOffMain(
-      fromHTML: html, baseURL: url, relevantVersion: "155.0.8059.40",
+      fromHTML: html, baseURL: url, relevantVersion: "156.0.8078.74",
       allowFirstSectionFallback: false)
     let content = try XCTUnwrap(result).get()
     XCTAssertEqual(
       content.string.components(separatedBy: .newlines).filter { !$0.isEmpty },
       [
         "Stable Channel Update for Desktop",
-        "The Stable channel has been updated to 155.0.8059.39/.40 for Windows and Mac.",
+        "The Stable channel has been updated to 156.0.8078.73/.74 for Windows and Mac.",
         "Security Fixes and Rewards",
-        "Critical CVE-2026-106382: Use after free in Chromecast. Reported by @_3P1C.",
-        "Critical CVE-2026-106197: Use after free in Browser. Reported by @lbherrera_.",
+        "[N/A][571156746] Critical CVE-2026-118306: Memory corruption in FileSystem. Reported by Xinyang Ge on 2026-10-07.",
+        "[TBD][572193211] Critical CVE-2026-118331: Improper input validation in FileAPI. Reported by Xinyang Ge on 2026-10-11.",
       ])
-    let app = makeTestApp(name: "Chrome", version: "154.0.8037.98", remoteVersion: "155.0.8059.40")
+    XCTAssertTrue(
+      content.runs.contains { $0.text == "Security Fixes and Rewards" && $0.style?.bold == true })
+    XCTAssertEqual(
+      content.runs.first { $0.text == "571156746" }?.link,
+      URL(string: "https://issues.chromium.org/issues/571156746"))
+    let app = makeTestApp(name: "Chrome", version: "156.0.8078.74")
     let window = try await makeLatestTestWindow(
       content: ReleaseNotesDetailSurface(app: app, contentState: .text(content)), testCase: self)
     defer { window.close() }
@@ -57,7 +63,7 @@ final class ReleaseNotesWebViewTest: XCTestCase {
     let tops =
       try await web.evaluateJavaScript(
         """
-        ['Stable Channel', 'Security Fixes', 'Critical CVE-2026-106382', 'Critical CVE-2026-106197'].map(prefix => {
+        ['Stable Channel', 'Security Fixes', 'Critical CVE-2026-118306', 'Critical CVE-2026-118331'].map(prefix => {
           const nodes = document.createTreeWalker(document.querySelector('main'), NodeFilter.SHOW_TEXT);
           while (nodes.nextNode()) {
             const offset = nodes.currentNode.textContent.indexOf(prefix);

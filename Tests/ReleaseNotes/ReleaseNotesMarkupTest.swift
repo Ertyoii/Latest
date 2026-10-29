@@ -305,6 +305,18 @@ final class ReleaseNotesMarkupTest: XCTestCase {
     XCTAssertGreaterThan(paragraph.headIndent, paragraph.firstLineHeadIndent)
   }
 
+  func testHTMLInlineWrappersPreserveBreaksWithoutAddingMarkupOrSpaces() throws {
+    let html = """
+      <h2>Fixed <strong>rendering</strong>.</h2>
+      <p><span>Fixed File</span><span>System.</span><b><br /></b><span>Fixed FileAPI.</span></p>
+      <p>Fixed rendering.<strong></strong><em><br /></em><i></i>Kept line breaks.</p>
+      """
+    let content = try ReleaseNotesMarkup.attributedString(from: html, baseURL: nil).get()
+    XCTAssertEqual(
+      content.string.trimmingCharacters(in: .newlines),
+      "Fixed rendering.\nFixed FileSystem.\nFixed FileAPI.\nFixed rendering.\nKept line breaks.")
+  }
+
   func testReleaseSelectionIgnoresNavigationAndPreservesReleaseDate() throws {
     let html = """
       <nav><a href="/download/4.6">Moom 4.6 requires macOS</a></nav>
