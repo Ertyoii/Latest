@@ -312,7 +312,7 @@ final class ReleaseNotesWebViewTest: XCTestCase {
       XCTAssertEqual(maximum > 0, lineCount > 1)
 
       for bottom in [false, true] {
-        _ = try await web.evaluateJavaScript("window.scrollTo(0, \(bottom ? maximum : 0))")
+        try await positionScroll(web, at: bottom ? maximum : 0)
         for (dx, dy) in [(0, bottom ? -60 : 60), (-60, 0), (60, 0)] {
           let positions = try await scrollGesture(web, dx: Int32(dx), dy: Int32(dy))
           for position in positions {
@@ -324,13 +324,23 @@ final class ReleaseNotesWebViewTest: XCTestCase {
         }
       }
       if maximum > 0 {
-        _ = try await web.evaluateJavaScript("window.scrollTo(0, 0)")
+        try await positionScroll(web, at: 0)
         let down = try await scrollGesture(web, dx: 0, dy: -30)
         XCTAssertGreaterThan(try XCTUnwrap(down.last).y, 0, "Normal scrolling must still work")
         let up = try await scrollGesture(web, dx: 0, dy: 30)
         XCTAssertLessThan(try XCTUnwrap(up.last).y, try XCTUnwrap(down.last).y)
       }
     }
+  }
+
+  @MainActor
+  private func positionScroll(_ web: WKWebView, at y: Double) async throws {
+    _ = try await web.evaluateJavaScript("window.scrollTo(0, \(y))")
+    // Commit the programmatic position before native wheel events use WebKit's
+    // asynchronous scrolling tree, which can otherwise retain the old offset.
+    try await waitForWebPaint(web)
+    let offset = try await web.evaluateJavaScript("window.scrollY") as? Double
+    XCTAssertEqual(try XCTUnwrap(offset), y, accuracy: 0.5, "The gesture must start at its target")
   }
 
   @MainActor
