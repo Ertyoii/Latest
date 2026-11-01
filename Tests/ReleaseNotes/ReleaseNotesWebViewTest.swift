@@ -284,6 +284,85 @@ final class ReleaseNotesWebViewTest: XCTestCase {
   }
 
   @MainActor
+  func testReleaseNotesScrollStopsAtEveryEdgeAndCanReverse() async throws {
+    try requireUITests()
+    let host = NSHostingView(rootView: ReleaseNotesWebView(text: nil))
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 360, height: 280),
+      styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    defer { window.close() }
+    window.orderFront(nil)
+
+    for lineCount in [1, 80] {
+      let content = ReleaseNotesContent(
+        string: Array(
+          repeating: "Release notes with enough text to wrap onto multiple lines.", count: lineCount
+        ).joined(separator: "\n"))
+      host.rootView = ReleaseNotesWebView(text: content)
+      host.layoutSubtreeIfNeeded()
+      let web = try XCTUnwrap(host.descendant(of: WKWebView.self))
+      try await waitForWebContent(web, containing: content.string)
+      try await waitForWebPaint(web)
+      let scrollHeight =
+        try await web.evaluateJavaScript(
+          "Math.max(0, document.scrollingElement.scrollHeight - window.innerHeight)") as? Double
+      let maximum = try XCTUnwrap(scrollHeight)
+      XCTAssertEqual(maximum > 0, lineCount > 1)
+
+      for bottom in [false, true] {
+        _ = try await web.evaluateJavaScript("window.scrollTo(0, \(bottom ? maximum : 0))")
+        for (dx, dy) in [(0, bottom ? -60 : 60), (-60, 0), (60, 0)] {
+          let positions = try await scrollGesture(web, dx: Int32(dx), dy: Int32(dy))
+          for position in positions {
+            XCTAssertEqual(position.x, 0, accuracy: 0.5, "Horizontal overscroll must stay disabled")
+            XCTAssertEqual(
+              position.y, bottom ? maximum : 0, accuracy: 0.5,
+              "Release notes must stay at the edge throughout a gesture (lines=\(lineCount))")
+          }
+        }
+      }
+      if maximum > 0 {
+        _ = try await web.evaluateJavaScript("window.scrollTo(0, 0)")
+        let down = try await scrollGesture(web, dx: 0, dy: -30)
+        XCTAssertGreaterThan(try XCTUnwrap(down.last).y, 0, "Normal scrolling must still work")
+        let up = try await scrollGesture(web, dx: 0, dy: 30)
+        XCTAssertLessThan(try XCTUnwrap(up.last).y, try XCTUnwrap(down.last).y)
+      }
+    }
+  }
+
+  @MainActor
+  private func scrollGesture(_ web: WKWebView, dx: Int32, dy: Int32) async throws -> [NSPoint] {
+    let window = try XCTUnwrap(web.window)
+    let point = window.convertPoint(
+      toScreen: web.convert(NSPoint(x: web.bounds.midX, y: web.bounds.midY), to: nil))
+    let screen = try XCTUnwrap(NSScreen.screens.first)
+    var positions: [NSPoint] = []
+    // Keep the gesture active while sampling: waiting until it ends would hide
+    // rubber-banding because WebKit springs back to its legal scroll range.
+    for index in 0..<9 {
+      let ended = index == 8
+      let event = try XCTUnwrap(
+        CGEvent(
+          scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
+          wheel1: ended ? 0 : dy, wheel2: ended ? 0 : dx, wheel3: 0))
+      event.location = CGPoint(x: point.x, y: screen.frame.maxY - point.y)
+      event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+      event.setIntegerValueField(
+        .scrollWheelEventScrollPhase, value: ended ? 4 : (index == 0 ? 1 : 2))
+      web.scrollWheel(with: try XCTUnwrap(NSEvent(cgEvent: event)))
+      try await Task.sleep(for: .milliseconds(25))
+      let result = try await web.evaluateJavaScript("[window.scrollX, window.scrollY]") as? [Double]
+      let offset = try XCTUnwrap(result)
+      positions.append(NSPoint(x: offset[0], y: offset[1]))
+    }
+    try await Task.sleep(for: .milliseconds(300))
+    return positions
+  }
+
+  @MainActor
   private func waitForWebContent(_ web: WKWebView, containing text: String) async throws {
     let deadline = Date(timeIntervalSinceNow: 10)
     while Date() < deadline {

@@ -2,6 +2,8 @@
 
 The HTML and v2 RTF payloads were recorded from the original AppKit preparation at commit `3da9579` on macOS 27, before replacing its semantic preparation with SwiftUI `AttributedString`.
 
+On 2026-11-01, the four HTML fixtures from `8336ae3` were updated only to add `overscroll-behavior: none` to `:root`, matching the reviewed change that disables release-note edge bounce on both axes. Their bodies and the original v2 RTF payloads remain unchanged.
+
 `ReleaseNotesMarkupTest.testPreparedRichTextMatchesOriginalHTMLAndLegacyCache` requires identical HTML for headings, combined inline styles, links, nested lists, code blocks, Unicode, HTML and plain text. It also requires existing RTF payloads and newly written payloads to render the same HTML. The original payload timestamps are fixture metadata; these tests decode the payload directly without renewing or checking its cache lifetime.
 
 Regenerate only from a reviewed original implementation when intentionally changing the rendering contract.
