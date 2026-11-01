@@ -21,7 +21,8 @@ struct ReleaseNotesWebView: View {
 
   var body: some View {
     WebView(renderer.page)
-      // Keep the native detail background visible before WebKit's first paint.
+      // The native detail surface owns the background, including before first
+      // paint. The HTML body must also stay transparent while appearance syncs.
       .webViewContentBackground(.hidden)
       .focused(windowFocus ?? $focus, equals: .releaseNotes)
       .webViewBackForwardNavigationGestures(.disabled)
@@ -94,12 +95,13 @@ enum ReleaseNotesWebDocument {
     }
     return """
       <!doctype html><html><head><meta charset="utf-8">
+      <meta name="color-scheme" content="light dark">
       <meta name="viewport" content="width=device-width, initial-scale=1">
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
       <style>
       :root { color-scheme: light dark; }
       body { margin: 0; padding: 14px 20px; font: 13px/1.6 -apple-system, sans-serif;
-        color: CanvasText; background: Canvas; overflow-wrap: anywhere; }
+        color: CanvasText; background: transparent; overflow-wrap: anywhere; }
       main { white-space: pre-wrap; }
       a { color: -apple-system-blue; }
       code { font-family: ui-monospace, monospace; font-size: 12px; }

@@ -98,7 +98,7 @@ final class ReleaseNotesWebViewTest: XCTestCase {
     let app = makeTestApp(name: "First paint", version: "1")
     for dark in [true, false] {
       let host = NSHostingView(
-        rootView: ReleaseNotesDetailSurface(app: nil, contentState: .message(.noSelection)))
+        rootView: AnyView(Color(nsColor: .textBackgroundColor)))
       let window = NSWindow(
         contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
         styleMask: [.titled], backing: .buffered, defer: false)
@@ -128,17 +128,34 @@ final class ReleaseNotesWebViewTest: XCTestCase {
           try await Task.sleep(for: .milliseconds(10))
         }
         XCTAssertFalse(frames.brightness.isEmpty, "Capture must start before loading the page")
-        // Record the cold first load and subsequent selections without waiting
-        // for paint between the SwiftUI state change and each captured frame.
-        for index in 0..<3 {
+        // Mount fresh renderers after capture starts. Pre-mounting a hidden
+        // WebView warms WebKit and misses the actual cold-start transition.
+        for index in 0..<6 {
           let text = "Release notes selection \(index)"
-          host.rootView = ReleaseNotesDetailSurface(
-            app: app, contentState: .text(ReleaseNotesContent(string: text)))
+          host.rootView = AnyView(
+            ReleaseNotesDetailSurface(
+              app: app, contentState: .text(ReleaseNotesContent(string: text))
+            )
+            .id(index / 2))
           host.layoutSubtreeIfNeeded()
           let web = try XCTUnwrap(host.descendant(of: WKWebView.self))
           try await waitForWebContent(web, containing: text)
           try await Task.sleep(for: .milliseconds(100))
         }
+        let bitmap = try await settledWindowBitmap(window)
+        let attachment = XCTAttachment(
+          image: NSImage(cgImage: try XCTUnwrap(bitmap.cgImage), size: bitmap.size))
+        attachment.name = "release-notes-background-\(dark ? "dark" : "light")"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        // WebKit's content process can receive appearance changes after the
+        // native host. Model that interval explicitly: the page must not paint
+        // an opposite-scheme rectangle over the native detail background.
+        let web = try XCTUnwrap(host.descendant(of: WKWebView.self))
+        _ = try await web.evaluateJavaScript(
+          "document.documentElement.style.colorScheme = '\(dark ? "light" : "dark")'")
+        _ = try await web.takeSnapshot(configuration: nil)
+        try await Task.sleep(for: .milliseconds(100))
         try await stream.stopCapture()
       } catch {
         try? await stream.stopCapture()
