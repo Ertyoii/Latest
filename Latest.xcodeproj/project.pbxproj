@@ -130,6 +130,7 @@
 		52F001012FE2000000000001 /* AppPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000012FE2000000000001 /* AppPresentation.swift */; };
 		52F001022FE2000000000001 /* ReleaseNotesProviderSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000022FE2000000000001 /* ReleaseNotesProviderSupport.swift */; };
 		52F001032FE2000000000001 /* SidebarScrollConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000032FE2000000000001 /* SidebarScrollConfiguration.swift */; };
+		52F101012FE2000000000001 /* InitialWindowFocus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F100012FE2000000000001 /* InitialWindowFocus.swift */; };
 		52F001042FE2000000000001 /* ReleaseNotesSourceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000042FE2000000000001 /* ReleaseNotesSourceCatalog.swift */; };
 		52F001052FE2000000000001 /* ElectronReleaseNotesSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000052FE2000000000001 /* ElectronReleaseNotesSource.swift */; };
 		52F001062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift */; };
@@ -454,6 +455,7 @@
 		52F000012FE2000000000001 /* AppPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPresentation.swift; sourceTree = "<group>"; };
 		52F000022FE2000000000001 /* ReleaseNotesProviderSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesProviderSupport.swift; sourceTree = "<group>"; };
 		52F000032FE2000000000001 /* SidebarScrollConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarScrollConfiguration.swift; sourceTree = "<group>"; };
+		52F100012FE2000000000001 /* InitialWindowFocus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InitialWindowFocus.swift; sourceTree = "<group>"; };
 		52F000042FE2000000000001 /* ReleaseNotesSourceCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesSourceCatalog.swift; sourceTree = "<group>"; };
 		52F000052FE2000000000001 /* ElectronReleaseNotesSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElectronReleaseNotesSource.swift; sourceTree = "<group>"; };
 		52F000062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesMarkup+Preparation.swift"; sourceTree = "<group>"; };
@@ -866,6 +868,7 @@
 				52E000012FE1000000000001 /* ApplicationWorkspace.swift */,
 				5058BA3921202BA7003F332B /* IconCache.swift */,
 				52F000032FE2000000000001 /* SidebarScrollConfiguration.swift */,
+				52F100012FE2000000000001 /* InitialWindowFocus.swift */,
 			);
 			path = AppKit;
 			sourceTree = "<group>";
@@ -1412,6 +1415,7 @@
 				52F001012FE2000000000001 /* AppPresentation.swift in Sources */,
 				52F001022FE2000000000001 /* ReleaseNotesProviderSupport.swift in Sources */,
 				52F001032FE2000000000001 /* SidebarScrollConfiguration.swift in Sources */,
+				52F101012FE2000000000001 /* InitialWindowFocus.swift in Sources */,
 				52F001042FE2000000000001 /* ReleaseNotesSourceCatalog.swift in Sources */,
 				52F001052FE2000000000001 /* ElectronReleaseNotesSource.swift in Sources */,
 				52F001062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift in Sources */,
@@ -1800,7 +1804,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.94;
+				MARKETING_VERSION = 0.95;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1843,7 +1847,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.94;
+				MARKETING_VERSION = 0.95;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

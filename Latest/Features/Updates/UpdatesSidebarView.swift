@@ -117,7 +117,8 @@ struct UpdatesSidebarHeaderView: View {
     .glassEffect(.regular, in: .capsule)
     .padding(.horizontal, 12)
     .padding(.vertical, 8)
-    .onChange(of: searchFocusController.request, initial: true) { _, request in
+    // A past Find request must not be replayed when the window is recreated.
+    .onChange(of: searchFocusController.request) { _, request in
       guard request != nil else { return }
       focus.wrappedValue = .search
     }

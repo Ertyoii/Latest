@@ -9,6 +9,52 @@ import XCTest
 
 @MainActor
 final class SidebarInteractionTest: XCTestCase {
+  func testWindowStartsWithListFocusBeforeAndAfterDiscovery() async throws {
+    try requireUITests()
+    let settings = try isolatedAppListSettings(for: self)
+    let suite = "StartupFocus.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = AppDataStore(userDefaults: defaults)
+    let model = UpdatesListViewModel(settings: settings, appProvider: store)
+    model.startObserving()
+    defer { model.stopObserving() }
+    let environment = AppEnvironment(settings: settings, updatesListViewModel: model)
+
+    // Reuse the environment to cover a new window after an earlier Find request.
+    for opening in 0..<2 {
+      let window = try await makeLatestTestWindow(
+        environment: environment, resetFocus: false, testCase: self)
+      defer { window.close() }
+      let search = try XCTUnwrap(window.contentView?.descendant(of: NSTextField.self))
+      XCTAssertNil(search.currentEditor(), "Opening \(opening) must not start text input")
+      if opening == 0 {
+        store.set(appBundles: Set(LocalUATFixture.apps.prefix(3).map(\.bundle)))
+      }
+      var searchStartedEditing = false
+      for _ in 0..<30 {
+        try await Task.sleep(for: .milliseconds(10))
+        searchStartedEditing = searchStartedEditing || search.currentEditor() != nil
+      }
+      XCTAssertFalse(searchStartedEditing, "Discovery must not focus the search field")
+      let apps = model.snapshot.sections.flatMap(\.apps)
+      XCTAssertEqual(apps.count, 3)
+      model.select(apps.first)
+      let fixture = try SidebarInputFixture(window: window, model: model)
+      // No click or fixture.focus(): keyboard navigation must work on opening.
+      try fixture.press(down: true, repeatKey: false)
+      try await Task.sleep(for: .milliseconds(50))
+      XCTAssertEqual(model.selectedApp?.identifier, apps[1].identifier)
+      XCTAssertTrue(model.isKeyboardSelection)
+
+      environment.commands.focusSearch()
+      for _ in 0..<100 where search.currentEditor() == nil {
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      XCTAssertTrue(search.currentEditor() === window.firstResponder)
+    }
+  }
+
   func testSelectedSupportStatusSettlesWithoutChangingAppOrInstalledVersion() async throws {
     try requireUITests()
     let settings = try isolatedAppListSettings(for: self)
