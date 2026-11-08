@@ -7,9 +7,13 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-08-29.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
+import AppKit
 import SwiftUI
 
 struct LatestApplication: SwiftUI.App {
+  @NSApplicationDelegateAdaptor(LatestApplicationDelegate.self)
+  private var applicationDelegate
+
   @AppStorage(ApplicationAppearance.storageKey)
   private var appearanceRawValue = ApplicationAppearance.system.rawValue
 
@@ -67,6 +71,14 @@ struct LatestApplication: SwiftUI.App {
 
   private var appearance: ApplicationAppearance {
     ApplicationAppearance.resolve(appearanceRawValue)
+  }
+}
+
+/// Closing the last window, including with Command-W, should end the app session.
+@MainActor
+private final class LatestApplicationDelegate: NSObject, NSApplicationDelegate {
+  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    true
   }
 }
 
