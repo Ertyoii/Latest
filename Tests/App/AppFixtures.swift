@@ -84,16 +84,18 @@ enum LocalUATFixture {
 /// Each fixture owns an isolated model and never starts live discovery.
 @MainActor
 func makeLatestTestWindow(
-  environment: AppEnvironment, dark: Bool = false, activate: Bool = true, testCase: XCTestCase
+  environment: AppEnvironment, dark: Bool = false, activate: Bool = true,
+  resetFocus: Bool = true, testCase: XCTestCase
 ) async throws -> NSWindow {
   try await makeLatestTestWindow(
     content: LatestRootView(environment: environment), dark: dark, activate: activate,
-    testCase: testCase)
+    resetFocus: resetFocus, testCase: testCase)
 }
 
 @MainActor
 func makeLatestTestWindow<Content: View>(
-  content: Content, dark: Bool = false, activate: Bool = true, testCase: XCTestCase
+  content: Content, dark: Bool = false, activate: Bool = true,
+  resetFocus: Bool = true, testCase: XCTestCase
 ) async throws -> NSWindow {
   try requireUITests()
   let originalAppearanceName = NSApp.appearance?.name.rawValue
@@ -125,7 +127,7 @@ func makeLatestTestWindow<Content: View>(
       } else {
         window.orderFront(nil)
       }
-      window.makeFirstResponder(nil)
+      if resetFocus { window.makeFirstResponder(nil) }
       return window
     }
     try await Task.sleep(for: .milliseconds(20))

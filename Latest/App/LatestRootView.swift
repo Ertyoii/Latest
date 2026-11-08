@@ -45,6 +45,9 @@ struct LatestRootView: View {
       }
     }
     .environment(\.windowFocus, $focus)
+    .background {
+      InitialWindowFocus { focus = .list }
+    }
     .modifier(UpdateInstallHelperPresentation())
     .navigationTitle("Latest")
     .toolbar(removing: .title)
