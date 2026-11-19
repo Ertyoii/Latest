@@ -118,7 +118,7 @@ final class UpdatesListViewModel: ObservableObject {
               withApps: update.apps,
               filterQuery: self.normalizedSearchQuery,
               settings: self.settings,
-              checkingGeneration: update.checkingGeneration, previous: self.snapshot
+              checkingGeneration: update.checkingGeneration
             ))
           self.maintainSelectionAfterSnapshotChange()
           self.updateDockBadge()

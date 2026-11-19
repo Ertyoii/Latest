@@ -46,7 +46,7 @@ enum BundleCollector {
 
     let enumerator = FileManager.default.enumerator(
       at: url,
-      includingPropertiesForKeys: nil,
+      includingPropertiesForKeys: [],
       options: [.skipsHiddenFiles]
     )
 

@@ -102,10 +102,20 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
 
   /// The library containing all bundles loaded from disk.
   private lazy var library: AppLibrary = {
-    return AppLibrary { [weak self] bundles in
-      self?.updateDiscoveredBundles(bundles)
-    }
+    AppLibrary(
+      cache: .live, previewHandler: { [weak self] in self?.showDiscoveredPreview($0) },
+      handler: { [weak self] in self?.updateDiscoveredBundles($0) })
   }()
+
+  /// Previews may include cached or partial inventory. Only a complete live
+  /// collection starts checks and supplies bundles to the installers.
+  func showDiscoveredPreview(_ bundles: [App.Bundle]) {
+    updateCheckSchedulingLock.withLock {
+      guard !hasDiscoveredApps else { return }
+      dataStore.beginUpdateCheck(generation: updateCheckGeneration.currentOrBegin())
+      dataStore.set(appBundles: Set(bundles))
+    }
+  }
 
   /// Reconciles a complete discovery snapshot and schedules its update checks.
   func updateDiscoveredBundles(_ bundles: [App.Bundle], forceRefresh: Bool = false) {
@@ -146,8 +156,6 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       }
     ),
   ]
-
-  private let updateCheckExecutor = BoundedUpdateCheckExecutor(maximumConcurrentTasks: 6)
 
   private let updateCheckSchedulingLock = NSLock()
   private var activeUpdateCheckTasks = [UUID: Task<Void, Never>]()
@@ -199,10 +207,8 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
   private func scheduleUpdateCheck(
     on bundles: [App.Bundle], generation: Int, publishesSnapshot: Bool = false
   ) {
-    let checkableBundles = Self.prioritizedBundlesForUpdateCheck(bundles).filter {
-      Self.checker(for: $0.source) != nil
-    }
-    let repository = checkableBundles.contains { $0.source == .none } ? repositoryProvider() : nil
+    let checkableBundles = bundles.filter { Self.checker(for: $0.source) != nil }
+      .sorted { $0.fileURL.path < $1.fileURL.path }
     updateCheckLogger.info(
       "Scheduled update check generation \(generation, privacy: .public) for \(bundles.count, privacy: .public) bundles and \(checkableBundles.count, privacy: .public) child tasks"
     )
@@ -213,7 +219,6 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       defer { self.removeActiveTask(taskID) }
       await self.performUpdateCheck(
         on: checkableBundles,
-        repository: repository,
         generation: generation,
         publishesSnapshot: publishesSnapshot
       )
@@ -223,7 +228,6 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
 
   private func performUpdateCheck(
     on bundles: [App.Bundle],
-    repository: UpdateRepository?,
     generation: Int,
     publishesSnapshot: Bool
   ) async {
@@ -236,23 +240,18 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       )
     }
 
-    let execution = await updateCheckExecutor.run(
-      bundles, collectResults: false,
-      onCompletion: { [weak self] (indexedResult: IndexedUpdateCheckResult<App.Update>) in
-        guard let self, bundles.indices.contains(indexedResult.index) else { return }
-        self.didCheck(bundles[indexedResult.index], indexedResult.result, generation: generation)
-      }
-    ) { [check] bundle in
-      try await check(bundle, repository)
-    }
-
+    let clock = ContinuousClock()
+    let start = clock.now
+    let catalog = bundles.filter(HomebrewCheckerOperation.usesCatalog)
+    let network = bundles.filter { !HomebrewCheckerOperation.usesCatalog(for: $0) }
+    // Indexed catalog matches share one fetch and need no network slots.
+    async let networkCount = checkBatch(network, limit: 6, repository: nil, generation: generation)
+    async let catalogCount = checkCatalogBatch(catalog, generation: generation)
+    let completed = await networkCount + catalogCount
     guard updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
-    let durationComponents = execution.metrics.duration.components
-    let durationMilliseconds =
-      Int64(durationComponents.seconds * 1_000)
-      + Int64(durationComponents.attoseconds / 1_000_000_000_000_000)
+    let elapsed = start.duration(to: clock.now)
     updateCheckLogger.info(
-      "Finished update check generation \(generation, privacy: .public), completed \(execution.metrics.completedCount, privacy: .public) of \(execution.metrics.scheduledCount, privacy: .public) tasks in \(durationMilliseconds, privacy: .public) ms"
+      "Finished update check generation \(generation, privacy: .public), completed \(completed, privacy: .public) of \(bundles.count, privacy: .public) in \(String(describing: elapsed), privacy: .public)"
     )
     await MainActor.run {
       guard self.updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
@@ -263,6 +262,26 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       }
       self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self, generation: generation)
     }
+  }
+
+  private func checkCatalogBatch(_ bundles: [App.Bundle], generation: Int) async -> Int {
+    guard !bundles.isEmpty, !Task.isCancelled else { return 0 }
+    return await checkBatch(
+      bundles, limit: 1, repository: repositoryProvider(), generation: generation)
+  }
+
+  private func checkBatch(
+    _ bundles: [App.Bundle], limit: Int, repository: UpdateRepository?, generation: Int
+  ) async -> Int {
+    let execution = await BoundedUpdateCheckExecutor(maximumConcurrentTasks: limit).run(
+      bundles, collectResults: false,
+      onCompletion: { [weak self] (result: IndexedUpdateCheckResult<App.Update>) in
+        self?.didCheck(bundles[result.index], result.result, generation: generation)
+      }
+    ) { [check] bundle in
+      try await check(bundle, repository)
+    }
+    return execution.metrics.completedCount
   }
 
   /// Callback to notify that an app has been updated.
@@ -367,21 +386,6 @@ extension UpdateCheckCoordinator {
 
   private static func checker(for source: App.Source) -> CheckerDefinition? {
     availableCheckers.first { $0.source == source }
-  }
-
-  /// Preserve discovery order within each priority group.
-  static func prioritizedBundlesForUpdateCheck(_ bundles: [App.Bundle]) -> [App.Bundle] {
-    var supported = [App.Bundle]()
-    var fallback = [App.Bundle]()
-    for bundle in bundles {
-      switch bundle.source {
-      case .sparkle, .appStore:
-        supported.append(bundle)
-      case .homebrew, .directDownload, .vendor, .none:
-        fallback.append(bundle)
-      }
-    }
-    return supported + fallback
   }
 
 }

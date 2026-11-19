@@ -27,13 +27,20 @@ class AppLibrary: @unchecked Sendable {
   /// A list of all application bundles that are available locally.
   var bundles: [App.Bundle] {
     stateQueue.sync {
-      currentBundles()
+      Self.uniqueBundles(directoryURLs.compactMap { directories[$0]?.bundles })
     }
   }
 
+  private var directoryURLs = [URL]()
   private var directories = [URL: AppDirectory]()
-  private var directoryGeneration = 0
-  private var isPreparingDirectories = false
+  private var pendingDirectories = [URL: UUID]()
+  private var reloadHandler: ReloadHandler?
+  private var hasPublishedInventory = false
+  private var cachedDirectories = [URL: [App.Bundle]]()
+  private var didReadCache = false
+  private let cache: AppInventoryCache?
+  private let previewHandler: UpdateHandler
+  private let bundleCollector: @Sendable (URL) -> [App.Bundle]
 
   /// Initializes the library with the given handler for updates.
   typealias DirectoryStoreFactory =
@@ -44,8 +51,14 @@ class AppLibrary: @unchecked Sendable {
     directoryStoreFactory: @escaping DirectoryStoreFactory = {
       AppDirectoryStore(updateHandler: $0)
     },
+    cache: AppInventoryCache? = nil,
+    bundleCollector: @escaping @Sendable (URL) -> [App.Bundle] = BundleCollector.collectBundles,
+    previewHandler: @escaping UpdateHandler = { _ in },
     handler: @escaping UpdateHandler
   ) {
+    self.cache = cache
+    self.previewHandler = previewHandler
+    self.bundleCollector = bundleCollector
     self.directoryStoreFactory = directoryStoreFactory
     self.updateHandler = handler
   }
@@ -70,86 +83,103 @@ class AppLibrary: @unchecked Sendable {
   func reload(handler: @escaping ReloadHandler) {
     stateQueue.async { [weak self] in
       guard let self else { return }
-      self.setupDirectoryObservers()
-      self.refreshDirectories(handler: handler)
+      self.reloadHandler = handler
+      self.setupDirectoryObservers(refreshExisting: true)
     }
   }
 
-  private func setupDirectoryObservers() {
-    // Publish a changed directory set after new observers finish their first scan.
-    // Removal-only changes also need a publication: they have no file event.
-    let isInitialSetup = self.directories.isEmpty
-    let dispatchGroup = DispatchGroup()
-    let previousURLs = Set(directories.keys)
-    appLibraryLogger.info(
-      "Preparing app directory observers. initial=\(isInitialSetup, privacy: .public)")
-
-    // Setup directories
-    let observedDirectories: [(URL, AppDirectory)] = directoryStore.URLs.compactMap { url in
-      // Skip unreachable directories
-      guard directoryStore.isReachable(url) else { return nil }
-
-      // Reuse existing directory observations if possible
-      if let directory = directories[url] {
-        return (url, directory)
-      }
-
-      let directory: AppDirectory
-      let updateHandler: AppDirectory.UpdateHandler = { [weak self] in
-        // Schedule update and coalesce bursts of file-system events.
-        self?.scheduleUpdate()
-      }
-
-      dispatchGroup.enter()
-      directory = AppDirectory(
-        url: url,
-        notifyOnInitialCollection: false,
-        initialCollectionCompletion: { dispatchGroup.leave() },
-        updateHandler: updateHandler
-      )
-
-      return (url, directory)
+  private func setupDirectoryObservers(refreshExisting: Bool = false) {
+    let urls = directoryStore.URLs
+    let previousURLs = Set(directoryURLs)
+    directoryURLs = urls
+    if !didReadCache {
+      didReadCache = true
+      cachedDirectories = cache?.load(for: urls) ?? [:]
+      let preview = Self.uniqueBundles(urls.compactMap { cachedDirectories[$0] })
+      if !preview.isEmpty { previewHandler(preview) }
     }
-    directories = Dictionary(uniqueKeysWithValues: observedDirectories)
-    appLibraryLogger.info("Observing \(self.directories.count, privacy: .public) app directories")
 
-    guard isInitialSetup || previousURLs != Set(directories.keys) else { return }
-    directoryGeneration += 1
-    let generation = directoryGeneration
-    isPreparingDirectories = true
-    scheduledUpdateWorkItem?.cancel()
-    dispatchGroup.notify(queue: stateQueue) {
-      guard self.directoryGeneration == generation else { return }
-      self.isPreparingDirectories = false
-      // Call update immediately. Using the scheduler delays the update.
-      self.performUpdate()
+    let configuredURLs = Set(urls)
+    let removedURLs = previousURLs.subtracting(configuredURLs)
+    for url in removedURLs {
+      directories[url] = nil
+      pendingDirectories[url] = nil
+      cachedDirectories[url] = nil
     }
+    for url in urls {
+      let existing = directories[url]
+      guard existing == nil || refreshExisting else { continue }
+      let token = UUID()
+      pendingDirectories[url] = token
+      let completion: AppDirectory.RefreshCompletion = { [weak self] in
+        self?.directoryReady(url, token: token)
+      }
+      if let existing {
+        existing.refresh(completion: completion)
+      } else {
+        directories[url] = AppDirectory(
+          url: url, notifyOnInitialCollection: false,
+          initialCollectionCompletion: completion, bundleCollector: bundleCollector,
+          updateHandler: { [weak self] in self?.scheduleUpdate() })
+      }
+    }
+    if !hasPublishedInventory || previousURLs != configuredURLs || refreshExisting {
+      scheduledUpdateWorkItem?.cancel()
+      if pendingDirectories.isEmpty {
+        performUpdate()
+      } else if !hasPublishedInventory, !removedURLs.isEmpty {
+        publishPreview()
+      }
+    }
+  }
+
+  private func directoryReady(_ url: URL, token: UUID) {
+    stateQueue.async { [weak self] in
+      guard let self, self.pendingDirectories[url] == token else { return }
+      self.pendingDirectories[url] = nil
+      if self.pendingDirectories.isEmpty {
+        self.performUpdate()
+      } else if !self.hasPublishedInventory {
+        self.publishPreview()
+      }
+    }
+  }
+
+  private func publishPreview() {
+    // A slow location can keep its cached rows while faster ones report live metadata.
+    var live = [[App.Bundle]]()
+    var completedPrefixes = [String]()
+    for url in directoryURLs {
+      if pendingDirectories[url] == nil, let bundles = directories[url]?.bundles {
+        live.append(bundles)
+        completedPrefixes.append(Self.descendantPrefix(for: url))
+      }
+    }
+    let cached = directoryURLs.compactMap { url -> [App.Bundle]? in
+      guard pendingDirectories[url] != nil, let bundles = cachedDirectories[url] else { return nil }
+      let prefix = Self.descendantPrefix(for: url)
+      let scannedChildren = completedPrefixes.filter { $0.hasPrefix(prefix) }
+      guard !scannedChildren.isEmpty else { return bundles }
+      // A pending ancestor's old inventory cannot restore a deleted app in a scanned child.
+      return bundles.filter { bundle in
+        let path = bundle.fileURL.standardizedFileURL.path
+        return !scannedChildren.contains { path.hasPrefix($0) }
+      }
+    }
+    previewHandler(Self.uniqueBundles(live + cached))
   }
 
   private func performUpdate() {
-    guard !isPreparingDirectories else { return }
-    let bundles = currentBundles()
+    guard pendingDirectories.isEmpty else { return }
+    hasPublishedInventory = true
+    cachedDirectories.removeAll()
+    let inventory = directories.mapValues(\.bundles)
+    let bundles = Self.uniqueBundles(directoryURLs.compactMap { inventory[$0] })
     appLibraryLogger.info("Publishing \(bundles.count, privacy: .public) discovered apps")
-    updateHandler(bundles)
-  }
-
-  private func refreshDirectories(handler: @escaping ReloadHandler) {
-    let directories = Array(self.directories.values)
-    appLibraryLogger.info("Refreshing \(directories.count, privacy: .public) app directories")
-
-    Task { [weak self] in
-      await withTaskGroup(of: Void.self) { group in
-        for directory in directories {
-          group.addTask {
-            await directory.refreshBundles()
-          }
-        }
-      }
-
-      guard let self else { return }
-      let bundles = self.stateQueue.sync { self.currentBundles() }
-      handler(bundles)
-    }
+    let handler = reloadHandler ?? updateHandler
+    reloadHandler = nil
+    handler(bundles)
+    cache?.store(inventory)
   }
 
   private func scheduleUpdate() {
@@ -170,8 +200,14 @@ class AppLibrary: @unchecked Sendable {
     self.stateQueue.asyncAfter(deadline: .now() + Self.updateCoalescingInterval, execute: workItem)
   }
 
-  private func currentBundles() -> [App.Bundle] {
-    directories.flatMap { $0.value.bundles }
+  private static func uniqueBundles(_ inventories: [[App.Bundle]]) -> [App.Bundle] {
+    var paths = Set<App.Bundle.Identifier>()
+    return inventories.flatMap { $0.filter { paths.insert($0.identifier).inserted } }
+  }
+
+  private static func descendantPrefix(for url: URL) -> String {
+    let path = url.standardizedFileURL.path
+    return path.hasSuffix("/") ? path : path + "/"
   }
 
   // MARK: - Directory Handling

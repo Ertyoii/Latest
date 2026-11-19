@@ -29,6 +29,7 @@
 		501EA9821EB1BA4400D05821 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 501EA9841EB1BA4400D05821 /* Localizable.strings */; };
 		501EF8ED2B9A665A00F0D759 /* BundleCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501EF8EC2B9A665A00F0D759 /* BundleCollector.swift */; };
 		501EF8EF2B9A77B400F0D759 /* AppDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501EF8EE2B9A77B400F0D759 /* AppDirectory.swift */; };
+		48BEEF232F70000100000001 /* AppInventoryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48BEEF232F70000100000002 /* AppInventoryCache.swift */; };
 		50290E791E53EB6A00133E3D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 50290E781E53EB6A00133E3D /* Assets.xcassets */; };
 		50366E5227DFD14100D4E247 /* Source.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50366E5127DFD14100D4E247 /* Source.swift */; };
 		5039DE8522CA396F0088B39B /* UpdateQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5039DE8422CA396F0088B39B /* UpdateQueue.swift */; };
@@ -264,6 +265,7 @@
 		501EA9831EB1BA4400D05821 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
 		501EF8EC2B9A665A00F0D759 /* BundleCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleCollector.swift; sourceTree = "<group>"; };
 		501EF8EE2B9A77B400F0D759 /* AppDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDirectory.swift; sourceTree = "<group>"; };
+		48BEEF232F70000100000002 /* AppInventoryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppInventoryCache.swift; sourceTree = "<group>"; };
 		502217772804B9990043366B /* hr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = hr; path = hr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		5022179A2804BB330043366B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		502217B12804BB390043366B /* hr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = hr; path = hr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -786,6 +788,7 @@
 			children = (
 				506DF77521248F6200D792FC /* AppDataStore.swift */,
 				501EF8EE2B9A77B400F0D759 /* AppDirectory.swift */,
+				48BEEF232F70000100000002 /* AppInventoryCache.swift */,
 				50B016972C38986300590339 /* AppDirectoryStore.swift */,
 				5073753E278998A300F371D8 /* AppLibrary.swift */,
 				501EF8EC2B9A665A00F0D759 /* BundleCollector.swift */,
@@ -1377,6 +1380,7 @@
 				50C9F0F5234637BD00FD1802 /* UpdateCheckerOperation.swift in Sources */,
 				50D6EF5F281461A3002D7006 /* SparkleFeed.swift in Sources */,
 				501EF8EF2B9A77B400F0D759 /* AppDirectory.swift in Sources */,
+				48BEEF232F70000100000001 /* AppInventoryCache.swift in Sources */,
 				50F36B952F2E90CB00C0FD0B /* UpdateInstallHelperAlert.swift in Sources */,
 				5039DE8B22CA39ED0088B39B /* StatefulOperation.swift in Sources */,
 				50C9F10A2346386B00FD1802 /* AppStoreCheckerOperation.swift in Sources */,

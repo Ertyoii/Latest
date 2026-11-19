@@ -20,12 +20,23 @@ final class HomebrewCheckerOperation: Sendable {
     self.repository = repository
   }
 
+  private enum DirectFeed: String {
+    case obsidian = "md.obsidian"
+    case delta = "com.zed-industries.delta"
+  }
+
+  /// These two vendor feeds perform their own requests. All other lookups share
+  /// one Homebrew index, regardless of the number of installed applications.
+  static func usesCatalog(for bundle: App.Bundle) -> Bool {
+    bundle.source == .none && DirectFeed(rawValue: bundle.bundleIdentifier) == nil
+  }
+
   func check() async throws -> App.Update {
     try Task.checkCancellation()
-    if bundle.bundleIdentifier == "md.obsidian" {
+    switch DirectFeed(rawValue: bundle.bundleIdentifier) {
+    case .obsidian:
       return try await ObsidianUpdate.check(bundle)
-    }
-    if bundle.bundleIdentifier == "com.zed-industries.delta" {
+    case .delta:
       let source = AppDownloadSource.delta
       let release = try await source.release()
       return App.Update(
@@ -38,6 +49,7 @@ final class HomebrewCheckerOperation: Sendable {
         updateAction: .builtIn { app in
           UpdateQueue.shared.addOperation(AppDownloadUpdateOperation(app: app, source: source))
         })
+    case nil: break
     }
     guard let repository else {
       throw LatestError.updateInfoUnavailable

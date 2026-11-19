@@ -37,8 +37,7 @@ struct AppListSnapshot {
     withApps apps: [App],
     filterQuery: String?,
     settings: any AppListSettingsProviding = AppListSettings.shared,
-    checkingGeneration: Int? = nil,
-    previous: AppListSnapshot? = nil
+    checkingGeneration: Int? = nil
   ) {
     self.init(
       apps: apps,
@@ -46,7 +45,7 @@ struct AppListSnapshot {
       settings: settings,
       checkingGeneration: checkingGeneration,
       preparedSections: Self.prepareSections(
-        from: apps, settings: settings, checkingGeneration: checkingGeneration, previous: previous),
+        from: apps, settings: settings, checkingGeneration: checkingGeneration),
       appsByIdentifier: Dictionary(
         apps.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
     )
@@ -108,8 +107,7 @@ struct AppListSnapshot {
   private static func prepareSections(
     from apps: [App],
     settings: any AppListSettingsProviding,
-    checkingGeneration: Int?,
-    previous: AppListSnapshot?
+    checkingGeneration: Int?
   ) -> PreparedSections {
     let showInstalledUpdates = settings.showInstalledUpdates
     let showIgnoredUpdates = settings.showIgnoredUpdates
@@ -156,22 +154,16 @@ struct AppListSnapshot {
     }
 
     if checkingGeneration != nil {
-      // While status and remote dates resolve, every visible row lives under
-      // the neutral Installed Apps heading. Updates remain actionable in place.
-      let previousOrder =
-        previous.map {
-          $0.preparedSections.availableUpdates
-            + $0.preparedSections.installedUpdates + $0.preparedSections.ignoredUpdates
-        } ?? []
-      Self.sort(&installedUpdates, by: sortOrder, previousOrder: previousOrder)
+      // Only local metadata determines the position of a row while remote
+      // results arrive. Newly visible rows obey the same order as existing ones.
+      Self.sort(&installedUpdates, by: sortOrder, usingInstalledDate: true)
       return PreparedSections(
         availableUpdates: [], installedUpdates: installedUpdates, ignoredUpdates: [])
     }
 
-    // Settled installed apps retain the existing displayed-date order.
     Self.sort(&availableUpdates, by: sortOrder)
     Self.sort(&ignoredUpdates, by: sortOrder)
-    Self.sort(&installedUpdates, by: .updateDate)
+    Self.sort(&installedUpdates, by: sortOrder)
     return PreparedSections(
       availableUpdates: availableUpdates,
       installedUpdates: installedUpdates,
@@ -214,27 +206,12 @@ struct AppListSnapshot {
   }
 
   private static func sort(
-    _ apps: inout [App], by sortOrder: AppListSettings.SortOptions, previousOrder: [App] = []
+    _ apps: inout [App], by sortOrder: AppListSettings.SortOptions, usingInstalledDate: Bool = false
   ) {
-    if !previousOrder.isEmpty {
-      // Retained rows already have an order. Only newcomers need sort keys.
-      // Grouping also preserves duplicate inputs without collapsing their rows.
-      var remaining = Dictionary(grouping: apps, by: \.identifier)
-      var retained = [App]()
-      retained.reserveCapacity(apps.count)
-      for previous in previousOrder {
-        if let current = remaining.removeValue(forKey: previous.identifier) {
-          retained.append(contentsOf: current)
-        }
-      }
-      var newcomers = apps.filter { remaining[$0.identifier] != nil }
-      sort(&newcomers, by: sortOrder)
-      apps = retained + newcomers
-      return
-    }
     apps = apps.map {
       (
-        app: $0, date: $0.updateDate, name: $0.name.lowercased(),
+        app: $0, date: usingInstalledDate ? $0.bundle.modificationDate : $0.updateDate,
+        name: $0.name.lowercased(),
         path: $0.identifier.absoluteString
       )
     }.sorted { lhs, rhs in

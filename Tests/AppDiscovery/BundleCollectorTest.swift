@@ -13,6 +13,80 @@ import XCTest
 @testable import Latest
 
 final class BundleCollectorTest: XCTestCase {
+  func testCachedAndNewlyScannedAppsArePublishedWhileAnotherFolderIsBlocked() throws {
+    let slow = try makeTemporaryDirectory()
+    let fast = slow.appending(component: "Fast", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: fast, withIntermediateDirectories: false)
+    let removed = try makeTemporaryDirectory()
+    let unconfigured = try makeTemporaryDirectory()
+    let cache = AppInventoryCache(
+      url: try makeTemporaryDirectory().appending(component: "apps.plist"))
+    func bundle(_ name: String, in root: URL) -> App.Bundle {
+      App.Bundle(
+        version: Version(versionNumber: "2", buildNumber: "3"), name: name,
+        bundleIdentifier: "test." + name, fileURL: root.appendingPathComponent(name + ".app"),
+        source: .sparkle, modificationDate: .now)
+    }
+    let old = bundle("Old", in: fast)
+    let new = bundle("New", in: fast)
+    let offline = bundle("Offline", in: slow)
+    let removable = bundle("Removed", in: removed)
+    let oldCopy = App.Bundle(
+      version: Version(versionNumber: "1", buildNumber: nil), name: new.name,
+      bundleIdentifier: new.bundleIdentifier, fileURL: new.fileURL,
+      source: new.source, modificationDate: .distantPast)
+    cache.store([
+      fast: [old], slow: [offline, old, oldCopy], removed: [removable],
+      unconfigured: [bundle("Unconfigured", in: unconfigured)],
+    ])
+    let store = LibraryDirectoryStore(urls: [slow, fast, removed])
+    let cached = expectation(description: "Preview contains only configured locations")
+    let partial = expectation(description: "Fast directory replaced its cached rows")
+    let removedFromPreview = expectation(description: "Removal was shown before slow scan finished")
+    let complete = expectation(description: "Empty slow directory reconciled")
+    let releaseSlow = DispatchSemaphore(value: 0)
+    let releaseRemoved = DispatchSemaphore(value: 0)
+    defer { releaseRemoved.signal() }
+    let library = AppLibrary(
+      directoryStoreFactory: { _ in store }, cache: cache,
+      bundleCollector: { url in
+        if url == fast { return [new] }
+        let release = url == slow ? releaseSlow : releaseRemoved
+        _ = release.wait(timeout: .now() + 8)
+        return url == removed ? [removable] : []
+      },
+      previewHandler: { apps in
+        let names = Set(apps.map(\.name))
+        if names == ["Old", "New", "Offline", "Removed"] {
+          XCTAssertTrue(apps.contains { $0.matchesMetadata(of: old) })
+          cached.fulfill()
+        } else if names == ["New", "Offline", "Removed"] {
+          XCTAssertEqual(apps.count, 3)
+          XCTAssertTrue(apps.contains { $0.matchesMetadata(of: new) })
+          partial.fulfill()
+        } else {
+          XCTAssertEqual(names, ["New", "Offline"])
+          removedFromPreview.fulfill()
+        }
+      }
+    ) { apps in
+      XCTAssertEqual(apps.map(\.identifier), [new.identifier])
+      complete.fulfill()
+    }
+    library.startQuery()
+    wait(for: [cached, partial], timeout: 2, enforceOrder: true)
+    store.remove(removed)
+    library.startQuery()
+    wait(for: [removedFromPreview], timeout: 2)
+    releaseSlow.signal()
+    wait(for: [complete], timeout: 2)
+    XCTAssertEqual(library.bundles.map(\.identifier), [new.identifier])
+    XCTAssertEqual(
+      cache.load(for: store.URLs).values.flatMap { $0 }.map(\.identifier), [new.identifier])
+    try Data("broken".utf8).write(to: cache.url)
+    XCTAssertTrue(cache.load(for: store.URLs).isEmpty)
+  }
+
   func testRemovingAnObservedDirectoryPublishesTheRemainingApps() async throws {
     let first = try makeTemporaryDirectory()
     let second = try makeTemporaryDirectory()
@@ -352,7 +426,6 @@ private final class LibraryDirectoryStore: AppDirectoryStoring, Sendable {
   func add(_ url: URL) { urls.withLock { $0.append(url) } }
   func remove(_ url: URL) { urls.withLock { $0.removeAll { $0 == url } } }
   func canRemove(_ url: URL) -> Bool { true }
-  func isReachable(_ url: URL) -> Bool { true }
 }
 
 extension BundleCollectorTest {

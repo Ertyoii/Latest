@@ -51,7 +51,9 @@ SwiftUI owns the scenes, search, rows, settings, and detail controls. macOS 26 a
 
 Closing the last window with Command-W or the close button quits Latest. Closing Settings, About, or Licenses while the main window is open keeps the app running.
 
-Discovery publishes apps promptly while update providers run. During a scan, visible apps share the neutral Installed Apps section and retain their previous/discovery order as versions and dates resolve. Apps with unresolved update sources show Checking rather than an unsupported indicator. Completed scans apply the usual sections and displayed-date sorting once. Search and explicit preferences remain usable, refresh retains known results until replaced, and selection stays attached to the installed path. Remote release-note catalog refresh runs alongside discovery using the bundled catalog initially. Keyboard selection updates the detail header immediately and waits for selection to settle before hashing and loading notes; mouse selection loads notes immediately.
+On launch, Latest shows the last local inventory from the configured application folders while it scans them again. Each folder can contribute rows as soon as it finishes. You can search, select, open, and reveal apps during discovery. Live checks enable updates as results arrive. Homebrew catalog matches run alongside App Store, Sparkle, and vendor requests.
+
+During a scan, visible apps share the Installed Apps section. Name sorting uses the app name and installed path. Date sorting uses the installed modification date until the scan finishes, then uses the displayed date in each section. The relative order of visible apps is independent of provider timing. The list respects visibility preferences throughout, and selection follows the installed path. Remote release-note catalog refresh runs alongside discovery using the bundled catalog initially. Keyboard selection updates the detail header immediately and waits for selection to settle before hashing and loading notes; mouse selection loads notes immediately.
 
 ## Updating applications
 
