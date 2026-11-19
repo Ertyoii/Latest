@@ -6,14 +6,8 @@
 /* Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app. */
 "UpdateErrorAlertTitle" = "เกิดข้อผิดพลาดขณะทำการอัปเดต %@.";
 
-/* Touch Bar section title for available updates */
-"AvailableSection" = "รายการที่มี";
-
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "รายการอัปเดตที่มี";
-
-/* Cancel button in an update dialogue */
-"CancelAction" = "ยกเลิก";
 
 /* Update progress state of cancelling an update */
 "CancellingUpdateStatus" = "กำลังยกเลิก";
@@ -27,17 +21,11 @@
 /* Update progress state of extracting the downloaded update */
 "ExtractingUpdateStatus" = "กำลังแตกไฟล์อัปเดต";
 
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "ยกเว้น";
-
 /* Table Section Header for ignored apps */
 "IgnoredAppsSection" = "แอปที่ไม่ต้องการอัปเดต";
 
 /* Update progress state of initializing an update */
 "InitializingUpdateStatus" = "กำลังเตรียมการ";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "ติดตั้งแล้ว";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "แอปที่ติดตั้งแล้ว";
@@ -66,17 +54,11 @@
 /* Description of release notes empty state */
 "NoAppSelectedDescription" = "เลือกแอปจากรายการเพื่ออ่าน Release Notes";
 
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "มาจาก: %@";
-
 /* Update String */
 "UpdateAction" = "อัปเดต";
 
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "รอสักครู่";
-
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "Web";
 
 /* Current Version String */
 "LocalVersionFormat" = "เวอร์ชันที่ใช้: %@";
@@ -104,9 +86,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "ไม่พบ Release notes สำหรับแอปนี้";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "จาก %@";

@@ -127,7 +127,7 @@ private final class ProductionCaptureOperation: UpdateOperation, @unchecked Send
   private let started: XCTestExpectation
   init(app: Latest.App, started: XCTestExpectation) {
     self.started = started
-    super.init(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+    super.init(appIdentifier: app.identifier)
   }
   override func execute() {
     super.execute()

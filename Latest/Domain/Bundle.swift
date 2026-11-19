@@ -23,7 +23,7 @@ extension App {
     let name: String
 
     /// The unique identifier of the bundle, equal to the URL of the bundle.
-    let identifier: Identifier
+    var identifier: Identifier { fileURL }
 
     /// The bundle identifier of the app.
     let bundleIdentifier: String
@@ -47,7 +47,6 @@ extension App {
     ) {
       self.version = version
       self.name = name
-      self.identifier = fileURL
       self.bundleIdentifier = bundleIdentifier
       self.fileURL = fileURL
       self.source = source

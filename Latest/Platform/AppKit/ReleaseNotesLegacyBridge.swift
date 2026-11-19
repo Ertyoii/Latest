@@ -3,7 +3,7 @@
 import AppKit
 import Foundation
 
-/// Read-only compatibility for existing RTF caches and non-UTF8 vendor notes.
+/// Read-only compatibility for existing RTF caches.
 /// Newly prepared content and cache writes use semantic runs without AppKit.
 enum ReleaseNotesLegacyBridge {
   static func content(from text: NSAttributedString) -> ReleaseNotesContent {
@@ -31,20 +31,6 @@ enum ReleaseNotesLegacyBridge {
       runs.append(.init(text: plainText.substring(with: range), style: style, link: link))
     }
     return ReleaseNotesContent(runs: runs)
-  }
-
-  /// Retains Foundation's legacy encoding detection for non-UTF8 vendor notes.
-  static func decode(_ data: Data) throws -> ReleaseNotesContent {
-    var options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
-      .documentType: NSAttributedString.DocumentType.html
-    ]
-    let text = try NSAttributedString(data: data, options: options, documentAttributes: nil)
-    if text.string.split(separator: "\n").count == 1 {
-      options[.documentType] = NSAttributedString.DocumentType.plain
-      return content(
-        from: try NSAttributedString(data: data, options: options, documentAttributes: nil))
-    }
-    return content(from: text)
   }
 
   static func decodeRTF(_ data: Data) throws -> ReleaseNotesContent {

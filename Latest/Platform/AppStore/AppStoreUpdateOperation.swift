@@ -58,7 +58,7 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
     self.app = app
     self.itemIdentifier = itemIdentifier
     self.pageURL = pageURL
-    super.init(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+    super.init(appIdentifier: app.identifier)
   }
 
   static let requiresManualInstallation = ProcessInfo.processInfo.isOperatingSystemAtLeast(

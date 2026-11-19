@@ -1,7 +1,4 @@
 
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "Zanemareno";
-
 /* New Version String */
 "RemoteVersionFormat" = "Nova verzija: %@";
 
@@ -13,14 +10,8 @@
 /* Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app. */
 "UpdateErrorAlertTitle" = "Došlo je do greške pri ažuriranju %@.";
 
-/* Touch Bar section title for available updates */
-"AvailableSection" = "Dostupno";
-
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "Dostupna ažuriranja";
-
-/* Cancel button in an update dialogue */
-"CancelAction" = "Otkaži";
 
 /* Update progress state of cancelling an update */
 "CancellingUpdateStatus" = "Otkazivanje";
@@ -39,9 +30,6 @@
 
 /* Update progress state of initializing an update */
 "InitializingUpdateStatus" = "Pokretanje";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "Instalirano";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "Instalirani programi";
@@ -67,17 +55,11 @@
 /* Description of release notes empty state */
 "NoAppSelectedDescription" = "Izaberi program sa liste da pročitaš napomene o izdanju.";
 
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "Izvor: %@";
-
 /* Update String */
 "UpdateAction" = "Ažuriraj";
 
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "Na čekanju";
-
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "Web";
 
 /* Error description when the attempt to update an app from the App Store failed because the user is not signed in with their App Store account. */
 "AppStoreNotSignedInError" = "Niste ulogovani";
@@ -102,9 +84,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "Napomene o izdanju nisu dostupne za ovaj program.";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "u %@";

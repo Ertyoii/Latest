@@ -9,7 +9,7 @@ class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
 
   init(app: App.Bundle) {
     self.app = app
-    super.init(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+    super.init(appIdentifier: app.identifier)
   }
 
   final override func execute() {

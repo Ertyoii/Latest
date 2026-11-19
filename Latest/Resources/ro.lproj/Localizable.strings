@@ -6,14 +6,8 @@
 /* Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app. */
 "UpdateErrorAlertTitle" = "A aparut o eroare in cursul actualizarii %@.";
 
-/* Touch Bar section title for available updates */
-"AvailableSection" = "Disponibile";
-
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "Actualizari disponibile";
-
-/* Cancel button in an update dialogue */
-"CancelAction" = "Anulare";
 
 /* Update progress state of cancelling an update */
 "CancellingUpdateStatus" = "In curs de anulare";
@@ -27,17 +21,11 @@
 /* Update progress state of extracting the downloaded update */
 "ExtractingUpdateStatus" = "Extrage actualizarea";
 
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "Ignorate";
-
 /* Table Section Header for ignored apps */
 "IgnoredAppsSection" = "Aplicatii ignorate";
 
 /* Update progress state of initializing an update */
 "InitializingUpdateStatus" = "In curs de initializare";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "Instalate";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "Aplicatii instalate";
@@ -66,17 +54,11 @@
 /* Description of release notes empty state */
 "NoAppSelectedDescription" = "Selectati o aplicatie din lista pentru a-i vedea notele de lansare.";
 
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "Sursa: %@";
-
 /* Update String */
 "UpdateAction" = "Actualizeaza";
 
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "In asteptare";
-
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "Web";
 
 /* Current Version String */
 "LocalVersionFormat" = "Versiunea dvs.: %@";
@@ -104,9 +86,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "Nu exista note de lansare pentru aceasta aplicatie.";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "in %@";

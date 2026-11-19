@@ -16,17 +16,11 @@
 /* Description of release notes empty state */
 "NoAppSelectedDescription" = "Изберете приложение от списъка за да прочетете неговите бележки.";
 
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "Източник: %@";
-
 /* Update String */
 "UpdateAction" = "Обнови";
 
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "Чакане";
-
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "Web";
 
 /* Current Version String */
 "LocalVersionFormat" = "Твоята версия: %@";
@@ -42,14 +36,8 @@
 /* Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app. */
 "UpdateErrorAlertTitle" = "Възникна грешка при актуализирането на %@.";
 
-/* Touch Bar section title for available updates */
-"AvailableSection" = "Налично";
-
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "Налични обновления";
-
-/* Cancel button in an update dialogue */
-"CancelAction" = "Отказ";
 
 /* Update progress state of cancelling an update */
 "CancellingUpdateStatus" = "Отказване";
@@ -63,17 +51,11 @@
 /* Update progress state of extracting the downloaded update */
 "ExtractingUpdateStatus" = "Обновлението се разархивира";
 
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "Игнорирай";
-
 /* Table Section Header for ignored apps */
 "IgnoredAppsSection" = "Игнорирани приложения";
 
 /* Update progress state of initializing an update */
 "InitializingUpdateStatus" = "Зареждане";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "Инсталиран";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "Инсталирани приложения";
@@ -104,9 +86,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "Не са налични бележки за това приложение.";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "в %@";

@@ -48,11 +48,6 @@ class ReleaseNotesProvider {
   private let pipeline = ReleaseNotesPipeline()
   private let persistentCache: ReleaseNotesPersistentCache
 
-  /// Tracks the currently requested app.
-  ///
-  /// Used to suppress completion calls from older requests.
-  private var currentApp: App?
-
   /// Tracks the currently requested release notes operation.
   private var currentRequestID = UUID()
 
@@ -70,7 +65,6 @@ class ReleaseNotesProvider {
   /// fallback selection and its resulting quality.
   func resolvedReleaseNotes(for app: App, with completion: @escaping ResolvedCompletion) {
     let requestID = UUID()
-    currentApp = app
     currentRequestID = requestID
     currentReleaseNotesTask?.cancel()
     currentReleaseNotesTask = nil
@@ -136,7 +130,7 @@ class ReleaseNotesProvider {
         guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
         self.cache.setObject(
           ResolvedReleaseNotesBox(resolved), forKey: cacheKey, cost: resolved.content.length * 2)
-        completion(Self.validated(.success(resolved)))
+        completion(.success(resolved))
         return
       }
 
@@ -211,36 +205,20 @@ class ReleaseNotesProvider {
             provenance: app.source == .appStore ? .appStore : releaseNotes.provenance,
             qualityHint: releaseNotes.qualityHint
           ),
-          for: ReleaseNotesContext(app: app)
+          for: ReleaseNotesContext(
+            bundleIdentifier: app.bundleIdentifier,
+            remoteVersion: relevantVersion ?? app.releaseNotesVersion.buildNumber)
         )
         guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
         completion(releaseNotes)
       }
     case .url(let url):
       self.releaseNotes(
-        from: url, relevantVersion: relevantVersion, requestID: requestID,
+        from: url,
+        context: ReleaseNotesContext(
+          bundleIdentifier: app.bundleIdentifier, remoteVersion: relevantVersion),
+        requestID: requestID,
         with: completion)
-    case .encoded(let data):
-      let provenance: ReleaseNotesProvenance =
-        app.source == .appStore ? .appStore : releaseNotes.provenance
-      let quality = releaseNotes.qualityHint
-      currentReleaseNotesTask = Task { [weak self] in
-        guard let self else { return }
-        let releaseNotes = await ReleaseNotesMarkup.attributedStringByPreparingOffMain(
-          from: data,
-          baseURL: nil,
-          relevantVersion: relevantVersion
-        )
-        guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
-        completion(
-          releaseNotes.map {
-            ResolvedReleaseNotes(
-              content: $0,
-              quality: quality,
-              provenance: provenance
-            )
-          })
-      }
     case .githubRelease(let apiURL, let fallbackHTML):
       currentReleaseNotesTask = Task { [weak self] in
         guard let self else { return }
@@ -294,7 +272,7 @@ class ReleaseNotesProvider {
 
   /// Fetches release notes from the given URL.
   private func releaseNotes(
-    from url: URL, relevantVersion: String?, requestID: UUID,
+    from url: URL, context: ReleaseNotesContext, requestID: UUID,
     with completion: @escaping ResolvedCompletion
   ) {
     currentReleaseNotesTask = Task { [weak self] in
@@ -303,12 +281,6 @@ class ReleaseNotesProvider {
       do {
         let html = try await Self.fetchHTML(from: url)
         guard !Task.isCancelled, self.isCurrentRequest(requestID) else { return }
-        let context = ReleaseNotesContext(
-          appName: self.currentApp?.name ?? "",
-          bundleIdentifier: self.currentApp?.bundleIdentifier ?? "",
-          localVersion: self.currentApp?.version.versionNumber,
-          remoteVersion: relevantVersion
-        )
         let releaseNotes = await self.pipeline.resolve(
           ReleaseNotesCandidate(markup: html, baseURL: url, provenance: .remoteURL),
           for: context
@@ -329,7 +301,7 @@ class ReleaseNotesProvider {
           "Falling back to WebKit release notes loader for \(url.host ?? "unknown", privacy: .public)"
         )
         self.webReleaseNotes(
-          from: url, relevantVersion: relevantVersion, requestID: requestID, with: completion)
+          from: url, relevantVersion: context.remoteVersion, requestID: requestID, with: completion)
       }
     }
   }

@@ -666,8 +666,7 @@ private final class BenchmarkUpdateOperation: UpdateOperation, @unchecked Sendab
 
   init(started: XCTestExpectation) {
     self.started = started
-    super.init(
-      bundleIdentifier: "test.benchmark", appIdentifier: URL(fileURLWithPath: "/tmp/Benchmark.app"))
+    super.init(appIdentifier: URL(fileURLWithPath: "/tmp/Benchmark.app"))
   }
 
   override func execute() {

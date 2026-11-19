@@ -6,23 +6,14 @@
 /* Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app. */
 "UpdateErrorAlertTitle" = "Ett fel inträffade under uppdateringen av %@.";
 
-/* Touch Bar section title for available updates */
-"AvailableSection" = "Tillgänglig";
-
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "Tillgängliga uppdateringar";
-
-/* Cancel button in an update dialogue */
-"CancelAction" = "Avbryt";
 
 /* Update progress state of cancelling an update */
 "CancellingUpdateStatus" = "Avbryter";
 
 /* Update progress state of downloading an update. The first %@ stands for the already downloaded bytes, the second one for the total amount of bytes. One expected output would be 'Downloading 3 MB of 21 MB' */
 "DownloadingUpdateStatus" = "Laddar ner %@ av %@";
-
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "Ignorerad";
 
 /* Description of button that opens an error dialogue. */
 "ErrorButtonAccessibilityTitle" = "Fel vid uppdatering av app";
@@ -35,9 +26,6 @@
 
 /* Update progress state of initializing an update */
 "InitializingUpdateStatus" = "Initialiserar";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "Installerad";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "Installerade appar";
@@ -69,9 +57,6 @@
 /* Description of release notes empty state */
 "NoAppSelectedDescription" = "Välj en app från listan för att läsa versionsinformation.";
 
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "Källa: %@";
-
 /* Update String */
 "UpdateAction" = "Uppdatera";
 
@@ -80,9 +65,6 @@
 
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "Väntar";
-
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "Webb";
 
 /* Current Version String */
 "LocalVersionFormat" = "Din version: %@";
@@ -104,9 +86,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "Releaseinformation är inte tillgängliga för den här appen.";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "i %@";

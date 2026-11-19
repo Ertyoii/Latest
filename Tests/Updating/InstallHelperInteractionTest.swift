@@ -103,8 +103,7 @@ final class InstallHelperInteractionTest: XCTestCase {
       let queue = UpdateQueue()
       let updating = AppUpdateService(queue: queue)
       let workspace = StubApplicationWorkspace()
-      let operation = UpdateOperation(
-        bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+      let operation = UpdateOperation(appIdentifier: app.identifier)
       queue.addOperation(operation)
       try await waitForHelper { operation.isExecuting }
       operation.finish(

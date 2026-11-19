@@ -6,14 +6,8 @@
 /* Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app. */
 "UpdateErrorAlertTitle" = "更新 %@ 时发生错误。";
 
-/* Touch Bar section title for available updates */
-"AvailableSection" = "可用";
-
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "可用更新";
-
-/* Cancel button in an update dialogue */
-"CancelAction" = "取消";
 
 /* Update progress state of cancelling an update */
 "CancellingUpdateStatus" = "正在取消";
@@ -27,17 +21,11 @@
 /* Update progress state of extracting the downloaded update */
 "ExtractingUpdateStatus" = "解压更新";
 
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "忽略";
-
 /* Table Section Header for ignored apps */
 "IgnoredAppsSection" = "忽略的应用程序";
 
 /* Update progress state of initializing an update */
 "InitializingUpdateStatus" = "正在初始化";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "已安装";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "已安装的应用程序";
@@ -69,9 +57,6 @@
 /* Description of release notes empty state */
 "NoAppSelectedDescription" = "从列表中选择一个应用程序以阅读其发行说明。";
 
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "源: %@";
-
 /* Update String */
 "UpdateAction" = "更新";
 
@@ -80,9 +65,6 @@
 
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "等待中";
-
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "网站";
 
 /* Current Version String */
 "LocalVersionFormat" = "你的版本： %@";
@@ -104,9 +86,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "此应用程序没有提供发行说明。";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "去 %@";

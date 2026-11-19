@@ -14,14 +14,8 @@
 /* Description of release notes empty state */
 "NoAppSelectedDescription" = "Označite aplikacijo s seznama, da si lahko ogledate njene opombe ob izdaji.";
 
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "Vir: %@";
-
 /* Update String */
 "UpdateAction" = "Posodobi";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "Naložene Aplikacije";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "Naložene Aplikacije";
@@ -44,9 +38,6 @@
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "Čakanje na Posodobitev";
 
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "Spletno mesto";
-
 /* Current Version String */
 "LocalVersionFormat" = "Vaša različica: %@";
 /* The title of a section divider in the app list. The first placeholder is the name of the section. The value in paranthesis describes how many apps are in that section, number of apps is inserted in the second placeholder. Use the HTML underline tag <u> to mark the deemphasized part of the text, which should be the count. Example: 'Installed Apps (42)' */
@@ -55,14 +46,8 @@
 /* Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app. */
 "UpdateErrorAlertTitle" = "Med posodobitvijo %@ aplikacije je prišlo do napake.";
 
-/* Touch Bar section title for available updates */
-"AvailableSection" = "Na Voljo";
-
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "Na voljo so posodovitve";
-
-/* Cancel button in an update dialogue */
-"CancelAction" = "Prekliči";
 
 /* Update progress state of cancelling an update */
 "CancellingUpdateStatus" = "Preklicevanje";
@@ -75,9 +60,6 @@
 
 /* Update progress state of extracting the downloaded update */
 "ExtractingUpdateStatus" = "Pridobivanje Posodobitve";
-
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "Ignorirane Aplikacije";
 
 /* Table Section Header for ignored apps */
 "IgnoredAppsSection" = "Ignorirane Aplikacije";
@@ -102,9 +84,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "Informacije o izdaji te aplikacije niso na voljo.";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "v %@";

@@ -124,18 +124,13 @@ enum ReleaseNotesMarkup {
     relevantVersion: String?
   ) async -> ReleaseNotesProvider.ReleaseNotes? {
     let preparedMarkup = await prepareOffMain {
-      let relevantMarkup = markup
-      guard isUsefulReleaseNotesText(relevantMarkup, relevantVersion: relevantVersion) else {
+      guard isUsefulReleaseNotesText(markup, relevantVersion: relevantVersion) else {
         return nil
       }
 
       let title = title?.trimmingCharacters(in: .whitespacesAndNewlines)
-      let renderedMarkup =
-        ([title, relevantMarkup]
-        .compactMap { text in
-          guard let text, !text.isEmpty else { return nil }
-          return text
-        } as [String]).joined(separator: "\n\n")
+      let renderedMarkup = [title, markup].compactMap { $0 }.filter { !$0.isEmpty }
+        .joined(separator: "\n\n")
       // The API/tag page already selected this release. Version mentions in links
       // or download buttons must not replace its body with a trailing fragment.
       return prepare(renderedMarkup, baseURL: baseURL, relevantVersion: nil)
@@ -236,57 +231,6 @@ enum ReleaseNotesMarkup {
 
   private static func render(_ text: AttributedString) -> ReleaseNotesProvider.ReleaseNotes {
     .success(ReleaseNotesContent(text))
-  }
-
-  static func attributedString(from data: Data, baseURL: URL?, relevantVersion: String? = nil)
-    -> ReleaseNotesProvider.ReleaseNotes
-  {
-    if let markup = String(data: data, encoding: .utf8), !Self.looksLikeBinaryOrMojibakeText(markup)
-    {
-      return Self.attributedString(from: markup, baseURL: baseURL, relevantVersion: relevantVersion)
-    }
-
-    let string: ReleaseNotesContent
-    do {
-      string = try ReleaseNotesLegacyBridge.decode(data)
-    } catch {
-      return .failure(error)
-    }
-
-    guard Self.isUsefulReleaseNotesText(string.string, relevantVersion: relevantVersion) else {
-      return .failure(LatestError.releaseNotesUnavailable)
-    }
-
-    return .success(string)
-  }
-
-  @MainActor
-  static func attributedStringByPreparingOffMain(
-    from data: Data,
-    baseURL: URL?,
-    relevantVersion: String?
-  ) async -> ReleaseNotesProvider.ReleaseNotes {
-    let markup = await Task.detached(priority: .userInitiated) {
-      guard let markup = String(data: data, encoding: .utf8),
-        !looksLikeBinaryOrMojibakeText(markup)
-      else {
-        return Optional<String>.none
-      }
-      return markup
-    }.value
-
-    if let markup {
-      return await attributedStringByPreparingOffMain(
-        from: markup,
-        baseURL: baseURL,
-        relevantVersion: relevantVersion
-      )
-    }
-
-    guard !Task.isCancelled else {
-      return .failure(CancellationError())
-    }
-    return attributedString(from: data, baseURL: baseURL, relevantVersion: relevantVersion)
   }
 
 }
