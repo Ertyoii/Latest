@@ -22,9 +22,8 @@ final class AppDependencyBoundaryTest: XCTestCase {
         name: $0, version: "1", remoteVersion: "2",
         updateAction: .external(label: "App Store") { _ in })
     }
-    let (service, store, workspace, updating) = bulkService(apps: apps)
+    let (service, _, workspace, updating) = bulkService(apps: apps)
     service.updateAll()
-    XCTAssertEqual(store.preparations, 0)
     XCTAssertEqual(
       workspace.openedURLs.map(\.absoluteString), ["macappstore://apps.apple.com/updates"])
     XCTAssertTrue(updating.updatedNames.isEmpty)
@@ -35,31 +34,26 @@ final class AppDependencyBoundaryTest: XCTestCase {
     let (service, store, workspace, updating) = bulkService(apps: [app])
     store.alwaysUsesManualUpdates = true
     service.updateAll()
-    XCTAssertEqual(store.preparations, 0)
     XCTAssertEqual(workspace.openedURLs.count, 1)
     XCTAssertTrue(updating.updatedNames.isEmpty)
     store.alwaysUsesManualUpdates = false
     service.updateAll()
-    XCTAssertEqual(store.preparations, 1)
     XCTAssertEqual(updating.updatedNames, ["Native"])
     XCTAssertEqual(
       workspace.openedURLs.count, 1,
       "Enabling native updates needs no additional store launch or rescan")
   }
 
-  func testBulkMixedAppStoreActionsPrepareAndEnqueueOnlyNativeUpdates() {
+  func testBulkMixedAppStoreActionsEnqueueOnlyNativeUpdates() {
     let native = makeTestApp(name: "Native", version: "1", remoteVersion: "2")
     let wrapped = makeTestApp(
       name: "Wrapped", version: "1", remoteVersion: "2",
       updateAction: .external(label: "App Store") { _ in })
-    let (service, store, workspace, updating) = bulkService(apps: [native, wrapped])
+    let (service, _, workspace, updating) = bulkService(apps: [native, wrapped])
     service.updateAll()
-    XCTAssertEqual(store.preparations, 1)
     XCTAssertEqual(workspace.openedURLs.count, 1)
     XCTAssertEqual(updating.updatedNames, ["Native"])
     service.updateAll()
-    XCTAssertEqual(
-      store.preparations, 1, "Already queued native apps do not need helper preparation again")
     XCTAssertEqual(updating.updatedNames, ["Native"])
   }
 
@@ -288,8 +282,6 @@ private final class StubCheckCoordinator: UpdateCheckCoordinating {
 @MainActor
 private final class StubAppStoreService: AppStoreUpdateServicing {
   var alwaysUsesManualUpdates = false
-  private(set) var preparations = 0
-  func verifyAvailability() throws(InstallHelperError) { preparations += 1 }
 }
 
 private final class BulkUpdating: AppUpdating {

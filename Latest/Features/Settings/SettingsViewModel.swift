@@ -33,11 +33,8 @@ final class SettingsViewModel: ObservableObject {
   @Published var selectedTab: Tab = .general
   @Published private(set) var directoryURLs: [URL] = []
   @Published var selectedDirectory: URL?
-  @Published private(set) var showsInstallHelperBanner = false
-  @Published var helperRegistrationError: String?
 
   private let settings: any AppListSettingsProviding
-  private let installHelperService: any InstallHelperServicing
   private let directoryStoreFactory: DirectoryStoreFactory
   private lazy var directoryStore = directoryStoreFactory { [weak self] in
     self?.refreshDirectories()
@@ -45,16 +42,13 @@ final class SettingsViewModel: ObservableObject {
 
   init(
     settings: any AppListSettingsProviding = AppListSettings.shared,
-    installHelperService: any InstallHelperServicing = LiveInstallHelperService.shared,
     directoryStoreFactory: @escaping DirectoryStoreFactory = {
       AppDirectoryStore(updateHandler: $0)
     }
   ) {
     self.settings = settings
-    self.installHelperService = installHelperService
     self.directoryStoreFactory = directoryStoreFactory
     refreshDirectories()
-    refreshInstallHelperAvailability()
   }
 
   var includeAppsWithLimitedSupport: Bool {
@@ -76,27 +70,6 @@ final class SettingsViewModel: ObservableObject {
       settings.includeUnsupportedApps = newValue
       objectWillChange.send()
     }
-  }
-
-  func refreshInstallHelperAvailability() {
-    do {
-      try installHelperService.verifyAvailability()
-      showsInstallHelperBanner = false
-    } catch {
-      showsInstallHelperBanner = true
-    }
-  }
-
-  func registerInstallHelper() {
-    do {
-      try installHelperService.register()
-    } catch {
-      helperRegistrationError = [
-        error.localizedDescription, (error as? LocalizedError)?.failureReason,
-      ]
-      .compactMap { $0 }.joined(separator: "\n\n")
-    }
-    refreshInstallHelperAvailability()
   }
 
   func canRemove(_ url: URL?) -> Bool {

@@ -376,14 +376,8 @@ extension AppStoreUpdateCheckerOperation {
       openAppStorePage(for: entry)
       return
     }
-    Task { @MainActor in
-      UpdateInstallHelperAlert.shared.prepare(
-        fallbackURL: entry.pageURL,
-        preparation: { try await AppStoreUpdater.prepareForUpdates() }
-      ) {
-        AppStoreUpdater.enqueueUpdate(for: app, appStoreIdentifier: entry.appStoreIdentifier)
-      }
-    }
+    AppStoreUpdater.enqueueUpdate(
+      for: app, appStoreIdentifier: entry.appStoreIdentifier, pageURL: entry.pageURL)
   }
 
   private static func openAppStorePage(for entry: AppStoreEntry) {

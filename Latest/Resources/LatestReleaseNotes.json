@@ -37,5 +37,6 @@
   "0.93": "Latest Dev 0.93\n\n• Repairs legacy helper registrations that lost their connection to Latest.\n• Checks the signed update helper before downloading App Store updates.\n• Adds a persistent setup and recovery sheet with cancellation and an App Store fallback.\n• Protects active installations and avoids duplicate preparation work.",
   "0.94": "Latest Dev 0.94\n\n• Fixes Chrome release notes displaying security entries together with stray formatting markers.\n• Restores the security heading and removes extra spaces around issue links.\n• Refreshes previously cached Chrome notes with the corrected formatting.",
   "0.95": "Latest Dev 0.95\n\n• Prevents Search from activating automatically at startup and triggering a brief input-panel flash.\n• Starts keyboard focus in the app list so arrow-key navigation works immediately.\n• Prevents old Find requests from activating Search when a window is recreated.",
-  "0.96": "Latest Dev 0.96\n\n• Quits Latest when its last window is closed with Command-W or the close button, instead of keeping the app running in the background."
+  "0.96": "Latest Dev 0.96\n\n• Quits Latest when its last window is closed with Command-W or the close button, instead of keeping the app running in the background.",
+  "0.97": "Latest Dev 0.97\n\n• Start native App Store updates with one click. Latest asks for approval only when needed.\n• Fixes updates that failed when the App Store removed the downloaded installer or receipt.\n• Failed updates now offer Retry and a link to the app’s Store page."
 }

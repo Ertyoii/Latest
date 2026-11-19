@@ -25,6 +25,8 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 
   private var operationsByIdentifier = [App.Bundle.Identifier: UpdateOperation]()
 
+  private var appStoreFailures = [App.Bundle.Identifier: AppStoreUpdateFailure]()
+
   // MARK: - Public Methods
 
   /// Cancels the update operation for the given app.
@@ -45,7 +47,14 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 
   /// Returns the state for a given app.
   func state(for identifier: App.Bundle.Identifier) -> UpdateOperation.ProgressState {
-    return self.operation(for: identifier)?.progressState ?? .none
+    operationIndexLock.withLock {
+      if let operation = operationsByIdentifier[identifier] {
+        let progress = operation.progressState
+        if !operation.isFinished { return progress }
+        if case .error(let failure as AppStoreUpdateFailure) = progress { return .error(failure) }
+      }
+      return appStoreFailures[identifier].map { .error($0) } ?? .none
+    }
   }
 
   override func addOperation(_ op: Operation) {
@@ -155,7 +164,6 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
       }
 
       if operation.isFinished {
-        operationsByIdentifier[identifier] = nil
         return nil
       }
 
@@ -171,6 +179,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
         return false
       }
 
+      appStoreFailures[operation.appIdentifier] = nil
       operationsByIdentifier[operation.appIdentifier] = operation
       return true
     }
@@ -182,6 +191,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
         return
       }
 
+      appStoreFailures[operation.appIdentifier] = operation.error as? AppStoreUpdateFailure
       operationsByIdentifier[operation.appIdentifier] = nil
     }
   }

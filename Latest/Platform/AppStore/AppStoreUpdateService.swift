@@ -12,7 +12,6 @@ import Foundation
 @MainActor
 protocol AppStoreUpdateServicing: AnyObject {
   var alwaysUsesManualUpdates: Bool { get }
-  func verifyAvailability() throws(InstallHelperError)
 }
 
 @MainActor
@@ -25,7 +24,4 @@ final class LiveAppStoreUpdateService: AppStoreUpdateServicing {
     AppStoreUpdateSettings.alwaysPerformManualUpdates.active
   }
 
-  func verifyAvailability() throws(InstallHelperError) {
-    try AppStoreUpdater.verifyAvailability()
-  }
 }
