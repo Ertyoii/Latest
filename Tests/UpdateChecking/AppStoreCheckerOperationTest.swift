@@ -123,7 +123,7 @@ class AppStoreCheckerOperationTest: XCTestCase {
   }
 
   func testTransportCancellationDoesNotTryAnotherEntity() async throws {
-    let (checker, session, control, identifier) = controlledLookup(cancelImmediately: true)
+    let (checker, session, control, identifier) = controlledLookup(failure: .cancelled)
     defer {
       session.invalidateAndCancel()
       ControlledAppStoreURLProtocol.controls.withLock { $0[identifier] = nil }
@@ -135,6 +135,31 @@ class AppStoreCheckerOperationTest: XCTestCase {
       XCTAssertTrue(error is CancellationError || (error as? URLError)?.code == .cancelled)
     }
     XCTAssertEqual(control.requestCount, 1)
+  }
+
+  func testTimeoutStopsAfterOneRequestWhileMissingResultsTryTheNextEntity() async throws {
+    let outcomes: [(URLError.Code?, Int)] = [(.timedOut, 200), (nil, 200), (nil, 404)]
+    for (failure, firstStatusCode) in outcomes {
+      let (checker, session, control, identifier) = controlledLookup(
+        failure: failure, firstEmptyStatus: firstStatusCode)
+      defer {
+        session.invalidateAndCancel()
+        ControlledAppStoreURLProtocol.controls.withLock { $0[identifier] = nil }
+      }
+      if let failure {
+        do {
+          _ = try await checker.check()
+          XCTFail("Expected a transport error")
+        } catch {
+          XCTAssertEqual((error as? URLError)?.code, failure)
+        }
+        XCTAssertEqual(control.requestCount, 1)
+      } else {
+        let update = try await checker.check()
+        XCTAssertEqual(update.remoteVersion.versionNumber, "2.0")
+        XCTAssertEqual(control.requestCount, 2)
+      }
+    }
   }
 
   func testCancelledLookupReaderStopsWhileSharedFetchContinues() async throws {
@@ -166,11 +191,14 @@ class AppStoreCheckerOperationTest: XCTestCase {
     XCTAssertEqual(control.requestCount, 1, "Readers must share the unfinished fetch")
   }
 
-  private func controlledLookup(cancelImmediately: Bool = false) -> (
+  private func controlledLookup(
+    failure: URLError.Code? = nil, firstEmptyStatus: Int? = nil
+  ) -> (
     AppStoreUpdateCheckerOperation, URLSession, ControlledAppStoreURLProtocol.Control, String
   ) {
     let identifier = "com.example.lookup.\(UUID())"
-    let control = ControlledAppStoreURLProtocol.Control(cancelImmediately: cancelImmediately)
+    let control = ControlledAppStoreURLProtocol.Control(
+      failure: failure, firstEmptyStatus: firstEmptyStatus)
     ControlledAppStoreURLProtocol.controls.withLock { $0[identifier] = control }
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [ControlledAppStoreURLProtocol.self]
@@ -546,8 +574,12 @@ private final class ControlledAppStoreURLProtocol: URLProtocol, @unchecked Senda
         return requests.count == 1
       }
     }
-    let cancelImmediately: Bool
-    init(cancelImmediately: Bool) { self.cancelImmediately = cancelImmediately }
+    let failure: URLError.Code?
+    let firstEmptyStatus: Int?
+    init(failure: URLError.Code?, firstEmptyStatus: Int?) {
+      self.failure = failure
+      self.firstEmptyStatus = firstEmptyStatus
+    }
   }
   static let controls = Mutex<[String: Control]>([:])
   override class func canInit(with request: URLRequest) -> Bool { true }
@@ -560,17 +592,21 @@ private final class ControlledAppStoreURLProtocol: URLProtocol, @unchecked Senda
     guard let control = Self.controls.withLock({ $0[identifier] }) else { return }
     let isFirst = control.record(self)
     if isFirst { control.started.fulfill() }
-    if control.cancelImmediately {
-      client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+    if let failure = control.failure {
+      client?.urlProtocol(self, didFailWithError: URLError(failure))
+    } else if let firstEmptyStatus = control.firstEmptyStatus {
+      complete(empty: isFirst, statusCode: isFirst ? firstEmptyStatus : 200)
     }
   }
-  func complete() {
+  func complete(empty: Bool = false, statusCode: Int = 200) {
     let body =
-      #"{"results":[{"version":"2.0","minimumOsVersion":"14.0","trackViewUrl":"https://apps.apple.com/app/id123","trackId":123}]}"#
+      empty
+      ? #"{"results":[]}"#
+      : #"{"results":[{"version":"2.0","minimumOsVersion":"14.0","trackViewUrl":"https://apps.apple.com/app/id123","trackId":123}]}"#
     client?.urlProtocol(
       self,
       didReceive: HTTPURLResponse(
-        url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+        url: request.url!, statusCode: statusCode, httpVersion: nil, headerFields: nil)!,
       cacheStoragePolicy: .notAllowed)
     client?.urlProtocol(self, didLoad: Data(body.utf8))
     client?.urlProtocolDidFinishLoading(self)

@@ -7,67 +7,50 @@
 //
 
 import AppKit
+import UniformTypeIdentifiers
 
-/// A cache for app icons.
 @MainActor
-class IconCache {
-
-  /// The shared cache object.
+final class IconCache {
   static let shared = IconCache()
 
-  /// Initializes the cache.
+  private let cache = NSCache<NSString, NSImage>()
+  private let reader = IconReader()
+  private lazy var placeholder = NSWorkspace.shared.icon(for: .applicationBundle)
+
   private init() {
-    self.cache = NSCache()
-    self.cache.countLimit = 256
-    self.cache.totalCostLimit = 64 * 1_024 * 1_024
+    cache.countLimit = 256
+    cache.totalCostLimit = 64 * 1_024 * 1_024
   }
 
-  /// The object storing app images.
-  private let cache: NSCache<NSString, NSImage>
-  private var missingApplicationIcon: NSImage?
-
-  /// Loads an icon before a row is displayed, avoiding a blank first frame.
-  func iconImmediately(for app: App) -> NSImage {
-    loadIcon(for: app)
+  func cachedIconOrPlaceholder(for app: App) -> NSImage {
+    cache.object(forKey: key(for: app)) ?? placeholder
   }
 
-  /// Returns an icon after an asynchronous scheduling boundary. SwiftUI tasks
-  /// use this form so a cache hit cannot mutate view state during rendering.
   func icon(for app: App) async -> NSImage {
-    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-      DispatchQueue.main.async {
-        continuation.resume()
+    let key = key(for: app)
+    if let cached = cache.object(forKey: key) {
+      // SwiftUI can start a view task during rendering. Defer cached results as well.
+      await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        DispatchQueue.main.async { continuation.resume() }
       }
+      return cached
     }
-    return loadIcon(for: app)
-  }
-
-  private func loadIcon(for app: App) -> NSImage {
-    let cacheKey = cacheKey(for: app)
-    if let icon = cache.object(forKey: cacheKey) { return icon }
-
-    // Discovery results normally point to real bundles. Fixtures, stale
-    // volumes, and benchmark rows can point at missing paths; asking
-    // NSWorkspace to rediscover the same generic icon for every such path
-    // blocks scrolling and needlessly fills the cache with identical images.
-    guard FileManager.default.fileExists(atPath: app.fileURL.path) else {
-      if let missingApplicationIcon {
-        return missingApplicationIcon
-      }
-      let icon = NSWorkspace.shared.icon(forFile: app.fileURL.path)
-      missingApplicationIcon = icon
-      return icon
-    }
-
-    let icon = NSWorkspace.shared.icon(forFile: app.fileURL.path)
-    let pixelCount = max(Int(icon.size.width * icon.size.height), 1)
-    self.cache.setObject(icon, forKey: cacheKey, cost: pixelCount * 4)
+    guard let icon = await reader.read(at: app.fileURL) else { return placeholder }
+    let pixels = max(Int(icon.size.width * icon.size.height), 1)
+    cache.setObject(icon, forKey: key, cost: pixels * 4)
     return icon
   }
 
-  private func cacheKey(for app: App) -> NSString {
-    "\(app.fileURL.standardizedFileURL.path)\u{0}\(app.bundle.modificationDate.timeIntervalSinceReferenceDate)"
+  private func key(for app: App) -> NSString {
+    "\(app.fileURL.path)\u{0}\(app.bundle.modificationDate.timeIntervalSinceReferenceDate)"
       as NSString
   }
+}
 
+/// Waiting for an icon on a slow volume must not hold up the first frame or input.
+private actor IconReader {
+  func read(at url: URL) -> sending NSImage? {
+    guard !Task.isCancelled, FileManager.default.fileExists(atPath: url.path) else { return nil }
+    return NSWorkspace.shared.icon(forFile: url.path)
+  }
 }

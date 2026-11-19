@@ -16,6 +16,61 @@ import XCTest
 
 @MainActor
 final class UpdateCheckDiscoveryTest: XCTestCase {
+  func testPreviewCanBeSearchedAndOpenedBeforeLiveDiscoveryReconcilesIt() async throws {
+    let checked = Mutex([String]())
+    let coordinator = UpdateCheckCoordinator(
+      check: { bundle, _ in
+        checked.withLock { $0.append(bundle.name) }
+        throw LatestError.updateInfoUnavailable
+      }, repositoryProvider: { nil })
+    let workspace = StubApplicationWorkspace()
+    let model = UpdatesListViewModel(
+      settings: try isolatedAppListSettings(for: self), appProvider: coordinator.appProvider,
+      workspace: workspace)
+    model.startObserving()
+    defer { model.stopObserving() }
+    let cached = bundle("Keep")
+    coordinator.showDiscoveredPreview([cached, bundle("Removed")])
+    try await waitForSnapshot(model) { $0.apps.count == 2 }
+    model.setSearchQuery("keep")
+    let row = try XCTUnwrap(model.selectedApp)
+    XCTAssertNil(row.updateAction)
+    model.open(row)
+    XCTAssertEqual(workspace.openedApplicationURLs, [cached.fileURL])
+    XCTAssertTrue(checked.withLock { $0.isEmpty })
+    coordinator.updateDiscoveredBundles([bundle("Keep", version: "2")])
+    try await waitForSnapshot(model) { $0.checkingGeneration == nil }
+    XCTAssertEqual(model.selectedApp?.version.versionNumber, "2")
+    XCTAssertEqual(model.snapshot.apps.map(\.identifier), [cached.identifier])
+    XCTAssertEqual(checked.withLock { $0 }, ["Keep"])
+  }
+
+  func testSharedCatalogCompletesWithAllSixNetworkChecksSuspended() async throws {
+    let started = expectation(description: "Network slots are occupied")
+    started.expectedFulfillmentCount = 6
+    let checks = SuspendedDiscoveryChecks { _ in started.fulfill() }
+    let catalogResult = expectation(description: "Catalog app was checked")
+    let coordinator = UpdateCheckCoordinator(
+      check: { bundle, _ in
+        if bundle.source == .none { throw LatestError.updateInfoUnavailable }
+        return try await checks.check(bundle)
+      }, repositoryProvider: { nil })
+    let progress = DiscoveryCheckProgress(finished: expectation(description: "Scan finished")) {
+      app in
+      if app.bundle.source == .none { catalogResult.fulfill() }
+    }
+    coordinator.progressDelegate = progress
+    let catalog = App.Bundle(
+      version: Version(versionNumber: "1", buildNumber: nil), name: "Z Catalog",
+      bundleIdentifier: "test.catalog", fileURL: URL(fileURLWithPath: "/tmp/Z.app"), source: .none)
+    coordinator.updateDiscoveredBundles((0..<6).map { bundle("Slow " + String($0)) } + [catalog])
+    await fulfillment(of: [started, catalogResult], timeout: 2)
+    XCTAssertEqual(progress.checked.count, 1)
+    await checks.completeAll()
+    await fulfillment(of: [progress.finished], timeout: 2)
+    XCTAssertEqual(progress.batchSizes, [7])
+  }
+
   func testPostInstallRefreshRejectsOlderCheckInTheSameGeneration() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let appURL = root.appendingPathComponent("Installed.app")
@@ -153,7 +208,7 @@ final class UpdateCheckDiscoveryTest: XCTestCase {
       [bundle("A"), bundle("B"), bundle("C")], forceRefresh: true)
     await fulfillment(of: [refreshStarted], timeout: 2)
     try await waitForSnapshot(model) { $0.apps.count == 3 && $0.checkingGeneration != nil }
-    XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["B", "A", "C"])
+    XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["A", "B", "C"])
     XCTAssertEqual(
       model.selectedApp?.remoteVersion?.versionNumber, "1",
       "Refresh retains last known result while awaiting replacement")
@@ -166,7 +221,7 @@ final class UpdateCheckDiscoveryTest: XCTestCase {
     model.setSearchQuery("A")
     XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["A"])
     model.setSearchQuery("")
-    XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["B", "A", "C"])
+    XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["A", "B", "C"])
     model.stopObserving()
     model.startObserving()
     var iterator = coordinator.appProvider.updates().makeAsyncIterator()
@@ -177,7 +232,7 @@ final class UpdateCheckDiscoveryTest: XCTestCase {
     XCTAssertNil(current?.apps.first(where: { $0.name == "C" })?.remoteVersion)
     await checks.fail("B")
     try await waitForSnapshot(model) { $0.apps.first(where: { $0.name == "B" })?.error != nil }
-    XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["B", "A", "C"])
+    XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["A", "B", "C"])
     await checks.complete("C", remoteVersion: "1", date: Date(timeIntervalSince1970: 40))
     try await waitForSnapshot(model) { $0.checkingGeneration == nil }
     XCTAssertEqual(model.snapshot.sections.map { $0.apps.map(\.name) }, [["A"], ["C", "B"]])

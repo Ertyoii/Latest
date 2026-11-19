@@ -9,6 +9,7 @@
 import Darwin
 import Foundation
 import OSLog
+import Synchronization
 
 private let appDirectoryLogger = Logger(
   subsystem: Foundation.Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
@@ -31,12 +32,10 @@ class AppDirectory: @unchecked Sendable {
 
   /// The bundles collected within this directory.
   var bundles: [App.Bundle] {
-    collectionQueue.sync {
-      collectedBundles
-    }
+    collectedBundles.withLock { $0 }
   }
 
-  private var collectedBundles = [App.Bundle]()
+  private let collectedBundles = Mutex([App.Bundle]())
 
   typealias UpdateHandler = @Sendable () -> Void
   typealias RefreshCompletion = @Sendable () -> Void
@@ -51,24 +50,34 @@ class AppDirectory: @unchecked Sendable {
   private var isCollectionScheduledOrRunning = false
   private var pendingCollectionRequest: CollectionRequest?
 
-  /// The file system listener
-  private lazy var listener: DispatchSourceFileSystemObject? = {
-    let descriptor = open((self.url as NSURL).fileSystemRepresentation, O_EVTONLY)
-    guard descriptor != -1 else { return nil }
+  private var listener: DispatchSourceFileSystemObject?
+
+  /// Opening a slow volume belongs on this directory's collection queue.
+  private func startListeningIfNeeded() {
+    guard listener == nil else { return }
+    let descriptor = open((url as NSURL).fileSystemRepresentation, O_EVTONLY)
+    guard descriptor != -1 else { return }
 
     let source = DispatchSource.makeFileSystemObjectSource(
       fileDescriptor: descriptor,
-      eventMask: .write)
+      eventMask: [.write, .delete, .rename, .revoke],
+      queue: collectionQueue)
 
-    source.setEventHandler { [weak self] in
+    source.setEventHandler { [weak self, weak source] in
+      let invalidationEvents: DispatchSource.FileSystemEvent = [.delete, .rename, .revoke]
+      if let source, !source.data.intersection(invalidationEvents).isEmpty {
+        source.cancel()
+        self?.listener = nil
+      }
       self?.collectBundles()
     }
     source.setCancelHandler {
       close(descriptor)
     }
 
-    return source
-  }()
+    listener = source
+    source.activate()
+  }
 
   /// Initializes the class and resumes the listener automatically
   init(
@@ -85,7 +94,7 @@ class AppDirectory: @unchecked Sendable {
     self.bundleCollector = bundleCollector
     self.collectionQueue = DispatchQueue(label: "AppDirectoryCollectionQueue.\(url.path)")
 
-    resumeTracking(
+    collectBundles(
       notifyHandler: notifyOnInitialCollection,
       completion: initialCollectionCompletion
     )
@@ -98,21 +107,6 @@ class AppDirectory: @unchecked Sendable {
   /// Forces the directory contents to be read from disk.
   func refresh(completion: RefreshCompletion? = nil) {
     collectBundles(notifyHandler: false, completion: completion)
-  }
-
-  /// Refreshes the directory with structured concurrency while preserving request coalescing.
-  func refreshBundles() async {
-    await withCheckedContinuation { continuation in
-      refresh {
-        continuation.resume()
-      }
-    }
-  }
-
-  /// Resumes tracking if it is not already running
-  private func resumeTracking(notifyHandler: Bool, completion: RefreshCompletion?) {
-    listener?.activate()
-    collectBundles(notifyHandler: notifyHandler, completion: completion)
   }
 
   /// Triggers an update run
@@ -147,9 +141,10 @@ class AppDirectory: @unchecked Sendable {
       let signpostID = appDirectorySignposter.makeSignpostID()
       let interval = appDirectorySignposter.beginInterval("Collect App Bundles", id: signpostID)
       let start = DispatchTime.now().uptimeNanoseconds
+      startListeningIfNeeded()
       let bundles = bundleCollector(url)
       let duration = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
-      collectedBundles = bundles
+      collectedBundles.withLock { $0 = bundles }
       appDirectorySignposter.endInterval("Collect App Bundles", interval)
       appDirectoryLogger.info(
         "Collected \(bundles.count, privacy: .public) apps from \(self.url.lastPathComponent, privacy: .private) in \(duration, privacy: .public) ms"

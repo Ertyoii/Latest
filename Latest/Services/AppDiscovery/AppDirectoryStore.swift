@@ -15,7 +15,6 @@ protocol AppDirectoryStoring: AnyObject {
   func add(_ url: URL)
   func remove(_ url: URL)
   func canRemove(_ url: URL) -> Bool
-  func isReachable(_ url: URL) -> Bool
 }
 
 /// Object that takes care of storing and observing application directories.
@@ -88,11 +87,6 @@ final class AppDirectoryStore: AppDirectoryStoring {
   /// Whether the URL can be removed from the store.
   func canRemove(_ url: URL) -> Bool {
     customURLs.contains(url) && !Self.defaultURLs.contains(url)
-  }
-
-  /// Whether the url currently reachable.
-  func isReachable(_ url: URL) -> Bool {
-    (try? url.checkResourceIsReachable()) == true
   }
 }
 

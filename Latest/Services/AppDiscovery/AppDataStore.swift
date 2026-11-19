@@ -91,7 +91,8 @@ final class AppDataStore: AppProviding, Sendable {
       }
       state.appsByIdentifier = appsByIdentifier
     }
-    scheduleFilterUpdate()
+    // Publish local inventory on the next UI turn, even if provider checks are slow.
+    Task { @MainActor in updateStreams.yield(listUpdate()) }
   }
 
   func set(appBundle bundle: App.Bundle) -> App {

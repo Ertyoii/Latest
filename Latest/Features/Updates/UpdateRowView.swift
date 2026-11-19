@@ -30,7 +30,7 @@ struct UpdateRowView: View {
   let showsSupportStatus: Bool
   let updating: any AppUpdating
   let accessibilityLabel: String
-  private let icon: NSImage
+  @State private var loadedIcon: NSImage?
   private let versions: App.DisplayableVersionInformation?
   private let date: String
   @Environment(\.controlActiveState) private var controlActiveState
@@ -43,7 +43,6 @@ struct UpdateRowView: View {
     self.selection = selection
     self.showsSupportStatus = showsSupportStatus
     self.updating = updating
-    icon = IconCache.shared.iconImmediately(for: app)
     let versions = app.localizedVersionInformation
     self.versions = versions
     accessibilityLabel = [
@@ -57,12 +56,17 @@ struct UpdateRowView: View {
 
   var body: some View {
     HStack(spacing: 8) {
-      Image(nsImage: icon)
+      Image(nsImage: loadedIcon ?? IconCache.shared.cachedIconOrPlaceholder(for: app))
         .resizable()
         .scaledToFit()
         .frame(width: 50, height: 50)
         .opacity(controlActiveState == .inactive ? 0.5 : 1)
         .accessibilityHidden(true)
+        .task(id: app.bundle.modificationDate) {
+          let icon = await IconCache.shared.icon(for: app)
+          guard !Task.isCancelled else { return }
+          loadedIcon = icon
+        }
 
       VStack(alignment: .leading, spacing: 0) {
         Text(verbatim: app.name)

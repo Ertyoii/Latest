@@ -79,8 +79,9 @@ final class AppListSnapshotTest: XCTestCase {
     )
   }
 
-  func testInstalledAppsAreSortedByBundleModificationDate() throws {
+  func testInstalledAppsFollowSelectedDateAndNameSortOrders() throws {
     let settings = try isolatedAppListSettings(for: self)
+    settings.sortOrder = .updateDate
 
     let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -99,6 +100,9 @@ final class AppListSnapshotTest: XCTestCase {
 
     XCTAssertEqual(snapshot.sections[0].apps[0].name, "Z Newer")
     XCTAssertEqual(snapshot.sections[0].apps[1].name, "A Older")
+    settings.sortOrder = .name
+    XCTAssertEqual(
+      snapshot.updated(with: nil).sections[0].apps.map(\.name), ["A Older", "Z Newer"])
   }
 
   func testSnapshotMatchesUpdatedAppByIdentifier() throws {
@@ -116,6 +120,7 @@ final class AppListSnapshotTest: XCTestCase {
 
   func testInstalledAppStoreAppsSortByDisplayedDateAfterLookup() throws {
     let settings = try isolatedAppListSettings(for: self)
+    settings.sortOrder = .updateDate
     let day = 86_400.0
     let apps = [
       (name: "Amazon Kindle", source: App.Source.appStore, localDay: 1.0, releaseDay: 10.0),
@@ -159,11 +164,10 @@ final class AppListSnapshotTest: XCTestCase {
     let discovered = AppListSnapshot(
       withApps: pending.reversed(), filterQuery: nil, settings: settings, checkingGeneration: 1)
     let partial = AppListSnapshot(
-      withApps: [alpha, pending[1]], filterQuery: nil, settings: settings, checkingGeneration: 1,
-      previous: discovered)
+      withApps: [alpha, pending[1]], filterQuery: nil, settings: settings, checkingGeneration: 1)
+    XCTAssertEqual(partial.sections[0].apps.map(\.name), ["Alpha", "Beta"])
     let complete = AppListSnapshot(
-      withApps: [beta, alpha], filterQuery: nil, settings: settings, checkingGeneration: 1,
-      previous: partial)
+      withApps: [beta, alpha], filterQuery: nil, settings: settings, checkingGeneration: 1)
     XCTAssertEqual(complete.sections.count, 1)
     XCTAssertEqual(
       complete.sections[0].section.title, NSLocalizedString("InstalledAppsSection", comment: ""))
@@ -177,13 +181,13 @@ final class AppListSnapshotTest: XCTestCase {
       name: "Delta", version: "1", remoteVersion: "2", date: Date(timeIntervalSince1970: 40))
     let rediscovered = AppListSnapshot(
       withApps: [gamma, beta, delta], filterQuery: nil, settings: settings,
-      checkingGeneration: 1, previous: complete)
+      checkingGeneration: 1)
     XCTAssertEqual(
       rediscovered.sections[0].apps.map(\.name), ["Beta", "Delta", "Gamma"],
-      "Retained rows precede sorted newcomers, and removed apps leave no row")
-    // Explicit preference changes may reorder the current results, without waiting for settlement.
+      "Local sort keys place newcomers regardless of their remote dates")
+    // Rebuilding during a scan still uses installed dates.
     let explicitlySorted = complete.updated(with: nil)
-    XCTAssertEqual(explicitlySorted.sections[0].apps.map(\.name), ["Beta", "Alpha"])
+    XCTAssertEqual(explicitlySorted.sections[0].apps.map(\.name), ["Alpha", "Beta"])
     settings.sortOrder = .name
     XCTAssertEqual(
       explicitlySorted.updated(with: nil).sections[0].apps.map(\.name), ["Alpha", "Beta"])

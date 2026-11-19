@@ -158,7 +158,8 @@ private final class AppStoreLookupClient: Sendable {
         try Task.checkCancellation()
         do {
           return try await lookup(bundleIdentifier: bundleIdentifier, entityType: entityType)
-        } catch  where error is CancellationError || (error as? URLError)?.code == .cancelled {
+        } catch  where error is CancellationError || error is URLError {
+          // Changing the lookup entity or identifier cannot repair a failed connection.
           throw error
         } catch {
           lastError = error
@@ -195,7 +196,14 @@ private final class AppStoreLookupClient: Sendable {
 
       let request = URLRequest(
         url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
-      let (data, _) = try await self.session.data(for: request)
+      let (data, response) = try await self.session.data(for: request)
+      guard let http = response as? HTTPURLResponse else {
+        throw URLError(.badServerResponse)
+      }
+      if http.statusCode == 404 { throw LatestError.updateInfoUnavailable }
+      guard (200..<300).contains(http.statusCode) else {
+        throw URLError(.badServerResponse)
+      }
       guard let entry = try JSONDecoder().decode(EntryList.self, from: data).results.first else {
         throw LatestError.updateInfoUnavailable
       }

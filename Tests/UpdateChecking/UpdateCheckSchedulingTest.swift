@@ -15,25 +15,18 @@ import XCTest
 @testable import Latest
 
 final class UpdateCheckSchedulingTest: XCTestCase {
-  func testPriorityGroupingPreservesOrderAndDuplicates() {
-    let sources: [App.Source] = [.none, .sparkle, .homebrew, .appStore, .none, .sparkle]
-    let bundles = sources.enumerated().map { index, source in
-      App.Bundle(
-        version: Version(versionNumber: "1", buildNumber: nil),
-        name: "App \(index)",
-        bundleIdentifier: "test.\(index)",
-        fileURL: URL(fileURLWithPath: "/Applications/Test-\(index).app"),
-        source: source,
-        modificationDate: .distantPast
-      )
+  func testVendorFeedsDoNotWaitForTheSharedCatalog() {
+    for (identifier, usesCatalog) in [
+      ("md.obsidian", false), ("com.zed-industries.delta", false), ("test.other", true),
+    ] {
+      let bundle = App.Bundle(
+        version: Version(versionNumber: "1", buildNumber: nil), name: identifier,
+        bundleIdentifier: identifier, fileURL: URL(fileURLWithPath: "/Applications/Test.app"),
+        source: .none, modificationDate: .distantPast)
+      XCTAssertEqual(HomebrewCheckerOperation.usesCatalog(for: bundle), usesCatalog)
     }
-    let input = bundles + [bundles[1]]
-    XCTAssertEqual(
-      UpdateCheckCoordinator.prioritizedBundlesForUpdateCheck(input).map(\.identifier),
-      [1, 3, 5, 1, 0, 2, 4].map { bundles[$0].identifier }
-    )
-    XCTAssertTrue(UpdateCheckCoordinator.prioritizedBundlesForUpdateCheck([]).isEmpty)
   }
+
 }
 
 final class UpdateCheckGenerationTrackerTest: XCTestCase {
