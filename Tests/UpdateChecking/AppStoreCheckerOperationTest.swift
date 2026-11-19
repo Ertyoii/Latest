@@ -90,6 +90,38 @@ class AppStoreCheckerOperationTest: XCTestCase {
     }
   }
 
+  @MainActor
+  func testNativeUpdateClickImmediatelyQueuesOnceWithoutOpeningSetup() async throws {
+    let config = URLSessionConfiguration.ephemeral
+    config.protocolClasses = [AppStoreLookupURLProtocol.self]
+    let session = URLSession(configuration: config)
+    defer { session.invalidateAndCancel() }
+    let bundle = App.Bundle(
+      version: Version(versionNumber: "1", buildNumber: nil), name: "Native",
+      bundleIdentifier: "com.example.store.\(UUID())", fileURL: temporaryAppURL(), source: .appStore
+    )
+    let update = try await AppStoreUpdateCheckerOperation(with: bundle, session: session).check()
+    let app = App(bundle: bundle, update: .success(update), isIgnored: false)
+    let queue = UpdateQueue.shared
+    let suspended = queue.isSuspended
+    let manual = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
+    queue.isSuspended = true
+    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
+    defer {
+      queue.cancelUpdate(for: bundle.identifier)
+      queue.isSuspended = suspended
+      AppStoreUpdateSettings.alwaysPerformManualUpdates.active = manual
+    }
+    let service = AppUpdateService(queue: queue)
+    service.update(app)
+    service.update(app)
+    XCTAssertTrue(service.isUpdating(app))
+    XCTAssertEqual(
+      queue.operations.compactMap { $0 as? AppStoreUpdateOperation }
+        .filter { $0.appIdentifier == bundle.identifier }.count, 1)
+    XCTAssertFalse(UpdateInstallHelperAlert.shared.isPresented)
+  }
+
   func testTransportCancellationDoesNotTryAnotherEntity() async throws {
     let (checker, session, control, identifier) = controlledLookup(cancelImmediately: true)
     defer {
@@ -239,6 +271,44 @@ class AppStoreCheckerOperationTest: XCTestCase {
     XCTAssertFalse(AppStoreUpdateCheckerOperation.isIOSAppBundle(at: appURL))
   }
 
+  @MainActor
+  func testDownloadCanBeDeletedBeforeMainActorHandlesRemoval() async throws {
+    try XCTSkipUnless(AppStoreUpdateOperation.requiresManualInstallation)
+    let directory = temporaryAppURL()
+    let folder = directory.appendingPathComponent("123")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let payload = Data("finished package".utf8)
+    let receipt = Data("finished receipt".utf8)
+    try payload.write(to: folder.appendingPathComponent("update.pkg"))
+    try receipt.write(to: folder.appendingPathComponent("receipt"))
+    let app = makeTestApp(name: "Store fixture", version: "1", remoteVersion: "2")
+    let installations = Mutex(0)
+    let op = AppStoreUpdateOperation(
+      app: app.bundle, itemIdentifier: 123, pageURL: AppStoreUpdateSettings.updatesPage,
+      downloadDirectory: directory
+    ) { package, url, data in
+      XCTAssertEqual(try package.readToEnd(), payload)
+      XCTAssertEqual(url, app.fileURL)
+      XCTAssertEqual(data, receipt)
+      installations.withLock { $0 += 1 }
+    }
+    let download = SSDownload()
+    let metadata = SSDownloadMetadata(kind: "software")
+    metadata.itemIdentifier = 123
+    download.metadata = metadata
+    let status = SSDownloadStatus()
+    download.status = status
+    let queue = CKDownloadQueue.shared()
+    op.downloadQueue(queue, statusChangedFor: download)
+    try FileManager.default.removeItem(at: folder)
+    status.error = NSError(domain: "PKInstallErrorDomain", code: 201)
+    status.isCancelled = true
+    op.downloadQueue(queue, changedWithRemoval: download)
+    try await waitForHelper { op.isFinished }
+    XCTAssertNil(op.error)
+    XCTAssertEqual(installations.withLock { $0 }, 1)
+  }
+
   func testDownloadedArtifactsSurviveRemovalAndRefreshWhenInodeChanges() throws {
     let folder = temporaryAppURL().deletingPathExtension()
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -246,21 +316,56 @@ class AppStoreCheckerOperationTest: XCTestCase {
     let receipt = folder.appendingPathComponent("receipt")
     try Data("partial".utf8).write(to: package)
     try Data("receipt-1".utf8).write(to: receipt)
-    var artifacts = AppStoreDownloadArtifacts()
-    defer {
-      artifacts.removeAll()
-      try? FileManager.default.removeItem(at: folder)
-    }
-    try artifacts.refresh(in: folder)
-    let oldLink = try XCTUnwrap(artifacts.packageURL)
-    // App Store atomically replaces a partial package and receipt.
+    let artifacts = AppStoreDownloadArtifacts()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    artifacts.capture(in: folder)
+    // The store replaces partial files, then removes its folder before the UI can run.
     try Data("complete".utf8).write(to: package, options: .atomic)
     try Data("receipt-2".utf8).write(to: receipt, options: .atomic)
-    try artifacts.refresh(in: folder)
-    XCTAssertNotEqual(artifacts.packageURL, oldLink)
+    artifacts.capture(in: folder)
     try FileManager.default.removeItem(at: folder)
-    XCTAssertEqual(try Data(contentsOf: XCTUnwrap(artifacts.packageURL)), Data("complete".utf8))
-    XCTAssertEqual(try Data(contentsOf: XCTUnwrap(artifacts.receiptURL)), Data("receipt-2".utf8))
+    artifacts.capture(in: folder)
+    let files = try XCTUnwrap(artifacts.take())
+    XCTAssertEqual(try files.package?.readToEnd(), Data("complete".utf8))
+    XCTAssertEqual(files.receiptData, Data("receipt-2".utf8))
+    artifacts.capture(in: folder)
+    XCTAssertNil(artifacts.take(), "Late callbacks cannot reopen a finished download")
+
+  }
+
+  func testReportedPackageAndEarlyMetadataReceiptSurviveStoreCleanup() throws {
+    let root = temporaryAppURL()
+    let cache = root.appendingPathComponent("com.apple.appstore")
+    let legacyFolder = cache.appendingPathComponent("123")
+    let directory = root.appendingPathComponent("com.apple.appstoreagent/com.apple.appstore")
+      .appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let package = directory.appendingPathComponent("download.pkg")
+    let payload = Data("complete local asset".utf8)
+    let receipt = Data("receipt from an earlier callback".utf8)
+    try payload.write(to: package)
+    let artifacts = AppStoreDownloadArtifacts()
+    artifacts.capture(in: legacyFolder, assetPaths: [package.path], receiptData: receipt)
+    try FileManager.default.removeItem(at: directory)
+    artifacts.capture(in: legacyFolder, assetPaths: [package.path], receiptData: Data())
+    let files = try XCTUnwrap(artifacts.take())
+    XCTAssertEqual(try files.package?.readToEnd(), payload)
+    XCTAssertEqual(files.receiptData, receipt)
+  }
+
+  func testReportedPackageFromAnotherItemOrOutsideTheStoreCacheIsIgnored() throws {
+    let root = temporaryAppURL()
+    let cache = root.appendingPathComponent("com.apple.appstore")
+    for directory in [
+      cache.appendingPathComponent("456"), root.appendingPathComponent("elsewhere/123"),
+    ] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      let package = directory.appendingPathComponent("update.pkg")
+      try Data("unrelated".utf8).write(to: package)
+      let artifacts = AppStoreDownloadArtifacts()
+      artifacts.capture(in: cache.appendingPathComponent("123"), assetPaths: [package.path])
+      XCTAssertNil(artifacts.take()?.package)
+    }
   }
 
   func testManualInstallRepairsOnlyPackageKitEntitlementFailure() {
@@ -296,6 +401,25 @@ class AppStoreCheckerOperationTest: XCTestCase {
       return XCTFail("Cancelling in Latest must prevent installation")
     }
     XCTAssertTrue(failure is CancellationError)
+  }
+
+  @MainActor
+  func testOnlyStoreInitiatedCancellationOffersRecovery() async throws {
+    let app = makeTestApp(name: "Cancel fixture", version: "1", remoteVersion: "2")
+    let url = URL(string: "macappstore://apps.apple.com/app/id123")!
+    for userCancelled in [false, true] {
+      let operation = AppStoreUpdateOperation(app: app.bundle, itemIdentifier: 123, pageURL: url)
+      if userCancelled { operation.cancel() }
+      operation.finish(with: CancellationError())
+      try await waitForHelper { operation.isFinished }
+      if userCancelled {
+        XCTAssertNil(operation.error)
+      } else {
+        let failure = try XCTUnwrap(operation.error as? AppStoreUpdateFailure)
+        XCTAssertEqual(failure.pageURL, url)
+        XCTAssertEqual(failure.explanation, "The App Store cancelled the download.")
+      }
+    }
   }
 
   func testDownloadRemovalDoesNotHideErrorsOrReportCancellationAsSuccess() {

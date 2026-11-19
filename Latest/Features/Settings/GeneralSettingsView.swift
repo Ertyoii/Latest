@@ -15,27 +15,11 @@ struct GeneralSettingsView: View {
   @AppStorage(ApplicationAppearance.storageKey)
   private var appearanceRawValue = ApplicationAppearance.system.rawValue
 
+  @AppStorage(AppStoreUpdateSettings.alwaysPerformManualUpdates.rawValue)
+  private var useAppStore = false
+
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      settingsForm
-      if viewModel.showsInstallHelperBanner {
-        installHelperBanner
-      }
-    }
-    .padding(20)
-    .onAppear {
-      viewModel.refreshInstallHelperAvailability()
-    }
-    .alert(
-      "Unable to Enable Update Helper",
-      isPresented: Binding(
-        get: { viewModel.helperRegistrationError != nil },
-        set: { if !$0 { viewModel.helperRegistrationError = nil } })
-    ) {
-      Button("OK", role: .cancel) { viewModel.helperRegistrationError = nil }
-    } message: {
-      Text(viewModel.helperRegistrationError ?? "")
-    }
+    settingsForm.padding(20)
   }
 
   private var settingsForm: some View {
@@ -45,6 +29,21 @@ struct GeneralSettingsView: View {
           Text("Appearance")
           Spacer(minLength: 16)
           appearancePicker
+        }
+        .padding(10)
+      }
+
+      GroupBox {
+        HStack {
+          Text("Install App Store updates with")
+          Spacer(minLength: 16)
+          Picker("Install App Store updates with", selection: $useAppStore) {
+            Text("Latest").tag(false)
+            Text("App Store").tag(true)
+          }
+          .labelsHidden()
+          .pickerStyle(.segmented)
+          .frame(width: 150)
         }
         .padding(10)
       }
@@ -81,26 +80,6 @@ struct GeneralSettingsView: View {
     .pickerStyle(.segmented)
     .frame(width: 230)
     .accessibilityIdentifier("settings.appearance")
-  }
-
-  private var installHelperBanner: some View {
-    GroupBox {
-      HStack(spacing: 12) {
-        VStack(alignment: .leading, spacing: 4) {
-          Text("App Store updates")
-          Text("Enable a helper to update App Store apps within Latest.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-
-        Button("Enable") {
-          viewModel.registerInstallHelper()
-        }
-      }
-      .padding(10)
-    }
   }
 
   private func preferenceOption(

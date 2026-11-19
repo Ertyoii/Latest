@@ -31,3 +31,19 @@ enum UpdateProgressState: Sendable {
   /// The update is currently being cancelled.
   case cancelling
 }
+
+struct AppStoreUpdateFailure: LocalizedError {
+  let pageURL: URL
+  let installedVersion: Version
+  let cause: Error
+
+  var errorDescription: String? { cause.localizedDescription }
+
+  var explanation: String {
+    let error = cause as NSError
+    return [
+      error.localizedDescription, error.localizedFailureReason, error.localizedRecoverySuggestion,
+    ]
+    .compactMap { $0 }.joined(separator: " ")
+  }
+}

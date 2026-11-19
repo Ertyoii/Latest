@@ -11,7 +11,6 @@ import Foundation
 
 @MainActor
 protocol InstallHelperServicing: AnyObject {
-  func verifyAvailability() throws
   func register() throws
   func prepareForUpdates() async throws
 }
@@ -22,16 +21,11 @@ final class LiveInstallHelperService: InstallHelperServicing {
 
   private init() {}
 
-  func verifyAvailability() throws {
-    try InstallHelper.verifyAvailability()
-  }
-
   func prepareForUpdates() async throws {
     try await InstallHelper.prepareForUpdates()
   }
 
   func register() throws {
-    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
     try InstallHelper.installHelper()
   }
 }

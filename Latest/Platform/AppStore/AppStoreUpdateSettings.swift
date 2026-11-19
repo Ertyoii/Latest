@@ -10,6 +10,8 @@ import Foundation
 
 /// Collection of settings around app store updates
 enum AppStoreUpdateSettings: String {
+  static let updatesPage = URL(string: "macappstore://apps.apple.com/updates")!
+
   /// Whether app store updates should always be performed manually.
   case alwaysPerformManualUpdates = "AlwaysPerformManualUpdates"
 

@@ -77,6 +77,46 @@ final class AppUpdatingBoundaryTest: XCTestCase {
       weakModel, "The observation task must not retain its owner across stream suspension")
   }
 
+  func testStoreFailureRetainsProductPageAfterReselectionAndClearsOnRetry() async throws {
+    let attempts = Mutex(0)
+    let app = makeTestApp(
+      name: "Store fixture", version: "1", remoteVersion: "2",
+      updateAction: .builtIn { _ in attempts.withLock { $0 += 1 } })
+    let url = URL(string: "macappstore://apps.apple.com/app/id123")!
+    let queue = UpdateQueue()
+    let updating = AppUpdateService(queue: queue)
+    let workspace = StubApplicationWorkspace()
+    let operation = UpdateOperation(
+      bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+    queue.addOperation(operation)
+    try await waitForHelper { operation.isExecuting }
+    operation.finish(
+      with: AppStoreUpdateFailure(
+        pageURL: url, installedVersion: app.version,
+        cause: LatestError.custom(title: "Download interrupted", description: "Connection lost.")))
+    try await waitForHelper { queue.operationCount == 0 }
+    let model = UpdateActionViewModel(app: app, workspace: workspace, updating: updating)
+    guard case .appStoreFailed(let reason, let productPage) = model.presentation else {
+      return XCTFail("Reselecting an app must preserve its recovery actions")
+    }
+    XCTAssertTrue(reason.contains("Connection lost."))
+    model.openAppStore(productPage)
+    XCTAssertEqual(workspace.openedURLs, [url])
+    XCTAssertEqual(attempts.withLock { $0 }, 0)
+    model.performAction()
+    XCTAssertEqual(attempts.withLock { $0 }, 1)
+    let next = UpdateOperation(
+      bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+    queue.addOperation(next)
+    try await waitForHelper { next.isExecuting }
+    next.finish()
+    try await waitForHelper { queue.operationCount == 0 }
+    if case .none = queue.state(for: app.identifier) {
+    } else {
+      XCTFail("The retry clears the previous failure")
+    }
+  }
+
   func testProgressCanBeReadAndUpdatedConcurrentlyAndCallbackCanReenter() {
     let app = makeApp(action: .builtIn { _ in })
     let operation = UpdateOperation(

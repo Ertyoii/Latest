@@ -27,7 +27,6 @@ final class AppEnvironment: ObservableObject {
     workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared,
     updating: any AppUpdating = AppUpdateService.shared,
     appStoreUpdateService: any AppStoreUpdateServicing = LiveAppStoreUpdateService.shared,
-    installHelperService: any InstallHelperServicing = LiveInstallHelperService.shared,
     directoryStoreFactory: @escaping SettingsViewModel.DirectoryStoreFactory = {
       AppDirectoryStore(updateHandler: $0)
     },
@@ -55,7 +54,6 @@ final class AppEnvironment: ObservableObject {
       settingsViewModel
       ?? SettingsViewModel(
         settings: settings,
-        installHelperService: installHelperService,
         directoryStoreFactory: directoryStoreFactory
       )
 
