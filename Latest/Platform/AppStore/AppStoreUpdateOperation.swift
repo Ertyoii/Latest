@@ -7,8 +7,8 @@
 //
 
 import CommerceKit
-import CoreServices
 import StoreFoundation
+import Synchronization
 import os
 
 private let appStoreUpdateLogger = Logger(
@@ -16,10 +16,6 @@ private let appStoreUpdateLogger = Logger(
 
 /// Public boundary for App Store updates backed by private Apple frameworks.
 enum AppStoreUpdater {
-
-  static func verifyAvailability() throws(InstallHelperError) {
-    if AppStoreUpdateOperation.requiresManualInstallation { try InstallHelper.verifyAvailability() }
-  }
 
   /// Verifies whether the app can prepare App Store updates.
   static func prepareForUpdates() async throws {
@@ -29,11 +25,9 @@ enum AppStoreUpdater {
   }
 
   /// Enqueues an App Store update operation.
-  static func enqueueUpdate(for app: App.Bundle, appStoreIdentifier: UInt64) {
+  static func enqueueUpdate(for app: App.Bundle, appStoreIdentifier: UInt64, pageURL: URL) {
     let operation = AppStoreUpdateOperation(
-      appIdentifier: app.identifier,
-      appStoreIdentifier: appStoreIdentifier
-    )
+      app: app, itemIdentifier: appStoreIdentifier, pageURL: pageURL)
     UpdateQueue.shared.addOperation(operation)
   }
 
@@ -41,15 +35,30 @@ enum AppStoreUpdater {
 
 /// Owns App Store downloads while Latest displays progress. Apple downloads the
 /// purchased update; the signed helper handles PackageKit's entitlement failure.
-private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
+final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   private let itemIdentifier: UInt64
+  private let app: App.Bundle
+  private let pageURL: URL
+  private let downloadFolder: URL
+  private let install: @Sendable (FileHandle, URL, Data) async throws -> Void
   @MainActor private var observerIdentifier: String?
-  @MainActor private var artifacts = AppStoreDownloadArtifacts()
+  private let artifacts = AppStoreDownloadArtifacts()
   @MainActor private var isInstalling = false
+  @MainActor private var purchaseStarted = false
 
-  init(appIdentifier: App.Bundle.Identifier, appStoreIdentifier: UInt64) {
-    itemIdentifier = appStoreIdentifier
-    super.init(appIdentifier: appIdentifier)
+  init(
+    app: App.Bundle, itemIdentifier: UInt64, pageURL: URL,
+    downloadDirectory: URL = URL(fileURLWithPath: CKDownloadDirectory(nil), isDirectory: true),
+    install: @escaping @Sendable (FileHandle, URL, Data) async throws -> Void = InstallHelper
+      .installPackage
+  ) {
+    self.downloadFolder = downloadDirectory.appendingPathComponent(
+      String(itemIdentifier), isDirectory: true)
+    self.install = install
+    self.app = app
+    self.itemIdentifier = itemIdentifier
+    self.pageURL = pageURL
+    super.init(appIdentifier: app.identifier)
   }
 
   static let requiresManualInstallation = ProcessInfo.processInfo.isOperatingSystemAtLeast(
@@ -62,8 +71,7 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
         self.finish()
         return
       }
-      // Recheck at execution time as well: approval or daemon health may have
-      // changed while the operation waited in the queue.
+      // Approval may have changed while the operation waited in the queue.
       do { try await AppStoreUpdater.prepareForUpdates() } catch {
         guard !self.isCancelled, !self.isFinished else { return }
         self.preparationFailed(error)
@@ -74,6 +82,7 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
       // its completion callback, and their package/receipt must be preserved.
       self.observerIdentifier = CKDownloadQueue.shared().add(self)
       let purchase = SSPurchase(itemIdentifier: self.itemIdentifier)
+      self.purchaseStarted = true
       do {
         let (_, completed, response) = try await CKPurchaseController.shared().perform(
           purchase, withOptions: 0)
@@ -105,14 +114,11 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
     // an update failure or a successful-install notification, then offer recovery.
     super.cancel()
     finishOnMain()
-    let fallback = URL(string: "macappstore://apps.apple.com/updates")!
     UpdateInstallHelperAlert.shared.prepare(
-      fallbackURL: fallback,
+      fallbackURL: pageURL,
       error: error as? InstallHelperError ?? .unavailable(error.localizedDescription)
-    ) { [appIdentifier, itemIdentifier] in
-      UpdateQueue.shared.addOperation(
-        AppStoreUpdateOperation(
-          appIdentifier: appIdentifier, appStoreIdentifier: itemIdentifier))
+    ) { [app, itemIdentifier, pageURL] in
+      AppStoreUpdater.enqueueUpdate(for: app, appStoreIdentifier: itemIdentifier, pageURL: pageURL)
     }
   }
 
@@ -120,9 +126,11 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
     super.cancel()
     guard isCancelled else { return }
     Task { @MainActor in
-      CKPurchaseController.shared().cancelPurchase(
-        withProductID: NSNumber(value: self.itemIdentifier))
-      self.cancelPendingDownload()
+      if self.purchaseStarted, !self.isFinished {
+        CKPurchaseController.shared().cancelPurchase(
+          withProductID: NSNumber(value: self.itemIdentifier))
+        self.cancelPendingDownload()
+      }
       // installer cannot safely be interrupted halfway through replacing an app.
       if !self.isInstalling { self.finish() }
     }
@@ -135,6 +143,23 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
     }
   }
 
+  override func finish(with error: Error) {
+    guard !isCancelled else {
+      finish()
+      return
+    }
+    let cause = error as NSError
+    appStoreUpdateLogger.error(
+      "Update failed for item \(self.itemIdentifier): \(cause.domain, privacy: .public) \(cause.code)"
+    )
+    super.finish(
+      with: AppStoreUpdateFailure(
+        pageURL: pageURL, installedVersion: app.version,
+        cause: error is CancellationError
+          ? LatestError.custom(title: "The App Store cancelled the download.", description: nil)
+          : error))
+  }
+
   override func finish() {
     Task { @MainActor in self.finishOnMain() }
   }
@@ -145,18 +170,22 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
       CKDownloadQueue.shared().removeObserver(observerIdentifier)
       self.observerIdentifier = nil
     }
-    artifacts.removeAll()
+    _ = artifacts.take()
     super.finish()
   }
 
-  @MainActor private func preserveArtifacts() {
-    guard Self.requiresManualInstallation, !isFinished else { return }
-    let folder = URL(fileURLWithPath: CKDownloadDirectory(nil), isDirectory: true)
-      .appendingPathComponent(String(itemIdentifier), isDirectory: true)
-    do { try artifacts.refresh(in: folder) } catch {
-      // The folder is absent during initialization. If capture still fails at
-      // removal, report the missing package/receipt instead of claiming success.
-    }
+  private func preserveArtifacts(for download: SSDownload, snapshot: AppStoreDownloadSnapshot) {
+    guard Self.requiresManualInstallation else { return }
+    // CommerceKit may supply an opaque per-download folder. Use the matching
+    // asset's exact package when present, otherwise use its item-ID folder.
+    let asset = download.primaryAsset
+    let paths = [
+      asset?.responds(to: #selector(getter: SSDownloadAsset.processedPath)) == true
+        ? asset?.processedPath : nil,
+      asset?.responds(to: #selector(getter: SSDownloadAsset.downloadPath)) == true
+        ? asset?.downloadPath : nil,
+    ].compactMap { $0 }
+    artifacts.capture(in: downloadFolder, assetPaths: paths, receiptData: snapshot.receiptData)
   }
 
   @MainActor private func removed(_ snapshot: AppStoreDownloadSnapshot) async {
@@ -177,35 +206,21 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
     case .installPackage:
       break
     }
-    preserveArtifacts()
-    guard let package = artifacts.packageURL,
-      let receipt = artifacts.receiptURL.flatMap({ try? Data(contentsOf: $0) })
-        ?? snapshot.receiptData,
-      !receipt.isEmpty
+    let files = artifacts.take()
+    guard let package = files?.package,
+      let receipt = files?.receiptData
     else {
       finish(
         with: LatestError.custom(
-          title: "App Store Package Unavailable",
-          description:
-            "The App Store download did not provide a complete installer package and receipt. Please retry the update."
-        ))
+          title: "The App Store download was incomplete.",
+          description: "The installer or its receipt was missing."))
       return
     }
     do {
       try beginCommit()
       isInstalling = true
       progressState = .installing
-      appStoreUpdateLogger.notice(
-        "Installing preserved package: bytes=\((try? package.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)"
-      )
-      let installedURL = try await InstallHelper.installPackage(
-        at: package, appURL: appIdentifier, receiptData: receipt)
-      // Refresh Spotlight and LaunchServices after restoring the App Store receipt.
-      let process = Process()
-      process.executableURL = URL(fileURLWithPath: "/usr/bin/mdimport")
-      process.arguments = [installedURL.path]
-      try? process.run()
-      LSRegisterURL(installedURL as CFURL, true)
+      try await install(package, app.fileURL, receipt)
       finish()
     } catch {
       finish(with: error)
@@ -247,16 +262,15 @@ private struct AppStoreDownloadSnapshot: Sendable {
   let total: Int64
 
   init?(_ download: SSDownload, itemIdentifier: UInt64) {
-    guard let metadata = download.metadata, metadata.itemIdentifier == itemIdentifier,
-      let status = download.status
-    else {
+    guard let metadata = download.metadata, metadata.itemIdentifier == itemIdentifier else {
       return nil
     }
-    failed = status.isFailed
-    cancelled = status.isCancelled
-    error = status.error
+    let status = download.status
+    failed = status?.isFailed ?? true
+    cancelled = status?.isCancelled ?? false
+    error = status?.error
     receiptData = metadata.receiptData
-    let activePhase = status.activePhase
+    let activePhase = status?.activePhase
     phase = activePhase?.phaseType
     loaded = activePhase?.progressValue ?? 0
     total = activePhase?.totalProgressValue ?? 0
@@ -267,9 +281,9 @@ extension AppStoreUpdateOperation: CKDownloadQueueObserver {
   func downloadQueue(_ queue: CKDownloadQueue, statusChangedFor download: SSDownload) {
     guard let snapshot = AppStoreDownloadSnapshot(download, itemIdentifier: itemIdentifier)
     else { return }
+    preserveArtifacts(for: download, snapshot: snapshot)
     Task { @MainActor in
       guard !self.isFinished, !self.isInstalling, !self.isCancelled else { return }
-      self.preserveArtifacts()
       switch snapshot.phase {
       case 0:
         self.progressState = .downloading(loadedSize: snapshot.loaded, totalSize: snapshot.total)
@@ -284,6 +298,7 @@ extension AppStoreUpdateOperation: CKDownloadQueueObserver {
   func downloadQueue(_ queue: CKDownloadQueue, changedWithRemoval download: SSDownload) {
     guard let snapshot = AppStoreDownloadSnapshot(download, itemIdentifier: itemIdentifier)
     else { return }
+    preserveArtifacts(for: download, snapshot: snapshot)
     Task { @MainActor in await self.removed(snapshot) }
   }
   func downloadQueue(_ queue: CKDownloadQueue, changedWithAddition download: SSDownload) {
@@ -291,51 +306,84 @@ extension AppStoreUpdateOperation: CKDownloadQueueObserver {
   }
 }
 
-/// PackageKit's 201 restriction is the only failure a manual install can repair.
-/// Preserve the newest inode on every event: App Store replaces partial files.
-struct AppStoreDownloadArtifacts {
-  private(set) var packageURL: URL?
-  private(set) var receiptURL: URL?
+/// The Store can unlink its download as soon as the observer callback returns.
+final class AppStoreDownloadArtifacts: Sendable {
+  struct Files {
+    var package: FileHandle?
+    var receipt: FileHandle?
+    var metadataReceipt: Data?
 
-  mutating func refresh(in folder: URL) throws {
-    let keys: Set<URLResourceKey> = [
-      .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey,
-    ]
-    let children = try FileManager.default.contentsOfDirectory(
-      at: folder, includingPropertiesForKeys: Array(keys))
-    var package: (url: URL, date: Date)?
-    var receipt: URL?
-    for file in children {
-      guard file.pathExtension == "pkg" || file.lastPathComponent == "receipt",
-        let info = try? file.resourceValues(forKeys: keys),
-        info.isRegularFile == true, info.isSymbolicLink != true
-      else { continue }
-      if file.pathExtension == "pkg" {
-        let date = info.contentModificationDate ?? .distantPast
-        if let current = package, current.date >= date { continue }
-        package = (file, date)
-      } else {
-        receipt = file
-      }
-    }
-    // Capture the receipt even when a package link fails. Removal reports any
-    // incomplete artifacts rather than claiming the update succeeded.
-    defer {
-      if let receipt, let link = try? preserve(receipt, replacing: receiptURL) {
-        receiptURL = link
-      }
-    }
-    if let package {
-      packageURL = try preserve(package.url, replacing: packageURL)
+    var receiptData: Data? {
+      guard let data = try? receipt?.readToEnd(), !data.isEmpty else { return metadataReceipt }
+      return data
     }
   }
 
-  mutating func removeAll() {
-    for url in [packageURL, receiptURL].compactMap({ $0 }) {
-      try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+  private let files = Mutex<Files?>(Files())
+
+  func capture(in folder: URL, assetPaths: [String] = [], receiptData: Data? = nil) {
+    files.withLock { files in
+      guard files != nil else { return }
+      if let receiptData, !receiptData.isEmpty { files?.metadataReceipt = receiptData }
+      for path in assetPaths where path.hasPrefix("/") && path.hasSuffix(".pkg") {
+        let asset = URL(fileURLWithPath: path)
+        let directory = asset.deletingLastPathComponent().resolvingSymlinksInPath()
+        let root = directory.deletingLastPathComponent()
+        let cache = folder.deletingLastPathComponent().resolvingSymlinksInPath()
+        let agentCache = cache.deletingLastPathComponent().appendingPathComponent(
+          "com.apple.appstoreagent/com.apple.appstore", isDirectory: true)
+        guard
+          directory.lastPathComponent == folder.lastPathComponent
+            || UUID(uuidString: directory.lastPathComponent) != nil,
+          root.path == cache.path || root.path == agentCache.path,
+          let package = Self.openFile(directory.appendingPathComponent(asset.lastPathComponent))
+        else { continue }
+        files?.package = package
+        if let receipt = Self.openFile(directory.appendingPathComponent("receipt")) {
+          files?.receipt = receipt
+        }
+        return
+      }
+      let keys: Set<URLResourceKey> = [
+        .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey,
+      ]
+      guard
+        let entries = try? FileManager.default.contentsOfDirectory(
+          at: folder, includingPropertiesForKeys: Array(keys))
+      else { return }
+      var package: (url: URL, date: Date)?
+      for entry in entries {
+        guard entry.pathExtension == "pkg" || entry.lastPathComponent == "receipt",
+          let info = try? entry.resourceValues(forKeys: keys),
+          info.isRegularFile == true, info.isSymbolicLink != true
+        else { continue }
+        if entry.lastPathComponent == "receipt" {
+          files?.receipt = Self.openFile(entry)
+        } else {
+          let date = info.contentModificationDate ?? .distantPast
+          if let package, package.date >= date { continue }
+          package = (entry, date)
+        }
+      }
+      if let package { files?.package = Self.openFile(package.url) }
     }
-    packageURL = nil
-    receiptURL = nil
+  }
+
+  private static func openFile(_ url: URL) -> FileHandle? {
+    let descriptor = open(url.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+    guard descriptor >= 0 else { return nil }
+    let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    var info = stat()
+    guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
+    return handle
+  }
+
+  /// Taking ownership also closes capture to callbacks already in flight.
+  func take() -> Files? {
+    files.withLock { files in
+      defer { files = nil }
+      return files
+    }
   }
 
   static func requiresPackageInstallation(_ error: Error) -> Bool {
@@ -348,28 +396,6 @@ struct AppStoreDownloadArtifacts {
     return false
   }
 
-  private func preserve(_ source: URL, replacing existing: URL?) throws -> URL {
-    let key: Set<URLResourceKey> = [.fileResourceIdentifierKey]
-    if let existing,
-      let sourceID = try source.resourceValues(forKeys: key).fileResourceIdentifier,
-      let existingID = try existing.resourceValues(forKeys: key).fileResourceIdentifier,
-      sourceID.isEqual(existingID)
-    {
-      return existing
-    }
-    let directory = try FileManager.default.url(
-      for: .itemReplacementDirectory,
-      in: .userDomainMask, appropriateFor: source, create: true)
-    let link = directory.appendingPathComponent(source.lastPathComponent)
-    do { try FileManager.default.linkItem(at: source, to: link) } catch {
-      try? FileManager.default.removeItem(at: directory)
-      throw error
-    }
-    if let existing {
-      try? FileManager.default.removeItem(at: existing.deletingLastPathComponent())
-    }
-    return link
-  }
 }
 
 extension SSPurchase {

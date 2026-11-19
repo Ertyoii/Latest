@@ -18,16 +18,13 @@ final class InstallHelperTest: XCTestCase {
 
   @MainActor
   func testHelperRegistrationResumesPendingUpdateAfterApprovalOnlyOnce() async throws {
-    let stored = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
-    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
-    defer { AppStoreUpdateSettings.alwaysPerformManualUpdates.active = stored }
     let helper = HelperRegistrationFixture()
     let presenter = UpdateInstallHelperAlert(helper: helper)
     var resumed = 0
     presenter.prepare(
       fallbackURL: URL(string: "https://example.com")!, error: .installHelperNotRegistered
     ) { resumed += 1 }
-    presenter.enableHelper()
+    presenter.performPrimaryAction()
     try await waitForHelper { !presenter.isChecking }
     XCTAssertEqual(helper.registrations, 1)
     XCTAssertEqual(resumed, 0)
@@ -41,9 +38,6 @@ final class InstallHelperTest: XCTestCase {
 
   @MainActor
   func testHelperRegistrationFailureIsVisibleAndCancelDoesNotRetry() async throws {
-    let stored = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
-    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
-    defer { AppStoreUpdateSettings.alwaysPerformManualUpdates.active = stored }
     let helper = HelperRegistrationFixture()
     helper.failure = NSError(
       domain: "registration", code: 1,
@@ -53,67 +47,56 @@ final class InstallHelperTest: XCTestCase {
     presenter.prepare(
       fallbackURL: URL(string: "https://example.com")!, error: .installHelperNotRegistered
     ) { resumed = true }
-    presenter.enableHelper()
+    presenter.performPrimaryAction()
     try await waitForHelper { !presenter.isChecking }
     XCTAssertTrue(presenter.isPresented)
     XCTAssertTrue(
-      presenter.errorDetails?.contains("Signing does not match") == true)
+      presenter.message.contains("Signing does not match"))
     presenter.cancel()
     helper.enabled = true
     presenter.resumeIfAvailable()
     XCTAssertFalse(resumed)
   }
   @MainActor
-  func testFailedReadinessBlocksWholeBatchAndRetryStartsEachUpdateOnce() async throws {
+  func testApprovalResumesAllPendingUpdatesOnce() async throws {
     let helper = HelperRegistrationFixture()
-    helper.enabled = true
-    helper.readinessFailure = InstallHelperError.unavailable("Connection rejected")
     let presenter = UpdateInstallHelperAlert(helper: helper)
     var downloads: [Int] = []
-    let url = URL(string: "macappstore://apps.apple.com/updates")!
-    presenter.prepare(fallbackURL: url) { downloads.append(1) }
-    presenter.prepare(fallbackURL: url) { downloads.append(2) }
-    try await waitForHelper { !presenter.isChecking }
+    let url = URL(string: "macappstore://apps.apple.com/app/id123")!
+    for index in 1...2 {
+      presenter.prepare(fallbackURL: url, error: .installHelperRequiresApproval) {
+        downloads.append(index)
+      }
+    }
     XCTAssertTrue(downloads.isEmpty)
-    XCTAssertTrue(presenter.isPresented)
-    XCTAssertEqual(presenter.primaryTitle, "Check Again")
-    helper.readinessFailure = nil
-    presenter.enableHelper()
-    try await waitForHelper { !presenter.isChecking }
-    XCTAssertEqual(downloads, [1, 2])
+    helper.enabled = true
     presenter.resumeIfAvailable()
+    presenter.resumeIfAvailable()
+    try await waitForHelper { !presenter.isChecking }
     XCTAssertEqual(downloads, [1, 2])
   }
 
   @MainActor
-  func testCancelAndAppStoreFallbackDiscardLateSuccessfulReadiness() async throws {
-    for opensStore in [false, true] {
-      let helper = HelperRegistrationFixture()
-      helper.enabled = true
-      helper.suspendsCheck = true
-      let workspace = StubApplicationWorkspace()
-      let presenter = UpdateInstallHelperAlert(helper: helper, workspace: workspace)
-      let url = URL(string: "macappstore://apps.apple.com/updates")!
-      var downloads = 0
-      presenter.prepare(fallbackURL: url) { downloads += 1 }
-      try await waitForHelper { helper.pendingCheck != nil }
-      let cancelledCheck = try XCTUnwrap(helper.pendingCheck)
-      if opensStore { presenter.openAppStore() } else { presenter.cancel() }
-      XCTAssertEqual(downloads, 0)
-      XCTAssertFalse(presenter.isPresented)
-      XCTAssertEqual(workspace.openedURLs, opensStore ? [url] : [])
-
-      helper.pendingCheck = nil
-      presenter.prepare(fallbackURL: url) { downloads += 1 }
-      try await waitForHelper { helper.pendingCheck != nil }
-      cancelledCheck.resume()
-      try await waitForHelper { helper.completedChecks == 1 }
-      XCTAssertEqual(downloads, 0, "A cancelled reply must not release a newer batch")
-      XCTAssertTrue(presenter.isChecking)
-      helper.pendingCheck?.resume()
-      try await waitForHelper { !presenter.isChecking }
-      XCTAssertEqual(downloads, 1)
-    }
+  func testCancelDiscardsLateSuccessfulReadinessAndFallbackNeverReplaysInstall() async throws {
+    let helper = HelperRegistrationFixture()
+    helper.enabled = true
+    helper.suspendsCheck = true
+    let workspace = StubApplicationWorkspace()
+    let presenter = UpdateInstallHelperAlert(helper: helper, workspace: workspace)
+    let url = URL(string: "macappstore://apps.apple.com/app/id123")!
+    var downloads = 0
+    presenter.prepare(fallbackURL: url, error: .installHelperRequiresApproval) { downloads += 1 }
+    presenter.resumeIfAvailable()
+    try await waitForHelper { helper.pendingCheck != nil }
+    presenter.cancel()
+    presenter.prepare(fallbackURL: url, error: .unavailable("Connection failed")) { downloads += 1 }
+    helper.pendingCheck?.resume()
+    try await waitForHelper { helper.completedChecks == 1 }
+    XCTAssertTrue(presenter.isPresented)
+    presenter.performPrimaryAction()
+    XCTAssertFalse(presenter.isPresented)
+    XCTAssertEqual(workspace.openedURLs, [url])
+    XCTAssertEqual(downloads, 0)
   }
 
   func testReadinessRepairsStaleDaemonAndChecksAgainForNextBatch() async throws {

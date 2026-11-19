@@ -4,31 +4,14 @@ import Combine
 import Foundation
 import SwiftUI
 
-/// Owns preparation and the pending action, so dismissal or a late XPC reply
-/// cannot accidentally start a download. The sheet remains visible through repair.
+/// Only interrupted updates reach this sheet. A healthy helper stays out of the way.
 @MainActor
 final class UpdateInstallHelperAlert: ObservableObject {
   static let shared = UpdateInstallHelperAlert()
   @Published var isPresented = false
-  private enum State {
-    case checking
-    case needsSetup
-    case needsApproval
-    case failed(Error)
-
-    init(error: Error) {
-      switch error as? InstallHelperError {
-      case .installHelperNotRegistered: self = .needsSetup
-      case .installHelperRequiresApproval: self = .needsApproval
-      default: self = .failed(error)
-      }
-    }
-  }
-
-  @Published private var state = State.needsSetup
-  private var fallbackURL: URL?
-  private var pendingUpdates: [() -> Void] = []
-  private var preparation: (@MainActor () async throws -> Void)?
+  @Published private(set) var isChecking = false
+  @Published private var error = InstallHelperError.installHelperNotRegistered
+  private var updates: [(url: URL, start: () -> Void)] = []
   private var checkTask: Task<Void, Never>?
   private let helper: any InstallHelperServicing
   private let workspace: any ApplicationWorkspace
@@ -41,135 +24,87 @@ final class UpdateInstallHelperAlert: ObservableObject {
     self.workspace = workspace
   }
 
-  /// Queues a batch behind one live check, or shows an existing prerequisite
-  /// failure until the user chooses to retry.
-  func prepare(
-    fallbackURL: URL, error: InstallHelperError? = nil,
-    preparation: (@MainActor () async throws -> Void)? = nil,
-    update: @escaping () -> Void
-  ) {
-    guard pendingUpdates.isEmpty else {
-      pendingUpdates.append(update)
-      return
-    }
-    self.fallbackURL = fallbackURL
-    self.preparation = preparation
-    pendingUpdates = [update]
-    if let error {
-      state = State(error: error)
-      if AppStoreUpdateSettings.alwaysPerformManualUpdates.active {
-        openAppStore()
-        return
-      }
-    }
+  func prepare(fallbackURL: URL, error: InstallHelperError, update: @escaping () -> Void) {
+    let isFirst = updates.isEmpty
+    updates.append((fallbackURL, update))
+    guard isFirst else { return }
+    self.error = error
     isPresented = true
-    if error == nil { check() }
-  }
-
-  var isChecking: Bool {
-    if case .checking = state { return true }
-    return false
-  }
-
-  var errorDetails: String? {
-    guard case .failed(let error) = state else { return nil }
-    return [error.localizedDescription, (error as? LocalizedError)?.failureReason]
-      .compactMap { $0 }.joined(separator: "\n\n")
   }
 
   var title: String {
-    switch state {
-    case .checking: return "Checking Update Helper"
-    case .needsSetup: return "Set Up App Store Updates"
-    case .needsApproval: return "Allow App Store Updates"
-    case .failed: return "Update Helper Unavailable"
+    switch error {
+    case .installHelperNotRegistered, .installHelperRequiresApproval: "Allow App Store updates"
+    case .unavailable: "Continue in the App Store"
     }
   }
 
   var message: String {
-    switch state {
-    case .checking:
-      return "Checking that the helper is ready before downloading any updates."
-    case .needsSetup:
-      return
-        "Latest needs an approved helper to install App Store updates. No updates will download until it is ready."
-    case .needsApproval:
-      return
-        "Allow Latest in System Settings → General → Login Items & Extensions. Return here to continue automatically once the helper is ready."
-    case .failed:
-      return
-        "Latest could not connect to its update helper. No downloads have started. Try checking again, or update using the App Store."
+    switch error {
+    case .installHelperNotRegistered:
+      "Give Latest permission to install App Store updates on this Mac."
+    case .installHelperRequiresApproval:
+      "Turn on Latest under Login Items & Extensions in System Settings. Your update will continue when you return."
+    case .unavailable(let reason): reason
     }
   }
 
   var primaryTitle: String {
-    switch state {
-    case .checking: return "Checking…"
-    case .needsSetup: return "Enable Helper"
-    case .needsApproval: return "Open System Settings"
-    case .failed: return "Check Again"
+    switch error {
+    case .installHelperNotRegistered: "Continue"
+    case .installHelperRequiresApproval: "Open Settings"
+    case .unavailable: "Open App Store"
     }
   }
 
-  func enableHelper() {
-    switch state {
-    case .needsSetup, .needsApproval: check(register: true)
-    case .failed: check()
-    case .checking: break
+  func performPrimaryAction() {
+    switch error {
+    case .installHelperNotRegistered, .installHelperRequiresApproval:
+      check(register: true)
+    case .unavailable:
+      let url = updates.count > 1 ? AppStoreUpdateSettings.updatesPage : updates.first?.url
+      cancel()
+      if let url { workspace.open(url) }
     }
   }
 
   func resumeIfAvailable() {
-    guard case .needsApproval = state else { return }
-    check()
+    guard error == .installHelperRequiresApproval else { return }
+    check(register: false)
   }
 
-  private func check(register: Bool = false) {
-    guard !pendingUpdates.isEmpty, checkTask == nil else { return }
-    state = .checking
+  private func check(register: Bool) {
+    guard !updates.isEmpty, checkTask == nil else { return }
+    isChecking = true
     checkTask = Task {
       do {
         if register { try helper.register() }
-        if let preparation { try await preparation() } else { try await helper.prepareForUpdates() }
-        guard !Task.isCancelled else { return }
-        let updates = pendingUpdates
-        clear()
-        isPresented = false
-        updates.forEach { $0() }
+        try await helper.prepareForUpdates()
+        try Task.checkCancellation()
+        let ready = updates
+        cancel()
+        ready.forEach { $0.start() }
       } catch {
         guard !Task.isCancelled else { return }
+        self.error = error as? InstallHelperError ?? .unavailable(error.localizedDescription)
+        isChecking = false
         checkTask = nil
-        state = State(error: error)
       }
     }
   }
 
-  func openAppStore() {
-    let url = fallbackURL
-    cancel()
-    if let url { workspace.open(url) }
-  }
-
   func cancel() {
     checkTask?.cancel()
-    clear()
-    isPresented = false
-  }
-
-  private func clear() {
-    fallbackURL = nil
-    pendingUpdates = []
-    preparation = nil
     checkTask = nil
-    state = .needsSetup
+    updates.removeAll()
+    isChecking = false
+    isPresented = false
   }
 }
 
 struct UpdateInstallHelperPresentation: ViewModifier {
   @ObservedObject var presenter: UpdateInstallHelperAlert = .shared
   @Environment(\.scenePhase) private var scenePhase
-  @AppStorage(AppStoreUpdateSettings.alwaysPerformManualUpdates.rawValue)
-  private var alwaysOpenAppStore = false
 
   func body(content: Content) -> some View {
     content
@@ -177,42 +112,22 @@ struct UpdateInstallHelperPresentation: ViewModifier {
         isPresented: $presenter.isPresented,
         onDismiss: { if !presenter.isPresented { presenter.cancel() } }
       ) {
-        VStack(alignment: .leading, spacing: 20) {
-          HStack(spacing: 12) {
-            Image(systemName: "shippingbox")
-              .font(.system(size: 28)).foregroundStyle(.secondary)
-            Text(presenter.title).font(.title2.bold())
-          }
+        VStack(alignment: .leading, spacing: 12) {
+          Text(presenter.title).font(.headline)
           Text(presenter.message).fixedSize(horizontal: false, vertical: true)
-          if presenter.isChecking {
-            HStack(spacing: 10) {
-              ProgressView().controlSize(.small)
-              Text("Checking and repairing helper…").foregroundStyle(.secondary)
-            }
-          }
-          if let details = presenter.errorDetails {
-            DisclosureGroup("Details") {
-              Text(details)
-                .font(.caption).textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-          }
-          Toggle("Always open App Store", isOn: $alwaysOpenAppStore)
-          Divider()
           HStack {
+            if presenter.isChecking { ProgressView().controlSize(.small) }
+            Spacer()
             Button("Cancel", role: .cancel) { presenter.cancel() }
               .keyboardShortcut(.cancelAction)
-            Spacer()
-            Button("Open App Store") { presenter.openAppStore() }
-            Button(presenter.primaryTitle) { presenter.enableHelper() }
+            Button(presenter.primaryTitle) { presenter.performPrimaryAction() }
               .keyboardShortcut(.defaultAction)
               .disabled(presenter.isChecking)
           }
+          .padding(.top, 6)
         }
-        .padding(24)
-        .frame(width: 460, alignment: .leading)
-        .interactiveDismissDisabled(presenter.isChecking)
+        .padding(20)
+        .frame(width: 380, alignment: .leading)
       }
       .onChange(of: scenePhase) { _, phase in
         if phase == .active { presenter.resumeIfAvailable() }

@@ -6,6 +6,7 @@
 //  Copyright © 2026 Max Langer. All rights reserved.
 //
 
+import CoreServices
 import Foundation
 import Security
 import ServiceManagement
@@ -46,8 +47,10 @@ enum InstallHelper {
     let service = registration.service
     switch service.status {
     case .notFound, .notRegistered:
-      try service.register()
-      if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+      do { try register(service) } catch InstallHelperError.installHelperRequiresApproval {
+        SMAppService.openSystemSettingsLoginItems()
+        throw InstallHelperError.installHelperRequiresApproval
+      }
     case .requiresApproval:
       SMAppService.openSystemSettingsLoginItems()
     case .enabled:
@@ -55,6 +58,21 @@ enum InstallHelper {
     @unknown default:
       break
     }
+  }
+
+  /// macOS may report an approval requirement either as status or as a registration error.
+  private static func register(_ service: SMAppService) throws {
+    do { try service.register() } catch {
+      let cause = error as NSError
+      if service.status == .requiresApproval
+        || (cause.domain == kSMErrorDomainFramework as String
+          && cause.code == kSMErrorLaunchDeniedByUser)
+      {
+        throw InstallHelperError.installHelperRequiresApproval
+      }
+      throw error
+    }
+    try verifyAvailability(of: service)
   }
 
   private static var currentService: SMAppService {
@@ -105,22 +123,22 @@ enum InstallHelper {
   // MARK: - Package Installation
 
   /// Installs an App Store update package at the given target URL via the privileged helper.
-  static func installPackage(at url: URL, appURL: URL, receiptData: Data)
-    async throws -> URL
+  static func installPackage(_ package: FileHandle, appURL: URL, receiptData: Data)
+    async throws
   {
-    return try await readiness.install {
-      try await performInstallation(at: url, appURL: appURL, receiptData: receiptData)
+    let installedURL = try await readiness.install {
+      try await performInstallation(package, appURL: appURL, receiptData: receiptData)
     }
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/mdimport")
+    process.arguments = [installedURL.path]
+    try? process.run()
+    LSRegisterURL(installedURL as CFURL, true)
   }
 
-  private static func performInstallation(at url: URL, appURL: URL, receiptData: Data)
+  private static func performInstallation(_ package: FileHandle, appURL: URL, receiptData: Data)
     async throws -> URL
   {
-    // Transfer an open descriptor: the root daemon cannot reopen files in the
-    // user's protected temporary directory on current macOS releases.
-    let package = try FileHandle(forReadingFrom: url)
-    defer { try? package.close() }
-
     let connection = NSXPCConnection(
       machServiceName: UpdateInstallerIdentity.service, options: .privileged)
     connection.setCodeSigningRequirement(UpdateInstallerIdentity.helperRequirement)
@@ -185,8 +203,7 @@ enum InstallHelper {
       try await Task.sleep(for: .milliseconds(500))
       // A new stable registration also rebuilds the missing BTM parent link
       // left by some legacy records. Never rotate identities on every retry.
-      try InstallHelper.currentService.register()
-      try InstallHelper.verifyAvailability()
+      try InstallHelper.register(InstallHelper.currentService)
     }
 
     func probe() async throws -> InstallHelperHealth {

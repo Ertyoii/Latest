@@ -15,6 +15,8 @@ struct SidebarUpdateStatus: View {
 
   private struct ObservationKey: Equatable {
     let app: App.Bundle.Identifier
+    let version: Version
+    let updateAvailable: Bool
     let service: ObjectIdentifier
   }
 
@@ -24,7 +26,9 @@ struct SidebarUpdateStatus: View {
   }
 
   private var key: ObservationKey {
-    ObservationKey(app: app.identifier, service: ObjectIdentifier(updating))
+    ObservationKey(
+      app: app.identifier, version: app.version, updateAvailable: app.updateAvailable,
+      service: ObjectIdentifier(updating))
   }
 
   private var presentation: UpdateActionPresentation {
@@ -78,6 +82,15 @@ struct SidebarUpdateStatus: View {
         .accessibilityLabel(status)
         .accessibilityHint(cancellable ? "Cancel update" : "")
         .accessibilityIdentifier("updates.progress")
+      case .appStoreFailed(let reason, _):
+        Button {
+          updating.update(app)
+        } label: {
+          Image(systemName: "arrow.clockwise")
+        }
+        .buttonStyle(.plain)
+        .help(reason)
+        .accessibilityLabel("Retry updating \(app.name)")
       case .update, .open, .failed:
         Group {
           if app.isSourcePending {

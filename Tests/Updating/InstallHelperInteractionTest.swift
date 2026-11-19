@@ -2,6 +2,7 @@
 
 import AppKit
 import SwiftUI
+import Synchronization
 import XCTest
 
 @testable import Latest
@@ -11,10 +12,7 @@ final class InstallHelperInteractionTest: XCTestCase {
   func testHelperSheetRepairApprovalCancelAndFallback() throws {
     try requireUITests()
     try runApplicationTest {
-      let stored = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
-      defer { AppStoreUpdateSettings.alwaysPerformManualUpdates.active = stored }
       for dark in [false, true] {
-        AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
         let helper = HelperRegistrationFixture()
         helper.failure = NSError(
           domain: "registration", code: 1,
@@ -38,12 +36,11 @@ final class InstallHelperInteractionTest: XCTestCase {
         try await waitForHelper { window.attachedSheet != nil }
         let sheet = try XCTUnwrap(window.attachedSheet)
         try await self.capture(sheet, name: "\(dark ? "dark" : "light")-setup")
-        try await self.press("Enable Helper", in: sheet)
-        try await waitForHelper { presenter.errorDetails != nil }
+        try await self.press("Continue", in: sheet)
+        try await waitForHelper { presenter.primaryTitle == "Open App Store" }
         XCTAssertEqual(helper.registrations, 1)
         XCTAssertEqual(starts, 0)
         XCTAssertTrue(window.attachedSheet === sheet, "Repair must keep one stable sheet")
-        try await self.press("Details", in: sheet)
         try await self.capture(sheet, name: "\(dark ? "dark" : "light")-failure")
         XCTAssertTrue(
           self.elements(sheet).contains {
@@ -54,7 +51,6 @@ final class InstallHelperInteractionTest: XCTestCase {
             return ($0.object.value(forKey: "accessibilityValue") as? String)?.contains(
               "Signing does not match") == true
           })
-        try await self.press("Always open App Store", in: sheet)
         let escape = try XCTUnwrap(
           NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
@@ -62,14 +58,14 @@ final class InstallHelperInteractionTest: XCTestCase {
             charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
         sheet.sendEvent(escape)
         try await waitForHelper { window.attachedSheet == nil }
-        XCTAssertTrue(AppStoreUpdateSettings.alwaysPerformManualUpdates.active)
         XCTAssertEqual(starts, 0)
 
-        AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
         presenter.prepare(fallbackURL: url, error: .installHelperRequiresApproval) { starts += 1 }
         try await waitForHelper { window.attachedSheet != nil }
         let approvalSheet = try XCTUnwrap(window.attachedSheet)
         try await self.capture(approvalSheet, name: "\(dark ? "dark" : "light")-approval")
+        try await self.press("Open Settings", in: approvalSheet)
+        try await waitForHelper { presenter.primaryTitle == "Open App Store" }
         try await self.press("Open App Store", in: approvalSheet)
         try await waitForHelper { window.attachedSheet == nil }
         XCTAssertEqual(workspace.openedURLs, [url])
@@ -78,7 +74,9 @@ final class InstallHelperInteractionTest: XCTestCase {
         XCTAssertEqual(starts, 0)
 
         helper.suspendsCheck = true
-        presenter.prepare(fallbackURL: url) { starts += 1 }
+        helper.failure = nil
+        presenter.prepare(fallbackURL: url, error: .installHelperRequiresApproval) { starts += 1 }
+        presenter.resumeIfAvailable()
         try await waitForHelper { window.attachedSheet != nil && helper.pendingCheck != nil }
         let checkingSheet = try XCTUnwrap(window.attachedSheet)
         try await self.capture(
@@ -90,6 +88,62 @@ final class InstallHelperInteractionTest: XCTestCase {
         try await waitForHelper { helper.completedChecks > completedChecks }
         XCTAssertEqual(starts, 0, "Cancelling the checking sheet must discard its late reply")
       }
+    }
+  }
+
+  @MainActor
+  func testFailedStoreUpdateShowsRetryAndOpensTheSpecificProduct() throws {
+    try requireUITests()
+    try runApplicationTest {
+      let retries = Mutex(0)
+      let app = makeTestApp(
+        name: "Store fixture", version: "1", remoteVersion: "2",
+        updateAction: .builtIn { _ in retries.withLock { $0 += 1 } })
+      let url = URL(string: "macappstore://apps.apple.com/app/id123")!
+      let queue = UpdateQueue()
+      let updating = AppUpdateService(queue: queue)
+      let workspace = StubApplicationWorkspace()
+      let operation = UpdateOperation(appIdentifier: app.identifier)
+      queue.addOperation(operation)
+      try await waitForHelper { operation.isExecuting }
+      operation.finish(
+        with: AppStoreUpdateFailure(
+          pageURL: url, installedVersion: app.version,
+          cause: URLError(.networkConnectionLost)))
+      for dark in [false, true] {
+        let window = try await makeLatestTestWindow(
+          content: UpdateActionView(app: app, workspace: workspace, updating: updating)
+            .frame(width: 160, height: 80), dark: dark, testCase: self)
+        defer { window.close() }
+        try await activateTestWindow(window)
+        try await self.capture(window, name: "\(dark ? "dark" : "light")-update-failed")
+        try await self.press("Open \(app.name) in the App Store", in: window)
+        XCTAssertEqual(workspace.openedURLs.last, url)
+        let previous = retries.withLock { $0 }
+        try await self.press("Retry updating \(app.name)", in: window)
+        XCTAssertEqual(retries.withLock { $0 }, previous + 1)
+      }
+    }
+  }
+
+  @MainActor
+  func testStoreDestinationCanBeChangedInGeneralSettings() throws {
+    try requireUITests()
+    try runApplicationTest {
+      let name = "StoreDestination.\(UUID().uuidString)"
+      let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+      defer { defaults.removePersistentDomain(forName: name) }
+      let window = try await makeLatestTestWindow(
+        content: SettingsRootView().defaultAppStorage(defaults), dark: false, testCase: self)
+      defer { window.close() }
+      try await activateTestWindow(window)
+      let key = AppStoreUpdateSettings.alwaysPerformManualUpdates.rawValue
+      XCTAssertFalse(defaults.bool(forKey: key))
+      try await self.press("App Store", in: window, usingMouse: true)
+      try await waitForHelper { defaults.bool(forKey: key) }
+      try await self.press("Latest", in: window, usingMouse: true)
+      try await waitForHelper { !defaults.bool(forKey: key) }
+      try await self.capture(window, name: "settings")
     }
   }
 
@@ -112,7 +166,7 @@ final class InstallHelperInteractionTest: XCTestCase {
   }
 
   @MainActor
-  private func press(_ title: String, in window: NSWindow) async throws {
+  private func press(_ title: String, in window: NSWindow, usingMouse: Bool = false) async throws {
     func matchingElements() -> [SidebarAccessibilityElement] {
       elements(window).filter {
         if $0.accessibilityLabel() == title { return true }
@@ -126,7 +180,7 @@ final class InstallHelperInteractionTest: XCTestCase {
     try await waitForHelper { !matchingElements().isEmpty }
     let matches = matchingElements()
     let selector = NSSelectorFromString("accessibilityPerformPress")
-    if let button = matches.first(where: { $0.object.responds(to: selector) }) {
+    if !usingMouse, let button = matches.first(where: { $0.object.responds(to: selector) }) {
       typealias Press = @convention(c) (NSObject, Selector) -> Bool
       let press = unsafeBitCast(button.object.method(for: selector), to: Press.self)
       XCTAssertTrue(press(button.object, selector))
@@ -136,15 +190,7 @@ final class InstallHelperInteractionTest: XCTestCase {
     let frame = element.accessibilityFrame()
     XCTAssertFalse(frame.isEmpty)
     let point = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
-    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-      let event = try XCTUnwrap(
-        NSEvent.mouseEvent(
-          with: type, location: point, modifierFlags: [],
-          timestamp: ProcessInfo.processInfo.systemUptime,
-          windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
-          pressure: 1))
-      window.sendEvent(event)
-    }
+    try clickTestWindow(window, at: point)
   }
 
   @MainActor

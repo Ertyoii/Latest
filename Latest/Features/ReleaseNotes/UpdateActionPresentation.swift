@@ -10,6 +10,7 @@ enum UpdateActionPresentation: Equatable {
   case retryTermination
   case progress(fraction: Double?, status: String, cancellable: Bool = true)
   case failed(String)
+  case appStoreFailed(reason: String, pageURL: URL)
 
   static func make(for app: App, progressState: UpdateProgressState) -> Self {
     switch progressState {
@@ -65,6 +66,10 @@ enum UpdateActionPresentation: Equatable {
         ))
     case .waitingForQuit:
       return .retryTermination
+    case .error(let failure as AppStoreUpdateFailure):
+      guard app.updateAvailable else { return .open }
+      guard app.source == .appStore, app.version == failure.installedVersion else { return .update }
+      return .appStoreFailed(reason: failure.explanation, pageURL: failure.pageURL)
     case .error(let error):
       return .failed(error.localizedDescription)
     case .cancelling:

@@ -13,10 +13,6 @@ import Foundation
 
 @MainActor
 final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgressReporting {
-  private enum ExternalURL {
-    static let updatesPage = URL(string: "macappstore://apps.apple.com/updates")
-  }
-
   @Published private(set) var isRunning = false
   @Published private(set) var isIndeterminate = false
   @Published private(set) var checkedApps = 0
@@ -83,21 +79,8 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
       if case .builtIn = app.updateAction { apps.append(app) }
     }
 
-    if apps.contains(where: { $0.bundle.source == .appStore }) {
-      do {
-        try appStoreUpdateService.verifyAvailability()
-      } catch {
-        guard let updatesPage = ExternalURL.updatesPage else { return }
-        UpdateInstallHelperAlert.shared.prepare(fallbackURL: updatesPage, error: error) {
-          [weak self] in
-          self?.updateAll()
-        }
-        return
-      }
-    }
-
-    if opensAppStore, let updatesPage = ExternalURL.updatesPage {
-      workspace.open(updatesPage)
+    if opensAppStore {
+      workspace.open(AppStoreUpdateSettings.updatesPage)
     }
     apps.forEach { updating.update($0, isBulkUpdate: true) }
   }

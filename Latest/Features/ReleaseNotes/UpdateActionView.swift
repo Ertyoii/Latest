@@ -56,7 +56,7 @@ final class UpdateActionViewModel: ObservableObject {
 
   func performAction() {
     switch presentation {
-    case .update:
+    case .update, .appStoreFailed:
       updating.update(app)
     case .open:
       workspace.openApplication(at: app.fileURL)
@@ -70,6 +70,8 @@ final class UpdateActionViewModel: ObservableObject {
       break
     }
   }
+
+  func openAppStore(_ url: URL) { workspace.open(url) }
 
   func retry() {
     updating.update(app)
@@ -92,7 +94,7 @@ struct UpdateActionView: View {
     UpdateActionSurface(
       app: viewModel.app,
       presentation: viewModel.presentation,
-      performAction: viewModel.performAction
+      performAction: viewModel.performAction, openAppStore: viewModel.openAppStore
     )
     .alert(item: $viewModel.presentedError) { error in
       Alert(
@@ -120,19 +122,26 @@ struct UpdateActionSurface: View {
   let app: App
   let presentation: UpdateActionPresentation
   let performAction: () -> Void
+  let openAppStore: (URL) -> Void
 
   init(
     app: App,
     presentation: UpdateActionPresentation,
-    performAction: @escaping () -> Void
+    performAction: @escaping () -> Void,
+    openAppStore: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) }
   ) {
     self.app = app
     self.presentation = presentation
     self.performAction = performAction
+    self.openAppStore = openAppStore
   }
 
   var body: some View {
     VStack(spacing: 5) {
+      if case .appStoreFailed(let reason, _) = presentation {
+        Text("Update failed").font(.caption).foregroundStyle(.secondary)
+          .fixedSize().help(reason).accessibilityHint(reason)
+      }
       UpdateActionControl(
         appName: app.name,
         presentation: presentation,
@@ -143,7 +152,14 @@ struct UpdateActionSurface: View {
         height: VisualMetrics.detailUpdateButtonHeight
       )
 
-      if app.updateAvailable,
+      if case .appStoreFailed(_, let url) = presentation {
+        Button("Open App Store") { openAppStore(url) }
+          .buttonStyle(.link)
+          .controlSize(.small)
+          .fixedSize()
+          .accessibilityLabel("Open \(app.name) in the App Store")
+          .accessibilityIdentifier("update.app-store-fallback")
+      } else if app.updateAvailable,
         let externalUpdaterName = app.externalUpdaterName
       {
         Text(
@@ -232,6 +248,15 @@ private struct UpdateActionControl: View {
       .accessibilityLabel(status)
       .accessibilityHint(cancellable ? "Cancel update" : "")
       .accessibilityIdentifier("update.progress")
+    case .appStoreFailed(let reason, _):
+      UpdateActionCapsule(
+        content: .title(NSLocalizedString("RetryAction", comment: "Retry update")),
+        accessibilityLabel: "Retry updating \(appName)",
+        performAction: performAction
+      )
+      .help(reason)
+      .accessibilityHint(reason)
+      .accessibilityIdentifier("update.retry-app-store")
     case .failed:
       UpdateActionCapsule(
         content: .image(UpdateActionVisualStyle.errorImage),
