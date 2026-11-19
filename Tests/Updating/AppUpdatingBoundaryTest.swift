@@ -29,8 +29,7 @@ final class AppUpdatingBoundaryTest: XCTestCase {
     service.update(app)
     XCTAssertEqual(calls.withLock { $0 }, 1)
 
-    let operation = UpdateOperation(
-      bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+    let operation = UpdateOperation(appIdentifier: app.identifier)
     queue.addOperation(operation)
     XCTAssertTrue(service.isUpdating(app))
     service.update(app)
@@ -57,8 +56,7 @@ final class AppUpdatingBoundaryTest: XCTestCase {
     }
     let service = AppUpdateService(queue: queue)
     let app = makeApp(action: .builtIn { _ in })
-    let operation = UpdateOperation(
-      bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+    let operation = UpdateOperation(appIdentifier: app.identifier)
     queue.addOperation(operation)
     var model: UpdateActionViewModel? = UpdateActionViewModel(app: app, updating: service)
     XCTAssertEqual(model?.presentation, .make(for: app, progressState: .pending))
@@ -79,8 +77,7 @@ final class AppUpdatingBoundaryTest: XCTestCase {
 
   func testProgressCanBeReadAndUpdatedConcurrentlyAndCallbackCanReenter() {
     let app = makeApp(action: .builtIn { _ in })
-    let operation = UpdateOperation(
-      bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+    let operation = UpdateOperation(appIdentifier: app.identifier)
     let notifications = Mutex(0)
     operation.progressHandler = { [weak operation] _ in
       _ = operation?.progressState
@@ -96,8 +93,7 @@ final class AppUpdatingBoundaryTest: XCTestCase {
   func testCommittedInstallIgnoresLateCancellationAndPublishesSuccess() throws {
     for commit in [false, true] {
       let app = makeApp(action: .builtIn { _ in })
-      let operation = UpdateOperation(
-        bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+      let operation = UpdateOperation(appIdentifier: app.identifier)
       let notices = Mutex(0)
       let observer = NotificationCenter.default.addObserver(
         forName: .latestUpdateOperationDidFinish, object: operation, queue: nil

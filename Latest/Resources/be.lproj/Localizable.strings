@@ -1,14 +1,9 @@
 
-/* Cancel button in an update dialogue */
-"CancelAction" = "Адмена";
 /* The title of a section divider in the app list. The first placeholder is the name of the section. The value in paranthesis describes how many apps are in that section, number of apps is inserted in the second placeholder. Use the HTML underline tag <u> to mark the deemphasized part of the text, which should be the count. Example: 'Installed Apps (42)' */
 "SectionTitle" = "%1$@ <u>(%2$@)</u>";
 
 /* Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app. */
 "UpdateErrorAlertTitle" = "Пры абнаўленні адбылася памылка % @ .";
-
-/* Touch Bar section title for available updates */
-"AvailableSection" = "Даступна";
 
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "Даступныя абнаўленні";
@@ -25,17 +20,11 @@
 /* Update progress state of extracting the downloaded update */
 "ExtractingUpdateStatus" = "Выманне абнаўлення";
 
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "Ігнараваць";
-
 /* Table Section Header for ignored apps */
 "IgnoredAppsSection" = "Ігнараваныя Дадаткі";
 
 /* Update progress state of initializing an update */
 "InitializingUpdateStatus" = "Ініцыялізацыя";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "Устаноўка";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "Устаноўленыя дадаткі";
@@ -67,9 +56,6 @@
 /* Description of release notes empty state */
 "NoAppSelectedDescription" = "Выберыце прыкладанне з спісу, каб азнаёміцца з заўвагамі да яго выпуску.";
 
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "Рэсурс: %@";
-
 /* Update String */
 "UpdateAction" = "Абнаўленне";
 
@@ -78,9 +64,6 @@
 
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "Чаканне";
-
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "Сетка";
 
 /* Current Version String */
 "LocalVersionFormat" = "Ваша версія: %@";
@@ -102,9 +85,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "Release notes are not available for this app.";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "in %@";

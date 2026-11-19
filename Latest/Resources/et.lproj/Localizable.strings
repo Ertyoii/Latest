@@ -1,5 +1,3 @@
-"AppSource" = "Andmeallikas: %@";
-"CancelAction" = "Katkesta";
 "LocalVersionFormat" = "Sinu versioon: %@";
 "NoAppSelectedDescription" = "Lugemaks rakenduse avaldamisega seotud teavet, vali ta loendist.";
 "RemoteVersionFormat" = "Uus versioon: %@";
@@ -16,7 +14,6 @@
 "ErrorButtonAccessibilityTitle" = "Viga rakenduse uuendamisel";
 "SupportedCompactLabel" = "Toetatud";
 "NoAppSelectedTitle" = "Sa pole ühtegi rakendust valinud";
-"InstalledSection" = "Paigaldatud";
 "UpdateInfoUnavailableError" = "Uuenduse teavet pole saadaval";
 "LimitedSupportCompactLabel" = "Piiratud";
 "SupportedLabel" = "Toetatud";
@@ -27,15 +24,12 @@
 "UpdateInfoUnavailableErrorFailureReason" = "Selle rakenduse uuenduse teavet ei õnnestunud laadida.";
 "CancellingUpdateStatus" = "Katkestan";
 "WaitingUpdateStatus" = "Ootel";
-"WebSource" = "Veeb";
 "SingleCombinedVersionFormat" = "Versioon: %@";
 "RevealAction" = "Näita";
-"AvailableSection" = "Saadaval";
 "UpdateErrorAlertTitle" = "%@ rakenduse uuendamisel tekkis viga.";
 "LimitedSupportDescription" = "Üldiselt uuenduste teave on saadaval, kui see võib vaheti olla aegunud või ebatäpne. Uuendusi ei saa otse siin rakenduses teha.";
 "NameSortOption" = "Nimi";
 "FullSupportDescription" = "Täismahuline tugi on olemas. Usaldusväärne versiooniteave on saadaval ja uuendusi saab hallata otse siin rakenduses.\n\nKui näidatud versiooniteave pole õige, siis palun koosta asjakohane veateade.";
-"IgnoredSection" = "Eiratud";
 "SectionTitle" = "%1$@ <u>(%2$@)</u>";
 "RetryAction" = "Proovi uuesti";
 "ExternalUpdateAction" = "Uuenda rakenduses %@";

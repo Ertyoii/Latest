@@ -31,8 +31,6 @@ enum AppStoreUpdater {
   /// Enqueues an App Store update operation.
   static func enqueueUpdate(for app: App.Bundle, appStoreIdentifier: UInt64) {
     let operation = AppStoreUpdateOperation(
-      bundleIdentifier: app.bundleIdentifier,
-      installURL: app.fileURL,
       appIdentifier: app.identifier,
       appStoreIdentifier: appStoreIdentifier
     )
@@ -45,18 +43,13 @@ enum AppStoreUpdater {
 /// purchased update; the signed helper handles PackageKit's entitlement failure.
 private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   private let itemIdentifier: UInt64
-  private let installURL: URL
   @MainActor private var observerIdentifier: String?
   @MainActor private var artifacts = AppStoreDownloadArtifacts()
   @MainActor private var isInstalling = false
 
-  init(
-    bundleIdentifier: String, installURL: URL, appIdentifier: App.Bundle.Identifier,
-    appStoreIdentifier: UInt64
-  ) {
-    self.installURL = installURL
+  init(appIdentifier: App.Bundle.Identifier, appStoreIdentifier: UInt64) {
     itemIdentifier = appStoreIdentifier
-    super.init(bundleIdentifier: bundleIdentifier, appIdentifier: appIdentifier)
+    super.init(appIdentifier: appIdentifier)
   }
 
   static let requiresManualInstallation = ProcessInfo.processInfo.isOperatingSystemAtLeast(
@@ -116,10 +109,9 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
     UpdateInstallHelperAlert.shared.prepare(
       fallbackURL: fallback,
       error: error as? InstallHelperError ?? .unavailable(error.localizedDescription)
-    ) { [bundleIdentifier, installURL, appIdentifier, itemIdentifier] in
+    ) { [appIdentifier, itemIdentifier] in
       UpdateQueue.shared.addOperation(
         AppStoreUpdateOperation(
-          bundleIdentifier: bundleIdentifier, installURL: installURL,
           appIdentifier: appIdentifier, appStoreIdentifier: itemIdentifier))
     }
   }
@@ -207,7 +199,7 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
         "Installing preserved package: bytes=\((try? package.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)"
       )
       let installedURL = try await InstallHelper.installPackage(
-        at: package, appURL: installURL, receiptData: receipt)
+        at: package, appURL: appIdentifier, receiptData: receipt)
       // Refresh Spotlight and LaunchServices after restoring the App Store receipt.
       let process = Process()
       process.executableURL = URL(fileURLWithPath: "/usr/bin/mdimport")

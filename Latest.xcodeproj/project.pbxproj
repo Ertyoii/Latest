@@ -101,7 +101,6 @@
 		51D000012FC7000000000001 /* UpdateSources.json in Resources */ = {isa = PBXBuildFile; fileRef = 51D000002FC7000000000001 /* UpdateSources.json */; };
 		51E000012FC8000000000001 /* ReleaseNotesPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51E000002FC8000000000001 /* ReleaseNotesPipeline.swift */; };
 		51E000032FC8000000000001 /* ReleaseNotesCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51E000022FC8000000000001 /* ReleaseNotesCatalog.swift */; };
-		51F100032FD0000000000001 /* SidebarUpdateActionTitle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100122FD0000000000001 /* SidebarUpdateActionTitle.swift */; };
 		51F100052FD0000000000001 /* MigrationTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100142FD0000000000001 /* MigrationTelemetry.swift */; };
 		51F100072FD0000000000001 /* ReleaseNotesDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100162FD0000000000001 /* ReleaseNotesDetailViewModel.swift */; };
 		51F100082FD0000000000001 /* ReleaseNotesWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100172FD0000000000001 /* ReleaseNotesWebView.swift */; };
@@ -426,7 +425,6 @@
 		51D000002FC7000000000001 /* UpdateSources.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = UpdateSources.json; sourceTree = "<group>"; };
 		51E000002FC8000000000001 /* ReleaseNotesPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesPipeline.swift; sourceTree = "<group>"; };
 		51E000022FC8000000000001 /* ReleaseNotesCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesCatalog.swift; sourceTree = "<group>"; };
-		51F100122FD0000000000001 /* SidebarUpdateActionTitle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarUpdateActionTitle.swift; sourceTree = "<group>"; };
 		51F100142FD0000000000001 /* MigrationTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationTelemetry.swift; sourceTree = "<group>"; };
 		51F100162FD0000000000001 /* ReleaseNotesDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesDetailViewModel.swift; sourceTree = "<group>"; };
 		51F100172FD0000000000001 /* ReleaseNotesWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesWebView.swift; sourceTree = "<group>"; };
@@ -722,7 +720,6 @@
 				002A891730B3DDB4A59CA5A1 /* ToolbarProgressPresentation.swift */,
 				507375562789AB0300F371D8 /* AppListSnapshot.swift */,
 				51A0000A2FC3000000000001 /* SearchFocusController.swift */,
-				51F100122FD0000000000001 /* SidebarUpdateActionTitle.swift */,
 				52EF00112FFB000000000001 /* SidebarUpdateStatus.swift */,
 				51A000102FC3000000000001 /* UpdateRowView.swift */,
 				51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */,
@@ -1338,7 +1335,6 @@
 				51C100012FC6000000000001 /* LatestApplication.swift in Sources */,
 				51A001092FC3000000000001 /* UpdatesListViewModel.swift in Sources */,
 				51A0010A2FC3000000000001 /* SearchFocusController.swift in Sources */,
-				51F100032FD0000000000001 /* SidebarUpdateActionTitle.swift in Sources */,
 				51A0010F2FC3000000000001 /* UpdateSectionHeaderView.swift in Sources */,
 				52EF00102FFB000000000001 /* SidebarUpdateStatus.swift in Sources */,
 				51A001102FC3000000000001 /* UpdateRowView.swift in Sources */,
@@ -1804,7 +1800,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.96;
+				MARKETING_VERSION = 0.97;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";
@@ -1847,7 +1843,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.96;
+				MARKETING_VERSION = 0.97;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Latest Dev";

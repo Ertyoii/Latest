@@ -29,8 +29,8 @@ final class WebContentLoader: NSObject {
     currentLoadID = loadID
     currentUpdateHandler = contentUpdateHandler
     self.acceptsContent = acceptsContent
-    let webView = activeWebView
-    webView.stopLoading()
+    let webView = makeWebView()
+    self.webView = webView
     currentNavigation = webView.load(URLRequest(url: url))
     scheduleLoadTimeout(for: loadID)
   }
@@ -59,11 +59,7 @@ final class WebContentLoader: NSObject {
   /// Required for some websites that use scripts to populate the sites contents.
   private var webView: WKWebView?
 
-  private var activeWebView: WKWebView {
-    if let webView {
-      return webView
-    }
-
+  private func makeWebView() -> WKWebView {
     let config = WKWebViewConfiguration()
     config.websiteDataStore = .nonPersistent()
 
@@ -94,7 +90,6 @@ final class WebContentLoader: NSObject {
     let webView = WKWebView(frame: .zero, configuration: config)
     webView.navigationDelegate = self
 
-    self.webView = webView
     return webView
   }
 

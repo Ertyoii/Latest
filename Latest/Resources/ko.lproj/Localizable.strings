@@ -3,9 +3,6 @@
 /* Describes how many apps are in a section, number of apps is inserted in placeholder. */
 "SectionTitle" = "%1$@ <u>(%2$@)</u>";
 
-/* Touch Bar section title for available updates */
-"AvailableSection" = "사용 가능";
-
 /* Update progress state of installing an update */
 "InstallingUpdateStatus" = "설치 중";
 
@@ -27,9 +24,6 @@
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "사용 가능한 업데이트";
 
-/* Cancel button in an update dialogue */
-"CancelAction" = "취소";
-
 /* Update progress state of cancelling an update */
 "CancellingUpdateStatus" = "취소 중";
 
@@ -42,17 +36,11 @@
 /* Update progress state of extracting the downloaded update */
 "ExtractingUpdateStatus" = "업데이트 추출 중";
 
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "무시됨";
-
 /* Table Section Header for ignored apps */
 "IgnoredAppsSection" = "무시된 앱";
 
 /* Update progress state of initializing an update */
 "InitializingUpdateStatus" = "초기화 중";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "설치됨";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "설치된 앱";
@@ -69,9 +57,6 @@
 /* Description of release notes empty state */
 "NoAppSelectedDescription" = "출시 정보를 읽으려면 목록에서 앱을 선택합니다.";
 
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "출처: %@";
-
 /* Update String */
 "UpdateAction" = "업데이트";
 
@@ -80,9 +65,6 @@
 
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "경고";
-
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "웹";
 
 /* Current Version String */
 "LocalVersionFormat" = "사용자 버전: %@";
@@ -104,9 +86,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "이 앱의 출시 정보가 없습니다.";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "%@ 에서";

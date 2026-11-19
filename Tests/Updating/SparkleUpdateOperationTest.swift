@@ -149,8 +149,7 @@ final class SparkleUpdateOperationTest: XCTestCase {
     let app = makeTestApp(name: "Sparkle target", version: "1", remoteVersion: "2")
     let queue = UpdateQueue()
     queue.isSuspended = true
-    let operation = SparkleUpdateOperation(
-      bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+    let operation = SparkleUpdateOperation(appIdentifier: app.identifier)
     queue.addOperation(operation)
     defer {
       operation.finish()
@@ -178,7 +177,6 @@ final class SparkleUpdateOperationTest: XCTestCase {
   }
 
   private func makeOperation() -> SparkleUpdateOperation {
-    SparkleUpdateOperation(
-      bundleIdentifier: "test.sparkle", appIdentifier: URL(fileURLWithPath: "/tmp/Sparkle.app"))
+    SparkleUpdateOperation(appIdentifier: URL(fileURLWithPath: "/tmp/Sparkle.app"))
   }
 }

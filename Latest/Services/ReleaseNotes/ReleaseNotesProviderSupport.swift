@@ -186,8 +186,6 @@ extension App.Update.ReleaseNotes {
       return "html:\(ReleaseNotesStableDigest.hex(of: Data(string.utf8)))"
     case .genericMetadata(let string):
       return "homebrew-metadata:\(ReleaseNotesStableDigest.hex(of: Data(string.utf8)))"
-    case .encoded(let data):
-      return "encoded:\(ReleaseNotesStableDigest.hex(of: data))"
     case .githubRelease(let apiURL, let fallbackHTML):
       let fallbackDigest =
         fallbackHTML.map { ReleaseNotesStableDigest.hex(of: Data($0.utf8)) } ?? ""

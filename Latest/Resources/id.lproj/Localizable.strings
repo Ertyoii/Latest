@@ -6,17 +6,8 @@
 /* Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app. */
 "UpdateErrorAlertTitle" = "Terjadi galat saat memperbarui %@.";
 
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "Abaikan";
-
-/* Touch Bar section title for available updates */
-"AvailableSection" = "Tersedia";
-
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "Update tersedia";
-
-/* Cancel button in an update dialogue */
-"CancelAction" = "Batal";
 
 /* Update progress state of cancelling an update */
 "CancellingUpdateStatus" = "Batalkan";
@@ -35,9 +26,6 @@
 
 /* Update progress state of initializing an update */
 "InitializingUpdateStatus" = "Mempersiapkan";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "Terinstal";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "Aplikasi terinstal";
@@ -69,9 +57,6 @@
 /* Description of release notes empty state */
 "NoAppSelectedDescription" = "Pilih aplikasi untuk melihat catatan rilisnya.";
 
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "Sumber: %@";
-
 /* Update String */
 "UpdateAction" = "Perbarui";
 
@@ -80,9 +65,6 @@
 
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "Menunggu";
-
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "Web";
 
 /* Current Version String */
 "LocalVersionFormat" = "Versi Anda: %@";
@@ -104,9 +86,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "Catatan rilis tidak tersedia untuk aplikasi ini.";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "in %@";

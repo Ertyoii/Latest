@@ -1,9 +1,6 @@
 
 
 
-/* Cancel button in an update dialogue */
-"CancelAction" = "Mégsem";
-
 /* Update progress state of cancelling an update */
 "CancellingUpdateStatus" = "Megszakítás";
 
@@ -19,9 +16,6 @@
 /* Description of release notes empty state */
 "NoAppSelectedDescription" = "Válassz egy alkalmazást, hogy el tudd olvasni a változásokat.";
 
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "Forrás: %@";
-
 /* Update String */
 "UpdateAction" = "Frissítés";
 /* Describes how many apps are in a section, number of apps is inserted in placeholder. */
@@ -33,9 +27,6 @@
 /* Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app. */
 "UpdateErrorAlertTitle" = "A frissítés közben hiba történt %@.";
 
-/* Touch Bar section title for available updates */
-"AvailableSection" = "Elérhető";
-
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "Elérhető frissítések";
 
@@ -45,17 +36,11 @@
 /* Description of button that opens an error dialogue. */
 "ErrorButtonAccessibilityTitle" = "Hiba történt a frissítés közben";
 
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "Kihagyva";
-
 /* Table Section Header for ignored apps */
 "IgnoredAppsSection" = "Kihagyott appok";
 
 /* Update progress state of initializing an update */
 "InitializingUpdateStatus" = "Betöltés";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "Telepítve";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "Telepített alkalmazások";
@@ -81,9 +66,6 @@
 /* Error message stating that update info could not be retrieved for a given app. */
 "UpdateInfoUnavailableError" = "Nem található frissítés ehhez az alkalmazáshoz.";
 
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "Web";
-
 /* Current Version String */
 "LocalVersionFormat" = "Jelenlegi verzió: %@";
 
@@ -104,9 +86,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "Release notes are not available for this app.";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "in %@";

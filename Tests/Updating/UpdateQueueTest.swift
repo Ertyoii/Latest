@@ -175,7 +175,7 @@ private final class TestUpdateOperation: UpdateOperation, @unchecked Sendable {
 
   init(identifier: App.Bundle.Identifier, didStart: XCTestExpectation? = nil) {
     self.didStart = didStart
-    super.init(bundleIdentifier: "com.example.test", appIdentifier: identifier)
+    super.init(appIdentifier: identifier)
   }
 
   override func execute() {

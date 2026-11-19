@@ -18,9 +18,6 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
 
   typealias ProgressState = UpdateProgressState
 
-  /// The app that is updated by this operation.
-  let bundleIdentifier: String
-
   /// The identifier of the updated app.
   let appIdentifier: App.Bundle.Identifier
 
@@ -59,9 +56,7 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
     }
   }
 
-  /// Initializes the operation with the given app and progress handler.
-  init(bundleIdentifier: String, appIdentifier: App.Bundle.Identifier) {
-    self.bundleIdentifier = bundleIdentifier
+  init(appIdentifier: App.Bundle.Identifier) {
     self.appIdentifier = appIdentifier
   }
 

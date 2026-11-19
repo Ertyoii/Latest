@@ -1,6 +1,3 @@
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "Source: %@";
-
 /* Error description when the attempt to update an app from the App Store failed because the user is not signed in with their App Store account. */
 "AppStoreNotSignedInError" = "Not Signed In";
 
@@ -10,14 +7,8 @@
 /* The source name of apps loaded from the App Store. */
 "AppStoreSource" = "Mac App Store";
 
-/* Touch Bar section title for available updates */
-"AvailableSection" = "Available";
-
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "Available Updates";
-
-/* Cancel button in an update dialogue */
-"CancelAction" = "Cancel";
 
 /* Update progress state of cancelling an update */
 "CancellingUpdateStatus" = "Cancelling";
@@ -49,23 +40,14 @@
 /* Description for apps with full support. */
 "FullSupportDescription" = "Fully supported. Reliable version information is available, and updates can be managed directly within the app.\n\nIf the shown version information is inaccurate, feel free to write an issue report.";
 
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
-
 /* Table Section Header for ignored apps */
 "IgnoredAppsSection" = "Ignored Apps";
-
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "Ignored";
 
 /* Update progress state of initializing an update */
 "InitializingUpdateStatus" = "Initializing";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "Installed Apps";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "Installed";
 
 /* Update progress state of installing an update */
 "InstallingUpdateStatus" = "Installing";
@@ -127,9 +109,6 @@
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "Waiting";
 
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "Web";
-
 /* A compact label used for apps which are partially supported by Latest. */
 "LimitedSupportCompactLabel" = "Limited";
 
@@ -151,32 +130,11 @@
 /* Tool tip of a toolbar button that checks for updates */
 "CheckForUpdatesToolbarItemToolTip" = "Check for Updates";
 
-/* Tool tip of a toolbar button that performs updates for all apps with update available */
-"UpdateAllToolbarItemToolTip" = "Update all Apps";
-
 /* Shown when the update helper is not installed. */
 "InstallHelperNotFoundErrorDescription" = "To install App Store updates within Latest, a helper must be installed. If you don't want to install the helper, you can update apps via the App Store manually.";
 
 /* Shown when the update helper is installed but disabled, requiring approval. */
 "InstallHelperRequiresApprovalErrorDescription" = "Enable the update helper in Settings to install updates within Latest.";
-
-/* Title of the alert prompting to install or enable the update helper */
-"UpdateInstallHelperAlert.Title" = "Update Helper Required";
-
-/* Checkbox title to always open the App Store instead of using the helper */
-"UpdateInstallHelperAlert.SuppressionTitle" = "Always open App Store";
-
-/* Primary button to install the update helper */
-"UpdateInstallHelperAlert.Primary.InstallHelper" = "Install Helper";
-
-/* Primary button to open Settings to enable the update helper */
-"UpdateInstallHelperAlert.Primary.OpenSettings" = "Open Settings";
-
-/* Button to update the app in the App Store */
-"UpdateInstallHelperAlert.Secondary.AppStore" = "Update In App Store";
-
-/* Cancel button in the helper alert */
-"UpdateInstallHelperAlert.Cancel" = "Cancel";
 
 /* Short description of an error when communicating with the apps install helper. */
 "InstallHelperCommunicationFailedError" = "The connection to the update helper was interrupted.";

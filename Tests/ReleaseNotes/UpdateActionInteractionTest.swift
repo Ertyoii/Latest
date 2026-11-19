@@ -27,8 +27,7 @@ final class UpdateActionInteractionTest: XCTestCase {
       let app = makeTestApp(name: "Download target", version: "1", remoteVersion: "2")
       let queue = UpdateQueue()
       queue.isSuspended = true
-      let operation = UpdateOperation(
-        bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+      let operation = UpdateOperation(appIdentifier: app.identifier)
       queue.addOperation(operation)
       defer {
         operation.finish()
@@ -107,8 +106,7 @@ final class UpdateActionInteractionTest: XCTestCase {
       let app = makeTestApp(name: "Sparkle target", version: "1", remoteVersion: "2")
       let queue = UpdateQueue()
       queue.isSuspended = true
-      let operation = SparkleUpdateOperation(
-        bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+      let operation = SparkleUpdateOperation(appIdentifier: app.identifier)
       queue.addOperation(operation)
       defer {
         operation.finish()

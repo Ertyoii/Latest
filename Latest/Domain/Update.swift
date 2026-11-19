@@ -113,9 +113,6 @@ extension App.Update {
     /// update, but it must not be scored or presented as genuine vendor notes.
     case genericMetadata(string: String)
 
-    /// Release notes encoded in the given data object.
-    case encoded(data: Data)
-
     /// The release notes for a GitHub release.
     case githubRelease(apiURL: URL, fallbackHTML: String?)
 

@@ -76,9 +76,7 @@ final class ReleaseNotesPipelineTest: XCTestCase {
   }
 
   func testPipelinePreservesSelectedSourceAndRequestedVersion() async throws {
-    let context = ReleaseNotesContext(
-      appName: "Example", bundleIdentifier: "com.example.App", localVersion: "1.0",
-      remoteVersion: "2.0")
+    let context = ReleaseNotesContext(bundleIdentifier: "com.example.App", remoteVersion: "2.0")
     let candidate = ReleaseNotesCandidate(
       markup: """
         # 2.0
@@ -116,9 +114,7 @@ final class ReleaseNotesPipelineTest: XCTestCase {
   }
 
   func testPipelineRejectsEmptyContentBeforeRendering() async {
-    let context = ReleaseNotesContext(
-      appName: "Example", bundleIdentifier: "com.example.App", localVersion: "1", remoteVersion: "2"
-    )
+    let context = ReleaseNotesContext(bundleIdentifier: "com.example.App", remoteVersion: "2")
     let candidate = ReleaseNotesCandidate(markup: " \n", baseURL: nil, provenance: .changelog)
     let result = await ReleaseNotesPipeline().resolve(candidate, for: context)
     XCTAssertThrowsError(try result.get()) {
@@ -199,12 +195,7 @@ final class ReleaseNotesPipelineTest: XCTestCase {
 
   func testReleaseNotesCandidateScorerRejectsWrongIdentityVersionPlatformAndSize() {
     let scorer = ReleaseNotesCandidateScorer(maximumMarkupSize: 32)
-    let context = ReleaseNotesContext(
-      appName: "Zed",
-      bundleIdentifier: "dev.zed.Zed",
-      localVersion: "1.11.2",
-      remoteVersion: "1.11.3"
-    )
+    let context = ReleaseNotesContext(bundleIdentifier: "dev.zed.Zed", remoteVersion: "1.11.3")
 
     XCTAssertThrowsError(
       try scorer.quality(
@@ -274,7 +265,7 @@ final class ReleaseNotesPipelineTest: XCTestCase {
         maximumEnvelopeSize: 64 * 1_024
       ),
       bundledCatalogData: fixture.bundled,
-      loader: StubCatalogLoader(
+      loader: StubReleaseNotesLoader(
         response: Self.httpResponse(url: fixture.url, data: fixture.envelope))
     )
 
@@ -417,7 +408,7 @@ final class ReleaseNotesPipelineTest: XCTestCase {
     let remote = try await SignedReleaseNotesCatalogClient(
       configuration: configuration,
       bundledCatalogData: fixture.bundled,
-      loader: StubCatalogLoader(response: successfulResponse),
+      loader: StubReleaseNotesLoader(response: successfulResponse),
       cache: cache
     ).load()
     XCTAssertEqual(remote.origin, .remote)
@@ -435,7 +426,7 @@ final class ReleaseNotesPipelineTest: XCTestCase {
     let notModified = try await SignedReleaseNotesCatalogClient(
       configuration: configuration,
       bundledCatalogData: fixture.bundled,
-      loader: StubCatalogLoader(
+      loader: StubReleaseNotesLoader(
         response: Self.httpResponse(
           url: fixture.url,
           statusCode: 304,
@@ -478,7 +469,7 @@ final class ReleaseNotesPipelineTest: XCTestCase {
         maximumEnvelopeSize: 64 * 1_024
       ),
       bundledCatalogData: fixture.bundled,
-      loader: StubCatalogLoader(
+      loader: StubReleaseNotesLoader(
         response: Self.httpResponse(url: fixture.url, data: fixture.envelope))
     )
   }
@@ -526,16 +517,6 @@ private struct SignedCatalogFixture {
 }
 
 private struct StubReleaseNotesLoader: ReleaseNotesHTTPDataLoading {
-  let response: ReleaseNotesFetchResponse
-
-  func load(_ request: URLRequest, maximumResponseSize: Int) async throws
-    -> ReleaseNotesFetchResponse
-  {
-    response
-  }
-}
-
-private struct StubCatalogLoader: ReleaseNotesHTTPDataLoading {
   let response: ReleaseNotesFetchResponse
 
   func load(_ request: URLRequest, maximumResponseSize: Int) async throws

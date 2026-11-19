@@ -358,7 +358,7 @@ final class SidebarInteractionTest: XCTestCase {
     let service = AppUpdateService(queue: queue)
     let apps = Array(LocalUATFixture.apps.prefix(2))
     let operations = apps.map {
-      UpdateOperation(bundleIdentifier: $0.bundleIdentifier, appIdentifier: $0.identifier)
+      UpdateOperation(appIdentifier: $0.identifier)
     }
     for operation in operations { queue.addOperation(operation) }
     operations[0].progressState = .downloading(loadedSize: 25, totalSize: 100)

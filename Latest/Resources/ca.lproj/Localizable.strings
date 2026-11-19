@@ -4,13 +4,8 @@
 /* Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app. */
 "UpdateErrorAlertTitle" = "S'ha produït un error en actualitzar %@.";
 
-/* Cancel button in an update dialogue */
-"CancelAction" = "Cancel · lar";
 /* Describes how many apps are in a section, number of apps is inserted in placeholder. */
 "SectionTitle" = "%1$@ <u>(%2$@)</u>";
-
-/* Touch Bar section title for available updates */
-"AvailableSection" = "Disponible";
 
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "Actualitzacions disponibles";
@@ -30,20 +25,11 @@
 /* Update progress state of extracting the downloaded update */
 "ExtractingUpdateStatus" = "S'està extraient l'actualització";
 
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "Ignorat";
-
 /* Table Section Header for ignored apps */
 "IgnoredAppsSection" = "Aplicacions ignorades";
 
 /* Update progress state of initializing an update */
 "InitializingUpdateStatus" = "Inicialitzant";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "Instal·lat";
-
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "Font: %@";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "Aplicacions instal·lades";
@@ -81,9 +67,6 @@
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "Esperant";
 
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "Web";
-
 /* Current Version String */
 "LocalVersionFormat" = "La teva versió: %@";
 
@@ -104,9 +87,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "Release notes are not available for this app.";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "in %@";

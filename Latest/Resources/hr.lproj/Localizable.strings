@@ -1,16 +1,11 @@
 
 
 
-/* Cancel button in an update dialogue */
-"CancelAction" = "Prekini";
 /* Describes how many apps are in a section, number of apps is inserted in placeholder. */
 "SectionTitle" = "%1$@ <u>(%2$@)</u>";
 
 /* Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app. */
 "UpdateErrorAlertTitle" = "Dogodila se greška prilikom aktualiziranja programa %@.";
-
-/* Touch Bar section title for available updates */
-"AvailableSection" = "Dostupno";
 
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "Dostupne nove verzije";
@@ -27,9 +22,6 @@
 /* Update progress state of extracting the downloaded update */
 "ExtractingUpdateStatus" = "Raspakiravanje nove verzije";
 
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "Zanemareno";
-
 /* Table Section Header for ignored apps */
 "IgnoredAppsSection" = "Zanemareni programi";
 
@@ -38,9 +30,6 @@
 
 /* Update String */
 "UpdateAction" = "Aktualiziraj";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "Instalirano";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "Instalirani programi";
@@ -72,17 +61,11 @@
 /* Description of release notes empty state */
 "NoAppSelectedDescription" = "Odaberi aplikaciju iz popisa čije napomene o izdanju želiš pročitati.";
 
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "Izvor: %@";
-
 /* Error message stating that update info could not be retrieved for a given app. */
 "UpdateInfoUnavailableError" = "Informacije o novim verzijama nisu dostupne";
 
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "Čekanje";
-
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "Web";
 
 /* Current Version String */
 "LocalVersionFormat" = "Tvoja verzija: %@";
@@ -104,9 +87,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "Za ovu aplikaciju nema napomena o izdanju.";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "u %@";

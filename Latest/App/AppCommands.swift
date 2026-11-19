@@ -203,7 +203,7 @@ private struct SelectedAppCommandButtons: View {
   let appCommands: AppCommands
 
   var body: some View {
-    Button(updateSelectedTitle) {
+    Button(UpdateActionTitle.text(for: appCommands.selectedApp)) {
       appCommands.updateSelectedApp()
     }
     .keyboardShortcut("u")
@@ -222,22 +222,6 @@ private struct SelectedAppCommandButtons: View {
     }
     .keyboardShortcut("r", modifiers: [.command, .shift])
     .disabled(!appCommands.canOpenSelectedApp)
-  }
-
-  private var updateSelectedTitle: String {
-    guard let app = appCommands.selectedApp else {
-      return NSLocalizedString("UpdateAction", comment: "Action to update a given app.")
-    }
-    if let externalUpdater = app.externalUpdaterName {
-      return String(
-        format: NSLocalizedString(
-          "ExternalUpdateAction",
-          comment: "Action to update a given app outside of Latest."
-        ),
-        externalUpdater
-      )
-    }
-    return NSLocalizedString("UpdateAction", comment: "Action to update a given app.")
   }
 
 }

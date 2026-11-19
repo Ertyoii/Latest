@@ -39,30 +39,12 @@ struct ResolvedReleaseNotes: Sendable {
 }
 
 struct ReleaseNotesContext: Sendable {
-  let appName: String
   let bundleIdentifier: String
-  let localVersion: String?
   let remoteVersion: String?
   let platform: String
 
-  init(app: App, platform: String = "macOS") {
-    appName = app.name
-    bundleIdentifier = app.bundleIdentifier
-    localVersion = app.version.versionNumber ?? app.version.buildNumber
-    remoteVersion = app.releaseNotesVersion.versionNumber ?? app.releaseNotesVersion.buildNumber
-    self.platform = platform
-  }
-
-  init(
-    appName: String,
-    bundleIdentifier: String,
-    localVersion: String?,
-    remoteVersion: String?,
-    platform: String = "macOS"
-  ) {
-    self.appName = appName
+  init(bundleIdentifier: String, remoteVersion: String?, platform: String = "macOS") {
     self.bundleIdentifier = bundleIdentifier
-    self.localVersion = localVersion
     self.remoteVersion = remoteVersion
     self.platform = platform
   }
@@ -321,7 +303,7 @@ extension String.Encoding {
 extension App.Update.ReleaseNotes {
   var provenance: ReleaseNotesProvenance {
     switch self {
-    case .encoded, .html:
+    case .html:
       return .sparkleEmbedded
     case .genericMetadata:
       return .homebrewMetadata

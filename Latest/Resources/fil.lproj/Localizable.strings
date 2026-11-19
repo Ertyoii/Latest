@@ -4,14 +4,8 @@
 /* Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app. */
 "UpdateErrorAlertTitle" = "May naganap na error habang ina-update ang %@.";
 
-/* Touch Bar section title for available updates */
-"AvailableSection" = "Mga Available";
-
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "Magagamit na Mga Update";
-
-/* Cancel button in an update dialogue */
-"CancelAction" = "Kanselahin";
 
 /* Update progress state of cancelling an update */
 "CancellingUpdateStatus" = "Kinakansela";
@@ -25,17 +19,11 @@
 /* Update progress state of extracting the downloaded update */
 "ExtractingUpdateStatus" = "Nag-aaplay ng update";
 
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "Hindi pinansin";
-
 /* Table Section Header for ignored apps */
 "IgnoredAppsSection" = "Isinantabing Apps";
 
 /* Update progress state of initializing an update */
 "InitializingUpdateStatus" = "Nagsisimula";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "Naka-install";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "Naka-install na Apps";
@@ -67,9 +55,6 @@
 /* Description of release notes empty state */
 "NoAppSelectedDescription" = "Pumili ng app mula sa listahan para basahin ang mga release notes.";
 
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "Pinagmulan: %@";
-
 /* Update String */
 "UpdateAction" = "I-update";
 
@@ -78,9 +63,6 @@
 
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "Naghihintay";
-
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "Websayt";
 
 /* Current Version String */
 "LocalVersionFormat" = "Iyong bersyon: %@";
@@ -102,9 +84,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "Ang mga release note ay hindi available para sa app na ito.";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "sa %@";

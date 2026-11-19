@@ -138,3 +138,21 @@ extension App.Source.SupportState {
   }
 
 }
+
+@MainActor
+enum UpdateActionTitle {
+  static func text(for app: App?) -> String {
+    if let externalUpdater = app?.externalUpdaterName {
+      return String(
+        format: NSLocalizedString(
+          "ExternalUpdateAction",
+          comment:
+            "Action to update a given app outside of Latest. The placeholder is the external updater."
+        ),
+        externalUpdater
+      )
+    }
+
+    return NSLocalizedString("UpdateAction", comment: "Action to update a given app.")
+  }
+}

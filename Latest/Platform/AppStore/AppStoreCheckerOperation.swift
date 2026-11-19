@@ -143,18 +143,12 @@ private actor AppStoreLookupCache {
 }
 
 private final class AppStoreLookupClient: Sendable {
-  static let shared = AppStoreLookupClient()
-
   private let endpoint = URL(string: "https://itunes.apple.com/lookup")
   private let cache = AppStoreLookupCache.shared
   private let session: URLSession
 
-  init(session: URLSession = .shared) {
+  init(session: URLSession) {
     self.session = session
-  }
-
-  func invalidateCache() async {
-    await cache.removeAll()
   }
 
   func lookup(bundleIdentifiers: [String], entityTypes: [String]) async throws -> AppStoreEntry {
@@ -214,7 +208,7 @@ private final class AppStoreLookupClient: Sendable {
 /// retained for API compatibility, but checking is no longer an Operation.
 final class AppStoreUpdateCheckerOperation: Sendable {
   static func invalidateLookupCache() async {
-    await AppStoreLookupClient.shared.invalidateCache()
+    await AppStoreLookupCache.shared.removeAll()
   }
 
   // MARK: - Update Check

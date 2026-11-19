@@ -1,17 +1,8 @@
-/* The description of the app's source. e.g. 'Source: Mac App Store' */
-"AppSource" = "Source : %@";
-
 /* The source name of apps loaded from the App Store. */
 "AppStoreSource" = "Mac App Store";
 
-/* Touch Bar section title for available updates */
-"AvailableSection" = "Disponible";
-
 /* Table Section Header for available updates */
 "AvailableUpdatesSection" = "Mises à jour disponibles";
-
-/* Cancel button in an update dialogue */
-"CancelAction" = "Annuler";
 
 /* Update progress state of cancelling an update */
 "CancellingUpdateStatus" = "Annulation";
@@ -28,17 +19,11 @@
 /* Table Section Header for ignored apps */
 "IgnoredAppsSection" = "Applications ignorées";
 
-/* Touch Bar section title for ignored apps */
-"IgnoredSection" = "Ignorer";
-
 /* Update progress state of initializing an update */
 "InitializingUpdateStatus" = "Initialisation";
 
 /* Table Section Header for already installed apps */
 "InstalledAppsSection" = "Applications installées";
-
-/* Touch Bar section title for installed apps */
-"InstalledSection" = "Installé";
 
 /* Update progress state of installing an update */
 "InstallingUpdateStatus" = "Installation";
@@ -82,9 +67,6 @@
 /* Update progress state of waiting to start an update */
 "WaitingUpdateStatus" = "En attente";
 
-/* The source name for apps loaded from third-party websites. */
-"WebSource" = "Réseau";
-
 /* Error description when the attempt to update an app from the App Store failed because the user is not signed in with their App Store account. */
 "AppStoreNotSignedInError" = "Non signé";
 
@@ -102,9 +84,6 @@
 
 /* Error message that no release notes were found. */
 "ReleaseNotesUnavailableErrorFailureReason" = "Aucune note de version n'est disponible pour cette application.";
-
-/* The source name for apps checked via the Homebrew package manager. */
-"HomebrewSource" = "Homebrew";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "dans %@";
