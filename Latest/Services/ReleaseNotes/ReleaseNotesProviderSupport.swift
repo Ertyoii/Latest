@@ -159,11 +159,21 @@ final class ReleaseNotesCacheKey: NSObject {
   let stableIdentifier: String
 
   init(app: App) {
+    let installedVersionKey: String
+    if app.source == .appStore, case .html(let html) = app.releaseNotes, !html.isEmpty,
+      let remote = app.remoteVersion, app.version.comparisonForUpdate(to: remote) != .newer,
+      let release = remote.versionNumber, release == app.releaseNotesVersion.versionNumber
+    {
+      // Store notes describe the same release before and after its package is installed.
+      installedVersionKey = "app-store-release"
+    } else {
+      installedVersionKey = app.version.debugDescription
+    }
     stableIdentifier = [
       // Reload Chrome notes prepared before preserving wrapped Blogger line breaks.
       app.bundleIdentifier == "com.google.Chrome" ? "chrome-blocks-v2" : "vendor-fallback-v3",
       app.identifier.absoluteString,
-      app.version.debugDescription,
+      installedVersionKey,
       app.remoteVersion?.debugDescription ?? "",
       app.releaseNotes?.cacheIdentifier ?? "",
       String(ReleaseNotesSourceCatalog.revision),

@@ -87,6 +87,103 @@ final class BundleCollectorTest: XCTestCase {
     XCTAssertTrue(cache.load(for: store.URLs).isEmpty)
   }
 
+  func testStoreInstallPublishesOnlyConfirmedVersionsAcrossDirectoryEvents() throws {
+    let directory = try makeTemporaryDirectory()
+    let redirectedDirectory = try makeTemporaryDirectory()
+    var info = [
+      "CFBundleName": "Store app", "CFBundleIdentifier": "test.store",
+      "CFBundleShortVersionString": "1",
+    ]
+    let namedURL = try makeAppBundle(named: "Store app", in: directory, info: info)
+    let url = directory.appendingPathComponent("Renamed.APP", isDirectory: true)
+    try FileManager.default.moveItem(at: namedURL, to: url)
+    let otherCopy = try makeAppBundle(named: "Second copy", in: directory, info: info)
+    let otherReceipt = AppStoreReceipt.standardReceiptURL(forAppAt: otherCopy)
+    try FileManager.default.createDirectory(
+      at: otherReceipt.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data([1]).write(to: otherReceipt)
+    let receipt = AppStoreReceipt.standardReceiptURL(forAppAt: url)
+    try FileManager.default.createDirectory(
+      at: receipt.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data([1]).write(to: receipt)
+    let final = expectation(description: "Fresh directory read with installed receipt")
+    final.assertForOverFulfill = false
+    let library = AppLibrary(directoryStoreFactory: { _ in
+      LibraryDirectoryStore(urls: [directory, redirectedDirectory])
+    }) { apps in
+      if apps.contains(where: {
+        $0.fileURL.lastPathComponent == url.lastPathComponent && $0.source == .appStore
+          && $0.version.versionNumber == "2"
+      })
+        && apps.contains(where: {
+          $0.fileURL.lastPathComponent == "New Store copy.app" && $0.source == .appStore
+        })
+      {
+        final.fulfill()
+      }
+    }
+    func reload() -> [App.Bundle] {
+      let loaded = expectation(description: "Read observed directory")
+      let snapshot = Mutex([App.Bundle]())
+      library.reload { apps in
+        snapshot.withLock { $0 = apps }
+        loaded.fulfill()
+      }
+      wait(for: [loaded], timeout: 3)
+      return snapshot.withLock { $0 }
+    }
+    let original = try XCTUnwrap(
+      reload().first { $0.fileURL.lastPathComponent == url.lastPathComponent })
+    XCTAssertEqual(original.version.versionNumber, "1")
+    XCTAssertEqual(original.source, .appStore)
+    library.beginReplacing(original)
+    try FileManager.default.removeItem(at: receipt)
+    try FileManager.default.removeItem(at: otherReceipt)
+    info["CFBundleShortVersionString"] = "2"
+    try writeInfoPlist(forAppAt: url, info: info)
+    _ = try makeAppBundle(
+      named: "Other", in: directory,
+      info: [
+        "CFBundleName": "Other", "CFBundleIdentifier": "test.other",
+        "CFBundleShortVersionString": "1",
+      ])
+    XCTAssertEqual(BundleCollector.collectBundle(at: url)?.source, App.Source.none)
+    let redirected = try makeAppBundle(named: "New Store copy", in: redirectedDirectory, info: info)
+    let partial = reload()
+    XCTAssertEqual(
+      partial.first { $0.fileURL.lastPathComponent == otherCopy.lastPathComponent }?.source,
+      .appStore)
+    XCTAssertEqual(partial.count, 3, "Other changes in the same folder still publish")
+    XCTAssertTrue(
+      partial.first { $0.identifier == original.identifier }?.matchesMetadata(of: original) == true)
+
+    let redirectedReceipt = AppStoreReceipt.standardReceiptURL(forAppAt: redirected)
+    try FileManager.default.createDirectory(
+      at: redirectedReceipt.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data([2]).write(to: redirectedReceipt)
+    try Data([2]).write(to: otherReceipt)
+    try Data([2]).write(to: receipt)
+    let installed = try XCTUnwrap(BundleCollector.collectBundle(at: original.identifier))
+    library.finishReplacing(at: original.identifier, with: installed, registeredURL: redirected) {
+      app in
+      XCTAssertEqual(app.source, .appStore)
+      XCTAssertEqual(app.version.versionNumber, "2")
+    }
+    // Even a directory snapshot taken before the receipt write uses the confirmed result.
+    XCTAssertTrue(
+      library.bundles.first { $0.identifier == original.identifier }?.matchesMetadata(of: installed)
+        == true)
+    wait(for: [final], timeout: 3)
+    XCTAssertTrue(
+      library.bundles.contains {
+        $0.fileURL.lastPathComponent == redirected.lastPathComponent && $0.source == .appStore
+      })
+    try FileManager.default.removeItem(at: receipt)
+    XCTAssertEqual(
+      reload().first { $0.identifier == original.identifier }?.source, App.Source.none,
+      "A subsequent genuine change of distribution channel must remain discoverable")
+  }
+
   func testRemovingAnObservedDirectoryPublishesTheRemainingApps() async throws {
     let first = try makeTemporaryDirectory()
     let second = try makeTemporaryDirectory()

@@ -37,14 +37,14 @@ final class UpdateActionViewModel: ObservableObject {
     self.updating = updating
     let feed = updating.stateChanges(for: app.identifier)
     _presentation = Published(
-      initialValue: .make(
+      initialValue: updating.presentation(
         for: app,
         progressState: feed.current
       ))
     observationTask = Task { [weak self] in
       for await state in feed.changes {
         guard !Task.isCancelled, let self else { break }
-        let next = UpdateActionPresentation.make(for: app, progressState: state)
+        let next = updating.presentation(for: app, progressState: state)
         if self.presentation != next { self.presentation = next }
       }
     }
@@ -79,16 +79,7 @@ final class UpdateActionViewModel: ObservableObject {
 }
 
 struct UpdateActionView: View {
-  @StateObject private var viewModel: UpdateActionViewModel
-
-  init(
-    app: App,
-    workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared,
-    updating: any AppUpdating = AppUpdateService.shared
-  ) {
-    _viewModel = StateObject(
-      wrappedValue: UpdateActionViewModel(app: app, workspace: workspace, updating: updating))
-  }
+  @ObservedObject var viewModel: UpdateActionViewModel
 
   var body: some View {
     UpdateActionSurface(
@@ -197,6 +188,7 @@ enum UpdateActionVisualStyle {
   static let errorImage = NSImage(
     systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
   static let capsuleHorizontalInset: CGFloat = 0.25
+  static let progressAnimation = Animation.linear(duration: 0.6)
   static let progressDiameter: CGFloat = 20
   static let progressLineWidth: CGFloat = 2.5
   static let pauseBarSize = CGSize(width: 2, height: 8)
@@ -488,6 +480,12 @@ private struct UpdateActionProgressIndicator: View {
               lineCap: .round
             )
           )
+          .animation(
+            reduceMotion || fraction == nil ? nil : UpdateActionVisualStyle.progressAnimation,
+            value: fraction
+          )
+          // The detail pane suppresses navigation animations. Animate only the measured arc.
+          .transaction { $0.disablesAnimations = false }
           .rotationEffect(
             .degrees(
               fraction == nil && !reduceMotion

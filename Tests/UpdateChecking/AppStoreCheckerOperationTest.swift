@@ -300,6 +300,30 @@ class AppStoreCheckerOperationTest: XCTestCase {
   }
 
   @MainActor
+  func testSparseAndOutOfOrderStoreProgressKeepsTheLastMeasurement() {
+    let app = makeTestApp(name: "Store progress", version: "1", remoteVersion: "2")
+    let operation = AppStoreUpdateOperation(
+      app: app.bundle, itemIdentifier: 123, pageURL: AppStoreUpdateSettings.updatesPage)
+    func receive(_ phase: Int64?, _ loaded: Int64, _ total: Int64) -> UpdateActionPresentation {
+      operation.receiveProgress(phase: phase, loaded: loaded, total: total)
+      return .make(for: app, progressState: operation.progressState)
+    }
+    let measured = receive(0, 60, 100)
+    XCTAssertEqual(receive(nil, 0, 0), measured)
+    XCTAssertEqual(receive(0, 45, 100), measured)
+    XCTAssertEqual(
+      receive(0, 75, 0),
+      .make(for: app, progressState: .downloading(loadedSize: 75, totalSize: 100)))
+    let unmeasured = receive(1, 0, 0)
+    XCTAssertEqual(unmeasured, .make(for: app, progressState: .extracting(progress: nil)))
+    XCTAssertEqual(receive(0, 100, 100), unmeasured)
+    let extracting = receive(1, 1, 2)
+    XCTAssertEqual(extracting, .make(for: app, progressState: .extracting(progress: 0.5)))
+    XCTAssertEqual(receive(1, 0, 0), extracting)
+    XCTAssertEqual(receive(1, 1, 4), extracting)
+  }
+
+  @MainActor
   func testDownloadCanBeDeletedBeforeMainActorHandlesRemoval() async throws {
     try XCTSkipUnless(AppStoreUpdateOperation.requiresManualInstallation)
     let directory = temporaryAppURL()

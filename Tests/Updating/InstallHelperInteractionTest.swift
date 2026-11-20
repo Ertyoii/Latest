@@ -112,8 +112,10 @@ final class InstallHelperInteractionTest: XCTestCase {
           cause: URLError(.networkConnectionLost)))
       for dark in [false, true] {
         let window = try await makeLatestTestWindow(
-          content: UpdateActionView(app: app, workspace: workspace, updating: updating)
-            .frame(width: 160, height: 80), dark: dark, testCase: self)
+          content: UpdateActionView(
+            viewModel: UpdateActionViewModel(app: app, workspace: workspace, updating: updating)
+          )
+          .frame(width: 160, height: 80), dark: dark, testCase: self)
         defer { window.close() }
         try await activateTestWindow(window)
         try await self.capture(window, name: "\(dark ? "dark" : "light")-update-failed")

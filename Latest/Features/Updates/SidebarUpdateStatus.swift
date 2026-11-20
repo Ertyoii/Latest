@@ -33,7 +33,7 @@ struct SidebarUpdateStatus: View {
 
   private var presentation: UpdateActionPresentation {
     if let observed, observed.key == key { return observed.presentation }
-    return .make(for: app, progressState: updating.state(for: app.identifier))
+    return updating.presentation(for: app, progressState: updating.state(for: app.identifier))
   }
 
   var body: some View {
@@ -112,7 +112,8 @@ struct SidebarUpdateStatus: View {
       let key = key
       for await state in updating.states(for: app.identifier) {
         guard !Task.isCancelled else { return }
-        let next = ObservedState(key: key, presentation: .make(for: app, progressState: state))
+        let next = ObservedState(
+          key: key, presentation: updating.presentation(for: app, progressState: state))
         if observed?.key != key || observed?.presentation != next.presentation { observed = next }
       }
     }
@@ -138,10 +139,12 @@ private struct SidebarProgressButtonStyle: ButtonStyle {
         tint: Color(nsColor: configuration.isPressed ? color.withSystemEffect(.pressed) : color),
         cancellable: cancellable
       )
+      .animation(
+        reduceMotion || fraction == nil ? nil : UpdateActionVisualStyle.progressAnimation,
+        value: fraction)
     }
     .frame(width: 24, height: 24)
     .contentShape(Rectangle())
-    .animation(reduceMotion ? nil : .linear(duration: 0.2), value: fraction)
   }
 }
 

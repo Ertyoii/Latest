@@ -147,38 +147,10 @@ struct ReleaseNotesHeaderView: View {
       .frame(width: VisualMetrics.detailIconSize, height: VisualMetrics.detailIconSize)
       .accessibilityHidden(true)
 
-      VStack(alignment: .leading, spacing: 0) {
-        appTitle
-          .offset(y: VisualMetrics.detailTitleVerticalCorrection)
-          .frame(height: 19)
-
-        if let version = app.localizedVersionInformation?.combined(includeNew: app.updateAvailable)
-        {
-          Text(version)
-            .font(.system(size: 11))
-            .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-            .offset(y: VisualMetrics.detailMetadataLineVerticalCorrection)
-            .lineLimit(1)
-        }
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      // The optional date extends below the two-line block without recentering it.
-      .overlay(alignment: .topLeading) {
-        if let date = app.latestUpdateDate {
-          GeometryReader { geometry in
-            Text(date, format: .dateTime.year().month(.wide).day())
-              .font(.system(size: 11))
-              .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-              .lineLimit(1)
-              .offset(y: geometry.size.height + VisualMetrics.detailMetadataLineVerticalCorrection)
-          }
-        }
-      }
-      .offset(y: VisualMetrics.detailMetadataVerticalOffset)
-      .layoutPriority(1)
-
-      UpdateActionView(app: app, updating: updating)
-        .id(appIdentity)
+      ReleaseNotesHeaderControls(
+        app: app, showsSupportStatus: showsSupportStatus, updating: updating
+      )
+      .id(appIdentity)
 
     }
     .padding(.horizontal, VisualMetrics.detailHeaderHorizontalPadding)
@@ -196,6 +168,61 @@ struct ReleaseNotesHeaderView: View {
     }
   }
 
+}
+
+private struct ReleaseNotesHeaderControls: View {
+  let app: App
+  let showsSupportStatus: Bool
+  @StateObject private var action: UpdateActionViewModel
+
+  init(app: App, showsSupportStatus: Bool, updating: any AppUpdating) {
+    self.app = app
+    self.showsSupportStatus = showsSupportStatus
+    _action = StateObject(wrappedValue: UpdateActionViewModel(app: app, updating: updating))
+  }
+
+  var body: some View {
+    Group {
+      VStack(alignment: .leading, spacing: 0) {
+        appTitle
+          .offset(y: VisualMetrics.detailTitleVerticalCorrection)
+          .frame(height: 19)
+
+        if let version = app.localizedVersionInformation?.combined(includeNew: app.updateAvailable)
+        {
+          Text(version)
+            .font(.system(size: 11))
+            .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+            .offset(y: VisualMetrics.detailMetadataLineVerticalCorrection)
+            .lineLimit(1)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      // The activity or date line fits below the version without moving the title.
+      .overlay(alignment: .topLeading) {
+        GeometryReader { geometry in
+          Group {
+            if app.bundle.source == .appStore, let status = action.presentation.activityStatus {
+              Text(verbatim: status)
+                .monospacedDigit()
+                .accessibilityIdentifier("update.activity-status")
+            } else if let date = app.latestUpdateDate {
+              Text(date, format: .dateTime.year().month(.wide).day())
+            }
+          }
+          .font(.system(size: 11))
+          .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+          .lineLimit(1)
+          .offset(y: geometry.size.height + VisualMetrics.detailMetadataLineVerticalCorrection)
+        }
+      }
+      .offset(y: VisualMetrics.detailMetadataVerticalOffset)
+      .layoutPriority(1)
+
+      UpdateActionView(viewModel: action)
+    }
+  }
+
   @ViewBuilder
   private var appTitle: some View {
     if showsSupportStatus {
@@ -204,13 +231,11 @@ struct ReleaseNotesHeaderView: View {
           appName
             .fixedSize(horizontal: true, vertical: false)
           SupportStatusButton(app: app)
-            .id(appIdentity)
         }
 
         HStack(spacing: 5) {
           appName
           SupportStatusButton(app: app, showsLabel: false)
-            .id(appIdentity)
         }
       }
     } else {

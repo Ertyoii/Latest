@@ -130,6 +130,24 @@ final class AppDataStoreTest: XCTestCase {
     XCTAssertEqual(refreshedApp.remoteVersion, remoteVersion)
   }
 
+  @MainActor
+  func testOfflinePostInstallRecheckPreservesConfirmedStoreRelease() {
+    let store = AppDataStore()
+    let fixture = makeTestApp(name: "Store recheck", version: "1", remoteVersion: "2")
+    let release = App.Update(
+      app: fixture.bundle, remoteVersion: Version(versionNumber: "2", buildNumber: nil),
+      minimumOSVersion: nil, source: .appStore, date: nil,
+      releaseNotes: .html(string: "Notes for two"),
+      updateAction: .builtIn { _ in })
+    _ = store.set(.success(release), for: fixture.bundle)
+    let installed = makeTestApp(name: fixture.name, version: "2").bundle
+    let rebased = store.set(appBundle: installed)
+    let offline = Result<App.Update, Error>.failure(URLError(.notConnectedToInternet))
+    XCTAssertNil(store.accept(offline, for: installed, afterInstall: true))
+    XCTAssertTrue(store.app(at: installed.identifier) === rebased)
+    XCTAssertNotNil(store.accept(offline, for: installed)?.error)
+  }
+
   func testSingleBundleRefreshClearsAvailableStateWhenInstalledVersionCatchesUp() {
     let store = AppDataStore()
     let appURL = URL(
@@ -311,6 +329,42 @@ final class AppDirectoryTest: XCTestCase {
     allowCollectionToFinish.signal()
     wait(for: [callersFinished], timeout: 2)
     XCTAssertEqual(invocationCount.withLock { $0 }, 1)
+  }
+
+  func testPostInstallCollectionCannotReuseAnInFlightSettingsScan() {
+    let started = DispatchSemaphore(value: 0)
+    let waiting = DispatchSemaphore(value: 0)
+    let finishOldScan = DispatchSemaphore(value: 0)
+    let invocations = Mutex(0)
+    let coordinator = BundleCollectionCoordinator(
+      collector: { _ in
+        let first = invocations.withLock {
+          $0 += 1
+          return $0 == 1
+        }
+        if first {
+          started.signal()
+          _ = finishOldScan.wait(timeout: .now() + 3)
+        }
+        return []
+      }, waiterDidJoin: { waiting.signal() })
+    let directory = FileManager.default.temporaryDirectory
+    let finished = expectation(description: "Both directory snapshots are available")
+    finished.expectedFulfillmentCount = 2
+    DispatchQueue.global().async {
+      _ = coordinator.collectBundles(at: directory)
+      finished.fulfill()
+    }
+    XCTAssertEqual(started.wait(timeout: .now() + 1), .success)
+    coordinator.invalidateCollection(at: directory)
+    DispatchQueue.global().async {
+      _ = coordinator.collectBundles(at: directory)
+      finished.fulfill()
+    }
+    XCTAssertEqual(waiting.wait(timeout: .now() + 1), .success)
+    finishOldScan.signal()
+    wait(for: [finished], timeout: 2)
+    XCTAssertEqual(invocations.withLock { $0 }, 2)
   }
 
   func testRefreshRecollectsBundleVersionFromDisk() throws {

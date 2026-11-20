@@ -10,6 +10,45 @@ import XCTest
 
 final class UpdateActionInteractionTest: XCTestCase {
   @MainActor
+  func testStoreCompletionShowsOpenWhileSelectionStillHasOldVersion() throws {
+    try requireUITests()
+    try runApplicationTest {
+      let attempts = Mutex(0)
+      let old = makeTestApp(
+        name: "Store handoff", version: "1", remoteVersion: "2",
+        updateAction: .builtIn { _ in attempts.withLock { $0 += 1 } })
+      let installed = makeTestApp(name: old.name, version: "2", remoteVersion: "2")
+      let current = Mutex(old)
+      let queue = UpdateQueue()
+      let service = AppUpdateService(queue: queue) { _ in current.withLock { $0 } }
+      let operation = UpdateOperation(appIdentifier: old.identifier)
+      queue.addOperation(operation)
+      try await waitForHelper { operation.isExecuting }
+      operation.progressState = .installing
+      let fixture = try await SidebarInputFixture.make(
+        apps: [old], selected: old, updating: service, testCase: self)
+      defer { fixture.window.close() }
+      try await waitForHelper {
+        fixture.accessibilityElements().contains {
+          $0.accessibilityIdentifier() == "update.activity-status"
+        }
+      }
+      XCTAssertTrue(fixture.model.selectedApp === old)
+      current.withLock { $0 = installed }
+      operation.finish()
+      try await waitForHelper {
+        fixture.accessibilityElements().contains { $0.accessibilityLabel() == "Open Store handoff" }
+      }
+      XCTAssertFalse(
+        fixture.accessibilityElements().contains {
+          $0.accessibilityLabel() == "Update Store handoff"
+        })
+      service.update(old)
+      XCTAssertEqual(attempts.withLock { $0 }, 0)
+    }
+  }
+
+  @MainActor
   func testProgressControlsAdvanceAndCancelUnmeasuredTransfers() throws {
     try requireUITests()
     try runApplicationTest {
@@ -44,22 +83,38 @@ final class UpdateActionInteractionTest: XCTestCase {
               && $0.accessibilityFrame().intersects(fixture.window.frame)
           })
       }
-      let earlyLabel = try progressButton().accessibilityLabel()
-      let early = try await captureWindowBitmap(fixture.window)
-      operation.progressState = .downloading(loadedSize: 75, totalSize: 100)
-      try await Task.sleep(for: .milliseconds(300))
-      XCTAssertNotEqual(try progressButton().accessibilityLabel(), earlyLabel)
-      let later = try await captureWindowBitmap(fixture.window)
-      let frame = fixture.window.convertFromScreen(try progressButton().accessibilityFrame())
+      let initialButton = try progressButton()
+      let frame = fixture.window.convertFromScreen(initialButton.accessibilityFrame())
       let crop = CGRect(
         x: frame.minX * 2, y: (fixture.window.frame.height - frame.maxY) * 2,
         width: frame.width * 2, height: frame.height * 2)
-      let before = try XCTUnwrap(early.cgImage?.cropping(to: crop))
-      let after = try XCTUnwrap(later.cgImage?.cropping(to: crop))
-      XCTAssertNotEqual(
-        NSBitmapImageRep(cgImage: before).representation(using: .png, properties: [:]),
-        NSBitmapImageRep(cgImage: after).representation(using: .png, properties: [:]),
-        "The progress ring must repaint when more bytes arrive")
+      func ringPixels(_ bitmap: NSBitmapImageRep) throws -> Data {
+        let ring = try XCTUnwrap(bitmap.cgImage?.cropping(to: crop))
+        return try XCTUnwrap(
+          NSBitmapImageRep(cgImage: ring).representation(using: .png, properties: [:]))
+      }
+      let earlyLabel = initialButton.accessibilityLabel()
+      let early = try await captureWindowBitmap(fixture.window)
+      operation.progressState = .downloading(loadedSize: 75, totalSize: 100)
+      try await Task.sleep(for: .milliseconds(150))
+      let intermediate = try await captureWindowBitmap(fixture.window)
+      try await Task.sleep(for: .milliseconds(550))
+      let later = try await captureWindowBitmap(fixture.window)
+      XCTAssertNotEqual(try progressButton().accessibilityLabel(), earlyLabel)
+      XCTAssertNotEqual(try ringPixels(early), try ringPixels(later))
+      if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        XCTAssertNotEqual(
+          try ringPixels(intermediate), try ringPixels(early),
+          "The ring must start advancing when a new measurement arrives")
+        XCTAssertNotEqual(
+          try ringPixels(intermediate), try ringPixels(later),
+          "A single download callback should move the ring through intermediate positions")
+      }
+      let status = try XCTUnwrap(
+        fixture.accessibilityElements().first {
+          $0.accessibilityIdentifier() == "update.activity-status"
+        })
+      XCTAssertTrue(status.accessibilityFrame().intersects(fixture.window.frame))
       for (name, bitmap) in [("early", early), ("later", later)] {
         try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
           to: output.appendingPathComponent("\(identifier)-\(name).png"))
@@ -138,15 +193,23 @@ final class UpdateActionInteractionTest: XCTestCase {
       operation.showReady { XCTAssertEqual($0, .install) }
       operation.showInstallingUpdate(
         withApplicationTerminated: false, retryTerminatingApplication: { retries += 1 })
-      try await Task.sleep(for: .milliseconds(150))
       for (index, identifier) in ["updates.retry-termination", "update.retry-termination"]
         .enumerated()
       {
-        let button = try XCTUnwrap(
-          fixture.accessibilityElements().first {
+        var retryButton: SidebarAccessibilityElement?
+        let deadline = ContinuousClock.now + .seconds(2)
+        repeat {
+          fixture.window.layoutIfNeeded()
+          retryButton = fixture.accessibilityElements().first {
             $0.accessibilityIdentifier() == identifier
               && $0.accessibilityFrame().intersects(fixture.window.frame)
-          })
+          }
+          if retryButton != nil { break }
+          try await Task.sleep(for: .milliseconds(20))
+        } while ContinuousClock.now < deadline
+        let button = try XCTUnwrap(
+          retryButton, "Missing \(identifier) in \(dark ? "dark" : "light") appearance")
+        try await activateTestWindow(fixture.window)
         let frame = fixture.window.convertFromScreen(button.accessibilityFrame())
         try clickTestWindow(fixture.window, at: NSPoint(x: frame.midX, y: frame.midY))
         try await Task.sleep(for: .milliseconds(50))
@@ -176,7 +239,8 @@ final class UpdateActionInteractionTest: XCTestCase {
             updateAction: .external(label: "Vendor") { _ in calls.withLock { $0[index] += 1 } })),
         isIgnored: false)
     }
-    let host = NSHostingView(rootView: ReleaseNotesHeaderView(app: apps[0]))
+    let service = AppUpdateService(queue: UpdateQueue())
+    let host = NSHostingView(rootView: ReleaseNotesHeaderView(app: apps[0], updating: service))
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 460, height: 79),
       styleMask: [.borderless], backing: .buffered, defer: false)
@@ -185,7 +249,7 @@ final class UpdateActionInteractionTest: XCTestCase {
     window.orderFront(nil)
     defer { window.close() }
     for app in apps {
-      host.rootView = ReleaseNotesHeaderView(app: app)
+      host.rootView = ReleaseNotesHeaderView(app: app, updating: service)
       try await Task.sleep(for: .milliseconds(150))
       host.layoutSubtreeIfNeeded()
       let down = try XCTUnwrap(

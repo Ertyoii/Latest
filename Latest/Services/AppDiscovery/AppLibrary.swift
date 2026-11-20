@@ -27,7 +27,8 @@ class AppLibrary: @unchecked Sendable {
   /// A list of all application bundles that are available locally.
   var bundles: [App.Bundle] {
     stateQueue.sync {
-      Self.uniqueBundles(directoryURLs.compactMap { directories[$0]?.bundles })
+      let inventory = currentInventory()
+      return Self.uniqueBundles(directoryURLs.compactMap { inventory[$0] })
     }
   }
 
@@ -38,6 +39,13 @@ class AppLibrary: @unchecked Sendable {
   private var hasPublishedInventory = false
   private var cachedDirectories = [URL: [App.Bundle]]()
   private var didReadCache = false
+  private struct Replacement {
+    let token: UUID
+    let bundleIdentifier: String
+    var bundle: App.Bundle?
+    let otherCopies: [App.Bundle]
+  }
+  private var replacements = [URL: Replacement]()
   private let cache: AppInventoryCache?
   private let previewHandler: UpdateHandler
   private let bundleCollector: @Sendable (URL) -> [App.Bundle]
@@ -85,6 +93,60 @@ class AppLibrary: @unchecked Sendable {
       guard let self else { return }
       self.reloadHandler = handler
       self.setupDirectoryObservers(refreshExisting: true)
+    }
+  }
+
+  /// Directory events can see the new package before its App Store receipt is written.
+  func beginReplacing(_ bundle: App.Bundle) {
+    stateQueue.sync {
+      let copies = Self.uniqueBundles(Array(currentInventory().values)).filter {
+        $0.identifier != bundle.identifier && $0.bundleIdentifier == bundle.bundleIdentifier
+      }
+      replacements[bundle.identifier] = Replacement(
+        token: UUID(), bundleIdentifier: bundle.bundleIdentifier, bundle: bundle,
+        otherCopies: copies)
+    }
+  }
+
+  func finishReplacing(
+    at url: URL, with installed: App.Bundle?, registeredURL: URL? = nil,
+    reconcile: @Sendable (App.Bundle) -> Void
+  ) {
+    stateQueue.sync {
+      guard var replacement = replacements[url] else { return }
+      replacement.bundle = installed
+      replacements[url] = replacement
+      // A coalesced watcher event may still contain the pre-receipt inventory.
+      // Retire the override only after all owning directories have read again.
+      let refreshed = DispatchGroup()
+      let path = url.standardizedFileURL.path
+      let paths =
+        (replacement.otherCopies.map(\.fileURL) + [url] + [registeredURL].compactMap { $0 })
+        .map { $0.standardizedFileURL.path }
+      let owners = directories.filter {
+        let prefix = Self.descendantPrefix(for: $0.key)
+        return paths.contains { $0.hasPrefix(prefix) }
+      }
+      guard !owners.isEmpty else {
+        replacements[url] = nil
+        return
+      }
+      if let installed,
+        owners.keys.contains(where: { path.hasPrefix(Self.descendantPrefix(for: $0)) })
+      {
+        reconcile(installed)
+      }
+      for (directory, observer) in owners {
+        BundleCollector.invalidateCollection(at: directory)
+        refreshed.enter()
+        observer.refresh { refreshed.leave() }
+      }
+      let token = replacement.token
+      refreshed.notify(queue: stateQueue) {
+        guard self.replacements[url]?.token == token else { return }
+        self.replacements[url] = nil
+        self.performUpdate()
+      }
     }
   }
 
@@ -169,11 +231,44 @@ class AppLibrary: @unchecked Sendable {
     previewHandler(Self.uniqueBundles(live + cached))
   }
 
+  private func currentInventory() -> [URL: [App.Bundle]] {
+    var inventory = directories.mapValues(\.bundles)
+    guard !replacements.isEmpty else { return inventory }
+    // PackageKit can replace a sibling copy or create one at its registered path.
+    // Only publish a new Store copy once its receipt identifies the source.
+    for replacement in replacements.values {
+      let oldCopies = replacement.otherCopies
+      for directory in directoryURLs {
+        let prefix = Self.descendantPrefix(for: directory)
+        inventory[directory]?.removeAll { app in
+          app.bundleIdentifier == replacement.bundleIdentifier && app.source != .appStore
+            && !oldCopies.contains { $0.identifier == app.identifier && $0.source != .appStore }
+        }
+        for copy in oldCopies
+        where copy.source == .appStore && replacements[copy.identifier] == nil
+          && copy.fileURL.standardizedFileURL.path.hasPrefix(prefix)
+        {
+          if inventory[directory]?.contains(where: { $0.identifier == copy.identifier }) == false {
+            inventory[directory]?.append(copy)
+          }
+        }
+      }
+    }
+    for (url, replacement) in replacements {
+      let path = url.standardizedFileURL.path
+      for directory in directoryURLs where path.hasPrefix(Self.descendantPrefix(for: directory)) {
+        inventory[directory]?.removeAll { $0.fileURL.standardizedFileURL.path == path }
+        if let bundle = replacement.bundle { inventory[directory]?.append(bundle) }
+      }
+    }
+    return inventory
+  }
+
   private func performUpdate() {
     guard pendingDirectories.isEmpty else { return }
     hasPublishedInventory = true
     cachedDirectories.removeAll()
-    let inventory = directories.mapValues(\.bundles)
+    let inventory = currentInventory()
     let bundles = Self.uniqueBundles(directoryURLs.compactMap { inventory[$0] })
     appLibraryLogger.info("Publishing \(bundles.count, privacy: .public) discovered apps")
     let handler = reloadHandler ?? updateHandler

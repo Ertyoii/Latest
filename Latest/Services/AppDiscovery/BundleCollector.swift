@@ -41,6 +41,10 @@ enum BundleCollector {
     collectionCoordinator.collectBundles(at: url)
   }
 
+  static func invalidateCollection(at url: URL) {
+    collectionCoordinator.invalidateCollection(at: url)
+  }
+
   private static func collectBundlesUncoordinated(at url: URL) -> [App.Bundle] {
     guard !isInExcludedSubfolder(url) else { return [] }
 
@@ -83,7 +87,7 @@ enum BundleCollector {
 
   /// Returns a single application bundle at the given URL.
   static func collectBundle(at url: URL) -> App.Bundle? {
-    guard url.pathExtension == appExtension else { return nil }
+    guard url.pathExtension.lowercased() == appExtension else { return nil }
     return cachedBundle(forAppAt: url)
   }
 
@@ -188,6 +192,7 @@ final class BundleCollectionCoordinator: @unchecked Sendable {
   private struct Slot {
     var generation = 0
     var isCollecting = false
+    var invalidated = false
     var mostRecentBundles = [App.Bundle]()
   }
 
@@ -204,9 +209,21 @@ final class BundleCollectionCoordinator: @unchecked Sendable {
     self.waiterDidJoin = waiterDidJoin
   }
 
+  // A post-install read must not join a Settings scan started before the receipt was written.
+  func invalidateCollection(at url: URL) {
+    let key = url.standardizedFileURL
+    condition.lock()
+    if slots[key]?.isCollecting == true { slots[key]?.invalidated = true }
+    condition.unlock()
+  }
+
   func collectBundles(at url: URL) -> [App.Bundle] {
     let key = url.standardizedFileURL
     condition.lock()
+    if slots[key]?.invalidated == true {
+      waiterDidJoin()
+      while slots[key]?.invalidated == true { condition.wait() }
+    }
     var slot = slots[key] ?? Slot()
     if slot.isCollecting {
       let awaitedGeneration = slot.generation
@@ -229,6 +246,7 @@ final class BundleCollectionCoordinator: @unchecked Sendable {
     slot = slots[key] ?? Slot()
     slot.generation &+= 1
     slot.isCollecting = false
+    slot.invalidated = false
     slot.mostRecentBundles = bundles
     slots[key] = slot
     condition.broadcast()

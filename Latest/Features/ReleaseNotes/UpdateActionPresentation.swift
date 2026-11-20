@@ -12,6 +12,13 @@ enum UpdateActionPresentation: Equatable {
   case failed(String)
   case appStoreFailed(reason: String, pageURL: URL)
 
+  var activityStatus: String? {
+    switch self {
+    case .waiting(let status), .progress(_, let status, _): status
+    default: nil
+    }
+  }
+
   static func make(for app: App, progressState: UpdateProgressState) -> Self {
     switch progressState {
     case .none:

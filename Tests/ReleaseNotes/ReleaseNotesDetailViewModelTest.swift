@@ -8,6 +8,24 @@ import XCTest
 
 final class ReleaseNotesDetailViewModelTest: XCTestCase {
   @MainActor
+  func testInstallingTheDisplayedStoreReleaseKeepsItsNotesOnScreen() {
+    let provider = ReleaseNotesProviderProbe()
+    let detail = ReleaseNotesDetailViewModel(releaseNotesProvider: provider)
+    let current = makeTestApp(name: "Store notes", version: "1", remoteVersion: "2")
+    detail.display(current)
+    provider.completeRequest(at: 0, with: .success(ReleaseNotesContent(string: "Version two")))
+    let updated = makeTestApp(name: "Store notes", version: "2", remoteVersion: "2")
+    detail.display(updated)
+    XCTAssertEqual(provider.requests.count, 1)
+    guard case .text(let content) = detail.contentState else {
+      return XCTFail("Expected visible notes")
+    }
+    XCTAssertEqual(content.string, "Version two")
+    detail.display(makeTestApp(name: "Store notes", version: "2", remoteVersion: "3"))
+    XCTAssertEqual(provider.requests.count, 2)
+  }
+
+  @MainActor
   func testLateCatalogRefreshRetriesSelectedDetailsWithoutAnotherListPublication() async throws {
     let provider = ReleaseNotesProviderProbe()
     let detail = ReleaseNotesDetailViewModel(releaseNotesProvider: provider)
