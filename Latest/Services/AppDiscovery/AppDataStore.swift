@@ -60,6 +60,10 @@ final class AppDataStore: AppProviding, Sendable {
   }
 
   var apps: [App] { state.withLock { Array($0.appsByIdentifier.values) } }
+  func app(at identifier: App.Bundle.Identifier) -> App? {
+    state.withLock { $0.appsByIdentifier[identifier] }
+  }
+
   var updatableApps: [App] {
     apps.filter { $0.updateAvailable && $0.usesBuiltInUpdater && !$0.isIgnored }
   }
@@ -92,7 +96,7 @@ final class AppDataStore: AppProviding, Sendable {
       state.appsByIdentifier = appsByIdentifier
     }
     // Publish local inventory on the next UI turn, even if provider checks are slow.
-    Task { @MainActor in updateStreams.yield(listUpdate()) }
+    Task { @MainActor in publishCurrentApps() }
   }
 
   func set(appBundle bundle: App.Bundle) -> App {
@@ -120,11 +124,20 @@ final class AppDataStore: AppProviding, Sendable {
 
   /// A targeted post-install refresh can change metadata within an ongoing
   /// scan generation. Accept only results for the currently installed bundle.
-  func accept(_ update: Result<App.Update, Error>, for bundle: App.Bundle) -> App? {
+  func accept(
+    _ update: Result<App.Update, Error>, for bundle: App.Bundle, afterInstall: Bool = false
+  ) -> App? {
     let app = state.withLock { state -> App? in
       guard let current = state.appsByIdentifier[bundle.identifier],
         current.bundle.matchesMetadata(of: bundle)
       else { return nil }
+      // A background recheck can fail offline after a successful Store installation.
+      if afterInstall, case .failure = update, current.source == .appStore,
+        let release = current.remoteVersion,
+        bundle.version.comparisonForUpdate(to: release) == .samePrecedence
+      {
+        return nil
+      }
       let app = App(bundle: bundle, update: update, isIgnored: current.isIgnored)
       state.appsByIdentifier[app.identifier] = app
       return app
@@ -170,6 +183,10 @@ final class AppDataStore: AppProviding, Sendable {
     updateStreams.stream(initialValue: listUpdate())
   }
 
+  @MainActor func publishCurrentApps() {
+    updateStreams.yield(listUpdate())
+  }
+
   private func listUpdate() -> AppListUpdate {
     state.withLock {
       AppListUpdate(
@@ -186,7 +203,7 @@ final class AppDataStore: AppProviding, Sendable {
         Task { @MainActor [weak self] in
           guard let self else { return }
           self.scheduledUpdate.withLock { $0 = nil }
-          self.updateStreams.yield(self.listUpdate())
+          self.publishCurrentApps()
         }
       }
       scheduled = work

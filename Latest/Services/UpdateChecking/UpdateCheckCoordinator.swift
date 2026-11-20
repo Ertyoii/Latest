@@ -128,12 +128,14 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       // Invalidate before replacing the store so late results cannot restore removed apps.
       let generation = beginUpdateCheckGeneration()
       dataStore.set(appBundles: bundles)
-      scheduleUpdateCheck(on: Array(bundles), generation: generation, publishesSnapshot: true)
+      scheduleUpdateCheck(on: Array(bundles), generation: generation, isFullScan: true)
     }
   }
 
   /// The data store updated apps should be passed to
   private let dataStore = AppDataStore()
+
+  func app(at identifier: App.Bundle.Identifier) -> App? { dataStore.app(at: identifier) }
 
   private struct CheckerDefinition: Sendable {
     let source: App.Source
@@ -205,7 +207,7 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
 
   /// Called while holding the scheduling lock so registration and cancellation are atomic.
   private func scheduleUpdateCheck(
-    on bundles: [App.Bundle], generation: Int, publishesSnapshot: Bool = false
+    on bundles: [App.Bundle], generation: Int, isFullScan: Bool = false
   ) {
     let checkableBundles = bundles.filter { Self.checker(for: $0.source) != nil }
       .sorted { $0.fileURL.path < $1.fileURL.path }
@@ -220,7 +222,7 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       await self.performUpdateCheck(
         on: checkableBundles,
         generation: generation,
-        publishesSnapshot: publishesSnapshot
+        isFullScan: isFullScan
       )
     }
     activeUpdateCheckTasks[taskID] = task
@@ -229,10 +231,12 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
   private func performUpdateCheck(
     on bundles: [App.Bundle],
     generation: Int,
-    publishesSnapshot: Bool
+    isFullScan: Bool
   ) async {
     await MainActor.run {
-      guard self.updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
+      guard isFullScan, self.updateCheckGeneration.isCurrent(generation), !Task.isCancelled else {
+        return
+      }
       self.progressDelegate?.updateChecker(
         self,
         didStartCheckingApps: bundles.count,
@@ -245,8 +249,10 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
     let catalog = bundles.filter(HomebrewCheckerOperation.usesCatalog)
     let network = bundles.filter { !HomebrewCheckerOperation.usesCatalog(for: $0) }
     // Indexed catalog matches share one fetch and need no network slots.
-    async let networkCount = checkBatch(network, limit: 6, repository: nil, generation: generation)
-    async let catalogCount = checkCatalogBatch(catalog, generation: generation)
+    async let networkCount = checkBatch(
+      network, limit: 6, repository: nil, generation: generation, isFullScan: isFullScan)
+    async let catalogCount = checkCatalogBatch(
+      catalog, generation: generation, isFullScan: isFullScan)
     let completed = await networkCount + catalogCount
     guard updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
     let elapsed = start.duration(to: clock.now)
@@ -254,29 +260,34 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       "Finished update check generation \(generation, privacy: .public), completed \(completed, privacy: .public) of \(bundles.count, privacy: .public) in \(String(describing: elapsed), privacy: .public)"
     )
     await MainActor.run {
-      guard self.updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
-      if publishesSnapshot {
-        _ = self.updateCheckGeneration.withCurrent(generation) {
-          self.dataStore.finishUpdateCheck(generation: generation)
-        }
+      guard isFullScan, self.updateCheckGeneration.isCurrent(generation), !Task.isCancelled else {
+        return
+      }
+      _ = self.updateCheckGeneration.withCurrent(generation) {
+        self.dataStore.finishUpdateCheck(generation: generation)
       }
       self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self, generation: generation)
     }
   }
 
-  private func checkCatalogBatch(_ bundles: [App.Bundle], generation: Int) async -> Int {
+  private func checkCatalogBatch(_ bundles: [App.Bundle], generation: Int, isFullScan: Bool) async
+    -> Int
+  {
     guard !bundles.isEmpty, !Task.isCancelled else { return 0 }
     return await checkBatch(
-      bundles, limit: 1, repository: repositoryProvider(), generation: generation)
+      bundles, limit: 1, repository: repositoryProvider(), generation: generation,
+      isFullScan: isFullScan)
   }
 
   private func checkBatch(
-    _ bundles: [App.Bundle], limit: Int, repository: UpdateRepository?, generation: Int
+    _ bundles: [App.Bundle], limit: Int, repository: UpdateRepository?, generation: Int,
+    isFullScan: Bool
   ) async -> Int {
     let execution = await BoundedUpdateCheckExecutor(maximumConcurrentTasks: limit).run(
       bundles, collectResults: false,
       onCompletion: { [weak self] (result: IndexedUpdateCheckResult<App.Update>) in
-        self?.didCheck(bundles[result.index], result.result, generation: generation)
+        self?.didCheck(
+          bundles[result.index], result.result, generation: generation, isFullScan: isFullScan)
       }
     ) { [check] bundle in
       try await check(bundle, repository)
@@ -285,15 +296,16 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
   }
 
   /// Callback to notify that an app has been updated.
-  private func didCheck(_ bundle: App.Bundle, _ update: Result<App.Update, Error>, generation: Int)
-  {
+  private func didCheck(
+    _ bundle: App.Bundle, _ update: Result<App.Update, Error>, generation: Int, isFullScan: Bool
+  ) {
     guard
       let accepted = updateCheckGeneration.withCurrent(
         generation,
         perform: {
-          self.dataStore.accept(update, for: bundle)
+          self.dataStore.accept(update, for: bundle, afterInstall: !isFullScan)
         }),
-      let app = accepted
+      let app = accepted, isFullScan
     else { return }
 
     Task { @MainActor in
@@ -308,7 +320,68 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
     }
   }
 
+  @MainActor
+  func whileReplacingStoreApp(_ bundle: App.Bundle, install: () async throws -> URL) async throws {
+    library.beginReplacing(bundle)
+    let result: Result<URL, Error>
+    do {
+      result = .success(try await install())
+    } catch {
+      result = .failure(error)
+    }
+    let installed = await Task.detached(priority: .userInitiated) {
+      BundleCollector.collectBundle(at: bundle.fileURL)
+    }.value
+    // Rebase the existing Store notes and action onto the installed version
+    // before the operation releases its progress control.
+    let registeredURL = try? result.get()
+    let sameCopy =
+      registeredURL.map { url in
+        if url.standardizedFileURL.path == bundle.fileURL.standardizedFileURL.path { return true }
+        // PackageKit can return different capitalization or a symlink to the selected bundle.
+        let keys: Set<URLResourceKey> = [.fileResourceIdentifierKey]
+        guard
+          let selected = try? bundle.fileURL.resolvingSymlinksInPath().resourceValues(forKeys: keys)
+            .fileResourceIdentifier,
+          let registered = try? url.resolvingSymlinksInPath().resourceValues(forKeys: keys)
+            .fileResourceIdentifier
+        else { return false }
+        return selected.isEqual(registered)
+      } ?? false
+    library.finishReplacing(at: bundle.identifier, with: installed, registeredURL: registeredURL) {
+      installed in
+      guard sameCopy, installed.source == .appStore,
+        installed.bundleIdentifier == bundle.bundleIdentifier
+      else { return }
+      self.recheckInstalledBundle(installed)
+    }
+    dataStore.publishCurrentApps()
+    let updatedURL = try result.get()
+    guard sameCopy else {
+      throw LatestError.custom(
+        title: String(localized: "The App Store updated a different copy of this app."),
+        description: String(
+          localized: "Updated \(updatedURL.path) instead of \(bundle.fileURL.path)."))
+    }
+    guard installed?.source == .appStore, installed?.bundleIdentifier == bundle.bundleIdentifier
+    else {
+      throw LatestError.custom(
+        title: String(localized: "The installed App Store copy could not be verified."),
+        description: bundle.fileURL.path)
+    }
+  }
+
+  private func recheckInstalledBundle(_ bundle: App.Bundle) {
+    updateCheckSchedulingLock.withLock {
+      guard dataStore.app(at: bundle.identifier) != nil else { return }
+      _ = dataStore.set(appBundle: bundle)
+      scheduleUpdateCheck(on: [bundle], generation: updateCheckGeneration.currentOrBegin())
+    }
+  }
+
   private func refreshUpdatedApp(from notification: Notification) {
+    // The manual installer already verified and reconciled its registered path.
+    if let store = notification.object as? AppStoreUpdateOperation, store.isCommitting { return }
     guard
       let appIdentifier = notification.userInfo?[UpdateOperation.appIdentifierUserInfoKey]
         as? App.Bundle.Identifier
@@ -324,11 +397,7 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
         return
       }
 
-      self.updateCheckSchedulingLock.withLock {
-        _ = self.dataStore.set(appBundle: bundle)
-        self.scheduleUpdateCheck(
-          on: [bundle], generation: self.updateCheckGeneration.currentOrBegin())
-      }
+      self.recheckInstalledBundle(bundle)
     }
   }
 

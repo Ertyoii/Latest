@@ -290,12 +290,12 @@ enum AppStoreReceipt {
       return existingReceiptURL
     }
 
-    guard appURL.pathExtension == "app" else { return nil }
+    guard appURL.pathExtension.lowercased() == "app" else { return nil }
     return standardReceiptURL(forAppAt: appURL)
   }
 
   static func existingURL(forAppAt appURL: URL, fileManager: FileManager = .default) -> URL? {
-    guard appURL.pathExtension == "app" else { return nil }
+    guard appURL.pathExtension.lowercased() == "app" else { return nil }
 
     let standardURL = standardReceiptURL(forAppAt: appURL)
     if fileManager.fileExists(atPath: standardURL.path) {

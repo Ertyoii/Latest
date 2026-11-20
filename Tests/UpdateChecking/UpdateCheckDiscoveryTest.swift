@@ -71,6 +71,21 @@ final class UpdateCheckDiscoveryTest: XCTestCase {
     XCTAssertEqual(progress.batchSizes, [7])
   }
 
+  func testStoreInstallerReportsTheCopyThatPackageKitActuallyUpdated() async throws {
+    let original = bundle("Renamed Store App")
+    let other = original.fileURL.deletingLastPathComponent().appendingPathComponent("Store App.app")
+    let coordinator = UpdateCheckCoordinator(
+      check: { _, _ in throw LatestError.updateInfoUnavailable },
+      repositoryProvider: { nil })
+    do {
+      try await coordinator.whileReplacingStoreApp(original) { other }
+      XCTFail("The selected copy should not report a successful installation")
+    } catch let error as LatestError {
+      XCTAssertTrue(error.failureReason?.contains(other.path) == true)
+      XCTAssertTrue(error.failureReason?.contains(original.fileURL.path) == true)
+    }
+  }
+
   func testPostInstallRefreshRejectsOlderCheckInTheSameGeneration() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let appURL = root.appendingPathComponent("Installed.app")
@@ -91,17 +106,17 @@ final class UpdateCheckDiscoveryTest: XCTestCase {
     let original = try XCTUnwrap(BundleCollector.collectBundle(at: appURL))
     let oldStarted = expectation(description: "Old installed version check started")
     let newStarted = expectation(description: "New installed version check started")
-    let refreshed = expectation(description: "New installed version accepted")
     let checks = SuspendedDiscoveryChecks { bundle in
       (bundle.version.versionNumber == "1" ? oldStarted : newStarted).fulfill()
     }
     let coordinator = UpdateCheckCoordinator(
       check: { bundle, _ in try await checks.check(bundle) }, repositoryProvider: { nil })
-    let finished = expectation(description: "Both check batches finished")
-    finished.expectedFulfillmentCount = 2
-    let progress = DiscoveryCheckProgress(finished: finished) { app in
-      if app.version.versionNumber == "2" { refreshed.fulfill() }
-    }
+    let finished = expectation(description: "Original scan finished")
+    let progress = DiscoveryCheckProgress(finished: finished)
+    let model = UpdatesListViewModel(
+      settings: try isolatedAppListSettings(for: self), appProvider: coordinator.appProvider)
+    model.startObserving()
+    defer { model.stopObserving() }
     coordinator.progressDelegate = progress
     coordinator.updateDiscoveredBundles([original])
     await fulfillment(of: [oldStarted], timeout: 2)
@@ -111,11 +126,16 @@ final class UpdateCheckDiscoveryTest: XCTestCase {
       userInfo: [UpdateOperation.appIdentifierUserInfoKey: appURL])
     await fulfillment(of: [newStarted], timeout: 2)
     await checks.complete("Installed", installedVersion: "2", remoteVersion: "3")
-    await fulfillment(of: [refreshed], timeout: 2)
+    try await waitForSnapshot(model) {
+      $0.apps.first?.remoteVersion?.versionNumber == "3"
+        && $0.apps.first?.version.versionNumber == "2"
+    }
     await checks.complete("Installed", installedVersion: "1", remoteVersion: "3")
     await fulfillment(of: [finished], timeout: 2)
     XCTAssertEqual(coordinator.appProvider.updatableApps.first?.version.versionNumber, "2")
-    XCTAssertEqual(progress.checked.count, 1, "Old metadata must not overwrite the refresh")
+    XCTAssertEqual(
+      progress.batchSizes, [1], "A post-install check must not start another toolbar scan")
+    XCTAssertTrue(progress.checked.isEmpty, "Old metadata must not overwrite the refresh")
   }
 
   func testDiscoveryPublishesRowsAndResultsBeforeSlowProviderFinishes() async throws {

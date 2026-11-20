@@ -124,7 +124,7 @@ enum InstallHelper {
 
   /// Installs an App Store update package at the given target URL via the privileged helper.
   static func installPackage(_ package: FileHandle, appURL: URL, receiptData: Data)
-    async throws
+    async throws -> URL
   {
     let installedURL = try await readiness.install {
       try await performInstallation(package, appURL: appURL, receiptData: receiptData)
@@ -134,6 +134,7 @@ enum InstallHelper {
     process.arguments = [installedURL.path]
     try? process.run()
     LSRegisterURL(installedURL as CFURL, true)
+    return installedURL
   }
 
   private static func performInstallation(_ package: FileHandle, appURL: URL, receiptData: Data)

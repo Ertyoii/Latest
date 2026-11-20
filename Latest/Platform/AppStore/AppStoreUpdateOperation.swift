@@ -27,7 +27,8 @@ enum AppStoreUpdater {
   /// Enqueues an App Store update operation.
   static func enqueueUpdate(for app: App.Bundle, appStoreIdentifier: UInt64, pageURL: URL) {
     let operation = AppStoreUpdateOperation(
-      app: app, itemIdentifier: appStoreIdentifier, pageURL: pageURL)
+      app: app, itemIdentifier: appStoreIdentifier, pageURL: pageURL
+    )
     UpdateQueue.shared.addOperation(operation)
   }
 
@@ -49,12 +50,16 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   init(
     app: App.Bundle, itemIdentifier: UInt64, pageURL: URL,
     downloadDirectory: URL = URL(fileURLWithPath: CKDownloadDirectory(nil), isDirectory: true),
-    install: @escaping @Sendable (FileHandle, URL, Data) async throws -> Void = InstallHelper
-      .installPackage
+    install: (@Sendable (FileHandle, URL, Data) async throws -> Void)? = nil
   ) {
     self.downloadFolder = downloadDirectory.appendingPathComponent(
       String(itemIdentifier), isDirectory: true)
-    self.install = install
+    self.install =
+      install ?? { package, url, receipt in
+        try await UpdateCheckCoordinator.shared.whileReplacingStoreApp(app) {
+          try await InstallHelper.installPackage(package, appURL: url, receiptData: receipt)
+        }
+      }
     self.app = app
     self.itemIdentifier = itemIdentifier
     self.pageURL = pageURL
@@ -277,6 +282,30 @@ private struct AppStoreDownloadSnapshot: Sendable {
   }
 }
 
+extension AppStoreUpdateOperation {
+  @MainActor func receiveProgress(phase: Int64?, loaded: Int64, total: Int64) {
+    switch phase {
+    case 0:
+      if case .extracting = progressState { return }
+      if case .downloading(let previous, let knownTotal, _) = progressState {
+        guard loaded >= previous else { return }
+        progressState = .downloading(loadedSize: loaded, totalSize: total > 0 ? total : knownTotal)
+      } else {
+        progressState = .downloading(loadedSize: max(0, loaded), totalSize: total)
+      }
+    case 1:
+      let fraction = total > 0 ? min(max(Double(loaded) / Double(total), 0), 1) : nil
+      if case .extracting(let previous?, _) = progressState {
+        guard let fraction, fraction >= previous else { return }
+      }
+      progressState = .extracting(progress: fraction)
+    default:
+      // A status without an active phase supplies no new progress information.
+      break
+    }
+  }
+}
+
 extension AppStoreUpdateOperation: CKDownloadQueueObserver {
   func downloadQueue(_ queue: CKDownloadQueue, statusChangedFor download: SSDownload) {
     guard let snapshot = AppStoreDownloadSnapshot(download, itemIdentifier: itemIdentifier)
@@ -284,14 +313,7 @@ extension AppStoreUpdateOperation: CKDownloadQueueObserver {
     preserveArtifacts(for: download, snapshot: snapshot)
     Task { @MainActor in
       guard !self.isFinished, !self.isInstalling, !self.isCancelled else { return }
-      switch snapshot.phase {
-      case 0:
-        self.progressState = .downloading(loadedSize: snapshot.loaded, totalSize: snapshot.total)
-      case 1:
-        self.progressState = .extracting(
-          progress: snapshot.total > 0 ? Double(snapshot.loaded) / Double(snapshot.total) : 0)
-      default: self.progressState = .initializing
-      }
+      self.receiveProgress(phase: snapshot.phase, loaded: snapshot.loaded, total: snapshot.total)
     }
   }
 
